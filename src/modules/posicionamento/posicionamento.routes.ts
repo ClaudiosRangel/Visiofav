@@ -1,0 +1,149 @@
+import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { prisma } from '../../lib/prisma'
+import { authenticate } from '../../middleware/authenticate'
+import { moduloGuard } from '../../middleware/modulo-guard'
+
+const querySchema = z.object({
+  depositoId: z.string().uuid().optional(),
+  zonaId: z.string().uuid().optional(),
+  rua: z.string().optional(),
+  produtoId: z.string().uuid().optional(),
+})
+
+export async function posicionamentoRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+  app.addHook('preHandler', moduloGuard('WMS'))
+
+  // GET /mapa — retorna mapa visual do armazém (endereços com ocupação)
+  app.get('/mapa', async (request) => {
+    const query = querySchema.parse(request.query)
+
+    const where: any = {}
+    if (query.depositoId) where.depositoId = query.depositoId
+    if (query.zonaId) where.zonaId = query.zonaId
+    if (query.rua) where.codigoRua = query.rua
+
+    // Se filtro por produto, buscar apenas endereços que tenham saldo desse produto
+    if (query.produtoId) {
+      where.saldos = { some: { produtoId: query.produtoId, quantidade: { gt: 0 } } }
+    }
+
+    const saldoWhere: any = { quantidade: { gt: 0 } }
+    if (query.produtoId) saldoWhere.produtoId = query.produtoId
+
+    const enderecos = await prisma.endereco.findMany({
+      where,
+      orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
+      include: {
+        saldos: {
+          where: saldoWhere,
+          include: { produto: { select: { id: true, nome: true, descricao: true, codigo: true } } },
+        },
+      },
+    })
+
+    // Agrupar por rua → prédio → nível → apto
+    const mapa: Record<string, Record<string, Array<{
+      nivel: string
+      apto: string
+      enderecoId: string
+      enderecoCompleto: string
+      tipo: string
+      ocupacao: 'LIVRE' | 'PARCIAL' | 'CHEIO' | 'BLOQUEADO'
+      produtos: Array<{ id: string; codigo: string; descricao: string; quantidade: number }>
+      totalQuantidade: number
+    }>>> = {}
+
+    for (const end of enderecos) {
+      const rua = end.codigoRua || '001'
+      const predio = end.codigoPredio || '001'
+
+      if (!mapa[rua]) mapa[rua] = {}
+      if (!mapa[rua][predio]) mapa[rua][predio] = []
+
+      const produtos = end.saldos.map((s: any) => ({
+        id: s.produto?.id || s.produtoId,
+        codigo: s.produto?.codigo || '',
+        descricao: s.produto?.nome || s.produto?.descricao || '',
+        quantidade: Number(s.quantidade),
+      }))
+
+      const totalQuantidade = produtos.reduce((s, p) => s + p.quantidade, 0)
+
+      let ocupacao: 'LIVRE' | 'PARCIAL' | 'CHEIO' | 'BLOQUEADO' = 'LIVRE'
+      if (end.tipo === 'BLOQUEADO') ocupacao = 'BLOQUEADO'
+      else if (totalQuantidade > 0) ocupacao = 'CHEIO'
+
+      mapa[rua][predio].push({
+        nivel: end.codigoNivel || '001',
+        apto: end.codigoApto || '001',
+        enderecoId: end.id,
+        enderecoCompleto: end.enderecoCompleto || '',
+        tipo: end.tipo || 'ARMAZENAGEM',
+        ocupacao,
+        produtos,
+        totalQuantidade,
+      })
+    }
+
+    // Estatísticas
+    const totalEnderecos = enderecos.length
+    const livres = enderecos.filter((e) => !e.saldos.some((s: any) => Number(s.quantidade) > 0) && e.tipo !== 'BLOQUEADO').length
+    const ocupados = enderecos.filter((e) => e.saldos.some((s: any) => Number(s.quantidade) > 0)).length
+    const bloqueados = enderecos.filter((e) => e.tipo === 'BLOQUEADO').length
+
+    return {
+      mapa,
+      estatisticas: {
+        totalEnderecos,
+        livres,
+        ocupados,
+        bloqueados,
+        percentualOcupacao: totalEnderecos > 0 ? Math.round((ocupados / totalEnderecos) * 100) : 0,
+      },
+      ruas: Object.keys(mapa).sort(),
+    }
+  })
+
+  // GET /saldo-enderecado — consulta saldo por endereço (tabela detalhada)
+  app.get('/saldo-enderecado', async (request) => {
+    const { produtoId } = z.object({ produtoId: z.string().uuid().optional() }).parse(request.query)
+
+    const where: any = { quantidade: { gt: 0 } }
+    if (produtoId) where.produtoId = produtoId
+
+    const saldos = await prisma.saldoEndereco.findMany({
+      where,
+      orderBy: { atualizadoEm: 'desc' },
+      include: {
+        produto: { select: { id: true, nome: true, descricao: true, codigo: true } },
+        endereco: { select: { id: true, enderecoCompleto: true, codigoRua: true, codigoPredio: true, codigoNivel: true, codigoApto: true } },
+      },
+    })
+
+    return { data: saldos, total: saldos.length }
+  })
+
+  // GET /estado-enderecos — resumo de estados dos endereços
+  app.get('/estado-enderecos', async (request) => {
+    const enderecos = await prisma.endereco.findMany({
+      select: { id: true, enderecoCompleto: true, tipo: true, codigoRua: true, codigoPredio: true, codigoNivel: true, codigoApto: true },
+      orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
+    })
+
+    return { data: enderecos, total: enderecos.length }
+  })
+
+  // PATCH /estado-enderecos/:id — alterar estado de um endereço
+  app.patch('/estado-enderecos/:id', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { tipo } = z.object({ tipo: z.string() }).parse(request.body)
+
+    const endereco = await prisma.endereco.findUnique({ where: { id } })
+    if (!endereco) return reply.status(404).send({ message: 'Endereço não encontrado' })
+
+    const atualizado = await prisma.endereco.update({ where: { id }, data: { tipo } })
+    return atualizado
+  })
+}

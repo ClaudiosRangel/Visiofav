@@ -1,0 +1,476 @@
+# Implementation Plan: ERP WMS Módulos
+
+## Overview
+
+Plano de implementação para expandir o VisioFab WMS em uma plataforma ERP multi-módulo. A implementação segue uma abordagem incremental: primeiro a infraestrutura (schema Prisma + middleware), depois os módulos de negócio (Compras, Vendas, Financeiro, Fiscal), e por fim a integração WMS. Backend em Fastify 5 + Prisma 6 + TypeScript; Frontend em Next.js 15 + Mantine UI 7 + TanStack Query/Table + React Hook Form + Zod.
+
+## Tasks
+
+- [x] 1. Schema Prisma — Campos fiscais e novos models
+  - [x] 1.1 Adicionar campos fiscais ao model Empresa (regimeTributario, certificadoPfx, senhaCertificado, ambienteNFe, serieNFe, proximoNumeroNFe, serieCTe, proximoNumeroCTe) e ao model Produto (ncm, cfopEstadual, cfopInterest, cst, csosn, aliqICMS, aliqIPI, cstPIS, aliqPIS, cstCOFINS, aliqCOFINS, origemProd, cEAN)
+    - Alterar `prisma/schema.prisma` adicionando os campos conforme o design
+    - Adicionar novas relações em Empresa (nfes, ctes, devolucoes, transferencias, agendaWms)
+    - _Requirements: 17.1, 11.2_
+  - [x] 1.2 Criar models Vendedor, PedidoCompra, ItemPedidoCompra, CompraEfetivada, DevolucaoCompra, ItemDevolucaoCompra, TransferenciaEstoque, ItemTransferencia
+    - Definir todos os campos, relações, unique constraints e @@map conforme o design
+    - _Requirements: 3.2, 4.1, 4.2, 4.5, 5.1, 7.1, 8.1_
+  - [x] 1.3 Criar models TabelaPreco, CondicaoPagamento, PedidoVenda, ItemPedidoVenda, VendaEfetivada
+    - Definir campos, relações e unique constraints conforme o design
+    - _Requirements: 9.1, 9.2, 10.1, 10.4, 11.1_
+  - [x] 1.4 Criar models ContaPagar, ContaReceber, Nfe, ItemNfe, Cte, NfeCteReferencia, AgendaWms, Estoque
+    - Definir campos, relações e unique constraints conforme o design
+    - Adicionar relações inversas em Produto (itensPedidoCompra, itensPedidoVenda, itensNfe, itensDevolucao, itensTransferencia, estoques)
+    - Adicionar relações inversas em Fornecedor (contasPagar), Cliente (contasReceber, pedidosVenda), Transportadora (se necessário)
+    - _Requirements: 15.1, 16.1, 17.1, 17.5, 13.1_
+  - [x] 1.5 Gerar e aplicar migration Prisma
+    - Executar `npx prisma migrate dev --name add-erp-modules` para gerar a migration
+    - Executar `npx prisma generate` para atualizar o client
+    - _Requirements: todos (infraestrutura base)_
+
+- [x] 2. Middleware de autorização por módulo
+  - [x] 2.1 Criar `src/middleware/modulo-guard.ts` com a função `moduloGuard(modulo: Modulo)`
+    - Implementar type `Modulo` com valores `'COMPRAS' | 'VENDAS' | 'FINANCEIRO' | 'WMS' | 'CTE' | 'PCP'`
+    - Consultar `UsuarioEmpresa` para verificar se o módulo está autorizado
+    - Retornar HTTP 403 com mensagem `"Sem acesso ao módulo"` quando não autorizado
+    - Tratar `modulos === '*'` como acesso total
+    - _Requirements: 18.1, 18.3, 18.4_
+
+  - [ ]* 2.2 Escrever teste de propriedade para controle de acesso por módulo
+    - **Property 3: Controle de acesso por módulo nega operações não autorizadas**
+    - Gerar combinações aleatórias de usuário + módulo onde o módulo NÃO está na lista de `modulos`
+    - Verificar que o middleware retorna HTTP 403 para todas as combinações
+    - Arquivo: `src/modules/modulo-guard/__tests__/modulo-guard.property.test.ts`
+    - **Validates: Requirements 2.5, 18.3**
+
+- [x] 3. Seleção de empresa e tela de módulos — Backend
+  - [x] 3.1 Criar `src/modules/empresa-selector/empresa-selector.routes.ts` com endpoints de seleção de empresa
+    - `GET /api/empresas/minhas` — lista empresas ativas do usuário autenticado (filtrar por `status = true`)
+    - `GET /api/empresas/:id/modulos` — retorna módulos autorizados para o usuário na empresa
+    - `POST /api/empresas/:id/selecionar` — registra seleção e retorna token JWT atualizado com `empresaId`
+    - Validação Zod inline para parâmetros
+    - _Requirements: 1.1, 1.2, 1.4, 2.1, 2.2_
+  - [x] 3.2 Registrar rotas de empresa-selector no `src/server.ts`
+    - Importar e registrar com prefixo `/api/empresas`
+    - Estas rotas NÃO passam pelo moduloGuard (são pré-módulo)
+    - _Requirements: 1.1_
+  - [ ]* 3.3 Escrever testes de propriedade para seleção de empresa
+    - **Property 1: Filtragem de empresas ativas retorna apenas empresas com status ativo**
+    - Gerar N empresas com status aleatório (true/false), verificar que apenas as ativas são retornadas
+    - **Property 2: Filtragem de módulos respeita o campo modulos do UsuarioEmpresa**
+    - Gerar strings de módulos aleatórias, verificar que a lista retornada corresponde exatamente
+    - Arquivo: `src/modules/empresa-selector/__tests__/empresa-selector.property.test.ts`
+    - **Validates: Requirements 1.1, 1.4, 2.1, 2.2**
+
+- [x] 4. Seleção de empresa e tela de módulos — Frontend
+  - [x] 4.1 Criar `EmpresaProvider` em `src/providers/EmpresaProvider.tsx`
+    - Implementar context com `empresa`, `modulos`, `selecionarEmpresa()`, `trocarEmpresa()`
+    - Armazenar `empresaId` no localStorage e enviar via header `X-Empresa-Id` em todas as requisições axios
+    - _Requirements: 1.2, 1.5_
+  - [x] 4.2 Criar página `src/app/(interna)/selecionar-empresa/page.tsx`
+    - Listar empresas com razão social, nome fantasia e CNPJ usando cards Mantine
+    - Exibir mensagem quando não há empresas disponíveis
+    - Ao selecionar, chamar `POST /api/empresas/:id/selecionar` e navegar para `/modulos`
+    - _Requirements: 1.1, 1.3, 1.4_
+  - [x] 4.3 Criar página `src/app/(interna)/modulos/page.tsx`
+    - Exibir grid de módulos disponíveis (COMPRAS, VENDAS, FINANCEIRO, WMS, CTE, PCP) com ícones Tabler
+    - Ocultar módulos não autorizados
+    - Ao clicar, navegar para a rota do módulo correspondente
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+  - [x] 4.4 Implementar guard de módulo no frontend
+    - Criar hook `useModuloGuard(modulo)` que redireciona para `/modulos` com mensagem de acesso negado se o módulo não está autorizado
+    - Aplicar em cada layout de módulo
+    - _Requirements: 2.5, 18.4_
+
+- [x] 5. Checkpoint — Infraestrutura base
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verificar que migration foi aplicada, middleware funciona, seleção de empresa e tela de módulos estão operacionais
+
+- [x] 6. Módulo Vendedores — Backend + Frontend
+  - [x] 6.1 Criar `src/modules/vendedor/vendedor.routes.ts` com CRUD de vendedores
+    - `GET /api/vendedores` — lista paginada com busca por nome, filtro por status
+    - `POST /api/vendedores` — cria vendedor (validação Zod: nome obrigatório ≤ 150 chars, CPF obrigatório, comissão 0-100)
+    - `PUT /api/vendedores/:id` — edita vendedor
+    - `PATCH /api/vendedores/:id/inativar` — inativa vendedor (mantém vínculos históricos)
+    - Aplicar `moduloGuard('VENDAS')` em todas as rotas
+    - Tratar erro 409 para CPF duplicado na mesma empresa
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [x] 6.2 Registrar rotas de vendedor no `src/server.ts` com prefixo `/api/vendedores`
+    - _Requirements: 3.1_
+  - [x] 6.3 Criar página frontend `src/app/(interna)/configurador/vendedores/page.tsx`
+    - Tabela TanStack Table com listagem paginada, busca e filtro por status
+    - Modal Mantine para criação/edição com React Hook Form + Zod
+    - Botão de inativação com confirmação
+    - _Requirements: 3.1, 3.2_
+  - [ ]* 6.4 Escrever testes de propriedade para vendedores
+    - **Property 4: Round-trip de dados do Vendedor**
+    - **Property 5: Unicidade de CPF de Vendedor por empresa**
+    - Arquivo: `src/modules/vendedor/__tests__/vendedor.property.test.ts`
+    - **Validates: Requirements 3.2, 3.3**
+
+- [x] 7. Módulo Compras — Pedido de Compra (Backend + Frontend)
+  - [x] 7.1 Criar `src/modules/pedido-compra/pedido-compra.routes.ts`
+    - `GET /api/pedidos-compra` — lista paginada com filtros por status, fornecedor, período
+    - `POST /api/pedidos-compra` — cria pedido com itens (validação: quantidade > 0, preço > 0, classificação REVENDA/MATERIA_PRIMA)
+    - `GET /api/pedidos-compra/:id` — detalhe com itens
+    - `PUT /api/pedidos-compra/:id` — edita pedido (apenas status RASCUNHO)
+    - `PATCH /api/pedidos-compra/:id/confirmar` — altera status para CONFIRMADO
+    - `PATCH /api/pedidos-compra/:id/cancelar` — cancela com motivo ≥ 10 chars
+    - Calcular valorTotal como soma de (quantidade × precoUnitario) dos itens
+    - Atribuir número sequencial por empresa
+    - Aplicar `moduloGuard('COMPRAS')` em todas as rotas
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
+  - [x] 7.2 Registrar rotas de pedido-compra no `src/server.ts` com prefixo `/api/pedidos-compra`
+    - _Requirements: 4.1_
+  - [x] 7.3 Criar páginas frontend para pedidos de compra
+    - `src/app/(interna)/compras/pedidos/page.tsx` — lista com TanStack Table, filtros por status/fornecedor/período
+    - `src/app/(interna)/compras/pedidos/novo/page.tsx` — formulário com React Hook Form + Zod, seleção de fornecedor, adição dinâmica de itens
+    - `src/app/(interna)/compras/pedidos/[id]/page.tsx` — detalhe/edição do pedido
+    - Botões de ação: confirmar, cancelar (com modal para motivo)
+    - _Requirements: 4.1, 4.2, 4.3, 4.6, 4.7_
+  - [ ]* 7.4 Escrever testes de propriedade para pedidos
+    - **Property 6: Cálculo de valor total de pedido**
+    - **Property 7: Numeração sequencial única por empresa**
+    - **Property 8: Rejeição de itens com quantidade ou preço inválido**
+    - **Property 9: Motivo de cancelamento exige mínimo de 10 caracteres**
+    - Arquivo: `src/modules/pedido-compra/__tests__/pedido.property.test.ts`
+    - **Validates: Requirements 4.2, 4.4, 4.5, 4.7, 10.3, 10.4, 10.6**
+
+- [x] 8. Módulo Compras — Efetivação, Importação XML, Devolução, Transferência (Backend + Frontend)
+  - [x] 8.1 Criar `src/modules/compra/compra.routes.ts` com endpoints de efetivação
+    - `GET /api/compras` — lista compras efetivadas
+    - `POST /api/compras/efetivar` — efetiva pedido CONFIRMADO: cria CompraEfetivada, gera ContasPagar, cria AgendaWms (se usaWms=true) ou registra dataEntrega (se usaWms=false), altera status do pedido para RECEBIDO
+    - `GET /api/compras/:id` — detalhe da compra efetivada
+    - `POST /api/compras/:id/devolver` — registra devolução parcial/total (validar quantidade ≤ recebida, gerar dados para NF-e devolução, criar estorno em ContasPagar)
+    - `POST /api/compras/importar-xml` — importa XML NF-e: extrai dados, auto-cria fornecedor/produto se necessário, cria pedido CONFIRMADO + CompraEfetivada, armazena XML original
+    - `POST /api/compras/transferir` — transferência entre empresas: valida saldo, gera dados para NF-e transferência, registra entrada na empresa destino
+    - Aplicar `moduloGuard('COMPRAS')` em todas as rotas
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4_
+  - [x] 8.2 Registrar rotas de compra no `src/server.ts` com prefixo `/api/compras`
+    - _Requirements: 5.1_
+  - [x] 8.3 Criar páginas frontend para compras efetivadas, devoluções, transferências e importação XML
+    - `src/app/(interna)/compras/compras-efetivadas/page.tsx` — lista de compras efetivadas
+    - `src/app/(interna)/compras/devolucoes/page.tsx` — formulário de devolução com seleção de itens e quantidades
+    - `src/app/(interna)/compras/transferencias/page.tsx` — formulário de transferência com seleção de empresa destino e itens
+    - `src/app/(interna)/compras/importar-xml/page.tsx` — upload de arquivo XML com preview dos dados extraídos e confirmação
+    - _Requirements: 5.1, 6.1, 6.6, 7.1, 8.1_
+  - [ ]* 8.4 Escrever teste de propriedade para round-trip de valores XML NF-e
+    - **Property 13: Round-trip de valores fiscais XML NF-e**
+    - Gerar XMLs NF-e válidos com itens e valores aleatórios, verificar que o valor total calculado pelo sistema é igual ao vNF declarado
+    - Arquivo: `src/modules/nfe/__tests__/nfe-xml.property.test.ts`
+    - **Validates: Requirements 6.7**
+
+- [x] 9. Checkpoint — Módulo Compras completo
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verificar fluxo completo: Pedido → Confirmação → Efetivação → Contas a Pagar → Agenda WMS
+
+- [x] 10. Módulo Vendas — Tabela de Preço (Backend + Frontend)
+  - [x] 10.1 Criar `src/modules/tabela-preco/tabela-preco.routes.ts`
+    - `GET /api/tabelas-preco` — lista tabelas de preço da empresa
+    - `POST /api/tabelas-preco` — cria tabela com condições de pagamento (forma, parcelas, percentual)
+    - `PUT /api/tabelas-preco/:id` — edita tabela e condições
+    - `GET /api/tabelas-preco/:id` — detalhe com condições
+    - Validação: percentual entre -100.00 e 100.00, parcelas > 0
+    - Impedir seleção de tabela inativa em novos pedidos
+    - Aplicar `moduloGuard('VENDAS')` em todas as rotas
+    - _Requirements: 9.1, 9.2, 9.4_
+  - [x] 10.2 Registrar rotas de tabela-preco no `src/server.ts` com prefixo `/api/tabelas-preco`
+    - _Requirements: 9.1_
+  - [x] 10.3 Criar página frontend `src/app/(interna)/vendas/tabelas-preco/page.tsx`
+    - Tabela com listagem, modal para criação/edição com condições de pagamento dinâmicas
+    - _Requirements: 9.1, 9.2_
+  - [ ]* 10.4 Escrever teste de propriedade para cálculo de preço com condição
+    - **Property 11: Cálculo de preço com condição de pagamento**
+    - Para qualquer preço base P e percentual D, verificar que preço final = P × (1 + D/100) com precisão de 4 casas decimais
+    - Arquivo: `src/modules/tabela-preco/__tests__/tabela-preco.property.test.ts`
+    - **Validates: Requirements 9.3**
+
+- [x] 11. Módulo Vendas — Pedido de Venda (Backend + Frontend)
+  - [x] 11.1 Criar `src/modules/pedido-venda/pedido-venda.routes.ts`
+    - `GET /api/pedidos-venda` — lista paginada com filtros por status, cliente, período
+    - `POST /api/pedidos-venda` — cria pedido com itens (vinculado a cliente, vendedor opcional, TabelaPreco, condição de pagamento)
+    - `GET /api/pedidos-venda/:id` — detalhe com itens
+    - `PUT /api/pedidos-venda/:id` — edita pedido (apenas status RASCUNHO)
+    - `PATCH /api/pedidos-venda/:id/confirmar` — altera status para CONFIRMADO
+    - `PATCH /api/pedidos-venda/:id/cancelar` — cancela com motivo ≥ 10 chars
+    - Calcular preço final dos itens aplicando condição de pagamento da tabela de preço
+    - Calcular valorTotal como soma de (quantidade × precoFinal) dos itens
+    - Atribuir número sequencial por empresa
+    - Aplicar `moduloGuard('VENDAS')` em todas as rotas
+    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6_
+  - [x] 11.2 Registrar rotas de pedido-venda no `src/server.ts` com prefixo `/api/pedidos-venda`
+    - _Requirements: 10.1_
+  - [x] 11.3 Criar páginas frontend para pedidos de venda
+    - `src/app/(interna)/vendas/pedidos/page.tsx` — lista com TanStack Table, filtros por status/cliente/período
+    - `src/app/(interna)/vendas/pedidos/novo/page.tsx` — formulário com seleção de cliente, vendedor, tabela de preço, condição de pagamento, adição dinâmica de itens com cálculo automático de preço final
+    - `src/app/(interna)/vendas/pedidos/[id]/page.tsx` — detalhe/edição do pedido
+    - _Requirements: 10.1, 10.2, 10.5, 10.6_
+
+- [x] 12. Módulo Vendas — Efetivação, Entrega, Comissão (Backend + Frontend)
+  - [x] 12.1 Criar `src/modules/venda/venda.routes.ts` com endpoints de efetivação
+    - `GET /api/vendas` — lista vendas efetivadas
+    - `POST /api/vendas/efetivar` — efetiva pedido CONFIRMADO: cria VendaEfetivada, gera dados para NF-e, gera ContasReceber com base na condição de pagamento, calcula comissão do vendedor (valor × percentual / 100), cria ordem de separação WMS (se usaWms=true) ou registra entrega PENDENTE (se usaWms=false)
+    - `GET /api/vendas/:id` — detalhe da venda efetivada
+    - `PATCH /api/vendas/:id/entrega` — atualiza status de entrega (PENDENTE → EM_TRANSITO → ENTREGUE), registra data de entrega ao marcar ENTREGUE, exige motivo ≥ 10 chars para reversão
+    - Aplicar `moduloGuard('VENDAS')` em todas as rotas
+    - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 12.1, 12.2, 12.3_
+  - [x] 12.2 Registrar rotas de venda no `src/server.ts` com prefixo `/api/vendas`
+    - _Requirements: 11.1_
+  - [x] 12.3 Criar páginas frontend para vendas efetivadas, entregas e comissões
+    - `src/app/(interna)/vendas/vendas-efetivadas/page.tsx` — lista de vendas efetivadas
+    - `src/app/(interna)/vendas/entregas/page.tsx` — controle de entregas com atualização de status (sem WMS)
+    - `src/app/(interna)/vendas/comissoes/page.tsx` — relatório de comissões por vendedor e período
+    - _Requirements: 11.1, 12.1, 12.2, 11.6_
+  - [ ]* 12.4 Escrever testes de propriedade para vendas
+    - **Property 10: Geração de parcelas financeiras**
+    - Para qualquer condição com N parcelas e valor V, verificar que são geradas exatamente N contas e soma = V
+    - **Property 12: Cálculo de comissão do vendedor**
+    - Para qualquer valor V e percentual C, verificar que comissão = V × C / 100 com precisão de 2 casas decimais
+    - Arquivo: `src/modules/venda/__tests__/venda.property.test.ts`
+    - **Validates: Requirements 5.2, 11.3, 11.6**
+
+- [x] 13. Checkpoint — Módulo Vendas completo
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verificar fluxo completo: Pedido → Confirmação → Efetivação → Contas a Receber → Comissão
+
+- [x] 14. Módulo Financeiro — Contas a Pagar (Backend + Frontend)
+  - [x] 14.1 Criar `src/modules/conta-pagar/conta-pagar.routes.ts`
+    - `GET /api/contas-pagar` — lista com filtros por status, fornecedor, período de vencimento, período de pagamento
+    - `POST /api/contas-pagar` — cria conta manual (validação: descrição obrigatória, valor > 0, dataVencimento obrigatória, fornecedor opcional)
+    - `GET /api/contas-pagar/:id` — detalhe
+    - `PATCH /api/contas-pagar/:id/pagar` — registra pagamento (valor > 0, data, forma de pagamento), altera status para PAGA
+    - Calcular status VENCIDA quando dataVencimento < dataAtual e status = ABERTA
+    - Rejeitar valor de pagamento ≤ 0
+    - Aplicar `moduloGuard('FINANCEIRO')` em todas as rotas
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6_
+  - [x] 14.2 Registrar rotas de conta-pagar no `src/server.ts` com prefixo `/api/contas-pagar`
+    - _Requirements: 15.1_
+  - [x] 14.3 Criar página frontend `src/app/(interna)/financeiro/contas-pagar/page.tsx`
+    - Tabela TanStack Table com filtros por status, fornecedor, período
+    - Modal para criação manual de conta
+    - Modal para registro de pagamento (valor, data, forma)
+    - Destaque visual para contas vencidas
+    - _Requirements: 15.1, 15.2, 15.4, 15.6_
+
+- [x] 15. Módulo Financeiro — Contas a Receber (Backend + Frontend)
+  - [x] 15.1 Criar `src/modules/conta-receber/conta-receber.routes.ts`
+    - `GET /api/contas-receber` — lista com filtros por status, cliente, período de vencimento, período de recebimento
+    - `POST /api/contas-receber` — cria conta manual (validação: descrição obrigatória, valor > 0, dataVencimento obrigatória, cliente opcional)
+    - `GET /api/contas-receber/:id` — detalhe
+    - `PATCH /api/contas-receber/:id/receber` — registra recebimento (valor > 0, data, forma de pagamento), altera status para RECEBIDA
+    - Calcular status VENCIDA quando dataVencimento < dataAtual e status = ABERTA
+    - Rejeitar valor de recebimento ≤ 0
+    - Aplicar `moduloGuard('FINANCEIRO')` em todas as rotas
+    - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5, 16.6_
+  - [x] 15.2 Registrar rotas de conta-receber no `src/server.ts` com prefixo `/api/contas-receber`
+    - _Requirements: 16.1_
+  - [x] 15.3 Criar página frontend `src/app/(interna)/financeiro/contas-receber/page.tsx`
+    - Tabela TanStack Table com filtros por status, cliente, período
+    - Modal para criação manual de conta
+    - Modal para registro de recebimento (valor, data, forma)
+    - Destaque visual para contas vencidas
+    - _Requirements: 16.1, 16.2, 16.4, 16.6_
+  - [ ]* 15.4 Escrever testes de propriedade para módulo financeiro
+    - **Property 14: Status VENCIDA para contas com data ultrapassada**
+    - Para qualquer conta ABERTA com dataVencimento < hoje, verificar que status exibido = VENCIDA
+    - **Property 15: Rejeição de valor inválido em baixa financeira**
+    - Para qualquer valor ≤ 0, verificar que a baixa é rejeitada com erro de validação
+    - Arquivo: `src/modules/conta-pagar/__tests__/financeiro.property.test.ts`
+    - **Validates: Requirements 15.3, 15.5, 16.3, 16.5**
+
+- [x] 16. Checkpoint — Módulo Financeiro completo
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verificar criação manual de contas, baixa, filtros e cálculo de status VENCIDA
+
+- [x] 17. Módulo NF-e — Emissão, Consulta, Cancelamento, DANFE (Backend + Frontend)
+  - [x] 17.1 Criar utilitários de NF-e em `src/modules/nfe/`
+    - `nfe-xml-builder.ts` — montagem do XML NF-e 4.00 em memória (infNFe, ide, emit, dest, det com prod e imposto, total, transp, cobr, pag)
+    - `nfe-calculo.ts` — cálculo de tributos por item (ICMS por CST/CSOSN, IPI, PIS, COFINS) com base nos campos fiscais do Produto
+    - `nfe-chave.ts` — geração da chave de acesso de 44 dígitos (cUF + AAMM + CNPJ + mod + serie + nNF + tpEmis + cNF + cDV)
+    - `nfe-assinatura.ts` — assinatura digital XML com `node-forge` (RSA-SHA1 + certificado .pfx da empresa)
+    - `nfe-sefaz.ts` — comunicação SOAP 1.2 com SEFAZ (NfeAutorizacao4, NfeRetAutorizacao4, NfeCancelamento) com retry e backoff
+    - `nfe-danfe.ts` — geração de PDF do DANFE
+    - _Requirements: 11.2, 17.3_
+  - [x] 17.2 Criar `src/modules/nfe/nfe.routes.ts`
+    - `POST /api/nfe` — monta, assina e envia NF-e para SEFAZ (valida campos fiscais obrigatórios, incrementa proximoNumeroNFe da empresa)
+    - `GET /api/nfe/:id` — consulta NF-e com XML e protocolo
+    - `POST /api/nfe/:id/cancelar` — cancela NF-e na SEFAZ (evento de cancelamento)
+    - `GET /api/nfe/:id/danfe` — gera e retorna PDF do DANFE
+    - `POST /api/nfe/inutilizar` — inutiliza faixa de numeração na SEFAZ
+    - Aplicar `moduloGuard('VENDAS')` em todas as rotas (NF-e é parte do fluxo de vendas)
+    - _Requirements: 11.2_
+  - [x] 17.3 Registrar rotas de nfe no `src/server.ts` com prefixo `/api/nfe`
+    - _Requirements: 11.2_
+  - [x] 17.4 Criar página frontend `src/app/(interna)/fiscal/nfe/page.tsx`
+    - Lista de NF-e emitidas com status (PENDENTE, AUTORIZADA, REJEITADA, CANCELADA)
+    - Botão para emissão manual de NF-e
+    - Botão para download do DANFE (PDF)
+    - Botão para cancelamento com confirmação
+    - Visualização do XML
+    - _Requirements: 11.2_
+  - [x] 17.5 Criar página frontend `src/app/(interna)/configurador/tributacao/page.tsx`
+    - Formulário para edição dos campos fiscais dos produtos (NCM, CFOP, CST, alíquotas)
+    - Edição em lote ou individual
+    - _Requirements: 11.2_
+
+- [x] 18. Módulo CT-e — Emissão, Consulta, Cancelamento (Backend + Frontend)
+  - [x] 18.1 Criar utilitários de CT-e em `src/modules/cte/`
+    - `cte-xml-builder.ts` — montagem do XML CT-e (infCte, ide, compl, emit, rem, dest, vPrest, imp, infCTeNorm com infDoc)
+    - `cte-sefaz.ts` — comunicação SOAP com SEFAZ para CT-e (CteRecepcao, CteRetRecepcao, CteEvento)
+    - _Requirements: 17.3_
+  - [x] 18.2 Criar `src/modules/cte/cte.routes.ts`
+    - `POST /api/cte` — monta, assina e envia CT-e para SEFAZ (valida campos obrigatórios, vincula NF-e de referência)
+    - `GET /api/cte/:id` — consulta CT-e com XML e protocolo
+    - `POST /api/cte/:id/cancelar` — cancela CT-e na SEFAZ
+    - Aplicar `moduloGuard('CTE')` em todas as rotas
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5_
+  - [x] 18.3 Registrar rotas de cte no `src/server.ts` com prefixo `/api/cte`
+    - _Requirements: 17.1_
+  - [x] 18.4 Criar página frontend `src/app/(interna)/fiscal/cte/page.tsx`
+    - Lista de CT-e emitidos com status
+    - Formulário de emissão com seleção de remetente, destinatário, transportadora, NF-e de referência
+    - Botão para cancelamento com confirmação
+    - _Requirements: 17.1, 17.2_
+
+- [x] 19. Checkpoint — Módulos Fiscais completos
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verificar emissão de NF-e e CT-e em ambiente de homologação, geração de DANFE, cancelamento
+
+- [x] 20. Integração WMS — Agenda de Recebimento e Ordens de Separação (Backend + Frontend)
+  - [x] 20.1 Criar `src/modules/agenda-wms/agenda-wms.routes.ts`
+    - `GET /api/agenda-wms` — lista agendamentos com filtros por data e status
+    - `GET /api/agenda-wms/:id` — detalhe do agendamento com dados do pedido de compra e itens
+    - `PATCH /api/agenda-wms/:id/concluir` — marca recebimento como concluído, atualiza status do PedidoCompra para RECEBIDO
+    - Aplicar `moduloGuard('WMS')` em todas as rotas
+    - _Requirements: 13.1, 13.2, 13.3_
+  - [x] 20.2 Implementar lógica de criação de ordem de separação WMS ao efetivar venda
+    - Ao efetivar venda com usaWms=true, criar ordem de serviço no WMS vinculada ao PedidoVenda
+    - Atualizar status do PedidoVenda para EM_SEPARACAO quando ordem é concluída
+    - Atualizar status do PedidoVenda para FATURADO quando carregamento é concluído
+    - _Requirements: 14.1, 14.2, 14.3_
+  - [x] 20.3 Registrar rotas de agenda-wms no `src/server.ts` com prefixo `/api/agenda-wms`
+    - _Requirements: 13.1_
+  - [x] 20.4 Criar páginas frontend para integração WMS
+    - Adicionar seção de agenda de recebimento no módulo WMS existente ou criar `src/app/(interna)/wms/agenda/page.tsx`
+    - Exibir agendamentos com data prevista, fornecedor, número do pedido, status
+    - Botão para marcar recebimento como concluído
+    - _Requirements: 13.1, 13.2_
+
+- [x] 21. Integração Externa — API REST Pública (Backend + Frontend)
+  - [x] 21.1 Criar middleware `src/modules/integracao/api-key-guard.ts`
+    - Validar header `X-Api-Key`, verificar se chave existe, não está revogada e não expirou
+    - Extrair `empresaId` da API Key e injetar no request
+    - Retornar HTTP 401 para chave inválida/expirada/revogada
+    - _Requirements: 19.2, 19.8_
+  - [x] 21.2 Criar middleware `src/modules/integracao/rate-limiter.ts`
+    - Implementar rate limiting de 100 req/min por API Key (in-memory com Map)
+    - Retornar header `X-RateLimit-Remaining` e HTTP 429 quando excedido
+    - _Requirements: 19.7_
+  - [x] 21.3 Criar `src/modules/integracao/api-key.routes.ts` — CRUD de API Keys (admin)
+    - `GET /api/api-keys` — lista API Keys da empresa
+    - `POST /api/api-keys` — cria API Key (gera chave + secret aleatórios)
+    - `DELETE /api/api-keys/:id` — revoga API Key
+    - `POST /api/api-keys/:id/regenerar` — regenera chave
+    - Aplicar `moduloGuard('WMS')` (admin do WMS gerencia integrações)
+    - _Requirements: 19.3_
+  - [x] 21.4 Criar `src/modules/integracao/integracao.routes.ts` — endpoints públicos
+    - `POST /api/v1/integracao/notas-entrada` — criar nota de entrada
+    - `GET /api/v1/integracao/notas-entrada/:id/status` — status de recebimento
+    - `GET /api/v1/integracao/estoque` — consultar saldo
+    - `POST /api/v1/integracao/pedidos-separacao` — solicitar separação
+    - `GET /api/v1/integracao/pedidos-separacao/:id/status` — status de separação
+    - `POST /api/v1/integracao/produtos` — cadastrar/atualizar produto
+    - Aplicar api-key-guard + rate-limiter em todas as rotas
+    - Registrar log de cada chamada (LogIntegracao)
+    - _Requirements: 19.1, 19.4, 19.5, 19.6_
+  - [x] 21.5 Registrar rotas de integração no `src/server.ts`
+    - _Requirements: 19.1_
+  - [x] 21.6 Criar página frontend `src/app/(interna)/configurador/integracao/api-keys/page.tsx`
+    - Tabela com API Keys, botões de criar, revogar, regenerar
+    - Exibir chave apenas na criação (depois fica mascarada)
+    - _Requirements: 19.3_
+
+- [x] 22. Integração Externa — Webhooks (Backend + Frontend)
+  - [x] 22.1 Criar `src/modules/integracao/webhook.routes.ts` — configuração de webhooks
+    - `GET /api/webhooks` — lista webhooks da empresa
+    - `POST /api/webhooks` — cria webhook (URL + eventos)
+    - `PUT /api/webhooks/:id` — edita webhook
+    - `DELETE /api/webhooks/:id` — remove webhook
+    - `GET /api/webhooks/:id/entregas` — histórico de entregas
+    - `POST /api/webhooks/entregas/:id/reenviar` — reenvio manual
+    - Aplicar `moduloGuard('WMS')`
+    - _Requirements: 20.1, 20.5, 20.6_
+  - [x] 22.2 Criar `src/modules/integracao/webhook-dispatcher.ts`
+    - Função `dispararWebhook(empresaId, evento, dados)` que busca webhooks configurados e envia POST
+    - Assinar payload com HMAC-SHA256 usando `apiKey.secret`
+    - Implementar retry com backoff exponencial (1min, 5min, 30min)
+    - Registrar cada tentativa em WebhookEntrega
+    - _Requirements: 20.2, 20.3, 20.4_
+  - [x] 22.3 Integrar dispatcher nos módulos existentes
+    - Disparar `nota.recebida` ao concluir conferência
+    - Disparar `separacao.concluida` ao finalizar separação
+    - Disparar `expedicao.carregada` ao concluir carregamento
+    - Disparar `estoque.atualizado` ao alterar saldo
+    - _Requirements: 20.2_
+  - [x] 22.4 Criar página frontend `src/app/(interna)/configurador/integracao/webhooks/page.tsx`
+    - Formulário de configuração (URL + seleção de eventos)
+    - Tabela de histórico de entregas com status e botão de reenvio
+    - _Requirements: 20.1, 20.5, 20.6_
+
+- [x] 23. Integração Externa — Importação de Arquivos (Backend + Frontend)
+  - [x] 23.1 Criar `src/modules/integracao/file-importer.ts`
+    - Parser CSV genérico com validação por schema Zod
+    - Parser XML genérico
+    - Processamento parcial: importar linhas válidas, rejeitar inválidas com motivo
+    - _Requirements: 21.1, 21.3, 21.6_
+  - [x] 23.2 Criar endpoints de importação em `src/modules/integracao/integracao.routes.ts`
+    - `POST /api/v1/integracao/importar/notas-entrada` — upload CSV/XML
+    - `POST /api/v1/integracao/importar/pedidos-separacao` — upload CSV/XML
+    - `POST /api/v1/integracao/importar/produtos` — upload CSV/XML
+    - `GET /api/v1/integracao/importar/templates/:tipo` — download template CSV
+    - _Requirements: 21.1, 21.2, 21.5_
+  - [x] 23.3 Criar templates CSV para cada tipo de importação
+    - Template notas de entrada, pedidos de separação, produtos
+    - _Requirements: 21.5_
+  - [x] 23.4 Criar página frontend `src/app/(interna)/configurador/integracao/importar/page.tsx`
+    - Upload de arquivo com seleção de tipo
+    - Preview dos dados antes de confirmar
+    - Exibição do relatório de importação (importadas/rejeitadas/erros)
+    - Download de templates
+    - _Requirements: 21.1, 21.4, 21.5_
+
+- [x] 24. Wiring final — Conectar todos os módulos
+  - [x] 24.1 Verificar e ajustar todas as importações e registros de rotas no `src/server.ts`
+    - Garantir que todos os novos módulos estão registrados com prefixos corretos
+    - Garantir que o moduloGuard está aplicado corretamente em cada grupo de rotas
+    - _Requirements: 18.1, 18.3_
+  - [x] 24.2 Configurar interceptor axios no frontend para enviar `X-Empresa-Id` em todas as requisições
+    - Garantir que o EmpresaProvider está wrapping toda a aplicação
+    - Configurar redirecionamento para `/selecionar-empresa` quando empresaId não está definido
+    - _Requirements: 1.2, 1.5, 18.4_
+  - [x] 24.3 Atualizar navegação do frontend (sidebar/menu) para incluir todos os novos módulos
+    - Adicionar links para Compras, Vendas, Financeiro, Fiscal (NF-e, CT-e), Configurador (Vendedores, Tributação, Integração)
+    - Ocultar links de módulos não autorizados usando o contexto de módulos do EmpresaProvider
+    - _Requirements: 2.3, 2.4, 18.4_
+  - [ ]* 24.4 Escrever testes de integração para fluxos completos
+    - Fluxo compra: Pedido → Confirmação → Efetivação → Contas a Pagar → Agenda WMS
+    - Fluxo venda: Pedido → Confirmação → Efetivação → NF-e → Contas a Receber → Ordem WMS
+    - Importação XML end-to-end: Upload XML → Fornecedor auto-criado → Pedido + Compra + Contas
+    - Integração externa: API Key → chamada REST → webhook disparado
+    - _Requirements: 5.1, 5.2, 5.3, 11.1, 11.2, 11.3, 6.1, 6.4, 19.4, 20.3_
+
+- [x] 25. Final checkpoint — Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+  - Verificar que todos os módulos estão integrados e funcionais
+  - Verificar que o controle de acesso por módulo funciona end-to-end (backend + frontend)
+  - Verificar que a API de integração externa funciona com API Key
+  - Verificar que webhooks são disparados corretamente
+
+## Notes
+
+- Tasks marcadas com `*` são opcionais e podem ser puladas para um MVP mais rápido
+- Cada task referencia os requisitos específicos para rastreabilidade
+- Checkpoints garantem validação incremental a cada grupo de módulos
+- Testes de propriedade validam propriedades universais de corretude (cálculos, validações, controle de acesso)
+- Testes unitários e de integração validam cenários específicos e fluxos end-to-end
+- A comunicação com SEFAZ (NF-e/CT-e) deve ser testada em ambiente de homologação
+- O padrão de módulos backend segue o existente: `{modulo}.routes.ts` com Zod inline e Prisma direto

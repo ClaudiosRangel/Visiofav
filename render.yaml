@@ -1,0 +1,20 @@
+# Render Blueprint — VisioFab WMS Backend
+# Deploy: connect GitHub repo → Render auto-detects this file
+
+services:
+  - type: web
+    name: visiofab-wms-api
+    runtime: docker
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # Set manually in Render dashboard with Neon URL
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 3333
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/health
+    buildCommand: ""
+    startCommand: ""

@@ -1,0 +1,251 @@
+# Implementation Plan: WMS Separação, Embalagem e Carregamento
+
+## Overview
+
+Implementação do fluxo completo de saída de mercadorias no WMS: criação de onda de separação → picking → conferência de saída → embalagem (packing) → carregamento (loading). O plano segue a arquitetura existente do projeto (Fastify 5 + Prisma 6 + PostgreSQL no backend, Next.js 15 + Mantine UI 7 + TanStack Query no frontend), reutilizando middleware `authenticate` + `moduloGuard('WMS')` e o padrão routes/service/schemas já estabelecido.
+
+## Tasks
+
+- [x] 1. Schema Prisma — Adicionar enums e models de separação, embalagem e carregamento
+  - [x] 1.1 Adicionar os 11 enums ao schema Prisma
+    - Adicionar `PrioridadeOnda`, `StatusOnda`, `StatusOrdemSeparacao`, `StatusItemSeparacao`, `MotivoDivergencia`, `StatusConferencia`, `ResultadoConferencia`, `TipoDivergencia`, `TipoVolume`, `StatusVolume`, `StatusCarregamento` conforme definido no design
+    - _Requirements: 11.1, 11.2, 11.3, 12.1, 13.1, 14.1_
+  - [x] 1.2 Adicionar os 12 models ao schema Prisma
+    - Criar `OndaSeparacao`, `OndaPedido`, `OrdemSeparacao`, `ItemSeparacao`, `ConferenciaSaida`, `ItemConferenciaSaida`, `Volume`, `ItemVolume`, `Carregamento`, `CarregamentoVolume` com todos os campos, relações, `@@unique` constraints e `@@map` conforme design
+    - Adicionar relações reversas nos models existentes (`Doca`, `Funcionario`, `PedidoVenda`, `Produto`, `Endereco`, `Transportadora`) se necessário para Prisma
+    - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 12.1, 12.2, 12.3, 13.1, 13.2, 13.3, 14.1, 14.2_
+  - [x] 1.3 Gerar e aplicar a migration Prisma
+    - Executar `npx prisma migrate dev --name add-separacao-embalagem-carregamento` para criar a migration
+    - Executar `npx prisma generate` para atualizar o Prisma Client
+    - _Requirements: 11.1, 11.2, 11.3, 12.1, 13.1, 14.1_
+
+- [x] 2. Checkpoint — Validar schema Prisma
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 3. Backend — Módulo Onda de Separação (routes + service + schemas)
+  - [x] 3.1 Criar schemas Zod de validação (`onda-separacao.schemas.ts`)
+    - Implementar `criarOndaSchema` (pedidoVendaIds, prioridade, docaId), `listarOndasSchema` (page, limit, status, prioridade, dataInicio, dataFim), `atribuirFuncionariosSchema` (funcionarioIds) conforme design
+    - _Requirements: 15.1, 15.2, 15.3_
+  - [x] 3.2 Criar service de onda de separação (`onda-separacao.service.ts`)
+    - Implementar `criarOnda`: validar pedidos (status EM_SEPARACAO, mesma empresa, não vinculados a onda ativa), gerar número sequencial, criar OndaSeparacao + OndaPedido
+    - Implementar `listarOndas`: query paginada com filtros por status, prioridade, data; incluir contadores de progresso (total itens, separados, pendentes, divergências)
+    - Implementar `obterOnda`: detalhe com ordens, itens, funcionários e percentual de progresso
+    - Implementar `iniciarOnda`: dentro de `prisma.$transaction` — consultar itens dos pedidos, chamar `selecionarEnderecosFIFO` para cada produto, criar `ItemSeparacao` com endereços origem/destino (doca), chamar `reservarEstoque`, criar `OrdemSeparacao`, alterar status para EM_SEPARACAO
+    - Implementar `selecionarEnderecosFIFO`: buscar SaldoEndereco ordenado por `atualizadoEm` ASC, distribuir quantidade entre endereços, retornar alocações
+    - Implementar `reservarEstoque`: incrementar `Estoque.reservado` limitado ao disponível (`quantidade - reservado`), retornar reservado e falta
+    - Implementar `cancelarOnda`: dentro de transação — decrementar `Estoque.reservado` para cada produto, alterar status para CANCELADA
+    - Implementar `atribuirFuncionarios`: validar funcionários (mesmo CD), criar/vincular OrdemSeparacao, distribuir itens round-robin (`distribuirItensRoundRobin`)
+    - Implementar `distribuirItensRoundRobin`: distribuição cíclica de itens entre ordens
+    - Implementar lógica de transição de status da onda (verificar se todos itens separados → SEPARADA)
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 6.1, 6.3, 15.1, 15.2, 15.3, 15.4, 15.5_
+  - [x] 3.3 Criar rotas Fastify (`onda-separacao.routes.ts`)
+    - `GET /` — lista paginada com filtros
+    - `POST /` — criar onda
+    - `GET /:id` — detalhe da onda
+    - `PATCH /:id/iniciar` — iniciar onda
+    - `PATCH /:id/cancelar` — cancelar onda
+    - `PATCH /:id/funcionarios` — atribuir funcionários
+    - Aplicar hooks `authenticate` e `moduloGuard('WMS')` em todas as rotas
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6_
+  - [ ]* 3.4 Escrever property test para alocação FIFO
+    - **Property 1: Alocação FIFO preserva ordem e soma**
+    - Testar que endereços aparecem na ordem crescente de `atualizadoEm`, soma das alocações = `min(Q, saldoTotal)`, nenhuma alocação excede saldo do endereço
+    - **Validates: Requirements 2.2, 2.3, 2.5**
+  - [ ]* 3.5 Escrever property test para reserva de estoque round-trip
+    - **Property 2: Reserva de estoque é round-trip**
+    - Testar que iniciar + cancelar onda retorna `Estoque.reservado` ao valor original
+    - **Validates: Requirements 3.1, 3.4**
+  - [ ]* 3.6 Escrever property test para geração de itens
+    - **Property 3: Geração de itens é completa e consistente**
+    - Testar que soma de `quantidadeSolicitada` por produto = soma dos pedidos (limitada ao estoque), todos itens com `enderecoDestinoId` = docaId, todos itens pertencem a OrdemSeparacao da onda
+    - **Validates: Requirements 2.1, 2.4, 2.6**
+  - [ ]* 3.7 Escrever property test para balanceamento round-robin
+    - **Property 4: Balanceamento round-robin distribui uniformemente**
+    - Testar que `max(contagens) - min(contagens) <= 1` para qualquer conjunto de itens e funcionários
+    - **Validates: Requirements 4.4**
+  - [ ]* 3.8 Escrever property test para progresso da onda
+    - **Property 7: Cálculo de progresso da onda é correto**
+    - Testar que percentual = `(SEPARADO + SEPARADO_PARCIAL) / total × 100` e transição para SEPARADA quando todos itens atingem status final
+    - **Validates: Requirements 6.1, 6.3**
+  - [ ]* 3.9 Escrever property test para máquina de estados
+    - **Property 12: Máquina de estados da onda respeita transições válidas**
+    - Testar que apenas transições do grafo definido são aceitas, todas as outras são rejeitadas
+    - **Validates: Requirements 7.5, 7.6, 8.1**
+  - [ ]* 3.10 Escrever property test para unicidade pedido-onda
+    - **Property 11: Pedido de venda pertence a no máximo uma onda ativa**
+    - Testar que não é possível vincular um pedido a mais de uma onda com status diferente de CANCELADA/CONCLUIDA
+    - **Validates: Requirements 1.4**
+
+- [x] 4. Backend — Módulo Item de Separação (routes + service)
+  - [x] 4.1 Criar service de item de separação (`item-separacao.service.ts`)
+    - Implementar `confirmarItem`: dentro de transação — atualizar `quantidadeSeparada`, definir status (SEPARADO se qtd == solicitada, SEPARADO_PARCIAL se menor), registrar `motivoDivergencia` se parcial, preencher `separadoEm`, decrementar `SaldoEndereco.quantidade`, decrementar `Estoque.quantidade` e `Estoque.reservado`, verificar se endereço ficou com saldo zero → atualizar estado para LIVRE
+    - Após confirmação, verificar se todos itens da onda estão separados → transicionar onda para SEPARADA
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.3_
+  - [x] 4.2 Criar rotas Fastify (`item-separacao.routes.ts`)
+    - `PATCH /:id/confirmar` — confirmar separação com `quantidadeSeparada` e `motivoDivergencia` opcional
+    - Schema Zod: `confirmarItemSchema` conforme design
+    - Aplicar hooks `authenticate` e `moduloGuard('WMS')`
+    - _Requirements: 16.1_
+  - [ ]* 4.3 Escrever property test para confirmação de separação
+    - **Property 5: Confirmação de separação define status corretamente**
+    - Testar que `quantidadeSeparada == quantidadeSolicitada` → SEPARADO, `<` → SEPARADO_PARCIAL com motivoDivergencia preenchido, `separadoEm` sempre preenchido
+    - **Validates: Requirements 5.1, 5.2, 5.5**
+  - [ ]* 4.4 Escrever property test para decremento de saldos
+    - **Property 6: Confirmação de separação decrementa saldos corretamente**
+    - Testar que SaldoEndereco decrementado em X, Estoque.quantidade decrementado em X, Estoque.reservado decrementado em X, reservado nunca negativo
+    - **Validates: Requirements 5.3, 5.4**
+
+- [x] 5. Backend — Módulo Conferência de Saída (routes + service)
+  - [x] 5.1 Criar service de conferência de saída (`conferencia-saida.service.ts`)
+    - Implementar `criarConferencia`: validar onda com status SEPARADA, criar ConferenciaSaida com status EM_CONFERENCIA
+    - Implementar `conferirItem`: comparar `quantidadeConferida` com `quantidadeSeparada`, definir resultado (CONFORME/DIVERGENTE), registrar `tipoDivergencia` e `observacao` se divergente
+    - Implementar `aprovarConferencia`: atualizar status para APROVADA, preencher `concluidaEm`, transicionar onda para CONFERIDA
+    - Implementar `rejeitarConferencia`: atualizar status para REJEITADA, retornar onda para EM_SEPARACAO
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
+  - [x] 5.2 Criar rotas Fastify (`conferencia-saida.routes.ts`)
+    - `POST /api/ondas-separacao/:id/conferencia` — criar conferência (registrar na rota de onda-separacao ou em rota própria conforme padrão do projeto)
+    - `PATCH /api/conferencias-saida/:id/itens/:itemId` — conferir item
+    - `PATCH /api/conferencias-saida/:id/aprovar` — aprovar conferência
+    - `PATCH /api/conferencias-saida/:id/rejeitar` — rejeitar conferência
+    - Aplicar hooks `authenticate` e `moduloGuard('WMS')`
+    - _Requirements: 16.2, 16.3, 16.4, 16.5_
+  - [ ]* 5.3 Escrever property test para classificação de resultado de conferência
+    - **Property 8: Classificação de resultado de conferência é determinística**
+    - Testar que `quantidadeConferida == quantidadeSeparada` → CONFORME, caso contrário → DIVERGENTE com tipoDivergencia preenchido
+    - **Validates: Requirements 7.2, 7.3**
+
+- [x] 6. Backend — Módulo Volume / Embalagem (routes + service)
+  - [x] 6.1 Criar service de volume (`volume.service.ts`)
+    - Implementar `criarVolume`: validar onda com status CONFERIDA, gerar código sequencial por onda, criar Volume com tipo, peso, dimensões, vincular a pedidoVendaId
+    - Implementar `vincularItens`: validar que itens pertencem à mesma onda, validar que soma de quantidade vinculada não excede `quantidadeSeparada`, criar ItemVolume
+    - Implementar `obterEtiqueta`: retornar dados formatados (código volume, cliente, pedido, peso, quantidade itens)
+    - Após vincular itens, verificar se todos itens separados da onda estão vinculados a volumes → transicionar onda para EMBALADA
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
+  - [x] 6.2 Criar rotas Fastify (`volume.routes.ts`)
+    - `POST /api/ondas-separacao/:id/volumes` — criar volume
+    - `POST /api/volumes/:id/itens` — vincular itens ao volume
+    - `GET /api/volumes/:id/etiqueta` — dados para etiqueta
+    - Aplicar hooks `authenticate` e `moduloGuard('WMS')`
+    - _Requirements: 17.1, 17.2, 17.3_
+  - [ ]* 6.3 Escrever property test para quantidade vinculada a volume
+    - **Property 9: Quantidade vinculada a volume não excede quantidade separada**
+    - Testar que soma de `ItemVolume.quantidade` para cada ItemSeparacao <= `quantidadeSeparada`, e todos itens do volume pertencem à mesma OndaSeparacao
+    - **Validates: Requirements 8.3**
+
+- [x] 7. Backend — Módulo Carregamento (routes + service)
+  - [x] 7.1 Criar service de carregamento (`carregamento.service.ts`)
+    - Implementar `criarCarregamento`: criar Carregamento com docaId, veiculoPlaca, transportadoraId opcional, status PENDENTE
+    - Implementar `adicionarVolumes`: validar volumes com status EMBALADO, criar CarregamentoVolume com sequência
+    - Implementar `confirmarCarregamento`: dentro de transação — validar todos volumes EMBALADO, atualizar status volumes para CARREGADO com `carregadoEm`, atualizar Carregamento para CONCLUIDO com `concluidoEm`, atualizar PedidoVenda.status para FATURADO, atualizar VendaEfetivada.statusEntrega para EM_TRANSITO, atualizar onda para CONCLUIDA, disparar webhook `expedicao.carregada` via `dispararWebhook` existente
+    - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
+  - [x] 7.2 Criar rotas Fastify (`carregamento.routes.ts`)
+    - `POST /api/carregamentos` — criar carregamento
+    - `POST /api/carregamentos/:id/volumes` — adicionar volumes
+    - `PATCH /api/carregamentos/:id/confirmar` — confirmar carregamento
+    - `GET /api/carregamentos` — listar carregamentos (para dashboard de expedição)
+    - Aplicar hooks `authenticate` e `moduloGuard('WMS')`
+    - _Requirements: 17.4, 17.5, 17.6_
+  - [ ]* 7.3 Escrever property test para conclusão de carregamento
+    - **Property 10: Conclusão de carregamento atualiza todos os pedidos vinculados**
+    - Testar que todos PedidoVenda vinculados ficam com status FATURADO e VendaEfetivada com statusEntrega EM_TRANSITO
+    - **Validates: Requirements 9.5, 9.6**
+
+- [x] 8. Backend — Registrar rotas no server.ts
+  - Importar e registrar `ondaSeparacaoRoutes` com prefix `/api/ondas-separacao`
+  - Importar e registrar `itemSeparacaoRoutes` com prefix `/api/itens-separacao`
+  - Importar e registrar `conferenciaSaidaRoutes` com prefix `/api/conferencias-saida`
+  - Importar e registrar `volumeRoutes` com prefix `/api/volumes`
+  - Importar e registrar `carregamentoRoutes` com prefix `/api/carregamentos`
+  - Adicionar rota de criação de conferência e criação de volume nas rotas de onda-separacao (sub-rotas `/:id/conferencia` e `/:id/volumes`)
+  - _Requirements: 15.6, 16.2, 17.1_
+
+- [x] 9. Checkpoint — Validar backend completo
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 10. Frontend — Hooks e serviços de API para separação
+  - [x] 10.1 Criar hooks TanStack Query para ondas de separação
+    - `useOndas` — GET /api/ondas-separacao com filtros e paginação
+    - `useOnda` — GET /api/ondas-separacao/:id com detalhes
+    - `useCriarOnda` — POST /api/ondas-separacao com invalidação de cache
+    - `useIniciarOnda` — PATCH /api/ondas-separacao/:id/iniciar
+    - `useCancelarOnda` — PATCH /api/ondas-separacao/:id/cancelar
+    - `useAtribuirFuncionarios` — PATCH /api/ondas-separacao/:id/funcionarios
+    - `useConfirmarItem` — PATCH /api/itens-separacao/:id/confirmar
+    - _Requirements: 18.1, 18.2, 18.3, 19.5_
+  - [x] 10.2 Criar hooks TanStack Query para conferência, volume e carregamento
+    - `useCriarConferencia` — POST /api/ondas-separacao/:id/conferencia
+    - `useConferirItem` — PATCH /api/conferencias-saida/:id/itens/:itemId
+    - `useAprovarConferencia` / `useRejeitarConferencia`
+    - `useCriarVolume` — POST /api/ondas-separacao/:id/volumes
+    - `useVincularItensVolume` — POST /api/volumes/:id/itens
+    - `useEtiquetaVolume` — GET /api/volumes/:id/etiqueta
+    - `useCriarCarregamento` — POST /api/carregamentos
+    - `useAdicionarVolumesCarregamento` — POST /api/carregamentos/:id/volumes
+    - `useConfirmarCarregamento` — PATCH /api/carregamentos/:id/confirmar
+    - `useCarregamentos` — GET /api/carregamentos
+    - _Requirements: 19.2, 19.3, 19.4, 19.5_
+
+- [x] 11. Frontend — Página de Picking com dados reais
+  - [x] 11.1 Conectar página de Picking ao backend
+    - Substituir dados mockados por `useOndas` com TanStack Query
+    - Exibir tabela de ondas com número, prioridade, status, progresso (barra), funcionários, data
+    - Calcular e exibir cards de estatísticas (Ondas Ativas, Itens Pendentes, Separados Hoje, Divergências) a partir dos dados da API
+    - Exibir indicadores visuais diferenciados para itens pendentes, separados e com divergência
+    - _Requirements: 18.1, 18.4, 6.2, 6.4_
+  - [x] 11.2 Implementar modal "Nova Onda"
+    - Exibir lista de pedidos de venda com status EM_SEPARACAO para seleção (buscar via API existente de pedidos-venda com filtro de status)
+    - Campos: seleção de pedidos (checkbox), prioridade (select ALTA/MEDIA/BAIXA), seleção de doca
+    - Ao confirmar, chamar `useCriarOnda` e invalidar cache
+    - _Requirements: 18.2_
+  - [x] 11.3 Implementar ações na tabela de ondas
+    - Botão "Iniciar" em ondas PENDENTE → chamar `useIniciarOnda`
+    - Botão "Cancelar" em ondas PENDENTE/EM_SEPARACAO → chamar `useCancelarOnda`
+    - Botão "Acompanhar" em ondas EM_SEPARACAO → navegar para `/picking/[id]`
+    - _Requirements: 18.3, 18.5_
+
+- [x] 12. Frontend — Página de detalhe da onda (`/picking/[id]`)
+  - [x] 12.1 Criar página de detalhe da onda de separação
+    - Buscar dados via `useOnda(id)` com TanStack Query
+    - Exibir cabeçalho com número da onda, status, prioridade, doca, data de criação
+    - Exibir barra de progresso geral (percentual de itens separados)
+    - Exibir lista de ordens de separação com funcionário atribuído e progresso individual
+    - Exibir tabela de itens de separação com produto, endereço origem, endereço destino, quantidade solicitada, quantidade separada, status
+    - Implementar modal de atribuição de funcionários (buscar funcionários via API existente, chamar `useAtribuirFuncionarios`)
+    - _Requirements: 18.5, 6.1, 6.2, 6.4, 4.1, 4.4_
+
+- [x] 13. Frontend — Página de Expedição com dados reais
+  - [x] 13.1 Conectar aba "Separação" da página de Expedição ao backend
+    - Substituir dados mockados por `useOndas` com filtro de status
+    - Exibir tabela com ondas e progresso
+    - _Requirements: 19.1_
+  - [x] 13.2 Implementar aba "Montagem de Carga"
+    - Exibir ondas com status EMBALADA via `useOndas({ status: 'EMBALADA' })`
+    - Exibir cliente, quantidade de volumes e peso total por onda
+    - Botão "Montar Carga" → exibir fluxo de conferência seguido de embalagem
+    - Implementar modal/fluxo de conferência: listar itens, registrar quantidade conferida, aprovar/rejeitar
+    - Implementar modal/fluxo de embalagem: criar volumes, vincular itens, gerar etiqueta
+    - _Requirements: 19.2, 19.4, 10.4_
+  - [x] 13.3 Implementar aba "Mapa de Carregamento"
+    - Exibir carregamentos ativos via `useCarregamentos`
+    - Exibir veículo, doca, volumes carregados/total, barra de progresso
+    - Implementar modal de criação de carregamento (doca, placa veículo, transportadora)
+    - Implementar ação de adicionar volumes ao carregamento com sequência
+    - Implementar ação de confirmar carregamento
+    - _Requirements: 19.3, 10.5_
+  - [x] 13.4 Atualizar cards de estatísticas da Expedição
+    - Calcular contadores de pedidos por status: pendentes, em separação, separados, conferidos, embalados, carregados
+    - Exibir indicador de produtividade por funcionário (nome, itens separados no dia, tempo médio)
+    - _Requirements: 10.1, 10.2, 10.3_
+
+- [x] 14. Checkpoint final — Validar integração frontend + backend
+  - Ensure all tests pass, ask the user if questions arise.
+
+## Notes
+
+- Tasks marcadas com `*` são opcionais e podem ser puladas para um MVP mais rápido
+- Cada task referencia requirements específicos para rastreabilidade
+- Checkpoints garantem validação incremental
+- Property tests validam propriedades universais de corretude (Properties 1-12 do design)
+- Unit tests validam cenários específicos e edge cases
+- O design usa TypeScript em todo o stack, então todas as implementações seguem esse padrão
+- As rotas de conferência e volume que são sub-rotas de onda-separacao (`/:id/conferencia`, `/:id/volumes`) devem ser registradas no módulo onda-separacao ou via prefixo adequado no server.ts
