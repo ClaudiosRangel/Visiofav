@@ -1,6 +1,7 @@
 {
   "name": "visiofab-wms-back",
   "version": "1.0.0",
+  "type": "module",
   "description": "VisioFab WMS - Backend API",
   "main": "dist/server.js",
   "scripts": {
