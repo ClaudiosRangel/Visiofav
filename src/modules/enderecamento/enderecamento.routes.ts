@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { ValidadorCapacidade } from '../endereco/validador-capacidade.service'
 
 export async function enderecamentoRoutes(app: FastifyInstance) {
   // Endereçar itens de uma NF conferida — cria OS, movimentos e atualiza saldos
@@ -40,6 +41,7 @@ export async function enderecamentoRoutes(app: FastifyInstance) {
     })
 
     // Para cada item, cria movimento e atualiza saldo
+    const validador = new ValidadorCapacidade()
     const movimentos = []
     for (let i = 0; i < nota.itens.length; i++) {
       const item = nota.itens[i]
@@ -55,6 +57,22 @@ export async function enderecamentoRoutes(app: FastifyInstance) {
         produto = await prisma.produto.create({
           data: { descricao: item.descricao, unidade: item.unidade, centroDistribuicaoId: body.centroDistribuicaoId },
         })
+      }
+
+      // Validate capacity before placing product at address
+      const enderecoComEstrutura = await prisma.endereco.findUnique({
+        where: { id: endereco.id },
+        select: { estruturaId: true },
+      })
+      if (enderecoComEstrutura?.estruturaId) {
+        const capacityResult = await validador.validar({
+          enderecoId: endereco.id,
+          produtoId: produto.id,
+          quantidade: item.quantidade,
+        })
+        if (!capacityResult.permitido) {
+          return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
+        }
       }
 
       // Cria movimento

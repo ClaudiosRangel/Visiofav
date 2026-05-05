@@ -1,8 +1,11 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { authenticate } from '../../middleware/authenticate'
 
 export async function centroDistRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
   // Listar
   app.get('/', async (request) => {
     const querySchema = z.object({
@@ -21,7 +24,7 @@ export async function centroDistRoutes(app: FastifyInstance) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { codigo: 'asc' },
+        orderBy: { nome: 'asc' },
       }),
       prisma.centroDistribuicao.count({ where }),
     ])
@@ -39,6 +42,7 @@ export async function centroDistRoutes(app: FastifyInstance) {
 
   // Criar
   app.post('/', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
     const bodySchema = z.object({
       descricao: z.string().min(1),
       logradouro: z.string().optional(),
@@ -52,7 +56,17 @@ export async function centroDistRoutes(app: FastifyInstance) {
     })
 
     const data = bodySchema.parse(request.body)
-    const item = await prisma.centroDistribuicao.create({ data })
+
+    // Generate codigo from descricao (uppercase, no spaces, max 20 chars)
+    const codigo = data.descricao.toUpperCase().replace(/\s+/g, '-').substring(0, 20)
+
+    const item = await prisma.centroDistribuicao.create({
+      data: {
+        empresaId: user.empresaId,
+        nome: data.descricao,
+        codigo,
+      },
+    })
     return reply.status(201).send(item)
   })
 

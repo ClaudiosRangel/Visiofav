@@ -22,20 +22,35 @@ export async function depositoRoutes(app: FastifyInstance) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { codigo: 'asc' },
-        include: { centroDistribuicao: { select: { descricao: true } } },
+        orderBy: { descricao: 'asc' },
       }),
       prisma.deposito.count({ where }),
     ])
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
+    // Add sequential codigo and centroDistribuicao name
+    const enriched = await Promise.all(data.map(async (dep, idx) => {
+      let cdNome = null
+      if (dep.centroDistribuicaoId) {
+        const cd = await prisma.centroDistribuicao.findUnique({
+          where: { id: dep.centroDistribuicaoId },
+          select: { nome: true },
+        })
+        cdNome = cd?.nome || null
+      }
+      return {
+        ...dep,
+        codigo: `DEP-${String((page - 1) * limit + idx + 1).padStart(3, '0')}`,
+        centroDistribuicao: cdNome ? { descricao: cdNome } : null,
+      }
+    }))
+
+    return { data: enriched, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
   app.get('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const item = await prisma.deposito.findUnique({
       where: { id },
-      include: { centroDistribuicao: { select: { descricao: true } } },
     })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item

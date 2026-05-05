@@ -14,16 +14,21 @@ export async function docaRoutes(app: FastifyInstance) {
   })
 
   app.post('/', async (request, reply) => {
-    const data = z.object({
-      descricao: z.string().min(1), tipo: z.string().min(1), comprimentoMax: z.number().optional(),
-      centroDistribuicaoId: z.string().uuid(), depositoId: z.string().uuid(),
+    const body = z.object({
+      descricao: z.string().min(1),
+      tipo: z.string().min(1),
+      centroDistribuicaoId: z.string().uuid().optional(),
+      depositoId: z.string().uuid().optional(),
+      comprimentoMax: z.number().optional(),
     }).parse(request.body)
+    const { comprimentoMax, ...data } = body
     return reply.status(201).send(await prisma.doca.create({ data }))
   })
 
   app.put('/:id', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const data = z.object({ descricao: z.string().optional(), tipo: z.string().optional(), estado: z.string().optional(), comprimentoMax: z.number().optional(), status: z.boolean().optional() }).parse(request.body)
+    const body = z.object({ descricao: z.string().optional(), tipo: z.string().optional(), status: z.boolean().optional(), centroDistribuicaoId: z.string().uuid().optional(), depositoId: z.string().uuid().optional(), comprimentoMax: z.number().optional() }).parse(request.body)
+    const { comprimentoMax, ...data } = body
     return prisma.doca.update({ where: { id }, data })
   })
 

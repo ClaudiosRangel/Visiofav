@@ -599,6 +599,7 @@ model CentroDistribuicao {
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
+  docas       Doca[]
 
   @@unique([empresaId, codigo])
   @@map("centro_distribuicao")
@@ -903,6 +904,11 @@ model Estrutura {
   id          String   @id @default(uuid())
   descricao   String   @db.VarChar(150)
   tipo        String   @db.VarChar(30) // PORTA_PALETE, BLOCADO, DRIVE_IN, FLOW_RACK
+  capacidade  Decimal? @db.Decimal(10,3)  // max weight in kg
+  largura     Decimal? @db.Decimal(10,3)  // width in meters
+  altura      Decimal? @db.Decimal(10,3)  // height in meters
+  comprimento Decimal? @db.Decimal(10,3)  // depth in meters
+  cubagem     Decimal? @db.Decimal(10,6)  // max volume in m³ (auto-calculated: largura × altura × comprimento)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
 
@@ -912,26 +918,34 @@ model Estrutura {
 }
 
 model Endereco {
-  id                    String   @id @default(uuid())
-  codigoDeposito        String?  @db.VarChar(10) @map("codigo_deposito")
-  codigoZona            String?  @db.VarChar(10) @map("codigo_zona")
-  codigoRua             String?  @db.VarChar(10) @map("codigo_rua")
-  codigoPredio          String?  @db.VarChar(10) @map("codigo_predio")
-  codigoNivel           String?  @db.VarChar(10) @map("codigo_nivel")
-  codigoApto            String?  @db.VarChar(10) @map("codigo_apto")
-  enderecoCompleto      String?  @db.VarChar(60) @map("endereco_completo")
-  tipo                  String   @default("ARMAZENAGEM") @db.VarChar(20) // ARMAZENAGEM, PICKING, DOCA, LIVRE, BLOQUEADO
-  centroDistribuicaoId  String?  @map("centro_distribuicao_id")
-  depositoId            String?  @map("deposito_id")
-  deposito              Deposito? @relation(fields: [depositoId], references: [id])
-  zonaId                String?  @map("zona_id")
-  zona                  Zona?    @relation(fields: [zonaId], references: [id])
-  estruturaId           String?  @map("estrutura_id")
-  estrutura             Estrutura? @relation(fields: [estruturaId], references: [id])
-  status                Boolean  @default(true)
-  criadoEm              DateTime @default(now()) @map("criado_em")
+  id                      String   @id @default(uuid())
+  codigoDeposito          String?  @db.VarChar(10) @map("codigo_deposito")
+  codigoZona              String?  @db.VarChar(10) @map("codigo_zona")
+  codigoRua               String?  @db.VarChar(10) @map("codigo_rua")
+  codigoPredio            String?  @db.VarChar(10) @map("codigo_predio")
+  codigoNivel             String?  @db.VarChar(10) @map("codigo_nivel")
+  codigoApto              String?  @db.VarChar(10) @map("codigo_apto")
+  enderecoCompleto        String?  @db.VarChar(60) @map("endereco_completo")
+  tipo                    String   @default("ARMAZENAGEM") @db.VarChar(20) // ARMAZENAGEM, PICKING, DOCA, LIVRE, BLOQUEADO
+  codigoBarras            String?  @db.VarChar(30) @map("codigo_barras")
+  areaArmazenagem         String?  @db.VarChar(20) @map("area_armazenagem") // PULMAO, PICKING
+  centroDistribuicaoId    String?  @map("centro_distribuicao_id")
+  depositoId              String?  @map("deposito_id")
+  deposito                Deposito? @relation(fields: [depositoId], references: [id])
+  zonaId                  String?  @map("zona_id")
+  zona                    Zona?    @relation(fields: [zonaId], references: [id])
+  estruturaId             String?  @map("estrutura_id")
+  estrutura               Estrutura? @relation(fields: [estruturaId], references: [id])
+  formaArmazenagemId      String?  @map("forma_armazenagem_id")
+  formaArmazenagem        FormaArmazenagem? @relation(fields: [formaArmazenagemId], references: [id])
+  ambienteArmazenagemId   String?  @map("ambiente_armazenagem_id")
+  ambienteArmazenagem     AmbienteArmazenagem? @relation(fields: [ambienteArmazenagemId], references: [id])
+  classificacaoProdutoId  String?  @map("classificacao_produto_id")
+  classificacaoProduto    ClassificacaoProduto? @relation(fields: [classificacaoProdutoId], references: [id])
+  status                  Boolean  @default(true)
+  criadoEm                DateTime @default(now()) @map("criado_em")
 
-  saldos                SaldoEndereco[]
+  saldos                  SaldoEndereco[]
 
   @@map("endereco")
 }
@@ -953,9 +967,11 @@ model SaldoEndereco {
 
 model Doca {
   id                    String   @id @default(uuid())
+  codigo                Int      @default(autoincrement())
   descricao             String   @db.VarChar(150)
   tipo                  String   @default("MISTA") @db.VarChar(20) // ENTRADA, SAIDA, MISTA
   centroDistribuicaoId  String?  @map("centro_distribuicao_id")
+  centroDistribuicao    CentroDistribuicao? @relation(fields: [centroDistribuicaoId], references: [id])
   depositoId            String?  @map("deposito_id")
   deposito              Deposito? @relation(fields: [depositoId], references: [id])
   status                Boolean  @default(true)
@@ -975,6 +991,7 @@ model Funcao {
 
 model Funcionario {
   id                    String   @id @default(uuid())
+  codigo                Int      @default(autoincrement())
   nome                  String   @db.VarChar(150)
   matricula             String   @db.VarChar(20)
   tipo                  String   @default("OPERADOR") @db.VarChar(30)
@@ -988,6 +1005,7 @@ model Funcionario {
 
 model EquipamentoMovimentacao {
   id          String   @id @default(uuid())
+  codigo      Int      @default(autoincrement())
   descricao   String   @db.VarChar(150)
   tipo        String   @db.VarChar(30) // EMPILHADEIRA, PALETEIRA, COLETOR
   patrimonio  String?  @db.VarChar(30)
@@ -1003,6 +1021,8 @@ model FormaArmazenagem {
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
 
+  enderecos   Endereco[]
+
   @@map("forma_armazenagem")
 }
 
@@ -1013,6 +1033,8 @@ model AmbienteArmazenagem {
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
 
+  enderecos   Endereco[]
+
   @@map("ambiente_armazenagem")
 }
 
@@ -1021,6 +1043,8 @@ model ClassificacaoProduto {
   descricao   String   @db.VarChar(150)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+
+  enderecos   Endereco[]
 
   @@map("classificacao_produto")
 }

@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { AddressGenerationService } from './address-generation.service'
+import { ValidadorCapacidade } from './validador-capacidade.service'
 
 export async function enderecoRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
@@ -49,38 +51,82 @@ export async function enderecoRoutes(app: FastifyInstance) {
   // Geração automática de endereços
   app.post('/gerar', async (request, reply) => {
     const body = z.object({
-      centroDistribuicaoId: z.string().uuid(), depositoId: z.string().uuid(),
-      codigoDeposito: z.string(), codigoZona: z.string(),
-      zonaId: z.string().uuid().optional(), estruturaId: z.string().uuid().optional(),
-      tipo: z.string().default('ARMAZENAGEM'),
-      ruaInicio: z.number(), ruaFim: z.number(),
-      predioInicio: z.number(), predioFim: z.number(),
-      nivelInicio: z.number(), nivelFim: z.number(),
-      aptoInicio: z.number(), aptoFim: z.number(),
+      centroDistribuicaoId: z.string().uuid(),
+      depositoId: z.string().uuid(),
+      codigoDeposito: z.string(),
+      codigoZona: z.string(),
+      zonaId: z.string().uuid(),
+      estruturaId: z.string().uuid(),
+      classificacaoProdutoId: z.string().uuid().optional(),
+      ambienteArmazenagemId: z.string().uuid().optional(),
+      formaArmazenagemId: z.string().uuid().optional(),
+      areaArmazenagem: z.enum(['PULMAO', 'PICKING']),
+      situacao: z.string(),
+      lado: z.enum(['PAR', 'IMPAR', 'AMBOS']),
+      ruaInicio: z.number().int().positive(),
+      ruaFim: z.number().int().positive(),
+      predioInicio: z.number().int().positive(),
+      predioFim: z.number().int().positive(),
+      nivelInicio: z.number().int().positive(),
+      nivelFim: z.number().int().positive(),
+      aptoInicio: z.number().int().positive(),
+      aptoFim: z.number().int().positive(),
     }).parse(request.body)
 
-    const enderecos: Array<Record<string, unknown>> = []
-    const pad = (n: number) => String(n).padStart(3, '0')
-
-    for (let rua = body.ruaInicio; rua <= body.ruaFim; rua++) {
-      for (let predio = body.predioInicio; predio <= body.predioFim; predio++) {
-        for (let nivel = body.nivelInicio; nivel <= body.nivelFim; nivel++) {
-          for (let apto = body.aptoInicio; apto <= body.aptoFim; apto++) {
-            const codigoRua = pad(rua), codigoPredio = pad(predio), codigoNivel = pad(nivel), codigoApto = pad(apto)
-            const enderecoCompleto = `${body.codigoDeposito}-${body.codigoZona}-${codigoRua}-${codigoPredio}-${codigoNivel}-${codigoApto}`
-            enderecos.push({
-              codigoDeposito: body.codigoDeposito, codigoZona: body.codigoZona,
-              codigoRua, codigoPredio, codigoNivel, codigoApto, enderecoCompleto,
-              tipo: body.tipo, centroDistribuicaoId: body.centroDistribuicaoId,
-              depositoId: body.depositoId, zonaId: body.zonaId, estruturaId: body.estruturaId,
-            })
-          }
-        }
+    try {
+      const service = new AddressGenerationService()
+      const result = await service.generate(body)
+      return reply.status(201).send({
+        criados: result.criados,
+        ignorados: result.ignorados,
+        total: result.total,
+      })
+    } catch (err: any) {
+      if (err.status === 400) {
+        return reply.status(400).send({ message: err.message })
       }
+      if (err.status === 404) {
+        return reply.status(404).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // Capacity utilization for an address
+  app.get('/:id/capacidade', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const endereco = await prisma.endereco.findUnique({ where: { id } })
+    if (!endereco) {
+      return reply.status(404).send({ message: 'Endereço não encontrado' })
     }
 
-    const result = await prisma.endereco.createMany({ data: enderecos as any, skipDuplicates: true })
-    return reply.status(201).send({ criados: result.count, total: enderecos.length })
+    const validador = new ValidadorCapacidade()
+    const utilization = await validador.getUtilization(id)
+    return utilization
+  })
+
+  // Validate capacity before storing a product
+  app.post('/validar-capacidade', async (request, reply) => {
+    const body = z.object({
+      enderecoId: z.string().uuid(),
+      produtoId: z.string().uuid(),
+      quantidade: z.number().positive(),
+    }).parse(request.body)
+
+    const validador = new ValidadorCapacidade()
+    try {
+      const result = await validador.validar(body)
+      if (!result.permitido) {
+        return reply.status(422).send(result)
+      }
+      return result
+    } catch (err: any) {
+      if (err.status === 404) {
+        return reply.status(404).send({ message: err.message })
+      }
+      throw err
+    }
   })
 
   app.put('/:id', async (request) => {

@@ -7,6 +7,7 @@ import { ValidacaoLocalizacaoService } from '../scanner/validacao-localizacao.se
 import { registrarAudit } from '../auditoria/auditoria.routes'
 import { FichaService } from '../ficha-operacional/ficha.service'
 import { SugestaoEnderecoService } from './sugestao-endereco.service'
+import { ValidadorCapacidade } from '../endereco/validador-capacidade.service'
 import type { ItemNotaEntrada, Produto } from '@prisma/client'
 import crypto from 'node:crypto'
 
@@ -95,12 +96,25 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
     const body = enderecamentoManualSchema.parse(request.body)
 
     // Verificar se endereço existe
-    const endereco = await prisma.endereco.findUnique({ where: { id: body.enderecoId } })
+    const endereco = await prisma.endereco.findUnique({ where: { id: body.enderecoId }, include: { estrutura: true } })
     if (!endereco) return reply.status(404).send({ message: 'Endereço não encontrado' })
 
     // Verificar se produto existe
     const produto = await prisma.produto.findFirst({ where: { id: body.produtoId, empresaId: user.empresaId } })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
+
+    // Validate capacity if address has an associated Estrutura
+    if (endereco.estruturaId) {
+      const validador = new ValidadorCapacidade()
+      const capacityResult = await validador.validar({
+        enderecoId: body.enderecoId,
+        produtoId: body.produtoId,
+        quantidade: body.quantidade,
+      })
+      if (!capacityResult.permitido) {
+        return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // Upsert saldo no endereço
@@ -259,11 +273,24 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const body = confirmarColetorSchema.parse(request.body)
 
-    const endereco = await prisma.endereco.findUnique({ where: { id: body.enderecoId } })
+    const endereco = await prisma.endereco.findUnique({ where: { id: body.enderecoId }, include: { estrutura: true } })
     if (!endereco) return reply.status(404).send({ message: 'Endereço não encontrado' })
 
     const produto = await prisma.produto.findFirst({ where: { id: body.produtoId, empresaId: user.empresaId } })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
+
+    // Validate capacity if address has an associated Estrutura
+    if (endereco.estruturaId) {
+      const validador = new ValidadorCapacidade()
+      const capacityResult = await validador.validar({
+        enderecoId: body.enderecoId,
+        produtoId: body.produtoId,
+        quantidade: body.quantidade,
+      })
+      if (!capacityResult.permitido) {
+        return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // Upsert saldo no endereço
@@ -565,6 +592,25 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
     }
 
     const etiquetas: Array<{ itemId: string; enderecoCompleto: string; produtoNome: string; quantidade: number; lote: string | null; validade: string | null }> = []
+
+    // Validate capacity for all items before starting the transaction
+    const validador = new ValidadorCapacidade()
+    for (const item of body.itens) {
+      const enderecoCheck = await prisma.endereco.findUnique({
+        where: { id: item.enderecoId },
+        select: { estruturaId: true },
+      })
+      if (enderecoCheck?.estruturaId) {
+        const capacityResult = await validador.validar({
+          enderecoId: item.enderecoId,
+          produtoId: item.produtoId,
+          quantidade: item.quantidade,
+        })
+        if (!capacityResult.permitido) {
+          return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
+        }
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // 1. Validate all addresses exist and are available

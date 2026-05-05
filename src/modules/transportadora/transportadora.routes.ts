@@ -6,7 +6,7 @@ export async function transportadoraRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const q = z.object({ page: z.coerce.number().default(1), limit: z.coerce.number().default(20), search: z.string().optional() }).parse(request.query)
     const where = q.search ? { razaoSocial: { contains: q.search, mode: 'insensitive' as const } } : {}
-    const [data, total] = await Promise.all([prisma.transportadora.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { codigo: 'asc' } }), prisma.transportadora.count({ where })])
+    const [data, total] = await Promise.all([prisma.transportadora.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { razaoSocial: 'asc' } }), prisma.transportadora.count({ where })])
     return { data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) }
   })
   app.post('/', async (request, reply) => {

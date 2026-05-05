@@ -7,7 +7,7 @@ export async function classificacaoProdutoRoutes(app: FastifyInstance) {
     const q = z.object({ page: z.coerce.number().default(1), limit: z.coerce.number().default(20), search: z.string().optional() }).parse(request.query)
     const where = q.search ? { descricao: { contains: q.search, mode: 'insensitive' as const } } : {}
     const [data, total] = await Promise.all([
-      prisma.classificacaoProduto.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { codigo: 'asc' } }),
+      prisma.classificacaoProduto.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { descricao: 'asc' } }),
       prisma.classificacaoProduto.count({ where }),
     ])
     return { data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) }

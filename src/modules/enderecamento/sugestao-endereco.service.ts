@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma'
+import { ValidadorCapacidade } from '../endereco/validador-capacidade.service'
 
 export interface SugestaoInput {
   produtoId: string
