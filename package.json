@@ -1,13 +1,12 @@
 {
   "name": "visiofab-wms-back",
   "version": "1.0.0",
-  "type": "module",
   "description": "VisioFab WMS - Backend API",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "build": "npx prisma generate",
+    "start": "tsx src/server.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
