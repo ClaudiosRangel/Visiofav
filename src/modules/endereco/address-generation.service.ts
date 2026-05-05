@@ -5,14 +5,15 @@ export interface GenerationParams {
   depositoId: string
   codigoDeposito: string
   codigoZona: string
-  zonaId: string
-  estruturaId: string
+  zonaId?: string
+  estruturaId?: string
   classificacaoProdutoId?: string
   ambienteArmazenagemId?: string
   formaArmazenagemId?: string
-  areaArmazenagem: 'PULMAO' | 'PICKING'
-  situacao: string
-  lado: 'PAR' | 'IMPAR' | 'AMBOS'
+  areaArmazenagem?: 'PULMAO' | 'PICKING'
+  situacao?: string
+  lado?: 'PAR' | 'IMPAR' | 'AMBOS'
+  tipo?: string
   ruaInicio: number
   ruaFim: number
   predioInicio: number
@@ -43,8 +44,8 @@ interface AddressCandidate {
   areaArmazenagem: string
   centroDistribuicaoId: string
   depositoId: string
-  zonaId: string
-  estruturaId: string
+  zonaId?: string
+  estruturaId?: string
   formaArmazenagemId?: string
   ambienteArmazenagemId?: string
   classificacaoProdutoId?: string
@@ -90,7 +91,7 @@ export class AddressGenerationService {
     const addresses: AddressCandidate[] = []
 
     for (let rua = params.ruaInicio; rua <= params.ruaFim; rua++) {
-      if (!this.filterByLado(rua, params.lado)) continue
+      if (!this.filterByLado(rua, params.lado || 'AMBOS')) continue
 
       for (let predio = params.predioInicio; predio <= params.predioFim; predio++) {
         for (let nivel = params.nivelInicio; nivel <= params.nivelFim; nivel++) {
@@ -112,12 +113,12 @@ export class AddressGenerationService {
               codigoApto,
               enderecoCompleto,
               codigoBarras,
-              tipo: params.situacao,
-              areaArmazenagem: params.areaArmazenagem,
+              tipo: params.situacao || params.tipo || 'ARMAZENAGEM',
+              areaArmazenagem: params.areaArmazenagem || 'PULMAO',
               centroDistribuicaoId: params.centroDistribuicaoId,
               depositoId: params.depositoId,
-              zonaId: params.zonaId,
-              estruturaId: params.estruturaId,
+              ...(params.zonaId ? { zonaId: params.zonaId } : {}),
+              ...(params.estruturaId ? { estruturaId: params.estruturaId } : {}),
               ...(params.formaArmazenagemId ? { formaArmazenagemId: params.formaArmazenagemId } : {}),
               ...(params.ambienteArmazenagemId ? { ambienteArmazenagemId: params.ambienteArmazenagemId } : {}),
               ...(params.classificacaoProdutoId ? { classificacaoProdutoId: params.classificacaoProdutoId } : {}),
@@ -181,7 +182,7 @@ export class AddressGenerationService {
     }
 
     // Validate areaArmazenagem
-    if (!['PULMAO', 'PICKING'].includes(params.areaArmazenagem)) {
+    if (params.areaArmazenagem && !['PULMAO', 'PICKING'].includes(params.areaArmazenagem)) {
       throw { status: 400, message: 'Área de armazenagem deve ser PULMAO ou PICKING' }
     }
 
@@ -191,14 +192,18 @@ export class AddressGenerationService {
       throw { status: 404, message: 'Depósito não encontrado' }
     }
 
-    const zona = await prisma.zona.findUnique({ where: { id: params.zonaId } })
-    if (!zona) {
-      throw { status: 404, message: 'Zona não encontrada' }
+    if (params.zonaId) {
+      const zona = await prisma.zona.findUnique({ where: { id: params.zonaId } })
+      if (!zona) {
+        throw { status: 404, message: 'Zona não encontrada' }
+      }
     }
 
-    const estrutura = await prisma.estrutura.findUnique({ where: { id: params.estruturaId } })
-    if (!estrutura) {
-      throw { status: 404, message: 'Estrutura não encontrada' }
+    if (params.estruturaId) {
+      const estrutura = await prisma.estrutura.findUnique({ where: { id: params.estruturaId } })
+      if (!estrutura) {
+        throw { status: 404, message: 'Estrutura não encontrada' }
+      }
     }
   }
 
