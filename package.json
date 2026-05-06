@@ -5,8 +5,8 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "npx prisma generate && npx tsx prisma/migrate-prod.ts",
-    "start": "tsx src/server.ts",
+    "build": "npx prisma generate",
+    "start": "npx tsx prisma/migrate-prod.ts && tsx src/server.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",

@@ -21,4 +21,4 @@ COPY tsconfig.json ./
 EXPOSE 3333
 
 # Start with tsx
-CMD ["npx", "tsx", "src/server.ts"]
+CMD ["sh", "-c", "npx tsx prisma/migrate-prod.ts && npx tsx src/server.ts"]
