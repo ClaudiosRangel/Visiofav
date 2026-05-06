@@ -289,6 +289,90 @@ export async function ordemServicoWmsRoutes(app: FastifyInstance) {
     return { osId: id, historico }
   })
 
+  // GET /historico — lista OS concluídas do funcionário logado, filtradas por data
+  app.get('/historico', async (request) => {
+    const user = request.user as { id: string; nome: string; empresaId: string }
+    const q = z.object({
+      data: z.string().optional(), // YYYY-MM-DD — filtra por dia
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
+      page: z.coerce.number().default(1),
+      limit: z.coerce.number().default(50),
+    }).parse(request.query)
+
+    // Encontrar funcionário vinculado ao usuário
+    const funcionario = await prisma.funcionario.findFirst({
+      where: {
+        OR: [
+          { usuarioId: user.id },
+          { nome: { contains: user.nome, mode: 'insensitive' } },
+        ]
+      }
+    })
+
+    if (!funcionario) {
+      return { data: [], total: 0 }
+    }
+
+    // Buscar OS onde o funcionário participou
+    const osFuncionarios = await prisma.osFuncionarioWms.findMany({
+      where: { funcionarioId: funcionario.id },
+      select: { ordemServicoId: true },
+    })
+
+    const osIds = osFuncionarios.map((f) => f.ordemServicoId)
+    if (osIds.length === 0) return { data: [], total: 0 }
+
+    const where: any = {
+      id: { in: osIds },
+      empresaId: user.empresaId,
+      status: 'CONCLUIDO',
+    }
+
+    // Filtro por data
+    if (q.data) {
+      const dia = new Date(q.data + 'T00:00:00.000Z')
+      const diaFim = new Date(q.data + 'T00:00:00.000Z')
+      diaFim.setUTCDate(diaFim.getUTCDate() + 1)
+      where.horaFim = { gte: dia, lt: diaFim }
+    } else if (q.dataInicio || q.dataFim) {
+      where.horaFim = {}
+      if (q.dataInicio) where.horaFim.gte = new Date(q.dataInicio + 'T00:00:00.000Z')
+      if (q.dataFim) {
+        const fim = new Date(q.dataFim + 'T00:00:00.000Z')
+        fim.setUTCDate(fim.getUTCDate() + 1)
+        where.horaFim.lt = fim
+      }
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.ordemServicoWms.findMany({
+        where,
+        skip: (q.page - 1) * q.limit,
+        take: q.limit,
+        orderBy: { horaFim: 'desc' },
+      }),
+      prisma.ordemServicoWms.count({ where }),
+    ])
+
+    // Enriquecer com nota fiscal e tempo
+    const enriched = await Promise.all(data.map(async (os) => {
+      let notaEntrada = null
+      if (os.notaEntradaId) {
+        notaEntrada = await prisma.notaEntrada.findUnique({
+          where: { id: os.notaEntradaId },
+          select: { numero: true, fornecedor: true },
+        })
+      }
+      const tempoMs = os.horaInicio && os.horaFim
+        ? new Date(os.horaFim).getTime() - new Date(os.horaInicio).getTime()
+        : 0
+      return { ...os, notaEntrada, tempoExecucaoMinutos: Math.round(tempoMs / 60000) }
+    }))
+
+    return { data: enriched, total }
+  })
+
   // GET /minhas — lista OS em andamento do funcionário logado
   app.get('/minhas', async (request) => {
     const user = request.user as { id: string; nome: string; empresaId: string }
