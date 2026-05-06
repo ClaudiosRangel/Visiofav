@@ -268,6 +268,134 @@ export async function etiquetaRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
+  // POST /enderecos-html — Gera etiquetas HTML de endereços com código de barras (fonte 20)
+  // Para impressão em impressora comum ou térmica via navegador
+  // ==========================================================================
+  app.post('/enderecos-html', async (request, reply) => {
+    const body = z.object({
+      ids: z.array(z.string().uuid()).min(1),
+      quantidade: z.number().int().positive().default(1),
+    }).parse(request.body)
+
+    const enderecos = await prisma.endereco.findMany({
+      where: { id: { in: body.ids } },
+      orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
+    })
+
+    if (enderecos.length === 0) {
+      return reply.status(422).send({ message: 'Nenhum endereço encontrado' })
+    }
+
+    // Generate barcode images
+    const barcodeCache = new Map<string, string>()
+    for (const e of enderecos) {
+      const code = (e.enderecoCompleto || '').replace(/[^A-Za-z0-9]/g, '')
+      if (!barcodeCache.has(code)) {
+        try {
+          const png = await bwipjs.toBuffer({
+            bcid: 'code128',
+            text: code,
+            scale: 4,
+            height: 15,
+            includetext: false,
+          })
+          barcodeCache.set(code, png.toString('base64'))
+        } catch {
+          barcodeCache.set(code, '')
+        }
+      }
+    }
+
+    const labelBlocks: string[] = []
+    for (const e of enderecos) {
+      for (let i = 0; i < body.quantidade; i++) {
+        const code = (e.enderecoCompleto || '').replace(/[^A-Za-z0-9]/g, '')
+        const barcodeBase64 = barcodeCache.get(code) ?? ''
+        const barcodeImg = barcodeBase64
+          ? `<img src="data:image/png;base64,${barcodeBase64}" style="width:100%;height:auto;max-height:20mm;" />`
+          : ''
+
+        labelBlocks.push(`
+      <div class="label">
+        <div class="address">${e.enderecoCompleto}</div>
+        <div class="barcode-img">${barcodeImg}</div>
+        <div class="barcode-text">${code}</div>
+        <div class="detail">Rua ${e.codigoRua} | Prédio ${e.codigoPredio} | Nível ${e.codigoNivel} | Apto ${e.codigoApto}</div>
+      </div>`)
+      }
+    }
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Etiquetas de Endereços</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; }
+    .page {
+      width: 210mm;
+      padding: 8mm;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4mm;
+      justify-content: flex-start;
+    }
+    .label {
+      width: 95mm;
+      height: 45mm;
+      border: 1px solid #000;
+      padding: 3mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      page-break-inside: avoid;
+      overflow: hidden;
+    }
+    .address {
+      font-size: 20pt;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 2mm;
+    }
+    .barcode-img {
+      text-align: center;
+      margin: 2mm 0;
+    }
+    .barcode-img img {
+      max-height: 15mm;
+    }
+    .barcode-text {
+      font-size: 10pt;
+      font-family: 'Courier New', monospace;
+      text-align: center;
+      letter-spacing: 1px;
+    }
+    .detail {
+      font-size: 8pt;
+      color: #555;
+      text-align: center;
+      margin-top: 1mm;
+    }
+    @media print {
+      @page { size: A4; margin: 5mm; }
+      body { -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+${labelBlocks.join('\n')}
+  </div>
+</body>
+</html>`
+
+    reply.header('Content-Type', 'text/html; charset=utf-8')
+    return reply.send(html)
+  })
+
+  // ==========================================================================
   // GET /volume/:id/html — Generate HTML label for a volume
   // Task 12.1: Contains barcode, type, weight, item count, sales order number.
   // ==========================================================================
