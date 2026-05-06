@@ -68,11 +68,20 @@ export async function funcionarioRoutes(app: FastifyInstance) {
 
     // Create user account if email and senha provided
     if (email && senha) {
-      await prisma.usuario.upsert({
+      const usuario = await prisma.usuario.upsert({
         where: { email },
         update: { nome: data.nome, senha: bcrypt.hashSync(senha, 10) },
         create: { nome: data.nome, email, senha: bcrypt.hashSync(senha, 10), perfil: 'OPERADOR' },
       })
+      // Link user to empresa (get from centroDistribuicao)
+      const cd = await prisma.centroDistribuicao.findFirst({ where: { id: data.centroDistribuicaoId }, select: { empresaId: true } })
+      if (cd?.empresaId) {
+        await prisma.usuarioEmpresa.upsert({
+          where: { usuarioId_empresaId: { usuarioId: usuario.id, empresaId: cd.empresaId } },
+          update: {},
+          create: { usuarioId: usuario.id, empresaId: cd.empresaId, modulos: 'WMS' },
+        })
+      }
     }
 
     return reply.status(201).send(funcionario)

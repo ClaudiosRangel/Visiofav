@@ -18,12 +18,16 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ message: 'Credenciais inválidas' })
     }
 
+    // Get empresaId from usuario_empresa
+    const vinculo = await prisma.usuarioEmpresa.findFirst({ where: { usuarioId: usuario.id } })
+    const empresaId = vinculo?.empresaId || null
+
     const token = app.jwt.sign(
-      { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil },
+      { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId },
       { expiresIn: '8h' }
     )
 
-    return { token, usuario: { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil } }
+    return { token, usuario: { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId } }
   })
 
   app.post('/registrar', async (request, reply) => {
