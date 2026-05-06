@@ -1,3 +1,6 @@
+// Set timezone to Brasília
+process.env.TZ = 'America/Sao_Paulo'
+
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
