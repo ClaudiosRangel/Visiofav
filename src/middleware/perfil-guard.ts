@@ -10,7 +10,12 @@ import { FastifyRequest, FastifyReply } from 'fastify'
 export function perfilGuard(...perfis: string[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user as { id: string; perfil: string }
-    if (!user || !perfis.includes(user.perfil)) {
+    if (!user) {
+      return reply.status(403).send({ message: 'Acesso não autorizado' })
+    }
+    // SUPER_ADMIN bypasses all perfil checks
+    if (user.perfil === 'SUPER_ADMIN') return
+    if (!perfis.includes(user.perfil)) {
       return reply.status(403).send({ message: 'Acesso não autorizado' })
     }
   }
