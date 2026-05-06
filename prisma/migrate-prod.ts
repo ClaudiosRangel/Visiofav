@@ -28,6 +28,9 @@ async function main() {
   // Funcionario table - codigo column
   await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "codigo" SERIAL`)
 
+  // Funcionario table - usuario_id column (direct link to usuario)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT`)
+
   // Estrutura table - codigo column
   await prisma.$executeRawUnsafe(`ALTER TABLE "estrutura" ADD COLUMN IF NOT EXISTS "codigo" SERIAL`)
 

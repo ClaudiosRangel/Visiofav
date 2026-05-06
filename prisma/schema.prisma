@@ -997,6 +997,7 @@ model Funcionario {
   matricula             String   @db.VarChar(20)
   tipo                  String   @default("OPERADOR") @db.VarChar(30)
   centroDistribuicaoId  String?  @map("centro_distribuicao_id")
+  usuarioId             String?  @unique @map("usuario_id")
   presente              Boolean  @default(false)
   status                Boolean  @default(true)
   criadoEm              DateTime @default(now()) @map("criado_em")

@@ -73,6 +73,8 @@ export async function funcionarioRoutes(app: FastifyInstance) {
         update: { nome: data.nome, senha: bcrypt.hashSync(senha, 10) },
         create: { nome: data.nome, email, senha: bcrypt.hashSync(senha, 10), perfil: 'OPERADOR' },
       })
+      // Link funcionario directly to usuario
+      await prisma.funcionario.update({ where: { id: funcionario.id }, data: { usuarioId: usuario.id } })
       // Link user to empresa (get from centroDistribuicao)
       const cd = await prisma.centroDistribuicao.findFirst({ where: { id: data.centroDistribuicaoId }, select: { empresaId: true } })
       if (cd?.empresaId) {
@@ -107,11 +109,13 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       const updateData: any = { nome: data.nome || funcionario.nome }
       if (senha) updateData.senha = bcrypt.hashSync(senha, 10)
 
-      await prisma.usuario.upsert({
+      const usuario = await prisma.usuario.upsert({
         where: { email },
         update: updateData,
         create: { nome: data.nome || funcionario.nome, email, senha: bcrypt.hashSync(senha || '123456', 10), perfil: 'OPERADOR' },
       })
+      // Link funcionario directly to usuario
+      await prisma.funcionario.update({ where: { id }, data: { usuarioId: usuario.id } })
     }
 
     return funcionario

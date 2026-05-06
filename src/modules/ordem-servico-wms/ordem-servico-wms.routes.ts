@@ -293,9 +293,14 @@ export async function ordemServicoWmsRoutes(app: FastifyInstance) {
   app.get('/minhas', async (request) => {
     const user = request.user as { id: string; nome: string; empresaId: string }
 
-    // Encontrar funcionário vinculado ao usuário pelo nome
+    // Encontrar funcionário vinculado ao usuário (por link direto ou fallback por nome)
     const funcionario = await prisma.funcionario.findFirst({
-      where: { nome: user.nome },
+      where: {
+        OR: [
+          { usuarioId: user.id },
+          { nome: { contains: user.nome, mode: 'insensitive' } },
+        ]
+      }
     })
 
     if (!funcionario) {
