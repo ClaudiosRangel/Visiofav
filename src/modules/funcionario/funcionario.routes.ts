@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import bcrypt from 'bcryptjs'
 
 export async function funcionarioRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
@@ -53,25 +54,58 @@ export async function funcionarioRoutes(app: FastifyInstance) {
   })
 
   app.post('/', async (request, reply) => {
-    const data = z.object({
+    const body = z.object({
       nome: z.string().min(1),
       matricula: z.string().optional(),
       tipo: z.string().min(1),
       centroDistribuicaoId: z.string().uuid(),
+      email: z.string().email().optional(),
+      senha: z.string().min(6).optional(),
     }).parse(request.body)
-    return reply.status(201).send(await prisma.funcionario.create({ data }))
+
+    const { email, senha, ...data } = body
+    const funcionario = await prisma.funcionario.create({ data })
+
+    // Create user account if email and senha provided
+    if (email && senha) {
+      await prisma.usuario.upsert({
+        where: { email },
+        update: { nome: data.nome, senha: bcrypt.hashSync(senha, 10) },
+        create: { nome: data.nome, email, senha: bcrypt.hashSync(senha, 10), perfil: 'OPERADOR' },
+      })
+    }
+
+    return reply.status(201).send(funcionario)
   })
 
   app.put('/:id', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const data = z.object({
+    const body = z.object({
       nome: z.string().optional(),
       matricula: z.string().optional(),
       tipo: z.string().optional(),
       presente: z.boolean().optional(),
       status: z.boolean().optional(),
+      email: z.string().email().optional(),
+      senha: z.string().min(6).optional(),
     }).parse(request.body)
-    return prisma.funcionario.update({ where: { id }, data })
+
+    const { email, senha, ...data } = body
+    const funcionario = await prisma.funcionario.update({ where: { id }, data })
+
+    // Create/update user account if email provided
+    if (email) {
+      const updateData: any = { nome: data.nome || funcionario.nome }
+      if (senha) updateData.senha = bcrypt.hashSync(senha, 10)
+
+      await prisma.usuario.upsert({
+        where: { email },
+        update: updateData,
+        create: { nome: data.nome || funcionario.nome, email, senha: bcrypt.hashSync(senha || '123456', 10), perfil: 'OPERADOR' },
+      })
+    }
+
+    return funcionario
   })
 
   app.delete('/:id', async (request, reply) => {
