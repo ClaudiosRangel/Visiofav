@@ -174,7 +174,7 @@ export async function compraRoutes(app: FastifyInstance) {
       include: {
         pedidoCompra: {
           include: {
-            itens: { include: { produto: { select: { nome: true, codigo: true } } } },
+            itens: { include: { produto: { select: { nome: true, codigo: true, unidade: true } } } },
             fornecedor: { select: { razaoSocial: true, nomeFantasia: true, cnpj: true } },
             vendedor: { select: { nome: true } },
           },
