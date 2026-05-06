@@ -193,6 +193,107 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
 
   // ── Coletor mode: location validation by barcode ──────────────────────
 
+  // Simple endpoint for app: scan barcode → find address
+  const buscarEnderecoPorBarcodeSchema = z.object({
+    barcode: z.string().min(1),
+    notaEntradaId: z.string().uuid().optional(),
+  })
+
+  app.post('/buscar-endereco-barcode', async (request) => {
+    const body = buscarEnderecoPorBarcodeSchema.parse(request.body)
+
+    // Try to find address by enderecoCompleto (with or without separators)
+    const barcodeClean = body.barcode.replace(/[^A-Za-z0-9]/g, '')
+
+    // Search by exact match or by cleaned barcode
+    let endereco = await prisma.endereco.findFirst({
+      where: { enderecoCompleto: body.barcode, status: true },
+    })
+
+    if (!endereco) {
+      // Try matching by removing separators from enderecoCompleto
+      const allEnderecos = await prisma.endereco.findMany({
+        where: { status: true, tipo: { in: ['ARMAZENAGEM', 'LIVRE'] } },
+      })
+      endereco = allEnderecos.find((e) =>
+        (e.enderecoCompleto || '').replace(/[^A-Za-z0-9]/g, '') === barcodeClean
+      ) || null
+    }
+
+    if (!endereco) {
+      // Try by codigoBarras field
+      endereco = await prisma.endereco.findFirst({
+        where: { codigoBarras: body.barcode, status: true },
+      })
+    }
+
+    if (endereco) {
+      return {
+        valido: true,
+        endereco: { id: endereco.id, enderecoCompleto: endereco.enderecoCompleto },
+      }
+    }
+
+    return {
+      valido: false,
+      mensagem: `Endereço não encontrado para o código: ${body.barcode}`,
+    }
+  })
+
+  // Simple endpoint for app: scan product barcode → find product in nota
+  const buscarProdutoPorBarcodeSchema = z.object({
+    barcode: z.string().min(1),
+    notaEntradaId: z.string().uuid(),
+  })
+
+  app.post('/buscar-produto-barcode', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = buscarProdutoPorBarcodeSchema.parse(request.body)
+
+    const nota = await prisma.notaEntrada.findUnique({
+      where: { id: body.notaEntradaId },
+      include: { itens: true },
+    })
+
+    if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
+
+    // Try to find product by codigo or EAN
+    let produto = await prisma.produto.findFirst({
+      where: { empresaId: user.empresaId, codigo: body.barcode },
+    })
+
+    if (!produto) {
+      produto = await prisma.produto.findFirst({
+        where: { empresaId: user.empresaId, cEAN: body.barcode },
+      })
+    }
+
+    if (!produto) {
+      // Try matching item by codigoProduto
+      const item = nota.itens.find((i) => i.codigoProduto === body.barcode)
+      if (item?.codigoProduto) {
+        produto = await prisma.produto.findFirst({
+          where: { empresaId: user.empresaId, codigo: item.codigoProduto },
+        })
+      }
+    }
+
+    if (produto) {
+      return {
+        valido: true,
+        produtoEsperado: { id: produto.id, nome: produto.nome, codigo: produto.codigo, ean: produto.cEAN },
+        barcodeEscaneado: body.barcode,
+      }
+    }
+
+    return {
+      valido: false,
+      produtoEsperado: null,
+      barcodeEscaneado: body.barcode,
+      mensagem: `Produto não encontrado para o código: ${body.barcode}`,
+    }
+  })
+
   const validarLocalizacaoEnderecamentoSchema = z.object({
     barcodeEscaneado: z.string().min(1),
     enderecoDestinoId: z.string().uuid(),
