@@ -289,6 +289,58 @@ export async function ordemServicoWmsRoutes(app: FastifyInstance) {
     return { osId: id, historico }
   })
 
+  // GET /minhas — lista OS em andamento do funcionário logado
+  app.get('/minhas', async (request) => {
+    const user = request.user as { id: string; nome: string; empresaId: string }
+
+    // Encontrar funcionário vinculado ao usuário pelo nome
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { nome: user.nome },
+    })
+
+    if (!funcionario) {
+      return { data: [], total: 0 }
+    }
+
+    // Buscar OS onde o funcionário está vinculado e status é EXECUTANDO ou ABERTO
+    const osFuncionarios = await prisma.osFuncionarioWms.findMany({
+      where: { funcionarioId: funcionario.id },
+      select: { ordemServicoId: true },
+    })
+
+    const osIds = osFuncionarios.map((f) => f.ordemServicoId)
+
+    if (osIds.length === 0) {
+      return { data: [], total: 0 }
+    }
+
+    const ordens = await prisma.ordemServicoWms.findMany({
+      where: {
+        id: { in: osIds },
+        empresaId: user.empresaId,
+        status: { in: ['EXECUTANDO', 'ABERTO'] },
+      },
+      include: {
+        ondaSeparacao: { select: { numero: true } },
+      },
+      orderBy: { criadoEm: 'desc' },
+    })
+
+    // Enriquecer com nota fiscal
+    const enriched = await Promise.all(ordens.map(async (os) => {
+      let notaEntrada = null
+      if (os.notaEntradaId) {
+        notaEntrada = await prisma.notaEntrada.findUnique({
+          where: { id: os.notaEntradaId },
+          select: { numero: true, fornecedor: true },
+        })
+      }
+      return { ...os, notaEntrada }
+    }))
+
+    return { data: enriched, total: enriched.length }
+  })
+
   // GET /pendentes — lista OS abertas para o funcionário assumir
   app.get('/pendentes/lista', async (request) => {
     const user = request.user as { id: string; empresaId: string }
