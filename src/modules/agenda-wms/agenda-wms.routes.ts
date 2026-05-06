@@ -52,9 +52,8 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
 
     // Filtro por dia específico — mas SEMPRE inclui agendamentos em andamento (NA_DOCA, CONFERINDO)
     if (data) {
-      // Usar horário de Brasília (UTC-3)
-      const dia = new Date(data + 'T03:00:00.000Z') // 00:00 BRT = 03:00 UTC
-      const diaFim = new Date(data + 'T03:00:00.000Z')
+      const dia = new Date(data + 'T00:00:00.000Z')
+      const diaFim = new Date(data + 'T00:00:00.000Z')
       diaFim.setUTCDate(diaFim.getUTCDate() + 1)
       where.OR = [
         { dataPrevista: { gte: dia, lt: diaFim } },
@@ -180,9 +179,8 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { data } = z.object({ data: z.string() }).parse(request.params) // YYYY-MM-DD
 
-    // Usar horário de Brasília (UTC-3) para definir o dia
-    const dia = new Date(data + 'T03:00:00.000Z') // 00:00 BRT = 03:00 UTC
-    const diaFim = new Date(data + 'T03:00:00.000Z')
+    const dia = new Date(data + 'T00:00:00.000Z')
+    const diaFim = new Date(data + 'T00:00:00.000Z')
     diaFim.setUTCDate(diaFim.getUTCDate() + 1)
 
     // Buscar docas ativas
