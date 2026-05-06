@@ -28,6 +28,9 @@ async function main() {
   // Funcionario table - codigo column
   await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "codigo" SERIAL`)
 
+  // Estrutura table - codigo column
+  await prisma.$executeRawUnsafe(`ALTER TABLE "estrutura" ADD COLUMN IF NOT EXISTS "codigo" SERIAL`)
+
   console.log('✅ All migrations applied successfully')
 }
 

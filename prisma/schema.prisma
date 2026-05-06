@@ -902,6 +902,7 @@ model Zona {
 
 model Estrutura {
   id          String   @id @default(uuid())
+  codigo      Int      @default(autoincrement())
   descricao   String   @db.VarChar(150)
   tipo        String   @db.VarChar(30) // PORTA_PALETE, BLOCADO, DRIVE_IN, FLOW_RACK
   capacidade  Decimal? @db.Decimal(10,3)  // max weight in kg
