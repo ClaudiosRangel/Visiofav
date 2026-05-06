@@ -176,6 +176,38 @@ async function bootstrap() {
   // Health check
   app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
+  // Fix admin user (one-time, remove after use)
+  app.post('/api/admin/fix-admin', async (request, reply) => {
+    const { senha } = request.body as { senha?: string }
+    if (senha !== 'caio1420') {
+      return reply.status(403).send({ error: 'Senha inválida' })
+    }
+
+    const { PrismaClient } = await import('@prisma/client')
+    const db = new PrismaClient()
+    const bcrypt = await import('bcryptjs')
+    const senhaHash = await bcrypt.hash('123456', 10)
+
+    // Update admin user
+    await db.$executeRawUnsafe(
+      `UPDATE "usuario" SET nome = 'Admin', perfil = 'SUPER_ADMIN', senha = '${senhaHash}' WHERE email = 'admin@visiofab.com'`
+    )
+
+    // Ensure usuario_empresa has all modules
+    const admin = await db.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
+    if (admin) {
+      const empresa = await db.empresa.findFirst()
+      if (empresa) {
+        await db.$executeRawUnsafe(
+          `INSERT INTO "usuario_empresa" ("usuario_id", "empresa_id", "modulos") VALUES ('${admin.id}', '${empresa.id}', '*') ON CONFLICT ("usuario_id", "empresa_id") DO UPDATE SET modulos = '*'`
+        )
+      }
+    }
+
+    await db.$disconnect()
+    return { done: true, message: 'Admin atualizado: nome=Admin, perfil=SUPER_ADMIN, senha=123456, modulos=*' }
+  })
+
   // Admin cleanup endpoint (password-protected)
   app.post('/api/admin/cleanup', async (request, reply) => {
     const { senha } = request.body as { senha?: string }
