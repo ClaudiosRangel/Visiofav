@@ -176,6 +176,50 @@ async function bootstrap() {
   // Health check
   app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
+  // Temporary cleanup endpoint (remove after use)
+  app.post('/api/admin/cleanup', async (request, reply) => {
+    const { PrismaClient } = await import('@prisma/client')
+    const db = new PrismaClient()
+    const results: string[] = []
+    
+    const tables = [
+      'os_funcionario_wms', 'log_movimento_wms', 'ordem_servico_wms',
+      'item_conferencia_entrada', 'conferencia_entrada',
+      'item_volume', 'carregamento_volume', 'carregamento', 'volume',
+      'item_conferencia_saida', 'conferencia_saida',
+      'item_separacao', 'ordem_separacao', 'onda_pedido', 'onda_separacao',
+      'saldo_endereco', 'movimento', 'log_ordem_servico', 'os_funcionario', 'ordem_servico',
+      'estoque', 'item_nota_entrada', 'nota_entrada', 'agenda_wms',
+      'conta_receber', 'venda_efetivada', 'item_pedido_venda', 'pedido_venda',
+      'conta_pagar', 'item_devolucao_compra', 'devolucao_compra', 'compra_efetivada',
+      'item_pedido_compra', 'pedido_compra',
+      'funcionario', 'endereco', 'ficha_operacional',
+    ]
+
+    for (const table of tables) {
+      try {
+        await db.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`)
+        results.push(`✓ ${table}`)
+      } catch (e: any) {
+        results.push(`✗ ${table}: ${e.message?.substring(0, 80)}`)
+      }
+    }
+
+    // Clean users except admin
+    try {
+      await db.$executeRawUnsafe(`DELETE FROM "usuario_empresa" WHERE "usuario_id" NOT IN (SELECT id FROM "usuario" WHERE email = 'admin@visiofab.com')`)
+      results.push('✓ usuario_empresa (non-admin)')
+    } catch (e: any) { results.push(`✗ usuario_empresa: ${e.message?.substring(0, 80)}`) }
+
+    try {
+      await db.$executeRawUnsafe(`DELETE FROM "usuario" WHERE email != 'admin@visiofab.com'`)
+      results.push('✓ usuarios non-admin')
+    } catch (e: any) { results.push(`✗ usuario: ${e.message?.substring(0, 80)}`) }
+
+    await db.$disconnect()
+    return { done: true, results }
+  })
+
   // SSE (Server-Sent Events) para notificações em tempo real
   await app.register(websocketRoutes)
 
