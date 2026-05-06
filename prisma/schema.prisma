@@ -879,6 +879,7 @@ model Deposito {
   uf                    String?  @db.VarChar(2)
   status                Boolean  @default(true)
   criadoEm              DateTime @default(now()) @map("criado_em")
+  empresaId             String?  @map("empresa_id")
 
   zonas     Zona[]
   enderecos Endereco[]
@@ -894,6 +895,7 @@ model Zona {
   deposito    Deposito? @relation(fields: [depositoId], references: [id])
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   enderecos   Endereco[]
 
@@ -912,6 +914,7 @@ model Estrutura {
   cubagem     Decimal? @db.Decimal(10,6)  // max volume in m³ (auto-calculated: largura × altura × comprimento)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   enderecos   Endereco[]
 
@@ -945,6 +948,7 @@ model Endereco {
   classificacaoProduto    ClassificacaoProduto? @relation(fields: [classificacaoProdutoId], references: [id])
   status                  Boolean  @default(true)
   criadoEm                DateTime @default(now()) @map("criado_em")
+  empresaId               String?  @map("empresa_id")
 
   saldos                  SaldoEndereco[]
 
@@ -961,6 +965,7 @@ model SaldoEndereco {
   lote          String?  @db.VarChar(30)
   validade      DateTime?
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+  empresaId     String?  @map("empresa_id")
 
   @@unique([enderecoId, produtoId, lote])
   @@map("saldo_endereco")
@@ -977,6 +982,7 @@ model Doca {
   deposito              Deposito? @relation(fields: [depositoId], references: [id])
   status                Boolean  @default(true)
   criadoEm              DateTime @default(now()) @map("criado_em")
+  empresaId             String?  @map("empresa_id")
 
   @@map("doca")
 }
@@ -986,6 +992,7 @@ model Funcao {
   descricao   String   @db.VarChar(150)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   @@map("funcao")
 }
@@ -1001,6 +1008,7 @@ model Funcionario {
   presente              Boolean  @default(false)
   status                Boolean  @default(true)
   criadoEm              DateTime @default(now()) @map("criado_em")
+  empresaId             String?  @map("empresa_id")
 
   @@map("funcionario")
 }
@@ -1013,6 +1021,7 @@ model EquipamentoMovimentacao {
   patrimonio  String?  @db.VarChar(30)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   @@map("equipamento_movimentacao")
 }
@@ -1022,6 +1031,7 @@ model FormaArmazenagem {
   descricao   String   @db.VarChar(150)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   enderecos   Endereco[]
 
@@ -1034,6 +1044,7 @@ model AmbienteArmazenagem {
   temperatura String?  @db.VarChar(30) // SECO, REFRIGERADO, CONGELADO
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   enderecos   Endereco[]
 
@@ -1045,6 +1056,7 @@ model ClassificacaoProduto {
   descricao   String   @db.VarChar(150)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   enderecos   Endereco[]
 
@@ -1056,6 +1068,7 @@ model TipoCarga {
   descricao   String   @db.VarChar(150)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   @@map("tipo_carga")
 }
@@ -1065,6 +1078,7 @@ model TipoCarroceria {
   descricao   String   @db.VarChar(150)
   status      Boolean  @default(true)
   criadoEm    DateTime @default(now()) @map("criado_em")
+  empresaId   String?  @map("empresa_id")
 
   @@map("tipo_carroceria")
 }
@@ -1079,6 +1093,7 @@ model VeiculoWms {
   tipoCarroceriaId  String?  @map("tipo_carroceria_id")
   status            Boolean  @default(true)
   criadoEm          DateTime @default(now()) @map("criado_em")
+  empresaId         String?  @map("empresa_id")
 
   @@map("veiculo_wms")
 }
@@ -1102,6 +1117,7 @@ model NotaEntrada {
   status            String   @default("PENDENTE") @db.VarChar(20)
   centroDistribuicaoId String? @map("centro_distribuicao_id")
   criadoEm          DateTime @default(now()) @map("criado_em")
+  empresaId         String?  @map("empresa_id")
 
   itens             ItemNotaEntrada[]
 
@@ -1194,6 +1210,7 @@ model Sku {
   status        Boolean  @default(true)
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+  empresaId     String?  @map("empresa_id")
 
   @@map("sku")
 }

@@ -3,8 +3,11 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import bcrypt from 'bcryptjs'
 
+function getDb(request: any) { return request.prismaScoped || prisma }
+
 export async function funcionarioRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
+    const db = getDb(request)
     const q = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(20),
@@ -38,22 +41,24 @@ export async function funcionarioRoutes(app: FastifyInstance) {
     }
 
     const [data, total] = await Promise.all([
-      prisma.funcionario.findMany({
+      db.funcionario.findMany({
         where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { nome: 'asc' },
       }),
-      prisma.funcionario.count({ where }),
+      db.funcionario.count({ where }),
     ])
     return { data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) }
   })
 
   app.get('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const item = await prisma.funcionario.findUnique({ where: { id } })
+    const item = await db.funcionario.findUnique({ where: { id } })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item
   })
 
   app.post('/', async (request, reply) => {
+    const db = getDb(request)
     const body = z.object({
       nome: z.string().min(1),
       matricula: z.string().optional(),
@@ -64,9 +69,9 @@ export async function funcionarioRoutes(app: FastifyInstance) {
     }).parse(request.body)
 
     const { email, senha, ...data } = body
-    const funcionario = await prisma.funcionario.create({ data })
+    const funcionario = await db.funcionario.create({ data })
 
-    // Create user account if email and senha provided
+    // Create user account if email and senha provided (uses global prisma for non-isolated models)
     if (email && senha) {
       const usuario = await prisma.usuario.upsert({
         where: { email },
@@ -74,9 +79,9 @@ export async function funcionarioRoutes(app: FastifyInstance) {
         create: { nome: data.nome, email, senha: bcrypt.hashSync(senha, 10), perfil: 'OPERADOR' },
       })
       // Link funcionario directly to usuario
-      await prisma.funcionario.update({ where: { id: funcionario.id }, data: { usuarioId: usuario.id } })
+      await db.funcionario.update({ where: { id: funcionario.id }, data: { usuarioId: usuario.id } })
       // Link user to empresa (get from centroDistribuicao)
-      const cd = await prisma.centroDistribuicao.findFirst({ where: { id: data.centroDistribuicaoId }, select: { empresaId: true } })
+      const cd = await db.centroDistribuicao.findFirst({ where: { id: data.centroDistribuicaoId }, select: { empresaId: true } })
       if (cd?.empresaId) {
         await prisma.usuarioEmpresa.upsert({
           where: { usuarioId_empresaId: { usuarioId: usuario.id, empresaId: cd.empresaId } },
@@ -90,6 +95,7 @@ export async function funcionarioRoutes(app: FastifyInstance) {
   })
 
   app.put('/:id', async (request) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({
       nome: z.string().optional(),
@@ -102,9 +108,9 @@ export async function funcionarioRoutes(app: FastifyInstance) {
     }).parse(request.body)
 
     const { email, senha, ...data } = body
-    const funcionario = await prisma.funcionario.update({ where: { id }, data })
+    const funcionario = await db.funcionario.update({ where: { id }, data })
 
-    // Create/update user account if email provided
+    // Create/update user account if email provided (uses global prisma for non-isolated models)
     if (email) {
       const updateData: any = { nome: data.nome || funcionario.nome }
       if (senha) updateData.senha = bcrypt.hashSync(senha, 10)
@@ -115,15 +121,16 @@ export async function funcionarioRoutes(app: FastifyInstance) {
         create: { nome: data.nome || funcionario.nome, email, senha: bcrypt.hashSync(senha || '123456', 10), perfil: 'OPERADOR' },
       })
       // Link funcionario directly to usuario
-      await prisma.funcionario.update({ where: { id }, data: { usuarioId: usuario.id } })
+      await db.funcionario.update({ where: { id }, data: { usuarioId: usuario.id } })
     }
 
     return funcionario
   })
 
   app.delete('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    await prisma.funcionario.delete({ where: { id } })
+    await db.funcionario.delete({ where: { id } })
     return reply.status(204).send()
   })
 }

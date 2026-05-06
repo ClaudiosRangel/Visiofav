@@ -2,11 +2,14 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 
+function getDb(request: any) { return request.prismaScoped || prisma }
+
 export async function skuRoutes(app: FastifyInstance) {
   // Listar SKUs de um produto
   app.get('/', async (request) => {
+    const db = getDb(request)
     const { produtoId } = z.object({ produtoId: z.string().uuid() }).parse(request.query)
-    const data = await prisma.sku.findMany({
+    const data = await db.sku.findMany({
       where: { produtoId },
       orderBy: { sequencia: 'asc' },
     })
@@ -15,6 +18,7 @@ export async function skuRoutes(app: FastifyInstance) {
 
   // Criar SKU
   app.post('/', async (request, reply) => {
+    const db = getDb(request)
     const body = z.object({
       produtoId: z.string().uuid(),
       sequencia: z.number().min(1),
@@ -39,12 +43,13 @@ export async function skuRoutes(app: FastifyInstance) {
       (body as any).volume = (body.largura * body.altura * body.comprimento) / 1000000
     }
 
-    const item = await prisma.sku.create({ data: body })
+    const item = await db.sku.create({ data: body })
     return reply.status(201).send(item)
   })
 
   // Atualizar SKU
   app.put('/:id', async (request) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({
       descricao: z.string().optional(),
@@ -64,13 +69,14 @@ export async function skuRoutes(app: FastifyInstance) {
       status: z.boolean().optional(),
     }).parse(request.body)
 
-    return prisma.sku.update({ where: { id }, data: body })
+    return db.sku.update({ where: { id }, data: body })
   })
 
   // Excluir SKU
   app.delete('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    await prisma.sku.delete({ where: { id } })
+    await db.sku.delete({ where: { id } })
     return reply.status(204).send()
   })
 }

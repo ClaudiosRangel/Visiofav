@@ -69,6 +69,7 @@ import { ocrRoutes } from './modules/ocr/ocr.routes'
 import { scannerRoutes } from './modules/scanner/scanner.routes'
 import { stockViewRoutes } from './modules/estoque/stock-view.routes'
 
+import { registerTenantContext } from './middleware/tenant-context'
 import multipart from '@fastify/multipart'
 
 const app = Fastify({ logger: true })
@@ -77,6 +78,8 @@ async function bootstrap() {
   await app.register(cors, { origin: true })
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'dev-secret' })
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } })
+
+  registerTenantContext(app)
 
   // Auth
   await app.register(authRoutes, { prefix: '/api/auth' })

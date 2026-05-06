@@ -34,6 +34,31 @@ async function main() {
   // Estrutura table - codigo column
   await prisma.$executeRawUnsafe(`ALTER TABLE "estrutura" ADD COLUMN IF NOT EXISTS "codigo" SERIAL`)
 
+  // Multi-tenant: Add empresa_id to WMS tables
+  const tenantTables = [
+    'deposito', 'zona', 'estrutura', 'endereco', 'funcionario', 'doca',
+    'equipamento_movimentacao', 'funcao', 'forma_armazenagem',
+    'ambiente_armazenagem', 'classificacao_produto', 'tipo_carroceria',
+    'tipo_carga', 'veiculo_wms', 'nota_entrada', 'saldo_endereco', 'sku',
+  ]
+
+  for (const table of tenantTables) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "empresa_id" TEXT`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_${table}_empresa_id" ON "${table}"("empresa_id")`)
+  }
+  console.log('✅ Multi-tenant: empresa_id columns and indexes added')
+
+  // Multi-tenant: Backfill empresa_id with default empresa
+  const defaultEmpresa = await prisma.empresa.findFirst({ select: { id: true } })
+  if (defaultEmpresa) {
+    for (const table of tenantTables) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "${table}" SET "empresa_id" = '${defaultEmpresa.id}' WHERE "empresa_id" IS NULL`
+      )
+    }
+    console.log('✅ Multi-tenant: backfill complete with empresa', defaultEmpresa.id)
+  }
+
   console.log('✅ All migrations applied successfully')
 }
 

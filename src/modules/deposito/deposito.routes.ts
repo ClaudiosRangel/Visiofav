@@ -2,8 +2,11 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 
+function getDb(request: any) { return request.prismaScoped || prisma }
+
 export async function depositoRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
+    const db = getDb(request)
     const querySchema = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(20),
@@ -18,20 +21,20 @@ export async function depositoRoutes(app: FastifyInstance) {
     }
 
     const [data, total] = await Promise.all([
-      prisma.deposito.findMany({
+      db.deposito.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { descricao: 'asc' },
       }),
-      prisma.deposito.count({ where }),
+      db.deposito.count({ where }),
     ])
 
     // Add sequential codigo and centroDistribuicao name
-    const enriched = await Promise.all(data.map(async (dep, idx) => {
+    const enriched = await Promise.all(data.map(async (dep: any, idx: number) => {
       let cdNome = null
       if (dep.centroDistribuicaoId) {
-        const cd = await prisma.centroDistribuicao.findUnique({
+        const cd = await db.centroDistribuicao.findUnique({
           where: { id: dep.centroDistribuicaoId },
           select: { nome: true },
         })
@@ -48,8 +51,9 @@ export async function depositoRoutes(app: FastifyInstance) {
   })
 
   app.get('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const item = await prisma.deposito.findUnique({
+    const item = await db.deposito.findUnique({
       where: { id },
     })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
@@ -57,6 +61,7 @@ export async function depositoRoutes(app: FastifyInstance) {
   })
 
   app.post('/', async (request, reply) => {
+    const db = getDb(request)
     const bodySchema = z.object({
       descricao: z.string().min(1),
       centroDistribuicaoId: z.string().uuid(),
@@ -72,11 +77,12 @@ export async function depositoRoutes(app: FastifyInstance) {
     })
 
     const data = bodySchema.parse(request.body)
-    const item = await prisma.deposito.create({ data })
+    const item = await db.deposito.create({ data })
     return reply.status(201).send(item)
   })
 
   app.put('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const bodySchema = z.object({
       descricao: z.string().min(1).optional(),
@@ -93,13 +99,14 @@ export async function depositoRoutes(app: FastifyInstance) {
     })
 
     const data = bodySchema.parse(request.body)
-    const item = await prisma.deposito.update({ where: { id }, data })
+    const item = await db.deposito.update({ where: { id }, data })
     return item
   })
 
   app.delete('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    await prisma.deposito.delete({ where: { id } })
+    await db.deposito.delete({ where: { id } })
     return reply.status(204).send()
   })
 }

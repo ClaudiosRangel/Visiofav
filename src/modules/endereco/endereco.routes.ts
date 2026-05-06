@@ -4,8 +4,11 @@ import { prisma } from '../../lib/prisma'
 import { AddressGenerationService } from './address-generation.service'
 import { ValidadorCapacidade } from './validador-capacidade.service'
 
+function getDb(request: any) { return request.prismaScoped || prisma }
+
 export async function enderecoRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
+    const db = getDb(request)
     const q = z.object({
       page: z.coerce.number().default(1), limit: z.coerce.number().default(50),
       search: z.string().optional(), centroDistribuicaoId: z.string().uuid().optional(),
@@ -20,7 +23,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }
 
     const [data, total] = await Promise.all([
-      prisma.endereco.findMany({
+      db.endereco.findMany({
         where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { enderecoCompleto: 'asc' },
         include: {
           deposito: { select: { descricao: true } },
@@ -28,12 +31,13 @@ export async function enderecoRoutes(app: FastifyInstance) {
           estrutura: { select: { descricao: true } },
         },
       }),
-      prisma.endereco.count({ where }),
+      db.endereco.count({ where }),
     ])
     return { data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) }
   })
 
   app.post('/', async (request, reply) => {
+    const db = getDb(request)
     const data = z.object({
       codigoDeposito: z.string(), codigoZona: z.string(), codigoRua: z.string(),
       codigoPredio: z.string(), codigoNivel: z.string(), codigoApto: z.string(),
@@ -45,7 +49,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }).parse(request.body)
 
     const enderecoCompleto = `${data.codigoDeposito}-${data.codigoZona}-${data.codigoRua}-${data.codigoPredio}-${data.codigoNivel}-${data.codigoApto}`
-    return reply.status(201).send(await prisma.endereco.create({ data: { ...data, enderecoCompleto } }))
+    return reply.status(201).send(await db.endereco.create({ data: { ...data, enderecoCompleto } }))
   })
 
   // Geração automática de endereços
@@ -95,9 +99,10 @@ export async function enderecoRoutes(app: FastifyInstance) {
 
   // Capacity utilization for an address
   app.get('/:id/capacidade', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
 
-    const endereco = await prisma.endereco.findUnique({ where: { id } })
+    const endereco = await db.endereco.findUnique({ where: { id } })
     if (!endereco) {
       return reply.status(404).send({ message: 'Endereço não encontrado' })
     }
@@ -131,14 +136,16 @@ export async function enderecoRoutes(app: FastifyInstance) {
   })
 
   app.put('/:id', async (request) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const data = z.object({ tipo: z.string().optional(), estado: z.string().optional(), status: z.boolean().optional() }).parse(request.body)
-    return prisma.endereco.update({ where: { id }, data })
+    return db.endereco.update({ where: { id }, data })
   })
 
   app.delete('/:id', async (request, reply) => {
+    const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    await prisma.endereco.delete({ where: { id } })
+    await db.endereco.delete({ where: { id } })
     return reply.status(204).send()
   })
 }
