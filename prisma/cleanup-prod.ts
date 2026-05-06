@@ -2,93 +2,119 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-async function main() {
-  console.log('🧹 Limpando dados de produção...')
+async function safeDelete(table: string) {
+  try {
+    await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`)
+    console.log(`  ✓ ${table}`)
+  } catch (e: any) {
+    if (e.message?.includes('42P01') || e.message?.includes('não existe') || e.message?.includes('does not exist')) {
+      console.log(`  ⏭ ${table} (tabela não existe, pulando)`)
+    } else {
+      console.log(`  ⚠ ${table}: ${e.message}`)
+    }
+  }
+}
 
-  // Order matters due to FK constraints — delete children first
+async function safeRaw(sql: string, label: string) {
+  try {
+    await prisma.$executeRawUnsafe(sql)
+    console.log(`  ✓ ${label}`)
+  } catch (e: any) {
+    console.log(`  ⚠ ${label}: ${e.message}`)
+  }
+}
+
+async function main() {
+  console.log('🧹 Limpando dados de produção...\n')
 
   // OS WMS related
-  await prisma.$executeRawUnsafe(`DELETE FROM "os_funcionario_wms"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "log_movimento_wms"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "ordem_servico_wms"`)
-  console.log('✅ OS WMS limpa')
+  console.log('OS WMS:')
+  await safeDelete('os_funcionario_wms')
+  await safeDelete('log_movimento_wms')
+  await safeDelete('ordem_servico_wms')
 
   // Conferencia
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_conferencia_entrada"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "conferencia_entrada"`)
-  console.log('✅ Conferência limpa')
-
-  // Movimentos e saldos
-  await prisma.$executeRawUnsafe(`DELETE FROM "saldo_endereco"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "movimento"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "log_ordem_servico"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "os_funcionario"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "ordem_servico"`)
-  console.log('✅ Movimentos e saldos limpos')
-
-  // Estoque
-  await prisma.$executeRawUnsafe(`DELETE FROM "estoque"`)
-  console.log('✅ Estoque limpo')
-
-  // Notas de entrada
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_nota_entrada"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "nota_entrada"`)
-  console.log('✅ Notas de entrada limpas')
-
-  // Agendamentos
-  await prisma.$executeRawUnsafe(`DELETE FROM "agenda_wms"`)
-  console.log('✅ Agendamentos limpos')
+  console.log('\nConferência:')
+  await safeDelete('item_conferencia_entrada')
+  await safeDelete('conferencia_entrada')
 
   // Separação/Expedição
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_volume"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "carregamento_volume"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "carregamento"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "volume"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_conferencia_saida"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "conferencia_saida"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_separacao"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "ordem_separacao"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "onda_pedido"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "onda_separacao"`)
-  console.log('✅ Separação/Expedição limpa')
+  console.log('\nSeparação/Expedição:')
+  await safeDelete('item_volume')
+  await safeDelete('carregamento_volume')
+  await safeDelete('carregamento')
+  await safeDelete('volume')
+  await safeDelete('item_conferencia_saida')
+  await safeDelete('conferencia_saida')
+  await safeDelete('item_separacao')
+  await safeDelete('ordem_separacao')
+  await safeDelete('onda_pedido')
+  await safeDelete('onda_separacao')
+
+  // Movimentos e saldos
+  console.log('\nMovimentos e saldos:')
+  await safeDelete('saldo_endereco')
+  await safeDelete('movimento')
+  await safeDelete('log_ordem_servico')
+  await safeDelete('os_funcionario')
+  await safeDelete('ordem_servico')
+
+  // Estoque
+  console.log('\nEstoque:')
+  await safeDelete('estoque')
+
+  // Notas de entrada
+  console.log('\nNotas de entrada:')
+  await safeDelete('item_nota_entrada')
+  await safeDelete('nota_entrada')
+
+  // Agendamentos
+  console.log('\nAgendamentos:')
+  await safeDelete('agenda_wms')
 
   // Vendas
-  await prisma.$executeRawUnsafe(`DELETE FROM "conta_receber"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "venda_efetivada"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_pedido_venda"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "pedido_venda"`)
-  console.log('✅ Vendas limpas')
+  console.log('\nVendas:')
+  await safeDelete('conta_receber')
+  await safeDelete('venda_efetivada')
+  await safeDelete('item_pedido_venda')
+  await safeDelete('pedido_venda')
 
   // Compras
-  await prisma.$executeRawUnsafe(`DELETE FROM "conta_pagar"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_devolucao_compra"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "devolucao_compra"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "compra_efetivada"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "item_pedido_compra"`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "pedido_compra"`)
-  console.log('✅ Compras limpas')
+  console.log('\nCompras:')
+  await safeDelete('conta_pagar')
+  await safeDelete('item_devolucao_compra')
+  await safeDelete('devolucao_compra')
+  await safeDelete('compra_efetivada')
+  await safeDelete('item_pedido_compra')
+  await safeDelete('pedido_compra')
 
-  // Funcionários (limpar vínculo com usuario primeiro)
-  await prisma.$executeRawUnsafe(`UPDATE "funcionario" SET "usuario_id" = NULL`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "funcionario"`)
-  console.log('✅ Funcionários limpos')
+  // Funcionários
+  console.log('\nFuncionários:')
+  await safeRaw(`UPDATE "funcionario" SET "usuario_id" = NULL`, 'desvincular usuarios')
+  await safeDelete('funcionario')
 
   // Usuarios (manter apenas admin)
-  await prisma.$executeRawUnsafe(`DELETE FROM "usuario_empresa" WHERE "usuario_id" NOT IN (SELECT id FROM "usuario" WHERE email = 'admin@visiofab.com')`)
-  await prisma.$executeRawUnsafe(`DELETE FROM "usuario" WHERE email != 'admin@visiofab.com'`)
-  console.log('✅ Usuários limpos (mantido admin)')
+  console.log('\nUsuários:')
+  await safeRaw(
+    `DELETE FROM "usuario_empresa" WHERE "usuario_id" NOT IN (SELECT id FROM "usuario" WHERE email = 'admin@visiofab.com')`,
+    'usuario_empresa (não-admin)'
+  )
+  await safeRaw(
+    `DELETE FROM "usuario" WHERE email != 'admin@visiofab.com'`,
+    'usuarios não-admin'
+  )
 
   // Endereços
-  await prisma.$executeRawUnsafe(`DELETE FROM "endereco"`)
-  console.log('✅ Endereços limpos')
+  console.log('\nEndereços:')
+  await safeDelete('endereco')
 
   // Fichas operacionais
-  await prisma.$executeRawUnsafe(`DELETE FROM "ficha_operacional"`)
-  console.log('✅ Fichas operacionais limpas')
+  console.log('\nFichas operacionais:')
+  await safeDelete('ficha_operacional')
 
   console.log('\n🎉 Limpeza concluída! Mantidos: empresa, CD, depósitos, zonas, estruturas, docas, produtos, SKUs, parâmetros, admin.')
 }
 
 main()
-  .catch((e) => { console.error('❌ Erro:', e.message); process.exit(1) })
+  .catch((e) => { console.error('❌ Erro fatal:', e.message); process.exit(1) })
   .finally(() => prisma.$disconnect())
