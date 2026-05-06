@@ -18,6 +18,10 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ message: 'Credenciais inválidas' })
     }
 
+    if (!usuario.status) {
+      return reply.status(401).send({ message: 'Conta desativada. Contate o administrador' })
+    }
+
     // Get empresaId from usuario_empresa
     const vinculo = await prisma.usuarioEmpresa.findFirst({ where: { usuarioId: usuario.id } })
     const empresaId = vinculo?.empresaId || null
