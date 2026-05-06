@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "npx prisma generate",
+    "build": "echo 'build-v2' && npx prisma generate",
     "start": "tsx src/server.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
