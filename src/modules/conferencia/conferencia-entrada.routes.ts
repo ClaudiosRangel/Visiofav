@@ -407,6 +407,52 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
   })
 
+  // GET /notas-enderecadas — notas já endereçadas
+  app.get('/notas-enderecadas', async () => {
+    const notas = await prisma.notaEntrada.findMany({
+      where: { status: 'ENDERECADA' },
+      orderBy: { criadoEm: 'desc' },
+      include: { itens: true },
+    })
+    return {
+      data: notas.map((n) => ({
+        ...n,
+        itens: n.itens.map((item) => ({
+          id: item.id,
+          item: item.item,
+          descricao: item.descricao,
+          codigoProduto: item.codigoProduto,
+          unidade: item.unidade,
+          quantidade: Number(item.quantidade),
+        })),
+      })),
+      total: notas.length,
+    }
+  })
+
+  // GET /notas-conferidas-e-enderecadas — todas as notas conferidas + endereçadas (para aba Conferidas)
+  app.get('/notas-conferidas-todas', async () => {
+    const notas = await prisma.notaEntrada.findMany({
+      where: { status: { in: ['CONFERIDA', 'ENDERECADA'] } },
+      orderBy: { criadoEm: 'desc' },
+      include: { itens: true },
+    })
+    return {
+      data: notas.map((n) => ({
+        ...n,
+        itens: n.itens.map((item) => ({
+          id: item.id,
+          item: item.item,
+          descricao: item.descricao,
+          codigoProduto: item.codigoProduto,
+          unidade: item.unidade,
+          quantidade: Number(item.quantidade),
+        })),
+      })),
+      total: notas.length,
+    }
+  })
+
   // POST /enderecamento-automatico/:notaId
   app.post('/enderecamento-automatico/:notaId', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
