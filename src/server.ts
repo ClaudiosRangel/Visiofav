@@ -57,6 +57,7 @@ import { conferenciaEntradaRoutes } from './modules/conferencia/conferencia-entr
 import { enderecamentoWmsRoutes } from './modules/enderecamento/enderecamento-wms.routes'
 import { etiquetaRoutes } from './modules/etiqueta/etiqueta.routes'
 import { ordemServicoWmsRoutes } from './modules/ordem-servico-wms/ordem-servico-wms.routes'
+import { pendenciaLogisticaRoutes } from './modules/pendencia-logistica/pendencia-logistica.routes'
 import { apiKeyRoutes } from './modules/integracao/api-key.routes'
 import { integracaoRoutes } from './modules/integracao/integracao.routes'
 import { webhookRoutes } from './modules/integracao/webhook.routes'
@@ -131,6 +132,7 @@ async function bootstrap() {
   await app.register(enderecamentoWmsRoutes, { prefix: '/api/enderecamento-wms' })
   await app.register(etiquetaRoutes, { prefix: '/api/etiquetas' })
   await app.register(ordemServicoWmsRoutes, { prefix: '/api/os-wms' })
+  await app.register(pendenciaLogisticaRoutes, { prefix: '/api/pendencias-logisticas' })
 
   // Fichas Operacionais, OCR e Scanner
   await app.register(fichaOperacionalRoutes, { prefix: '/api/fichas-operacionais' })

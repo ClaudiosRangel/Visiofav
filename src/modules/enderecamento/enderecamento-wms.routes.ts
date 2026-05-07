@@ -162,11 +162,16 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
 
   // POST /finalizar-coletor — finaliza endereçamento via coletor (fecha OS + muda nota para ENDERECADA)
   app.post('/finalizar-coletor', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; nome: string; empresaId: string }
     const body = z.object({
       notaEntradaId: z.string().uuid(),
       osId: z.string().uuid().optional(),
     }).parse(request.body)
+
+    // Buscar funcionário vinculado ao usuário logado
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { OR: [{ usuarioId: user.id }, { nome: { contains: user.nome, mode: 'insensitive' } }] },
+    })
 
     await prisma.$transaction(async (tx) => {
       // 1. Mudar nota para ENDERECADA
@@ -175,30 +180,49 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
         await tx.notaEntrada.update({ where: { id: body.notaEntradaId }, data: { status: 'ENDERECADA' } })
       }
 
-      // 2. Fechar OS de endereçamento
-      if (body.osId) {
-        const os = await tx.ordemServicoWms.findUnique({ where: { id: body.osId } })
-        if (os && os.status !== 'CONCLUIDO') {
-          await tx.ordemServicoWms.update({
-            where: { id: body.osId },
-            data: { status: 'CONCLUIDO', horaFim: new Date() },
+      // 2. Fechar OS de endereçamento e gravar funcionário
+      const osId = body.osId || undefined
+      let os = osId
+        ? await tx.ordemServicoWms.findUnique({ where: { id: osId } })
+        : await tx.ordemServicoWms.findFirst({
+            where: { notaEntradaId: body.notaEntradaId, operacao: 'ENDERECAMENTO', status: { not: 'CONCLUIDO' } },
           })
-        }
-      } else {
-        // Buscar OS de endereçamento vinculada à nota
-        const os = await tx.ordemServicoWms.findFirst({
-          where: { notaEntradaId: body.notaEntradaId, operacao: 'ENDERECAMENTO', status: { not: 'CONCLUIDO' } },
+
+      if (os && os.status !== 'CONCLUIDO') {
+        await tx.ordemServicoWms.update({
+          where: { id: os.id },
+          data: {
+            status: 'CONCLUIDO',
+            horaFim: new Date(),
+            funcionarioId: funcionario?.id || os.funcionarioId,
+          },
         })
-        if (os) {
-          await tx.ordemServicoWms.update({
-            where: { id: os.id },
-            data: { status: 'CONCLUIDO', horaFim: new Date() },
+
+        // Vincular funcionário na tabela OsFuncionarioWms (se ainda não vinculado)
+        if (funcionario) {
+          const jaVinculado = await tx.osFuncionarioWms.findFirst({
+            where: { ordemServicoId: os.id, funcionarioId: funcionario.id },
           })
+          if (!jaVinculado) {
+            await tx.osFuncionarioWms.create({
+              data: {
+                ordemServicoId: os.id,
+                funcionarioId: funcionario.id,
+                horaInicio: os.horaInicio || new Date(),
+                horaFim: new Date(),
+              },
+            })
+          } else if (!jaVinculado.horaFim) {
+            await tx.osFuncionarioWms.update({
+              where: { id: jaVinculado.id },
+              data: { horaFim: new Date() },
+            })
+          }
         }
       }
     })
 
-    return { message: 'Endereçamento finalizado — nota ENDERECADA e OS concluída' }
+    return { message: 'Endereçamento finalizado — nota ENDERECADA e OS concluída', funcionario: funcionario?.nome || null }
   })
 
   // GET /enderecos-disponiveis — lista endereços disponíveis para endereçamento
@@ -409,10 +433,11 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
     quantidade: z.number().positive(),
     lote: z.string().optional(),
     validade: z.string().optional(),
+    notaEntradaId: z.string().uuid().optional(),
   })
 
   app.post('/confirmar-coletor', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; nome: string; empresaId: string }
     const body = confirmarColetorSchema.parse(request.body)
 
     const endereco = await prisma.endereco.findUnique({ where: { id: body.enderecoId }, include: { estrutura: true } })
@@ -433,6 +458,11 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
         return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
       }
     }
+
+    // Buscar funcionário vinculado ao usuário logado
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { OR: [{ usuarioId: user.id }, { nome: { contains: user.nome, mode: 'insensitive' } }] },
+    })
 
     await prisma.$transaction(async (tx) => {
       // Upsert saldo no endereço
@@ -486,6 +516,35 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
           usuarioId: user.id,
         },
       })
+
+      // Vincular funcionário à OS de endereçamento (se existir e ainda não vinculado)
+      if (funcionario && body.notaEntradaId) {
+        const osEnderecamento = await tx.ordemServicoWms.findFirst({
+          where: { notaEntradaId: body.notaEntradaId, operacao: 'ENDERECAMENTO', status: { in: ['ABERTO', 'EXECUTANDO'] } },
+        })
+        if (osEnderecamento) {
+          // Atualizar OS para EXECUTANDO com funcionário
+          if (osEnderecamento.status === 'ABERTO' || !osEnderecamento.funcionarioId) {
+            await tx.ordemServicoWms.update({
+              where: { id: osEnderecamento.id },
+              data: {
+                status: 'EXECUTANDO',
+                funcionarioId: funcionario.id,
+                horaInicio: osEnderecamento.horaInicio || new Date(),
+              },
+            })
+          }
+          // Vincular funcionário na tabela OsFuncionarioWms
+          const jaVinculado = await tx.osFuncionarioWms.findFirst({
+            where: { ordemServicoId: osEnderecamento.id, funcionarioId: funcionario.id },
+          })
+          if (!jaVinculado) {
+            await tx.osFuncionarioWms.create({
+              data: { ordemServicoId: osEnderecamento.id, funcionarioId: funcionario.id, horaInicio: new Date() },
+            })
+          }
+        }
+      }
     })
 
     // Registrar auditoria

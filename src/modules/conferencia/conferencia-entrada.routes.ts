@@ -57,6 +57,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   // POST /conferir-por-barras/:notaId — conferir item por código de barras (para coletor/app)
   // O coletor escaneia o código de barras do produto e informa a quantidade
   app.post('/conferir-por-barras/:notaId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
     const body = z.object({
       codigoProduto: z.string().min(1),
@@ -64,6 +65,17 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       lote: z.string().optional(),
       validade: z.string().optional(),
     }).parse(request.body)
+
+    // Verificar pendências logísticas — bloqueia conferência
+    const pendenciasLogisticas = await prisma.pendenciaLogistica.count({
+      where: { notaEntradaId: notaId, status: 'PENDENTE', empresaId: user.empresaId },
+    })
+    if (pendenciasLogisticas > 0) {
+      return reply.status(422).send({
+        message: `Conferência bloqueada: ${pendenciasLogisticas} pendência(s) logística(s) não resolvida(s).`,
+        bloqueio: 'PENDENCIA_LOGISTICA',
+      })
+    }
 
     const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
@@ -97,14 +109,20 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   })
 
   // GET /notas-pendentes — notas pendentes + em conferência
-  app.get('/notas-pendentes', async () => {
+  app.get('/notas-pendentes', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
     const notas = await prisma.notaEntrada.findMany({
       where: { status: { in: ['PENDENTE', 'EM_CONFERENCIA'] } },
       orderBy: { criadoEm: 'desc' },
       include: { itens: true },
     })
-    return {
-      data: notas.map((n) => ({
+
+    // Verificar pendências logísticas para cada nota
+    const data = await Promise.all(notas.map(async (n) => {
+      const pendenciasCount = await prisma.pendenciaLogistica.count({
+        where: { notaEntradaId: n.id, status: 'PENDENTE', empresaId: user.empresaId },
+      })
+      return {
         ...n,
         itens: n.itens.map((item) => ({
           id: item.id,
@@ -113,7 +131,13 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           codigoProduto: item.codigoProduto,
           unidade: item.unidade,
         })),
-      })),
+        pendenciasLogisticas: pendenciasCount,
+        bloqueada: pendenciasCount > 0,
+      }
+    }))
+
+    return {
+      data,
       total: notas.length,
     }
   })
@@ -144,10 +168,22 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       return reply.status(422).send({ message: 'Esta nota não possui itens. Adicione itens à nota antes de iniciar a conferência.' })
     }
 
+    // Verificar pendências logísticas — bloqueia conferência se houver pendências
+    const user = request.user as { id: string; nome: string; empresaId: string }
+    const pendenciasLogisticas = await prisma.pendenciaLogistica.count({
+      where: { notaEntradaId: notaId, status: 'PENDENTE', empresaId: user.empresaId },
+    })
+
+    if (pendenciasLogisticas > 0) {
+      return reply.status(422).send({
+        message: `Esta nota possui ${pendenciasLogisticas} pendência(s) logística(s) não resolvida(s). Configure o SKU e/ou dados logísticos dos produtos antes de iniciar a conferência.`,
+        pendenciasLogisticas,
+        bloqueio: 'PENDENCIA_LOGISTICA',
+      })
+    }
+
     await prisma.notaEntrada.update({ where: { id: notaId }, data: { status: 'EM_CONFERENCIA' } })
 
-    // Vincular funcionário do usuário logado à OS de conferência (se existir)
-    const user = request.user as { id: string; nome: string; empresaId: string }
     const funcionario = await prisma.funcionario.findFirst({
       where: { OR: [{ usuarioId: user.id }, { nome: { contains: user.nome, mode: 'insensitive' } }] },
     })
@@ -212,9 +248,21 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
   // POST /conferir-item — conferir um item individualmente
   app.post('/conferir-item', async (request, reply) => {
+    const userConf = request.user as { id: string; empresaId: string }
     const body = conferirItemSchema.parse(request.body)
     const item = await prisma.itemNotaEntrada.findUnique({ where: { id: body.itemNotaEntradaId } })
     if (!item) return reply.status(404).send({ message: 'Item não encontrado' })
+
+    // Verificar pendências logísticas
+    const pendenciasCount = await prisma.pendenciaLogistica.count({
+      where: { notaEntradaId: item.notaEntradaId, status: 'PENDENTE', empresaId: userConf.empresaId },
+    })
+    if (pendenciasCount > 0) {
+      return reply.status(422).send({
+        message: `Conferência bloqueada: ${pendenciasCount} pendência(s) logística(s) não resolvida(s).`,
+        bloqueio: 'PENDENCIA_LOGISTICA',
+      })
+    }
 
     const quantidadeNota = Number(item.quantidade)
     const divergencia = body.quantidadeConferida - quantidadeNota
@@ -243,8 +291,20 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
   // POST /conferir-todos/:notaId — conferir todos os itens de uma vez
   app.post('/conferir-todos/:notaId', async (request, reply) => {
+    const userConf2 = request.user as { id: string; empresaId: string }
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
     const body = conferirTodosSchema.parse(request.body)
+
+    // Verificar pendências logísticas
+    const pendenciasCount2 = await prisma.pendenciaLogistica.count({
+      where: { notaEntradaId: notaId, status: 'PENDENTE', empresaId: userConf2.empresaId },
+    })
+    if (pendenciasCount2 > 0) {
+      return reply.status(422).send({
+        message: `Conferência bloqueada: ${pendenciasCount2} pendência(s) logística(s) não resolvida(s).`,
+        bloqueio: 'PENDENCIA_LOGISTICA',
+      })
+    }
 
     const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })

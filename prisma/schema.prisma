@@ -1325,6 +1325,32 @@ model AuditLog {
 
 
 // ============================================================================
+// WMS — PENDÊNCIAS LOGÍSTICAS (SKU / DADOS LOGÍSTICOS)
+// ============================================================================
+
+model PendenciaLogistica {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  notaEntradaId   String   @map("nota_entrada_id")
+  itemNotaEntradaId String? @map("item_nota_entrada_id")
+  codigoProduto   String?  @db.VarChar(60) @map("codigo_produto")
+  descricaoProduto String? @db.VarChar(200) @map("descricao_produto")
+  fornecedor      String?  @db.VarChar(200)
+  fornecedorDoc   String?  @db.VarChar(20) @map("fornecedor_doc")
+  tipo            String   @db.VarChar(30) // SKU, DADOS_LOGISTICOS
+  status          String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, RESOLVIDA
+  resolvidoPorId  String?  @map("resolvido_por_id")
+  resolvidoEm     DateTime? @map("resolvido_em")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, status])
+  @@index([notaEntradaId])
+  @@map("pendencia_logistica")
+}
+
+
+// ============================================================================
 // WMS — DADOS LOGÍSTICOS DO PRODUTO
 // ============================================================================
 

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { analisarPendenciasLogisticas } from '../pendencia-logistica/pendencia-logistica.routes'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -288,11 +289,21 @@ export async function portariaRoutes(app: FastifyInstance) {
       return { atualizado, os }
     })
 
+    // Analisar pendências logísticas (SKU e dados logísticos) dos itens da nota
+    let pendenciasLogisticas = { pendenciasCriadas: 0, itensAnalisados: 0 }
+    const notaEntradaIdFinal = result.os.notaEntradaId
+    if (notaEntradaIdFinal) {
+      pendenciasLogisticas = await analisarPendenciasLogisticas(user.empresaId, notaEntradaIdFinal)
+    }
+
     return {
       message: 'Entrada autorizada — veículo na doca. OS de conferência criada.',
       agendamento: result.atualizado,
       ordemServicoId: result.os.id,
       ordemServicoNumero: result.os.numero,
+      pendenciasLogisticas: pendenciasLogisticas.pendenciasCriadas > 0
+        ? { total: pendenciasLogisticas.pendenciasCriadas, mensagem: `${pendenciasLogisticas.pendenciasCriadas} pendência(s) logística(s) detectada(s). Conferência bloqueada até resolução.` }
+        : null,
     }
   })
 
