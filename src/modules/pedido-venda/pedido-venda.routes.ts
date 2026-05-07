@@ -10,6 +10,7 @@ const itemSchema = z.object({
   produtoId: z.string().uuid(),
   quantidade: z.number().positive('Quantidade deve ser maior que zero'),
   unidade: z.string().max(6).optional(),
+  precoUnitario: z.number().min(0).optional(),
   desconto: z.number().min(0).max(100).optional().default(0),
 })
 
@@ -99,10 +100,11 @@ export async function pedidoVendaRoutes(app: FastifyInstance) {
           select: { precoBase: true, unidade: true },
         })
 
-        const precoBase = produto ? Number(produto.precoBase) : 0
+        const precoBase = item.precoUnitario && item.precoUnitario > 0
+          ? item.precoUnitario
+          : (produto ? Number(produto.precoBase) : 0)
         const descontoPercent = item.desconto || 0
-        const precoComCondicao = Number((precoBase * (1 + percentual / 100)).toFixed(4))
-        const precoFinal = Number((precoComCondicao * (1 - descontoPercent / 100)).toFixed(4))
+        const precoFinal = Number((precoBase * (1 - descontoPercent / 100)).toFixed(4))
         const valorTotal = Number((item.quantidade * precoFinal).toFixed(2))
 
         return {
