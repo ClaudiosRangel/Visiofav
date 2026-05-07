@@ -160,6 +160,47 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
     }
   })
 
+  // POST /finalizar-coletor — finaliza endereçamento via coletor (fecha OS + muda nota para ENDERECADA)
+  app.post('/finalizar-coletor', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      notaEntradaId: z.string().uuid(),
+      osId: z.string().uuid().optional(),
+    }).parse(request.body)
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Mudar nota para ENDERECADA
+      const nota = await tx.notaEntrada.findUnique({ where: { id: body.notaEntradaId } })
+      if (nota && nota.status !== 'ENDERECADA') {
+        await tx.notaEntrada.update({ where: { id: body.notaEntradaId }, data: { status: 'ENDERECADA' } })
+      }
+
+      // 2. Fechar OS de endereçamento
+      if (body.osId) {
+        const os = await tx.ordemServicoWms.findUnique({ where: { id: body.osId } })
+        if (os && os.status !== 'CONCLUIDO') {
+          await tx.ordemServicoWms.update({
+            where: { id: body.osId },
+            data: { status: 'CONCLUIDO', horaFim: new Date() },
+          })
+        }
+      } else {
+        // Buscar OS de endereçamento vinculada à nota
+        const os = await tx.ordemServicoWms.findFirst({
+          where: { notaEntradaId: body.notaEntradaId, operacao: 'ENDERECAMENTO', status: { not: 'CONCLUIDO' } },
+        })
+        if (os) {
+          await tx.ordemServicoWms.update({
+            where: { id: os.id },
+            data: { status: 'CONCLUIDO', horaFim: new Date() },
+          })
+        }
+      }
+    })
+
+    return { message: 'Endereçamento finalizado — nota ENDERECADA e OS concluída' }
+  })
+
   // GET /enderecos-disponiveis — lista endereços disponíveis para endereçamento
   app.get('/enderecos-disponiveis', async (request) => {
     const { rua } = z.object({ rua: z.string().optional() }).parse(request.query)
