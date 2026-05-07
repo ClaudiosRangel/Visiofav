@@ -86,6 +86,11 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pendencia_logistica_nota_entrada_id_idx" ON "pendencia_logistica"("nota_entrada_id")`)
   console.log('✅ Pendencia Logistica table created')
 
+  // ItemPedidoVenda - add unidade and desconto columns
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "unidade" VARCHAR(6) DEFAULT 'UN'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "desconto" DECIMAL(5,2) DEFAULT 0`)
+  console.log('✅ ItemPedidoVenda: unidade and desconto columns added')
+
   // Atualizar senha do admin para 987123
   const bcrypt = await import('bcryptjs')
   const bcryptLib = bcrypt.default || bcrypt

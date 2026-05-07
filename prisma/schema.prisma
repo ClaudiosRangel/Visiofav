@@ -425,7 +425,9 @@ model ItemPedidoVenda {
   produtoId       String   @map("produto_id")
   produto         Produto  @relation(fields: [produtoId], references: [id])
   quantidade      Decimal  @db.Decimal(12,4)
+  unidade         String   @default("UN") @db.VarChar(6)
   precoBase       Decimal  @db.Decimal(12,4) @map("preco_base")
+  desconto        Decimal  @default(0) @db.Decimal(5,2)
   precoFinal      Decimal  @db.Decimal(12,4) @map("preco_final")
   valorTotal      Decimal  @db.Decimal(12,2) @map("valor_total")
 

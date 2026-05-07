@@ -9,6 +9,8 @@ const idParamsSchema = z.object({ id: z.string().uuid() })
 const itemSchema = z.object({
   produtoId: z.string().uuid(),
   quantidade: z.number().positive('Quantidade deve ser maior que zero'),
+  unidade: z.string().max(6).optional(),
+  desconto: z.number().min(0).max(100).optional().default(0),
 })
 
 const createBodySchema = z.object({
@@ -94,17 +96,21 @@ export async function pedidoVendaRoutes(app: FastifyInstance) {
       body.itens.map(async (item) => {
         const produto = await prisma.produto.findFirst({
           where: { id: item.produtoId, empresaId: user.empresaId },
-          select: { precoBase: true },
+          select: { precoBase: true, unidade: true },
         })
 
         const precoBase = produto ? Number(produto.precoBase) : 0
-        const precoFinal = Number((precoBase * (1 + percentual / 100)).toFixed(4))
+        const descontoPercent = item.desconto || 0
+        const precoComCondicao = Number((precoBase * (1 + percentual / 100)).toFixed(4))
+        const precoFinal = Number((precoComCondicao * (1 - descontoPercent / 100)).toFixed(4))
         const valorTotal = Number((item.quantidade * precoFinal).toFixed(2))
 
         return {
           produtoId: item.produtoId,
           quantidade: item.quantidade,
+          unidade: item.unidade || produto?.unidade || 'UN',
           precoBase,
+          desconto: descontoPercent,
           precoFinal,
           valorTotal,
         }
