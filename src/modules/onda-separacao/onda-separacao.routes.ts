@@ -95,7 +95,17 @@ export async function ondaSeparacaoRoutes(app: FastifyInstance) {
 
     try {
       const onda = await criarOnda(user.empresaId, body.pedidoVendaIds, body.prioridade, body.docaId, user.id)
-      return reply.status(201).send(onda)
+
+      // Criar OS de SEPARACAO automaticamente ao criar a onda
+      let ordemServico = null
+      try {
+        const osService = new OsAutoCreateService()
+        ordemServico = await osService.criarOsSeparacao(user.empresaId, onda.id)
+      } catch {
+        // Silenciar erros de criação de OS para não bloquear a operação
+      }
+
+      return reply.status(201).send({ ...onda, ordemServico })
     } catch (err: any) {
       if (err.status) return reply.status(err.status).send({ message: err.message })
       throw err
@@ -172,21 +182,27 @@ export async function ondaSeparacaoRoutes(app: FastifyInstance) {
     try {
       const result = await iniciarOnda(id, user.empresaId)
 
-      // Task 13.1: Auto-create OS type SAIDA operation SEPARACAO
-      let ordemServico = null
-      try {
-        const osService = new OsAutoCreateService()
-        ordemServico = await osService.criarOsSeparacao(user.empresaId, id)
+      // Verificar se já existe OS de SEPARACAO para esta onda (criada ao criar a onda)
+      // Se não existir (ondas antigas), criar agora
+      let ordemServico = await prisma.ordemServicoWms.findFirst({
+        where: { ondaSeparacaoId: id, operacao: 'SEPARACAO', status: { not: 'CONCLUIDO' } },
+      })
 
-        // OS Sync: Set OS to EXECUTANDO with horaInicio
-        if (ordemServico) {
-          await prisma.ordemServicoWms.update({
-            where: { id: ordemServico.id },
-            data: { status: 'EXECUTANDO', horaInicio: new Date() },
-          })
+      if (!ordemServico) {
+        try {
+          const osService = new OsAutoCreateService()
+          ordemServico = await osService.criarOsSeparacao(user.empresaId, id)
+        } catch {
+          // Silenciar erros
         }
-      } catch {
-        // Silenciar erros de criação de OS para não bloquear a operação
+      }
+
+      // OS Sync: Set OS to EXECUTANDO com horaInicio
+      if (ordemServico && ordemServico.status === 'ABERTO') {
+        await prisma.ordemServicoWms.update({
+          where: { id: ordemServico.id },
+          data: { status: 'EXECUTANDO', horaInicio: new Date() },
+        })
       }
 
       return { ...result, ordemServico }

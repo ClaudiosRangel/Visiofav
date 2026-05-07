@@ -139,7 +139,10 @@ export async function itemSeparacaoRoutes(app: FastifyInstance) {
     )
 
     return {
-      ...itemAtualizado,
+      id: itemAtualizado.id,
+      quantidadeSeparada: Number(itemAtualizado.quantidadeSeparada),
+      status: itemAtualizado.status,
+      motivoDivergencia: itemAtualizado.motivoDivergencia,
       ordemSeparacao: conclusao,
     }
   })
