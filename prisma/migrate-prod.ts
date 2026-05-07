@@ -5,6 +5,9 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('🔄 Applying production migrations...')
 
+  // Usuario table - senha_alterada flag
+  await prisma.$executeRawUnsafe(`ALTER TABLE "usuario" ADD COLUMN IF NOT EXISTS "senha_alterada" BOOLEAN DEFAULT false`)
+
   // Endereco table - new columns
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "codigo_barras" VARCHAR(30)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "area_armazenagem" VARCHAR(20)`)

@@ -27,11 +27,11 @@ export async function authRoutes(app: FastifyInstance) {
     const empresaId = vinculo?.empresaId || null
 
     const token = app.jwt.sign(
-      { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId },
+      { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId, primeiroLogin: !usuario.senhaAlterada },
       { expiresIn: '8h' }
     )
 
-    return { token, usuario: { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId } }
+    return { token, usuario: { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId, primeiroLogin: !usuario.senhaAlterada } }
   })
 
   app.post('/registrar', async (request, reply) => {

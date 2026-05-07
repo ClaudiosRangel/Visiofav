@@ -222,6 +222,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
     if (data.status !== undefined) updateData.status = data.status
     if (data.senha && data.senha.length > 0) {
       updateData.senha = bcrypt.hashSync(data.senha, 10)
+      updateData.senhaAlterada = true
     }
 
     const updated = await prisma.usuario.update({

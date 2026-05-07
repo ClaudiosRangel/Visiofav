@@ -70,14 +70,15 @@ model Empresa {
 }
 
 model Usuario {
-  id           String   @id @default(uuid())
-  nome         String   @db.VarChar(150)
-  email        String   @unique @db.VarChar(200)
-  senha        String   @db.VarChar(200)
-  perfil       String   @default("OPERADOR") @db.VarChar(30)
-  status       Boolean  @default(true)
-  criadoEm     DateTime @default(now()) @map("criado_em")
-  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+  id             String   @id @default(uuid())
+  nome           String   @db.VarChar(150)
+  email          String   @unique @db.VarChar(200)
+  senha          String   @db.VarChar(200)
+  perfil         String   @default("OPERADOR") @db.VarChar(30)
+  status         Boolean  @default(true)
+  senhaAlterada  Boolean  @default(false) @map("senha_alterada")
+  criadoEm       DateTime @default(now()) @map("criado_em")
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
 
   empresas UsuarioEmpresa[]
 
