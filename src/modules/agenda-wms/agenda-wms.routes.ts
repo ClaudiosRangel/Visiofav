@@ -210,11 +210,11 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
       return { ...ag, fornecedor }
     }))
 
-    // Gerar slots de 30 minutos (06:00 a 22:00 = 32 slots)
+    // Gerar slots de 30 minutos (06:00 a 23:30 = 35 slots)
     const slots: string[] = []
-    for (let h = 6; h < 22; h++) {
+    for (let h = 6; h < 24; h++) {
       slots.push(`${String(h).padStart(2, '0')}:00`)
-      slots.push(`${String(h).padStart(2, '0')}:30`)
+      if (h < 24) slots.push(`${String(h).padStart(2, '0')}:30`)
     }
 
     // Montar grade: para cada doca, marcar quais slots estão ocupados
@@ -317,9 +317,9 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
         select: { horaInicio: true, horaFim: true },
       })
 
-      // Procurar slot livre de 1h entre 06:00 e 22:00
+      // Procurar slot livre de 1h entre 06:00 e 23:00
       let slotEncontrado = false
-      for (let h = 6; h < 22; h++) {
+      for (let h = 6; h < 23; h++) {
         const candidatoInicio = `${String(h).padStart(2, '0')}:00`
         const candidatoFim = `${String(h + 1).padStart(2, '0')}:00`
 
@@ -338,7 +338,7 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
 
       if (!slotEncontrado) {
         return reply.status(422).send({
-          message: 'Nenhum horário disponível nesta doca para a data selecionada (06:00-22:00)',
+          message: 'Nenhum horário disponível nesta doca para a data selecionada (06:00-23:30)',
         })
       }
     }
