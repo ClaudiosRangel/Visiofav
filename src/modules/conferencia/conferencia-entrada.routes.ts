@@ -146,8 +146,34 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     await prisma.notaEntrada.update({ where: { id: notaId }, data: { status: 'EM_CONFERENCIA' } })
 
+    // Vincular funcionário do usuário logado à OS de conferência (se existir)
+    const user = request.user as { id: string; nome: string; empresaId: string }
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { OR: [{ usuarioId: user.id }, { nome: { contains: user.nome, mode: 'insensitive' } }] },
+    })
+
+    if (funcionario) {
+      const osConferencia = await prisma.ordemServicoWms.findFirst({
+        where: { empresaId: user.empresaId, notaEntradaId: notaId, operacao: 'CONFERENCIA', status: { in: ['ABERTO', 'EXECUTANDO'] } },
+      })
+      if (osConferencia) {
+        // Vincular funcionário e iniciar OS
+        const jaVinculado = await prisma.osFuncionarioWms.findFirst({
+          where: { ordemServicoId: osConferencia.id, funcionarioId: funcionario.id },
+        })
+        if (!jaVinculado) {
+          await prisma.osFuncionarioWms.create({
+            data: { ordemServicoId: osConferencia.id, funcionarioId: funcionario.id, horaInicio: new Date() },
+          })
+        }
+        await prisma.ordemServicoWms.update({
+          where: { id: osConferencia.id },
+          data: { status: 'EXECUTANDO', funcionarioId: funcionario.id, horaInicio: osConferencia.horaInicio || new Date() },
+        })
+      }
+    }
+
     // Atualizar agenda para CONFERINDO
-    const user = request.user as { id: string; empresaId: string }
     if (nota.fornecedorDoc) {
       const { hojeUtc, amanhaUtc } = getHojeRange()
       const fornecedor = await prisma.fornecedor.findFirst({
