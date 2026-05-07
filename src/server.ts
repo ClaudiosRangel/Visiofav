@@ -192,7 +192,7 @@ async function bootstrap() {
     const bcryptModule = await import('bcryptjs')
     const bcrypt = bcryptModule.default || bcryptModule
     const db = new PrismaClient()
-    const senhaHash = await bcrypt.hash('123456', 10)
+    const senhaHash = await bcrypt.hash('987123', 10)
 
     // Update admin user
     await db.$executeRawUnsafe(

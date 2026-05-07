@@ -86,6 +86,13 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pendencia_logistica_nota_entrada_id_idx" ON "pendencia_logistica"("nota_entrada_id")`)
   console.log('✅ Pendencia Logistica table created')
 
+  // Atualizar senha do admin para 987123
+  const bcrypt = await import('bcryptjs')
+  const bcryptLib = bcrypt.default || bcrypt
+  const novaSenhaHash = await bcryptLib.hash('987123', 10)
+  await prisma.$executeRawUnsafe(`UPDATE "usuario" SET "senha" = '${novaSenhaHash}' WHERE "email" = 'admin@visiofab.com'`)
+  console.log('✅ Admin password updated')
+
   console.log('✅ All migrations applied successfully')
 }
 
