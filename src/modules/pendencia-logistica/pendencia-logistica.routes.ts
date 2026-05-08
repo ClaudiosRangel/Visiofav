@@ -276,32 +276,6 @@ export async function analisarPendenciasLogisticas(
       }
     }
 
-    // Verificar se tem dados logísticos de armazenagem configurados
-    const dadosLogisticos = await prisma.dadosLogisticosArmazenagem.findFirst({
-      where: { produtoId: produto.id },
-    })
-
-    if (!dadosLogisticos) {
-      const jaExiste = await prisma.pendenciaLogistica.findFirst({
-        where: { notaEntradaId, codigoProduto: item.codigoProduto, tipo: 'DADOS_LOGISTICOS', status: 'PENDENTE' },
-      })
-      if (!jaExiste) {
-        await prisma.pendenciaLogistica.create({
-          data: {
-            empresaId,
-            notaEntradaId,
-            itemNotaEntradaId: item.id,
-            codigoProduto: item.codigoProduto,
-            descricaoProduto: item.descricao,
-            fornecedor: nota.fornecedor,
-            fornecedorDoc: nota.fornecedorDoc,
-            tipo: 'DADOS_LOGISTICOS',
-            status: 'PENDENTE',
-          },
-        })
-        pendenciasCriadas++
-      }
-    }
   }
 
   return { pendenciasCriadas, itensAnalisados: nota.itens.length }

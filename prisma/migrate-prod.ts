@@ -107,6 +107,14 @@ async function main() {
     console.log('⚠️ Limpeza OS órfãs skipped:', e.message)
   }
 
+  // Limpar pendências de DADOS_LOGISTICOS (removida a verificação)
+  try {
+    await prisma.$executeRawUnsafe(`UPDATE "pendencia_logistica" SET "status" = 'RESOLVIDA', "resolvido_em" = NOW() WHERE "tipo" = 'DADOS_LOGISTICOS' AND "status" = 'PENDENTE'`)
+    console.log('✅ Pendências DADOS_LOGISTICOS resolvidas automaticamente')
+  } catch (e: any) {
+    console.log('⚠️ Limpeza DADOS_LOGISTICOS skipped:', e.message)
+  }
+
   // Atualizar senha do admin para 987123
   try {
     const bcrypt = await import('bcryptjs')
