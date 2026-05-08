@@ -286,5 +286,16 @@ export async function cancelarOnda(ondaId: string, empresaId: string) {
       where: { id: ondaId },
       data: { status: 'CANCELADA' },
     })
+
+    // Cancelar/concluir OS de SEPARACAO vinculada
+    const osVinculada = await tx.ordemServicoWms.findFirst({
+      where: { ondaSeparacaoId: ondaId, operacao: 'SEPARACAO', status: { notIn: ['CONCLUIDO', 'REJEITADO'] } },
+    })
+    if (osVinculada) {
+      await tx.ordemServicoWms.update({
+        where: { id: osVinculada.id },
+        data: { status: 'REJEITADO', horaFim: new Date(), observacao: 'Onda cancelada' },
+      })
+    }
   })
 }
