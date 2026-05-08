@@ -217,14 +217,135 @@ export async function pendenciaLogisticaRoutes(app: FastifyInstance) {
 }
 
 /**
- * Analisa os itens de uma nota e cria pendências logísticas.
+ * Analisa os itens de uma nota e cria pendências logísticas para itens sem SKU.
  * Chamado quando a portaria autoriza a entrada do veículo.
- * NOTA: Verificações de SKU e Dados Logísticos desabilitadas por decisão de negócio.
  */
 export async function analisarPendenciasLogisticas(
   empresaId: string,
   notaEntradaId: string,
 ): Promise<{ pendenciasCriadas: number; itensAnalisados: number }> {
-  // Verificações desabilitadas — retorna sem criar pendências
-  return { pendenciasCriadas: 0, itensAnalisados: 0 }
+  const nota = await prisma.notaEntrada.findUnique({
+    where: { id: notaEntradaId },
+    include: { itens: true },
+  })
+
+  if (!nota || nota.itens.length === 0) {
+    return { pendenciasCriadas: 0, itensAnalisados: 0 }
+  }
+
+  let pendenciasCriadas = 0
+
+  for (const item of nota.itens) {
+    if (!item.codigoProduto) continue
+
+    const produto = await prisma.produto.findFirst({
+      where: { codigo: item.codigoProduto, empresaId },
+    })
+
+    if (!produto) continue
+
+    // Verificar se tem SKU configurado
+    const sku = await prisma.sku.findFirst({
+      where: { produtoId: produto.id },
+    })
+
+    if (!sku) {
+      const jaExiste = await prisma.pendenciaLogistica.findFirst({
+        where: { notaEntradaId, codigoProduto: item.codigoProduto, tipo: 'SKU', status: 'PENDENTE' },
+      })
+      if (!jaExiste) {
+        await prisma.pendenciaLogistica.create({
+          data: {
+            empresaId,
+            notaEntradaId,
+            itemNotaEntradaId: item.id,
+            codigoProduto: item.codigoProduto,
+            descricaoProduto: item.descricao,
+            fornecedor: nota.fornecedor,
+            fornecedorDoc: nota.fornecedorDoc,
+            tipo: 'SKU',
+            status: 'PENDENTE',
+          },
+        })
+        pendenciasCriadas++
+      }
+    }
+
+    // Verificar se tem dados logísticos de armazenagem configurados
+    const dadosLogisticos = await prisma.dadosLogisticosArmazenagem.findFirst({
+      where: { produtoId: produto.id },
+    })
+
+    if (!dadosLogisticos) {
+      const jaExiste = await prisma.pendenciaLogistica.findFirst({
+        where: { notaEntradaId, codigoProduto: item.codigoProduto, tipo: 'DADOS_LOGISTICOS', status: 'PENDENTE' },
+      })
+      if (!jaExiste) {
+        await prisma.pendenciaLogistica.create({
+          data: {
+            empresaId,
+            notaEntradaId,
+            itemNotaEntradaId: item.id,
+            codigoProduto: item.codigoProduto,
+            descricaoProduto: item.descricao,
+            fornecedor: nota.fornecedor,
+            fornecedorDoc: nota.fornecedorDoc,
+            tipo: 'DADOS_LOGISTICOS',
+            status: 'PENDENTE',
+          },
+        })
+        pendenciasCriadas++
+      }
+    }
+  }
+
+  return { pendenciasCriadas, itensAnalisados: nota.itens.length }
+}
+
+/**
+ * Verifica e resolve pendências automaticamente quando SKU ou dados logísticos são configurados.
+ * Deve ser chamado após salvar SKU ou DadosLogisticosArmazenagem.
+ */
+export async function resolverPendenciasAutomaticamente(produtoId: string, empresaId: string): Promise<number> {
+  // Buscar o produto para pegar o código
+  const produto = await prisma.produto.findFirst({
+    where: { id: produtoId, empresaId },
+    select: { codigo: true, id: true },
+  })
+
+  if (!produto) return 0
+
+  let resolvidas = 0
+
+  // Verificar se agora tem SKU → resolver pendências de SKU
+  const sku = await prisma.sku.findFirst({ where: { produtoId } })
+  if (sku) {
+    const pendenciasSku = await prisma.pendenciaLogistica.findMany({
+      where: { codigoProduto: produto.codigo, tipo: 'SKU', status: 'PENDENTE', empresaId },
+    })
+    for (const p of pendenciasSku) {
+      await prisma.pendenciaLogistica.update({
+        where: { id: p.id },
+        data: { status: 'RESOLVIDA', resolvidoEm: new Date() },
+      })
+      resolvidas++
+    }
+  }
+
+  // Verificar se agora tem dados logísticos → resolver pendências de DADOS_LOGISTICOS
+  const dadosLog = await prisma.dadosLogisticosArmazenagem.findFirst({ where: { produtoId } })
+  if (dadosLog) {
+    const pendenciasDL = await prisma.pendenciaLogistica.findMany({
+      where: { codigoProduto: produto.codigo, tipo: 'DADOS_LOGISTICOS', status: 'PENDENTE', empresaId },
+    })
+    for (const p of pendenciasDL) {
+      await prisma.pendenciaLogistica.update({
+        where: { id: p.id },
+        data: { status: 'RESOLVIDA', resolvidoEm: new Date() },
+      })
+      resolvidas++
+    }
+  }
+
+  return resolvidas
 }

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { resolverPendenciasAutomaticamente } from '../pendencia-logistica/pendencia-logistica.routes'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
@@ -44,6 +45,13 @@ export async function skuRoutes(app: FastifyInstance) {
     }
 
     const item = await db.sku.create({ data: body })
+
+    // Resolver pendências logísticas automaticamente
+    try {
+      const user = request.user as { id: string; empresaId: string }
+      await resolverPendenciasAutomaticamente(body.produtoId, user.empresaId)
+    } catch { /* non-blocking */ }
+
     return reply.status(201).send(item)
   })
 

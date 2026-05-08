@@ -107,12 +107,29 @@ async function main() {
     console.log('⚠️ Limpeza OS órfãs skipped:', e.message)
   }
 
-  // Limpar todas as pendências logísticas (verificações desabilitadas)
+  // Resolver pendências logísticas de produtos que já têm SKU/dados logísticos configurados
   try {
-    await prisma.$executeRawUnsafe(`UPDATE "pendencia_logistica" SET "status" = 'RESOLVIDA', "resolvido_em" = NOW() WHERE "status" = 'PENDENTE'`)
-    console.log('✅ Todas pendências logísticas resolvidas (verificações desabilitadas)')
+    // Resolver pendências SKU onde o produto já tem SKU
+    await prisma.$executeRawUnsafe(`
+      UPDATE "pendencia_logistica" SET "status" = 'RESOLVIDA', "resolvido_em" = NOW()
+      WHERE "status" = 'PENDENTE' AND "tipo" = 'SKU'
+      AND "codigo_produto" IN (
+        SELECT p."codigo" FROM "produto" p
+        INNER JOIN "sku" s ON s."produto_id" = p."id"
+      )
+    `)
+    // Resolver pendências DADOS_LOGISTICOS onde o produto já tem dados
+    await prisma.$executeRawUnsafe(`
+      UPDATE "pendencia_logistica" SET "status" = 'RESOLVIDA', "resolvido_em" = NOW()
+      WHERE "status" = 'PENDENTE' AND "tipo" = 'DADOS_LOGISTICOS'
+      AND "codigo_produto" IN (
+        SELECT p."codigo" FROM "produto" p
+        INNER JOIN "dados_logisticos_armazenagem" d ON d."produto_id" = p."id"
+      )
+    `)
+    console.log('✅ Pendências logísticas resolvidas para produtos já configurados')
   } catch (e: any) {
-    console.log('⚠️ Limpeza pendências skipped:', e.message)
+    console.log('⚠️ Resolução pendências skipped:', e.message)
   }
 
   // Atualizar senha do admin para 987123

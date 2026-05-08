@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { resolverPendenciasAutomaticamente } from '../pendencia-logistica/pendencia-logistica.routes'
 
 export async function dadosLogisticosRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -20,6 +21,7 @@ export async function dadosLogisticosRoutes(app: FastifyInstance) {
   })
 
   app.post('/armazenagem', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
     const body = z.object({
       produtoId: z.string().uuid(),
       skuSeq: z.number().int().default(1),
@@ -33,6 +35,12 @@ export async function dadosLogisticosRoutes(app: FastifyInstance) {
       fixo: z.boolean().default(false),
     }).parse(request.body)
     const item = await prisma.dadosLogisticosArmazenagem.create({ data: body })
+
+    // Resolver pendências logísticas automaticamente
+    try {
+      await resolverPendenciasAutomaticamente(body.produtoId, user.empresaId)
+    } catch { /* non-blocking */ }
+
     return reply.status(201).send(item)
   })
 
