@@ -91,6 +91,22 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "desconto" DECIMAL(5,2) DEFAULT 0`)
   console.log('✅ ItemPedidoVenda: unidade and desconto columns added')
 
+  // Limpar OS órfãs de ondas canceladas
+  try {
+    const osCanceladas = await prisma.$executeRawUnsafe(`
+      UPDATE "ordem_servico_wms" 
+      SET "status" = 'REJEITADO', "hora_fim" = NOW(), "observacao" = 'Onda cancelada - limpeza automática'
+      WHERE "operacao" = 'SEPARACAO' 
+        AND "status" IN ('ABERTO', 'EXECUTANDO')
+        AND "onda_separacao_id" IN (
+          SELECT "id" FROM "onda_separacao" WHERE "status" = 'CANCELADA'
+        )
+    `)
+    console.log('✅ OS órfãs de ondas canceladas limpas:', osCanceladas)
+  } catch (e: any) {
+    console.log('⚠️ Limpeza OS órfãs skipped:', e.message)
+  }
+
   // Atualizar senha do admin para 987123
   try {
     const bcrypt = await import('bcryptjs')
