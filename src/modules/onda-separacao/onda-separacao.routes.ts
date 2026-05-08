@@ -96,16 +96,29 @@ export async function ondaSeparacaoRoutes(app: FastifyInstance) {
     try {
       const onda = await criarOnda(user.empresaId, body.pedidoVendaIds, body.prioridade, body.docaId, user.id)
 
-      // Criar OS de SEPARACAO automaticamente ao criar a onda
+      // Iniciar onda automaticamente (gera itens de separação + reserva estoque)
+      let initResult = null
+      try {
+        initResult = await iniciarOnda(onda.id, user.empresaId)
+      } catch (initErr: any) {
+        // Se falhar ao iniciar (ex: sem saldo), retorna a onda criada mas com aviso
+        return reply.status(201).send({
+          ...onda,
+          ordemServico: null,
+          aviso: initErr.message || 'Onda criada mas não foi possível iniciar automaticamente',
+        })
+      }
+
+      // Criar OS de SEPARACAO automaticamente
       let ordemServico = null
       try {
         const osService = new OsAutoCreateService()
         ordemServico = await osService.criarOsSeparacao(user.empresaId, onda.id)
       } catch {
-        // Silenciar erros de criação de OS para não bloquear a operação
+        // Silenciar erros de criação de OS
       }
 
-      return reply.status(201).send({ ...onda, ordemServico })
+      return reply.status(201).send({ ...onda, status: 'EM_SEPARACAO', ordemServico, totalItens: initResult?.totalItens || 0 })
     } catch (err: any) {
       if (err.status) return reply.status(err.status).send({ message: err.message })
       throw err
