@@ -107,12 +107,12 @@ async function main() {
     console.log('⚠️ Limpeza OS órfãs skipped:', e.message)
   }
 
-  // Limpar pendências de DADOS_LOGISTICOS (removida a verificação)
+  // Limpar todas as pendências logísticas (verificações desabilitadas)
   try {
-    await prisma.$executeRawUnsafe(`UPDATE "pendencia_logistica" SET "status" = 'RESOLVIDA', "resolvido_em" = NOW() WHERE "tipo" = 'DADOS_LOGISTICOS' AND "status" = 'PENDENTE'`)
-    console.log('✅ Pendências DADOS_LOGISTICOS resolvidas automaticamente')
+    await prisma.$executeRawUnsafe(`UPDATE "pendencia_logistica" SET "status" = 'RESOLVIDA', "resolvido_em" = NOW() WHERE "status" = 'PENDENTE'`)
+    console.log('✅ Todas pendências logísticas resolvidas (verificações desabilitadas)')
   } catch (e: any) {
-    console.log('⚠️ Limpeza DADOS_LOGISTICOS skipped:', e.message)
+    console.log('⚠️ Limpeza pendências skipped:', e.message)
   }
 
   // Atualizar senha do admin para 987123
