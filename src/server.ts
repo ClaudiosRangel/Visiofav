@@ -188,29 +188,28 @@ async function bootstrap() {
       return reply.status(403).send({ error: 'Senha inválida' })
     }
 
-    const { PrismaClient } = await import('@prisma/client')
     const bcryptModule = await import('bcryptjs')
     const bcrypt = bcryptModule.default || bcryptModule
-    const db = new PrismaClient()
     const senhaHash = await bcrypt.hash('987123', 10)
 
-    // Update admin user using Prisma client (safe from SQL injection/escaping issues)
-    const admin = await db.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
+    // Use the global prisma instance (already connected)
+    const { prisma } = await import('./lib/prisma')
+
+    const admin = await prisma.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
     if (admin) {
-      await db.usuario.update({
+      await prisma.usuario.update({
         where: { id: admin.id },
         data: { nome: 'Admin', perfil: 'SUPER_ADMIN', senha: senhaHash },
       })
 
-      const empresa = await db.empresa.findFirst()
+      const empresa = await prisma.empresa.findFirst()
       if (empresa) {
-        await db.$executeRawUnsafe(
+        await prisma.$executeRawUnsafe(
           `INSERT INTO "usuario_empresa" ("usuario_id", "empresa_id", "modulos") VALUES ('${admin.id}', '${empresa.id}', '*') ON CONFLICT ("usuario_id", "empresa_id") DO UPDATE SET modulos = '*'`
         )
       }
     }
 
-    await db.$disconnect()
     return { done: true, message: 'Admin atualizado: nome=Admin, perfil=SUPER_ADMIN, senha=987123, modulos=*' }
   })
 
