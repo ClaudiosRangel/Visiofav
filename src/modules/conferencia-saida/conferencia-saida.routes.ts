@@ -158,6 +158,7 @@ export async function conferenciaSaidaRoutes(app: FastifyInstance) {
 
   // PATCH /:id/aprovar — aprovar conferência
   app.patch('/:id/aprovar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
     const { id } = idParamsSchema.parse(request.params)
 
     const conferencia = await prisma.conferenciaSaida.findUnique({ where: { id } })
@@ -173,9 +174,37 @@ export async function conferenciaSaidaRoutes(app: FastifyInstance) {
         where: { id: conferencia.ondaSeparacaoId },
         data: { status: 'CONFERIDA' },
       })
+
+      // Concluir OS de CONFERENCIA_SAIDA
+      const osConf = await tx.ordemServicoWms.findFirst({
+        where: { ondaSeparacaoId: conferencia.ondaSeparacaoId, operacao: 'CONFERENCIA_SAIDA', status: { notIn: ['CONCLUIDO', 'REJEITADO'] } },
+      })
+      if (osConf) {
+        await tx.ordemServicoWms.update({
+          where: { id: osConf.id },
+          data: { status: 'CONCLUIDO', horaFim: new Date() },
+        })
+      }
+
+      // Criar OS de EMBALAGEM automaticamente
+      const ultimaOs = await tx.ordemServicoWms.findFirst({
+        where: { empresaId: user.empresaId },
+        orderBy: { numero: 'desc' },
+        select: { numero: true },
+      })
+      await tx.ordemServicoWms.create({
+        data: {
+          empresaId: user.empresaId,
+          numero: (ultimaOs?.numero ?? 0) + 1,
+          tipo: 'SAIDA',
+          operacao: 'EMBALAGEM',
+          status: 'ABERTO',
+          ondaSeparacaoId: conferencia.ondaSeparacaoId,
+        },
+      })
     })
 
-    return { message: 'Conferência aprovada' }
+    return { message: 'Conferência aprovada — OS de embalagem criada' }
   })
 
   // PATCH /:id/rejeitar — rejeitar conferência
@@ -345,6 +374,34 @@ export async function conferenciaSaidaRoutes(app: FastifyInstance) {
           await tx.ondaSeparacao.update({
             where: { id: conferencia.ondaSeparacaoId },
             data: { status: 'CONFERIDA' },
+          })
+
+          // Concluir OS de CONFERENCIA_SAIDA
+          const osConf = await tx.ordemServicoWms.findFirst({
+            where: { ondaSeparacaoId: conferencia.ondaSeparacaoId, operacao: 'CONFERENCIA_SAIDA', status: { notIn: ['CONCLUIDO', 'REJEITADO'] } },
+          })
+          if (osConf) {
+            await tx.ordemServicoWms.update({
+              where: { id: osConf.id },
+              data: { status: 'CONCLUIDO', horaFim: new Date() },
+            })
+          }
+
+          // Criar OS de EMBALAGEM automaticamente
+          const ultimaOs = await tx.ordemServicoWms.findFirst({
+            where: { empresaId: user.empresaId },
+            orderBy: { numero: 'desc' },
+            select: { numero: true },
+          })
+          await tx.ordemServicoWms.create({
+            data: {
+              empresaId: user.empresaId,
+              numero: (ultimaOs?.numero ?? 0) + 1,
+              tipo: 'SAIDA',
+              operacao: 'EMBALAGEM',
+              status: 'ABERTO',
+              ondaSeparacaoId: conferencia.ondaSeparacaoId,
+            },
           })
         })
         conferenciaFinalizada = true

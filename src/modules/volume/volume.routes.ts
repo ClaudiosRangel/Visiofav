@@ -145,7 +145,7 @@ export async function volumeRoutes(app: FastifyInstance) {
             where: {
               ondaSeparacaoId: onda.id,
               operacao: 'EMBALAGEM',
-              status: 'EXECUTANDO',
+              status: { notIn: ['CONCLUIDO', 'REJEITADO'] },
             },
             orderBy: { criadoEm: 'desc' },
           })
@@ -156,9 +156,26 @@ export async function volumeRoutes(app: FastifyInstance) {
               data: { status: 'CONCLUIDO', horaFim },
             })
           }
-        } catch {
-          // OS sync is non-blocking
-        }
+        } catch { /* non-blocking */ }
+
+        // Criar OS de CARREGAMENTO automaticamente
+        try {
+          const ultimaOs = await prisma.ordemServicoWms.findFirst({
+            where: { empresaId: user.empresaId },
+            orderBy: { numero: 'desc' },
+            select: { numero: true },
+          })
+          await prisma.ordemServicoWms.create({
+            data: {
+              empresaId: user.empresaId,
+              numero: (ultimaOs?.numero ?? 0) + 1,
+              tipo: 'SAIDA',
+              operacao: 'CARREGAMENTO',
+              status: 'ABERTO',
+              ondaSeparacaoId: onda.id,
+            },
+          })
+        } catch { /* non-blocking */ }
       }
     }
 
@@ -287,7 +304,7 @@ export async function volumeRoutes(app: FastifyInstance) {
     })
 
     // Task 10.4: Check if all items from the onda are packed → EMBALADA
-    await verificarConclusaoEmbalagem(volume.ondaSeparacaoId)
+    await verificarConclusaoEmbalagem(volume.ondaSeparacaoId, user.empresaId)
 
     return itemVolume
   })
@@ -391,7 +408,7 @@ export async function volumeRoutes(app: FastifyInstance) {
 // Helper: Verifica conclusão de embalagem (Task 10.4)
 // When all separated items are packed, update OndaSeparacao to EMBALADA.
 // ==========================================================================
-async function verificarConclusaoEmbalagem(ondaSeparacaoId: string): Promise<boolean> {
+async function verificarConclusaoEmbalagem(ondaSeparacaoId: string, empresaId?: string): Promise<boolean> {
   const onda = await prisma.ondaSeparacao.findUnique({
     where: { id: ondaSeparacaoId },
     include: {
@@ -435,7 +452,7 @@ async function verificarConclusaoEmbalagem(ondaSeparacaoId: string): Promise<boo
         where: {
           ondaSeparacaoId,
           operacao: 'EMBALAGEM',
-          status: 'EXECUTANDO',
+          status: { notIn: ['CONCLUIDO', 'REJEITADO'] },
         },
         orderBy: { criadoEm: 'desc' },
       })
@@ -446,8 +463,27 @@ async function verificarConclusaoEmbalagem(ondaSeparacaoId: string): Promise<boo
           data: { status: 'CONCLUIDO', horaFim },
         })
       }
-    } catch {
-      // OS sync is non-blocking
+    } catch { /* non-blocking */ }
+
+    // Criar OS de CARREGAMENTO automaticamente
+    if (empresaId) {
+      try {
+        const ultimaOs = await prisma.ordemServicoWms.findFirst({
+          where: { empresaId },
+          orderBy: { numero: 'desc' },
+          select: { numero: true },
+        })
+        await prisma.ordemServicoWms.create({
+          data: {
+            empresaId,
+            numero: (ultimaOs?.numero ?? 0) + 1,
+            tipo: 'SAIDA',
+            operacao: 'CARREGAMENTO',
+            status: 'ABERTO',
+            ondaSeparacaoId,
+          },
+        })
+      } catch { /* non-blocking */ }
     }
 
     return true
