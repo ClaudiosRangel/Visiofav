@@ -92,11 +92,21 @@ async function main() {
   console.log('✅ ItemPedidoVenda: unidade and desconto columns added')
 
   // Atualizar senha do admin para 987123
-  const bcrypt = await import('bcryptjs')
-  const bcryptLib = bcrypt.default || bcrypt
-  const novaSenhaHash = await bcryptLib.hash('987123', 10)
-  await prisma.$executeRawUnsafe(`UPDATE "usuario" SET "senha" = '${novaSenhaHash}' WHERE "email" = 'admin@visiofab.com'`)
-  console.log('✅ Admin password updated')
+  try {
+    const bcrypt = await import('bcryptjs')
+    const bcryptLib = bcrypt.default || bcrypt
+    const novaSenhaHash = await bcryptLib.hash('987123', 10)
+    const admin = await prisma.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
+    if (admin) {
+      await prisma.usuario.update({
+        where: { id: admin.id },
+        data: { senha: novaSenhaHash },
+      })
+      console.log('✅ Admin password updated')
+    }
+  } catch (e: any) {
+    console.log('⚠️ Admin password update skipped:', e.message)
+  }
 
   console.log('✅ All migrations applied successfully')
 }

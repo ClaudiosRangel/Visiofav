@@ -194,14 +194,14 @@ async function bootstrap() {
     const db = new PrismaClient()
     const senhaHash = await bcrypt.hash('987123', 10)
 
-    // Update admin user
-    await db.$executeRawUnsafe(
-      `UPDATE "usuario" SET nome = 'Admin', perfil = 'SUPER_ADMIN', senha = '${senhaHash}' WHERE email = 'admin@visiofab.com'`
-    )
-
-    // Ensure usuario_empresa has all modules
+    // Update admin user using Prisma client (safe from SQL injection/escaping issues)
     const admin = await db.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
     if (admin) {
+      await db.usuario.update({
+        where: { id: admin.id },
+        data: { nome: 'Admin', perfil: 'SUPER_ADMIN', senha: senhaHash },
+      })
+
       const empresa = await db.empresa.findFirst()
       if (empresa) {
         await db.$executeRawUnsafe(
@@ -211,7 +211,7 @@ async function bootstrap() {
     }
 
     await db.$disconnect()
-    return { done: true, message: 'Admin atualizado: nome=Admin, perfil=SUPER_ADMIN, senha=123456, modulos=*' }
+    return { done: true, message: 'Admin atualizado: nome=Admin, perfil=SUPER_ADMIN, senha=987123, modulos=*' }
   })
 
   // Admin cleanup endpoint (password-protected)
