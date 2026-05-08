@@ -26,8 +26,85 @@ export async function conferenciaSaidaRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
   app.addHook('preHandler', moduloGuard('WMS'))
 
+  // GET /:id — detalhe da conferência com itens
+  app.get('/:id', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params)
+
+    // Tentar buscar por ID da conferência ou por ondaSeparacaoId
+    let conferencia = await prisma.conferenciaSaida.findUnique({
+      where: { id },
+      include: {
+        ondaSeparacao: {
+          include: {
+            ordens: {
+              include: {
+                itens: {
+                  include: {
+                    itensConferencia: { where: { conferenciaSaidaId: id } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+
+    // Fallback: buscar pela ondaSeparacaoId (quando o app passa o ondaSeparacaoId)
+    if (!conferencia) {
+      conferencia = await prisma.conferenciaSaida.findFirst({
+        where: { ondaSeparacaoId: id },
+        include: {
+          ondaSeparacao: {
+            include: {
+              ordens: {
+                include: {
+                  itens: {
+                    include: {
+                      itensConferencia: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+    }
+
+    if (!conferencia) return reply.status(404).send({ message: 'Conferência de saída não encontrada' })
+
+    // Enriquecer itens com produto
+    const todosItens = conferencia.ondaSeparacao.ordens.flatMap((o) => o.itens)
+    const produtoIds = [...new Set(todosItens.map((i) => i.produtoId))]
+    const produtos = await prisma.produto.findMany({
+      where: { id: { in: produtoIds } },
+      select: { id: true, codigo: true, nome: true, unidade: true },
+    })
+    const produtoMap = new Map(produtos.map((p) => [p.id, p]))
+
+    const itens = todosItens.map((item) => {
+      const produto = produtoMap.get(item.produtoId)
+      const confItem = item.itensConferencia?.[0]
+      return {
+        id: item.id,
+        produtoId: item.produtoId,
+        produto: produto ? { codigo: produto.codigo, nome: produto.nome, unidade: produto.unidade } : null,
+        quantidadeEsperada: Number(item.quantidadeSeparada),
+        quantidadeConferida: confItem ? Number(confItem.quantidadeConferida) : 0,
+        status: confItem ? (confItem.resultado === 'CONFORME' ? 'CONFORME' : 'DIVERGENTE') : 'PENDENTE',
+      }
+    })
+
+    return {
+      id: conferencia.id,
+      status: conferencia.status,
+      ondaSeparacaoId: conferencia.ondaSeparacaoId,
+      itens,
+    }
+  })
+
   // POST /api/ondas-separacao/:id/conferencia — criar conferência
-  // (registrada via onda-separacao routes, mas pode ser chamada aqui também)
 
   // POST / — criar conferência para uma onda
   app.post('/', async (request, reply) => {

@@ -77,6 +77,35 @@ export async function verificarConclusaoOrdem(
         })
       }
     } catch { /* silenciar */ }
+
+    // Criar Conferência de Saída automaticamente
+    try {
+      const confExistente = await prisma.conferenciaSaida.findFirst({
+        where: { ondaSeparacaoId: ordem.ondaSeparacaoId },
+      })
+      if (!confExistente) {
+        const conferencia = await prisma.conferenciaSaida.create({
+          data: { ondaSeparacaoId: ordem.ondaSeparacaoId, conferenteId: usuarioId },
+        })
+
+        // Criar OS de CONFERENCIA_SAIDA
+        const ultimaOs = await prisma.ordemServicoWms.findFirst({
+          where: { empresaId },
+          orderBy: { numero: 'desc' },
+          select: { numero: true },
+        })
+        await prisma.ordemServicoWms.create({
+          data: {
+            empresaId,
+            numero: (ultimaOs?.numero ?? 0) + 1,
+            tipo: 'SAIDA',
+            operacao: 'CONFERENCIA_SAIDA',
+            status: 'ABERTO',
+            ondaSeparacaoId: ordem.ondaSeparacaoId,
+          },
+        })
+      }
+    } catch { /* silenciar */ }
   }
 
   // If there are divergences, notify via AuditLog
