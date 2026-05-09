@@ -299,15 +299,15 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
 - [x] 11. Checkpoint — Verificar relatórios
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 12. Frontend — Página de Cadastro de Rotas
-  - [ ] 12.1 Criar página de listagem de Rotas
+- [-] 12. Frontend — Página de Cadastro de Rotas
+  - [x] 12.1 Criar página de listagem de Rotas
     - Criar `VisioFab.Wms.Front/src/app/(interna)/wms/rotas/page.tsx`
     - Tabela com colunas: código, descrição, transportadora, status
     - Paginação, filtro por status (ativo/inativo)
     - Botões: Nova Rota, Editar, Desativar
     - _Requirements: 1.4, 1.7_
 
-  - [ ] 12.2 Criar modal/formulário de criação/edição de Rota
+  - [x] 12.2 Criar modal/formulário de criação/edição de Rota
     - Campos: código, descrição, transportadora (select), status
     - Validação de campos obrigatórios
     - Feedback de erro para código duplicado
@@ -319,26 +319,26 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - _Requirements: 2.1, 2.2_
 
 - [ ] 13. Frontend — Página de Montagem de Carga aprimorada
-  - [ ] 13.1 Criar página de Montagem de Carga
+  - [x] 13.1 Criar página de Montagem de Carga
     - Criar `VisioFab.Wms.Front/src/app/(interna)/wms/montagem-carga/page.tsx`
     - Painel de filtros: rota, cliente, NF número, série, cidade, bairro, vendedor, período
     - Tabela de NFs disponíveis com checkbox de seleção
     - Botões: Marcar Selecionados, Desmarcar Selecionados, Marcar Toda Rota, Desmarcar Toda Rota
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 9.1, 9.2, 9.3, 9.4_
 
-  - [ ] 13.2 Implementar painel de totalização por rota
+  - [x] 13.2 Implementar painel de totalização por rota
     - Exibir totais agrupados por rota: qtd NFs, valor, peso, volumes
     - Exibir totalização geral
     - Atualizar totais ao marcar/desmarcar NFs
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-  - [ ] 13.3 Implementar formulário de geração de Mapa de Carregamento
+  - [x] 13.3 Implementar formulário de geração de Mapa de Carregamento
     - Modal com campos: placa veículo, motorista, CPF motorista, observações, usa coletor (toggle)
     - Botão "Gerar Mapa" que chama endpoint de geração
     - Feedback de sucesso com número do mapa gerado
     - _Requirements: 10.4, 10.5, 10.7_
 
-  - [ ] 13.4 Implementar tela de consulta/reemissão de Mapas
+  - [x] 13.4 Implementar tela de consulta/reemissão de Mapas
     - Criar `VisioFab.Wms.Front/src/app/(interna)/wms/mapas-carregamento/page.tsx`
     - Listagem de mapas com filtros: número, período, status, motorista, placa
     - Ações: Visualizar (reemissão), Cancelar, Fechar
@@ -377,7 +377,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - Desabilitar ações para carregamentos CONCLUIDO/CANCELADO
     - _Requirements: 4.1, 4.2, 5.1, 5.3_
 
-- [ ] 16. Final checkpoint — Verificar integração completa
+- [x] 16. Final checkpoint — Verificar integração completa
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

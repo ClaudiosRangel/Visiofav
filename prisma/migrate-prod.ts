@@ -107,6 +107,72 @@ async function main() {
     console.log('⚠️ Limpeza OS órfãs skipped:', e.message)
   }
 
+  // Tabelas de Roteirização e Montagem de Carga
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "rota" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(20) NOT NULL,
+      "descricao" VARCHAR(200) NOT NULL,
+      "transportadora_id" TEXT,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "rota_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "rota_empresa_id_codigo_key" ON "rota"("empresa_id", "codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "mapa_carregamento" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "rota_id" TEXT,
+      "veiculo_placa" VARCHAR(10) NOT NULL,
+      "motorista" VARCHAR(200),
+      "motorista_cpf" VARCHAR(14),
+      "observacoes" TEXT,
+      "status" VARCHAR(30) NOT NULL DEFAULT 'AGUARDANDO_SEPARACAO',
+      "motivo_cancelamento" TEXT,
+      "criado_por_id" TEXT NOT NULL,
+      "cancelado_por_id" TEXT,
+      "fechado_por_id" TEXT,
+      "emissao_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "finalizado_em" TIMESTAMP(3),
+      "cancelado_em" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "mapa_carregamento_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "mapa_carregamento_empresa_id_numero_key" ON "mapa_carregamento"("empresa_id", "numero")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "mapa_carregamento_nf" (
+      "id" TEXT NOT NULL,
+      "mapa_carregamento_id" TEXT NOT NULL,
+      "nfe_id" TEXT NOT NULL,
+      "status_entrega" VARCHAR(20),
+      "motivo_devolucao" TEXT,
+      CONSTRAINT "mapa_carregamento_nf_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "mapa_carregamento_nf_mapa_carregamento_id_nfe_id_key" ON "mapa_carregamento_nf"("mapa_carregamento_id", "nfe_id")`)
+
+  // Campos novos em tabelas existentes
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "rota_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "rota_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "motorista" VARCHAR(200)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "motorista_cpf" VARCHAR(14)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "rota_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "motivo_cancelamento" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "cancelado_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "em_carregamento_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ADD COLUMN IF NOT EXISTS "mapa_ok" BOOLEAN DEFAULT false`)
+  console.log('✅ Tabelas de Roteirização e Montagem de Carga criadas')
+
   // Resolver pendências logísticas de produtos que já têm SKU/dados logísticos configurados
   try {
     // Resolver pendências SKU onde o produto já tem SKU
