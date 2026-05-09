@@ -145,11 +145,11 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - Registrar timestamps: emCarregamentoEm, concluidoEm
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 6. Checkpoint — Verificar melhorias no Carregamento
+- [x] 6. Checkpoint — Verificar melhorias no Carregamento
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Implementar seleção de NFs e totalização
-  - [ ] 7.1 Criar endpoint de listagem de NFs disponíveis
+- [x] 7. Implementar seleção de NFs e totalização
+  - [x] 7.1 Criar endpoint de listagem de NFs disponíveis
     - Criar `src/modules/mapa-carregamento/mapa-carregamento.routes.ts`
     - Implementar `GET /mapas-carregamento/nfs-disponiveis`
     - Filtros: rotaId, clienteId, nfNumero, serie, cidade, bairro, vendedorId, período
@@ -166,7 +166,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 10: Exclusão de NFs já carregadas**
     - **Validates: Requirements 7.5, 9.7**
 
-  - [ ] 7.4 Implementar endpoints de marcação/desmarcação de NFs
+  - [x] 7.4 Implementar endpoints de marcação/desmarcação de NFs
     - Implementar `POST /mapas-carregamento/nfs/marcar` (batch)
     - Implementar `POST /mapas-carregamento/nfs/desmarcar` (batch)
     - Implementar `POST /mapas-carregamento/nfs/marcar-rota` (todas NFs de uma rota)
@@ -175,7 +175,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - Rejeitar marcação de NF já em Carregamento ativo
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
 
-  - [ ] 7.5 Implementar TotalizacaoService
+  - [x] 7.5 Implementar TotalizacaoService
     - Criar `src/modules/mapa-carregamento/totalizacao.service.ts`
     - Implementar cálculo de totais por rota: quantidadeNfs, valorTotal (2 decimais), pesoTotalKg (3 decimais), totalVolumes
     - Implementar totalização geral (soma de todas as rotas)
@@ -187,8 +187,8 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 11: Totalização por rota é soma dos itens**
     - **Validates: Requirements 8.1, 8.2, 8.3**
 
-- [ ] 8. Implementar Mapa de Carregamento (geração, status, cancelamento, transferência, fechamento)
-  - [ ] 8.1 Criar MapaCarregamentoService
+- [x] 8. Implementar Mapa de Carregamento (geração, status, cancelamento, transferência, fechamento)
+  - [x] 8.1 Criar MapaCarregamentoService
     - Criar `src/modules/mapa-carregamento/mapa-carregamento.service.ts`
     - Implementar `gerar(empresaId, data, usuarioId)`: numeração sequencial (max+1 por empresa), associar NFs marcadas, limpar flag mapaOk, definir status inicial baseado em usaColetor
     - Rejeitar se nenhuma NF marcada
@@ -203,7 +203,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 13: Geração de mapa associa NFs marcadas e limpa flags**
     - **Validates: Requirements 10.3, 10.6**
 
-  - [ ] 8.4 Implementar máquina de estados do Mapa de Carregamento
+  - [x] 8.4 Implementar máquina de estados do Mapa de Carregamento
     - Adicionar validação de transições no StatusMachineService: AGUARDANDO_SEPARACAO→EM_CARREGAMENTO, EM_CARREGAMENTO→FINALIZADO, AGUARDANDO_SEPARACAO→CANCELADO, EM_CARREGAMENTO→CANCELADO
     - Criar endpoint `PATCH /mapas-carregamento/:id/status`
     - Registrar finalizadoEm ao transicionar para FINALIZADO
@@ -213,7 +213,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 14: Máquina de estados do Mapa de Carregamento**
     - **Validates: Requirements 11.1, 11.2, 11.3, 11.4**
 
-  - [ ] 8.6 Implementar cancelamento de Mapa de Carregamento
+  - [x] 8.6 Implementar cancelamento de Mapa de Carregamento
     - Criar endpoint `POST /mapas-carregamento/:id/cancelar`
     - Exigir motivoCancelamento
     - Dissociar todas NFs do mapa (deletar MapaCarregamentoNf)
@@ -227,7 +227,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 15: Cancelamento de mapa libera NFs**
     - **Validates: Requirements 12.3**
 
-  - [ ] 8.8 Implementar transferência de NFs entre mapas
+  - [x] 8.8 Implementar transferência de NFs entre mapas
     - Criar endpoint `POST /mapas-carregamento/transferir-nfs`
     - Aceitar sourceMapaId, targetMapaId, nfeIds
     - Rejeitar se mapa origem FINALIZADO
@@ -240,7 +240,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 16: Transferência de NFs respeita status dos mapas**
     - **Validates: Requirements 13.2, 13.3**
 
-  - [ ] 8.10 Implementar reemissão (consulta) de Mapa de Carregamento
+  - [x] 8.10 Implementar reemissão (consulta) de Mapa de Carregamento
     - Criar endpoint `GET /mapas-carregamento/:id`
     - Retornar dados completos: header + NFs associadas com detalhes
     - Permitir consulta em qualquer status (inclusive CANCELADO e FINALIZADO)
@@ -250,7 +250,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 19: Reemissão de mapa funciona em qualquer status**
     - **Validates: Requirements 14.4**
 
-  - [ ] 8.12 Implementar fechamento (closure) de Mapa de Carregamento
+  - [x] 8.12 Implementar fechamento (closure) de Mapa de Carregamento
     - Criar endpoint `POST /mapas-carregamento/:id/fechar`
     - Aceitar lista de NFs com statusEntrega (ENTREGUE/DEVOLVIDO) e motivoDevolucao
     - Exigir motivoDevolucao para NFs com statusEntrega=DEVOLVIDO
@@ -268,11 +268,11 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 18: Fechamento de mapa exige status EM_CARREGAMENTO**
     - **Validates: Requirements 15.5**
 
-  - [ ] 8.15 Criar endpoint de listagem de Mapas de Carregamento
+  - [x] 8.15 Criar endpoint de listagem de Mapas de Carregamento
     - Implementar `GET /mapas-carregamento` com paginação e filtros: número, período, status, motorista, placa, rotaId
     - _Requirements: 17.3_
 
-  - [ ] 8.16 Registrar rotas do módulo mapa-carregamento em src/server.ts
+  - [x] 8.16 Registrar rotas do módulo mapa-carregamento em src/server.ts
     - Registrar `mapaCarregamentoRoutes` com prefix `/mapas-carregamento`
     - Adicionar autenticação e moduloGuard
     - _Requirements: 10.1_
