@@ -277,11 +277,11 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - Adicionar autenticação e moduloGuard
     - _Requirements: 10.1_
 
-- [ ] 9. Checkpoint — Verificar Mapa de Carregamento
+- [x] 9. Checkpoint — Verificar Mapa de Carregamento
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Implementar relatórios de expedição
-  - [ ] 10.1 Criar módulo de relatórios de expedição
+- [x] 10. Implementar relatórios de expedição
+  - [x] 10.1 Criar módulo de relatórios de expedição
     - Criar `src/modules/relatorio-expedicao/relatorio-expedicao.routes.ts`
     - Implementar `GET /relatorios/expedicao/total-roteiro`: totais por rota (NFs, valor, peso, volumes) para período
     - Implementar `GET /relatorios/expedicao/total-expedicao`: totais gerais de expedição para período
@@ -291,12 +291,12 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - Isolar dados por empresa do usuário autenticado
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6_
 
-  - [ ] 10.2 Registrar rotas de relatórios em src/server.ts
+  - [x] 10.2 Registrar rotas de relatórios em src/server.ts
     - Registrar `relatorioExpedicaoRoutes` com prefix `/relatorios/expedicao`
     - Adicionar autenticação e moduloGuard
     - _Requirements: 17.1_
 
-- [ ] 11. Checkpoint — Verificar relatórios
+- [x] 11. Checkpoint — Verificar relatórios
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 12. Frontend — Página de Cadastro de Rotas

@@ -74,6 +74,7 @@ import { ocrRoutes } from './modules/ocr/ocr.routes'
 import { scannerRoutes } from './modules/scanner/scanner.routes'
 import { stockViewRoutes } from './modules/estoque/stock-view.routes'
 import { mapaCarregamentoRoutes } from './modules/mapa-carregamento/mapa-carregamento.routes'
+import { relatorioExpedicaoRoutes } from './modules/relatorio-expedicao/relatorio-expedicao.routes'
 
 import { registerTenantContext } from './middleware/tenant-context'
 import multipart from '@fastify/multipart'
@@ -128,6 +129,7 @@ async function bootstrap() {
   await app.register(volumeRoutes, { prefix: '/api/volumes' })
   await app.register(carregamentoRoutes, { prefix: '/api/carregamentos' })
   await app.register(mapaCarregamentoRoutes, { prefix: '/api/mapas-carregamento' })
+  await app.register(relatorioExpedicaoRoutes, { prefix: '/api/relatorios/expedicao' })
   await app.register(posicionamentoRoutes, { prefix: '/api/posicionamento' })
   await app.register(portariaRoutes, { prefix: '/api/portaria' })
   await app.register(manutencaoEstoqueRoutes, { prefix: '/api/manutencao-estoque' })
