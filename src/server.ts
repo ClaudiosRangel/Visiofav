@@ -187,6 +187,17 @@ async function bootstrap() {
   // Health check
   app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
+  // Fix database columns (one-time)
+  app.post('/api/admin/fix-columns', async (request, reply) => {
+    const { senha } = request.body as { senha?: string }
+    if (senha !== 'caio1420') return reply.status(403).send({ error: 'Senha inválida' })
+    const { prisma: db } = await import('./lib/prisma')
+    const results: string[] = []
+    try { await db.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_enviado" TYPE TEXT`); results.push('✓ xml_enviado → TEXT') } catch (e: any) { results.push(`⚠ xml_enviado: ${e.message?.substring(0, 80)}`) }
+    try { await db.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_retorno" TYPE TEXT`); results.push('✓ xml_retorno → TEXT') } catch (e: any) { results.push(`⚠ xml_retorno: ${e.message?.substring(0, 80)}`) }
+    return { done: true, results }
+  })
+
   // Fix admin user (one-time, remove after use)
   app.post('/api/admin/fix-admin', async (request, reply) => {
     const { senha } = request.body as { senha?: string }
