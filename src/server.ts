@@ -242,13 +242,14 @@ async function bootstrap() {
     const results: string[] = []
 
     const tables = [
-      'os_funcionario_wms', 'log_movimento_wms', 'ordem_servico_wms',
+      'pendencia_logistica', 'mapa_carregamento_nf', 'mapa_carregamento',
+      'os_funcionario_wms', 'log_movimento_wms', 'log_movimentacao', 'ordem_servico_wms',
       'item_conferencia_entrada', 'conferencia_entrada',
       'item_volume', 'carregamento_volume', 'carregamento', 'volume',
       'item_conferencia_saida', 'conferencia_saida',
       'item_separacao', 'ordem_separacao', 'onda_pedido', 'onda_separacao',
       'saldo_endereco', 'movimento', 'log_ordem_servico', 'os_funcionario', 'ordem_servico',
-      'estoque', 'item_nota_entrada', 'nota_entrada', 'agenda_wms',
+      'estoque', 'item_nfe', 'nfe', 'item_nota_entrada', 'nota_entrada', 'agenda_wms',
       'conta_receber', 'venda_efetivada', 'item_pedido_venda', 'pedido_venda',
       'conta_pagar', 'item_devolucao_compra', 'devolucao_compra', 'compra_efetivada',
       'item_pedido_compra', 'pedido_compra',
