@@ -150,14 +150,13 @@ export async function nfeRoutes(app: FastifyInstance) {
 
     // Gerar chave de acesso
     const chaveAcesso = gerarChaveAcesso({
-      cUF: empresa.uf === 'SP' ? '35' : '35',
+      uf: empresa.uf || 'SP',
       dataEmissao: new Date(),
       cnpj: empresa.cnpj,
-      mod: '55',
-      serie: String(nfe.serie),
-      nNF: String(nfe.numero),
-      tpEmis: '1',
-      cNF: String(nfe.numero).padStart(8, '0'),
+      modelo: 55,
+      serie: nfe.serie,
+      numero: nfe.numero,
+      tipoEmissao: 1,
     })
 
     // Montar XML simplificado (sem assinatura, sem envio)
