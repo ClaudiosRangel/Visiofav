@@ -162,6 +162,7 @@ model Cliente {
   status        Boolean  @default(true)
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+  rotaId        String?  @map("rota_id")
 
   pedidosVenda  PedidoVenda[]
   contasReceber ContaReceber[]
@@ -405,6 +406,7 @@ model PedidoVenda {
   tabelaPrecoId      String   @map("tabela_preco_id")
   tabelaPreco        TabelaPreco @relation(fields: [tabelaPrecoId], references: [id])
   condicaoPagId      String?  @map("condicao_pag_id")
+  rotaId             String?  @map("rota_id")
   valorTotal         Decimal  @default(0) @db.Decimal(12,2) @map("valor_total")
   status             String   @default("RASCUNHO") @db.VarChar(20)
   motivoCancelamento String?  @db.Text @map("motivo_cancelamento")
@@ -524,6 +526,7 @@ model Nfe {
   finNFe            Int      @default(1) @map("fin_nfe")
   ambiente          Int      @default(2)
   criadoEm          DateTime @default(now()) @map("criado_em")
+  mapaOk            Boolean  @default(false) @map("mapa_ok")
 
   itens             ItemNfe[]
 
@@ -841,14 +844,21 @@ model ItemVolume {
 }
 
 model Carregamento {
-  id                String   @id @default(uuid())
-  empresaId         String   @map("empresa_id")
-  docaId            String   @map("doca_id")
-  veiculoPlaca      String   @db.VarChar(10) @map("veiculo_placa")
-  transportadoraId  String?  @map("transportadora_id")
-  status            String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_CARREGAMENTO, CONCLUIDO
-  criadoEm          DateTime @default(now()) @map("criado_em")
-  concluidoEm       DateTime? @map("concluido_em")
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  docaId              String   @map("doca_id")
+  veiculoPlaca        String   @db.VarChar(10) @map("veiculo_placa")
+  transportadoraId    String?  @map("transportadora_id")
+  status              String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_CARREGAMENTO, CONCLUIDO, CANCELADO
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  concluidoEm         DateTime? @map("concluido_em")
+  motorista           String?   @db.VarChar(200)
+  motoristaCpf        String?   @db.VarChar(14) @map("motorista_cpf")
+  rotaId              String?   @map("rota_id")
+  motivoCancelamento  String?   @db.Text @map("motivo_cancelamento")
+  canceladoPorId      String?   @map("cancelado_por_id")
+  canceladoEm         DateTime? @map("cancelado_em")
+  emCarregamentoEm    DateTime? @map("em_carregamento_em")
 
   volumes           CarregamentoVolume[]
   ordensServico     OrdemServicoWms[]
@@ -1404,4 +1414,60 @@ model DadosLogisticosExpedicao {
   atualizadoEm            DateTime @updatedAt @map("atualizado_em")
 
   @@map("dados_logisticos_expedicao")
+}
+
+// ============================================================================
+// WMS — ROTEIRIZAÇÃO E MONTAGEM DE CARGA
+// ============================================================================
+
+model Rota {
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  codigo            String   @db.VarChar(20)
+  descricao         String   @db.VarChar(200)
+  transportadoraId  String?  @map("transportadora_id")
+  status            Boolean  @default(true)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+  atualizadoEm      DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("rota")
+}
+
+model MapaCarregamento {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  numero              Int
+  rotaId              String?   @map("rota_id")
+  veiculoPlaca        String    @db.VarChar(10) @map("veiculo_placa")
+  motorista           String?   @db.VarChar(200)
+  motoristaCpf        String?   @db.VarChar(14) @map("motorista_cpf")
+  observacoes         String?   @db.Text
+  status              String    @default("AGUARDANDO_SEPARACAO") @db.VarChar(30)
+  motivoCancelamento  String?   @db.Text @map("motivo_cancelamento")
+  criadoPorId         String    @map("criado_por_id")
+  canceladoPorId      String?   @map("cancelado_por_id")
+  fechadoPorId        String?   @map("fechado_por_id")
+  emissaoEm           DateTime  @default(now()) @map("emissao_em")
+  finalizadoEm        DateTime? @map("finalizado_em")
+  canceladoEm         DateTime? @map("cancelado_em")
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+  atualizadoEm        DateTime  @updatedAt @map("atualizado_em")
+
+  nfs                 MapaCarregamentoNf[]
+
+  @@unique([empresaId, numero])
+  @@map("mapa_carregamento")
+}
+
+model MapaCarregamentoNf {
+  id                    String            @id @default(uuid())
+  mapaCarregamentoId    String            @map("mapa_carregamento_id")
+  mapaCarregamento      MapaCarregamento  @relation(fields: [mapaCarregamentoId], references: [id], onDelete: Cascade)
+  nfeId                 String            @map("nfe_id")
+  statusEntrega         String?           @db.VarChar(20) @map("status_entrega")
+  motivoDevolucao       String?           @db.Text @map("motivo_devolucao")
+
+  @@unique([mapaCarregamentoId, nfeId])
+  @@map("mapa_carregamento_nf")
 }

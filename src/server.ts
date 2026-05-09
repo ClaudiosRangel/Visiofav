@@ -26,6 +26,7 @@ import { veiculoRoutes } from './modules/veiculo/veiculo.routes'
 import { parametroRoutes } from './modules/parametro/parametro.routes'
 import { fornecedorRoutes } from './modules/fornecedor/fornecedor.routes'
 import { transportadoraRoutes } from './modules/transportadora/transportadora.routes'
+import { rotaRoutes } from './modules/rota/rota.routes'
 import { clienteRoutes } from './modules/cliente/cliente.routes'
 import { notaEntradaRoutes } from './modules/nota-entrada/nota-entrada.routes'
 import { importarXmlRoutes } from './modules/nota-entrada/importar-xml.routes'
@@ -168,6 +169,7 @@ async function bootstrap() {
   await app.register(parametroRoutes, { prefix: '/api/parametros' })
   await app.register(fornecedorRoutes, { prefix: '/api/fornecedores' })
   await app.register(transportadoraRoutes, { prefix: '/api/transportadoras' })
+  await app.register(rotaRoutes, { prefix: '/api/rotas' })
   await app.register(clienteRoutes, { prefix: '/api/clientes' })
 
   // Operacional
