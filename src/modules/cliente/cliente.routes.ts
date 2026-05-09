@@ -51,9 +51,18 @@ export async function clienteRoutes(app: FastifyInstance) {
       cep: z.string().optional(),
       telefone: z.string().optional(),
       email: z.string().optional(),
+      rotaId: z.string().uuid().optional().nullable(),
     }).parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+
+    // Validate rotaId belongs to same empresa
+    if (data.rotaId) {
+      const rota = await prisma.rota.findFirst({
+        where: { id: data.rotaId, empresaId: user.empresaId },
+      })
+      if (!rota) return reply.status(422).send({ message: 'Rota não encontrada ou não pertence a esta empresa' })
+    }
 
     return reply.status(201).send(await prisma.cliente.create({ data: { ...data, empresaId: user.empresaId } }))
   })
@@ -75,7 +84,17 @@ export async function clienteRoutes(app: FastifyInstance) {
       cep: z.string().optional(),
       telefone: z.string().optional(),
       email: z.string().optional(),
+      rotaId: z.string().uuid().optional().nullable(),
     }).parse(request.body)
+
+    // Validate rotaId belongs to same empresa
+    if (data.rotaId) {
+      if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+      const rota = await prisma.rota.findFirst({
+        where: { id: data.rotaId, empresaId: user.empresaId },
+      })
+      if (!rota) return reply.status(422).send({ message: 'Rota não encontrada ou não pertence a esta empresa' })
+    }
 
     return prisma.cliente.update({ where: { id }, data })
   })

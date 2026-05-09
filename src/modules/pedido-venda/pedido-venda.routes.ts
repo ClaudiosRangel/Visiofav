@@ -19,6 +19,7 @@ const createBodySchema = z.object({
   vendedorId: z.string().uuid().optional(),
   tabelaPrecoId: z.string().uuid(),
   condicaoPagId: z.string().uuid().optional(),
+  rotaId: z.string().uuid().optional().nullable(),
   itens: z.array(itemSchema).min(1, 'Pelo menos um item é obrigatório'),
 })
 
@@ -75,6 +76,24 @@ export async function pedidoVendaRoutes(app: FastifyInstance) {
   app.post('/', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const body = createBodySchema.parse(request.body)
+
+    // Determinar rotaId: se fornecido explicitamente, usar; senão, buscar do cliente
+    let rotaIdFinal: string | null | undefined = body.rotaId
+    if (rotaIdFinal === undefined || rotaIdFinal === null) {
+      const cliente = await prisma.cliente.findFirst({
+        where: { id: body.clienteId, empresaId: user.empresaId },
+        select: { rotaId: true },
+      })
+      rotaIdFinal = cliente?.rotaId ?? null
+    }
+
+    // Validar que rotaId pertence à mesma empresa
+    if (rotaIdFinal) {
+      const rota = await prisma.rota.findFirst({
+        where: { id: rotaIdFinal, empresaId: user.empresaId },
+      })
+      if (!rota) return reply.status(422).send({ message: 'Rota não encontrada ou não pertence a esta empresa' })
+    }
 
     // Buscar tabela de preço e condição
     const tabela = await prisma.tabelaPreco.findFirst({
@@ -138,6 +157,7 @@ export async function pedidoVendaRoutes(app: FastifyInstance) {
         vendedorId: body.vendedorId,
         tabelaPrecoId: body.tabelaPrecoId,
         condicaoPagId: condicao?.id,
+        rotaId: rotaIdFinal || undefined,
         valorTotal: valorTotalPedido,
         status: 'RASCUNHO',
         itens: { create: itensComPreco },

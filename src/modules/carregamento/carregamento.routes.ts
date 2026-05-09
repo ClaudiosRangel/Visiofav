@@ -9,6 +9,7 @@ import { FichaService } from '../ficha-operacional/ficha.service'
 import { OsAutoCreateService } from '../ordem-servico-wms/os-auto-create.service'
 import { MonitorService } from '../monitor/monitor.service'
 import { StockService } from '../estoque/stock.service'
+import { validarTransicaoCarregamento } from './status-machine.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -16,6 +17,9 @@ const criarCarregamentoSchema = z.object({
   docaId: z.string().uuid(),
   veiculoPlaca: z.string().min(1).max(10),
   transportadoraId: z.string().uuid().optional(),
+  motorista: z.string().max(200).optional(),
+  motoristaCpf: z.string().max(14).optional(),
+  rotaId: z.string().uuid().optional(),
 })
 
 const adicionarVolumesSchema = z.object({
@@ -29,6 +33,7 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   status: z.string().optional(),
+  rotaId: z.string().uuid().optional(),
 })
 
 export async function carregamentoRoutes(app: FastifyInstance) {
@@ -38,10 +43,11 @@ export async function carregamentoRoutes(app: FastifyInstance) {
   // GET / — listar carregamentos
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const { page, limit, status } = listQuerySchema.parse(request.query)
+    const { page, limit, status, rotaId } = listQuerySchema.parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
     if (status) where.status = status
+    if (rotaId) where.rotaId = rotaId
 
     const [data, total] = await Promise.all([
       prisma.carregamento.findMany({
@@ -69,12 +75,23 @@ export async function carregamentoRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const body = criarCarregamentoSchema.parse(request.body)
 
+    // Validate rotaId belongs to same empresa
+    if (body.rotaId) {
+      const rota = await prisma.rota.findFirst({
+        where: { id: body.rotaId, empresaId: user.empresaId },
+      })
+      if (!rota) return reply.status(422).send({ message: 'Rota não encontrada ou não pertence a esta empresa' })
+    }
+
     const carregamento = await prisma.carregamento.create({
       data: {
         empresaId: user.empresaId,
         docaId: body.docaId,
         veiculoPlaca: body.veiculoPlaca,
         transportadoraId: body.transportadoraId,
+        motorista: body.motorista,
+        motoristaCpf: body.motoristaCpf,
+        rotaId: body.rotaId,
       },
     })
 
@@ -603,6 +620,160 @@ export async function carregamentoRoutes(app: FastifyInstance) {
 
     reply.header('Content-Type', 'text/html; charset=utf-8')
     return reply.send(html)
+  })
+
+  // ==========================================================================
+  // POST /:id/cancelar — Cancel carregamento
+  // Task 5.5: Requires motivoCancelamento, rejects CONCLUIDO, reverts volumes
+  // ==========================================================================
+  app.post('/:id/cancelar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      motivoCancelamento: z.string().min(1, 'Motivo de cancelamento é obrigatório'),
+    }).parse(request.body)
+
+    const carregamento = await prisma.carregamento.findFirst({
+      where: { id, empresaId: user.empresaId },
+      include: { volumes: true },
+    })
+
+    if (!carregamento) return reply.status(404).send({ message: 'Carregamento não encontrado' })
+    if (carregamento.status === 'CONCLUIDO') {
+      return reply.status(422).send({ message: 'Carregamento concluído não pode ser cancelado' })
+    }
+    if (carregamento.status === 'CANCELADO') {
+      return reply.status(422).send({ message: 'Carregamento já está cancelado' })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Revert each volume status to EMBALADO
+      for (const cv of carregamento.volumes) {
+        await tx.volume.update({
+          where: { id: cv.volumeId },
+          data: { status: 'EMBALADO' },
+        })
+      }
+
+      // Delete all CarregamentoVolume records
+      await tx.carregamentoVolume.deleteMany({
+        where: { carregamentoId: id },
+      })
+
+      // Update carregamento status
+      await tx.carregamento.update({
+        where: { id },
+        data: {
+          status: 'CANCELADO',
+          motivoCancelamento: body.motivoCancelamento,
+          canceladoPorId: user.id,
+          canceladoEm: new Date(),
+        },
+      })
+
+      // Close linked OS CARREGAMENTO
+      try {
+        const os = await tx.ordemServicoWms.findFirst({
+          where: {
+            carregamentoId: id,
+            empresaId: user.empresaId,
+            operacao: 'CARREGAMENTO',
+            status: { in: ['ABERTO', 'EXECUTANDO'] },
+          },
+          orderBy: { criadoEm: 'desc' },
+        })
+        if (os) {
+          await tx.ordemServicoWms.update({
+            where: { id: os.id },
+            data: { status: 'CANCELADO', horaFim: new Date() },
+          })
+        }
+      } catch {
+        // OS sync is non-blocking
+      }
+    })
+
+    return { message: 'Carregamento cancelado com sucesso' }
+  })
+
+  // ==========================================================================
+  // DELETE /:id/volumes/:volumeId — Remove volume from carregamento
+  // Task 5.7: Rejects CONCLUIDO/CANCELADO, reverts volume to EMBALADO
+  // ==========================================================================
+  app.delete('/:id/volumes/:volumeId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const params = z.object({
+      id: z.string().uuid(),
+      volumeId: z.string().uuid(),
+    }).parse(request.params)
+
+    const carregamento = await prisma.carregamento.findFirst({
+      where: { id: params.id, empresaId: user.empresaId },
+    })
+
+    if (!carregamento) return reply.status(404).send({ message: 'Carregamento não encontrado' })
+    if (carregamento.status === 'CONCLUIDO') {
+      return reply.status(422).send({ message: 'Carregamento concluído não pode ser alterado' })
+    }
+    if (carregamento.status === 'CANCELADO') {
+      return reply.status(422).send({ message: 'Carregamento cancelado não pode ser alterado' })
+    }
+
+    const carregamentoVolume = await prisma.carregamentoVolume.findFirst({
+      where: { carregamentoId: params.id, volumeId: params.volumeId },
+    })
+
+    if (!carregamentoVolume) {
+      return reply.status(404).send({ message: 'Volume não está associado a este carregamento' })
+    }
+
+    // Delete the CarregamentoVolume record and revert volume status
+    await prisma.carregamentoVolume.delete({ where: { id: carregamentoVolume.id } })
+    await prisma.volume.update({
+      where: { id: params.volumeId },
+      data: { status: 'EMBALADO' },
+    })
+
+    return { message: 'Volume removido do carregamento' }
+  })
+
+  // ==========================================================================
+  // PATCH /:id/status — Transition carregamento status
+  // Task 5.9: Uses StatusMachineService, records timestamps
+  // ==========================================================================
+  app.patch('/:id/status', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      status: z.string().min(1),
+    }).parse(request.body)
+
+    const carregamento = await prisma.carregamento.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+
+    if (!carregamento) return reply.status(404).send({ message: 'Carregamento não encontrado' })
+
+    const resultado = validarTransicaoCarregamento(carregamento.status, body.status)
+    if (!resultado.valido) {
+      return reply.status(422).send({ message: resultado.mensagem })
+    }
+
+    const updateData: any = { status: body.status }
+
+    // Record timestamps based on target status
+    if (body.status === 'EM_CARREGAMENTO') {
+      updateData.emCarregamentoEm = new Date()
+    } else if (body.status === 'CONCLUIDO') {
+      updateData.concluidoEm = new Date()
+    }
+
+    const atualizado = await prisma.carregamento.update({
+      where: { id },
+      data: updateData,
+    })
+
+    return atualizado
   })
 }
 

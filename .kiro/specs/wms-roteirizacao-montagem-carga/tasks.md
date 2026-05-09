@@ -63,16 +63,16 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - Validação de entrada com Zod schemas
     - _Requirements: 1.1, 1.4, 1.5, 1.6, 1.7_
 
-- [ ] 3. Checkpoint — Verificar módulo Rota
+- [x] 3. Checkpoint — Verificar módulo Rota
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implementar associação Rota-Cliente e Rota-PedidoVenda
-  - [ ] 4.1 Modificar endpoint de Cliente para aceitar rotaId
+- [x] 4. Implementar associação Rota-Cliente e Rota-PedidoVenda
+  - [x] 4.1 Modificar endpoint de Cliente para aceitar rotaId
     - Atualizar endpoint de criação/atualização de Cliente para aceitar campo `rotaId`
     - Validar que rotaId pertence à mesma empresa do Cliente
     - _Requirements: 2.1, 2.2, 2.6_
 
-  - [ ] 4.2 Implementar auto-preenchimento de rotaId no PedidoVenda
+  - [x] 4.2 Implementar auto-preenchimento de rotaId no PedidoVenda
     - Modificar criação de PedidoVenda: se Cliente tem rotaId, preencher automaticamente no pedido
     - Permitir override manual do rotaId no PedidoVenda
     - Validar que rotaId pertence à mesma empresa
@@ -91,8 +91,8 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 20: Rejeição de rotaId em PedidoVenda não-RASCUNHO**
     - **Validates: Requirements 18.5**
 
-- [ ] 5. Implementar melhorias no Carregamento
-  - [ ] 5.1 Criar StatusMachineService para Carregamento
+- [x] 5. Implementar melhorias no Carregamento
+  - [x] 5.1 Criar StatusMachineService para Carregamento
     - Criar `src/modules/carregamento/status-machine.service.ts`
     - Implementar validação de transições: PENDENTE→EM_CARREGAMENTO, EM_CARREGAMENTO→CONCLUIDO, PENDENTE→CANCELADO, EM_CARREGAMENTO→CANCELADO
     - Rejeitar transições inválidas com erro 422 descritivo
@@ -106,14 +106,14 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 5: Imutabilidade de Carregamento concluído/cancelado**
     - **Validates: Requirements 3.5, 4.5, 5.3, 16.3**
 
-  - [ ] 5.4 Adicionar campos motorista e rotaId ao Carregamento
+  - [x] 5.4 Adicionar campos motorista e rotaId ao Carregamento
     - Modificar endpoints de criação/atualização de Carregamento para aceitar motorista, motoristaCpf, rotaId
     - Validar que rotaId pertence à mesma empresa
     - Rejeitar atualizações em Carregamento CONCLUIDO ou CANCELADO
     - Adicionar filtro por rotaId na listagem de carregamentos
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 16.1, 16.2, 16.3, 16.4, 16.5_
 
-  - [ ] 5.5 Implementar cancelamento de Carregamento
+  - [x] 5.5 Implementar cancelamento de Carregamento
     - Criar endpoint `POST /carregamentos/:id/cancelar`
     - Exigir motivoCancelamento (não vazio)
     - Dissociar todos os CarregamentoVolume do carregamento
@@ -127,7 +127,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 7: Cancelamento de Carregamento restaura volumes**
     - **Validates: Requirements 4.3, 4.4**
 
-  - [ ] 5.7 Implementar remoção de volume do Carregamento
+  - [x] 5.7 Implementar remoção de volume do Carregamento
     - Criar endpoint `DELETE /carregamentos/:id/volumes/:volumeId`
     - Reverter status do Volume para EMBALADO
     - Rejeitar se Carregamento CONCLUIDO ou CANCELADO
@@ -139,7 +139,7 @@ Plano de implementação para a funcionalidade de Roteirização e Montagem de C
     - **Property 8: Remoção de volume restaura status**
     - **Validates: Requirements 5.2**
 
-  - [ ] 5.9 Implementar endpoint de transição de status do Carregamento
+  - [x] 5.9 Implementar endpoint de transição de status do Carregamento
     - Criar endpoint `PATCH /carregamentos/:id/status`
     - Usar StatusMachineService para validar transição
     - Registrar timestamps: emCarregamentoEm, concluidoEm
