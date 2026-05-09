@@ -107,6 +107,11 @@ async function main() {
     console.log('⚠️ Limpeza OS órfãs skipped:', e.message)
   }
 
+  // Corrigir tipo das colunas XML na tabela nfe (VARCHAR → TEXT)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_enviado" TYPE TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_retorno" TYPE TEXT`)
+  console.log('✅ Colunas XML da NF-e alteradas para TEXT')
+
   // Tabelas de Roteirização e Montagem de Carga
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "rota" (
