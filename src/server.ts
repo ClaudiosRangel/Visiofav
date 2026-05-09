@@ -237,8 +237,7 @@ async function bootstrap() {
       return reply.status(403).send({ error: 'Senha inválida' })
     }
 
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
+    const { prisma: db } = await import('./lib/prisma')
     const results: string[] = []
 
     const tables = [
