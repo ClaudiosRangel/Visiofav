@@ -207,6 +207,7 @@ model Produto {
   status        Boolean  @default(true)
   imagemUrl     String?  @db.Text @map("imagem_url")
   shelfLifeMinimo Int?   @map("shelf_life_minimo")
+  curvaAbc      String?  @db.VarChar(1) @map("curva_abc")
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 

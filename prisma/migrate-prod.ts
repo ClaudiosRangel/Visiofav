@@ -232,6 +232,10 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "shelf_life_minimo" INTEGER`)
   console.log('✅ Produto: campo shelf_life_minimo adicionado')
 
+  // Curva ABC no Produto
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "curva_abc" VARCHAR(1)`)
+  console.log('✅ Produto: campo curva_abc adicionado')
+
   // Capacidade por Nível de Estrutura
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "capacidade_nivel" (

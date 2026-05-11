@@ -94,6 +94,7 @@ export async function produtoRoutes(app: FastifyInstance) {
       aliqCOFINS: z.number().optional(),
       origemProd: z.number().optional(),
       shelfLifeMinimo: z.number().int().positive().nullable().optional(),
+      curvaAbc: z.enum(['A', 'B', 'C']).nullable().optional(),
     }).parse(request.body)
 
     return prisma.produto.update({ where: { id }, data })
@@ -212,5 +213,16 @@ export async function produtoRoutes(app: FastifyInstance) {
     await prisma.produto.update({ where: { id }, data: { imagemUrl: null } })
 
     return reply.status(204).send()
+  })
+
+  // POST /recalcular-curva-abc — Recalcula curva ABC de todos os produtos
+  app.post('/recalcular-curva-abc', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+
+    const { calcularCurvaAbc } = await import('./curva-abc.service')
+    const resultado = await calcularCurvaAbc(user.empresaId)
+
+    return resultado
   })
 }
