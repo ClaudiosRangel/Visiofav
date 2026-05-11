@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { validarShelfLife } from './shelf-life.service'
+import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
+import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
 
 function getHojeRange() {
   const hojeStr = new Date().toISOString().split('T')[0]
@@ -83,6 +86,30 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     // Buscar item pelo código do produto
     const item = nota.itens.find((i) => i.codigoProduto === body.codigoProduto)
     if (!item) return reply.status(404).send({ message: `Produto ${body.codigoProduto} não encontrado nesta nota` })
+
+    // Validação de Shelf Life
+    if (body.validade) {
+      const produto = await prisma.produto.findFirst({
+        where: { empresaId: user.empresaId, codigo: body.codigoProduto },
+        select: { shelfLifeMinimo: true, nome: true },
+      })
+      if (produto && produto.shelfLifeMinimo) {
+        const resultado = validarShelfLife({
+          shelfLifeMinimo: produto.shelfLifeMinimo,
+          dataValidade: new Date(body.validade),
+          dataAtual: new Date(),
+          produtoNome: produto.nome,
+        })
+        if (!resultado.aprovado) {
+          return reply.status(422).send({
+            message: resultado.mensagem,
+            bloqueio: 'SHELF_LIFE',
+            diasRestantes: resultado.diasRestantes,
+            dataMinima: resultado.dataMinima,
+          })
+        }
+      }
+    }
 
     const quantidadeNota = Number(item.quantidade)
     const divergencia = body.quantidade - quantidadeNota
@@ -264,6 +291,30 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       })
     }
 
+    // Validação de Shelf Life
+    if (body.validade && item.codigoProduto) {
+      const produto = await prisma.produto.findFirst({
+        where: { empresaId: userConf.empresaId, codigo: item.codigoProduto },
+        select: { shelfLifeMinimo: true, nome: true },
+      })
+      if (produto && produto.shelfLifeMinimo) {
+        const resultado = validarShelfLife({
+          shelfLifeMinimo: produto.shelfLifeMinimo,
+          dataValidade: new Date(body.validade),
+          dataAtual: new Date(),
+          produtoNome: produto.nome,
+        })
+        if (!resultado.aprovado) {
+          return reply.status(422).send({
+            message: resultado.mensagem,
+            bloqueio: 'SHELF_LIFE',
+            diasRestantes: resultado.diasRestantes,
+            dataMinima: resultado.dataMinima,
+          })
+        }
+      }
+    }
+
     const quantidadeNota = Number(item.quantidade)
     const divergencia = body.quantidadeConferida - quantidadeNota
     const status = divergencia === 0 ? 'CONFORME' : 'DIVERGENTE'
@@ -311,10 +362,35 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     const resultados = []
     let temDivergencia = false
+    const falhasShelfLife: Array<{ itemId: string; descricao: string; mensagem: string }> = []
 
     for (const conferido of body.itens) {
       const item = nota.itens.find((i) => i.id === conferido.itemNotaEntradaId)
       if (!item) continue
+
+      // Validação de Shelf Life por item
+      if (conferido.validade && item.codigoProduto) {
+        const produto = await prisma.produto.findFirst({
+          where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto },
+          select: { shelfLifeMinimo: true, nome: true },
+        })
+        if (produto && produto.shelfLifeMinimo) {
+          const resultado = validarShelfLife({
+            shelfLifeMinimo: produto.shelfLifeMinimo,
+            dataValidade: new Date(conferido.validade),
+            dataAtual: new Date(),
+            produtoNome: produto.nome,
+          })
+          if (!resultado.aprovado) {
+            falhasShelfLife.push({
+              itemId: item.id,
+              descricao: item.descricao,
+              mensagem: resultado.mensagem!,
+            })
+            continue // Skip this item
+          }
+        }
+      }
 
       const quantidadeNota = Number(item.quantidade)
       const divergencia = conferido.quantidadeConferida - quantidadeNota
@@ -347,6 +423,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       conformes: resultados.filter((r) => r.status === 'CONFORME').length,
       divergentes: resultados.filter((r) => r.status === 'DIVERGENTE').length,
       itens: resultados,
+      falhasShelfLife: falhasShelfLife.length > 0 ? falhasShelfLife : undefined,
     }
   })
 
@@ -592,6 +669,67 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           }
         }
 
+        // Validate level capacity for the selected address
+        if (enderecoDestino && enderecoDestino.estrutura?.id && enderecoDestino.codigoNivel) {
+          const capacidadeNivel = await tx.capacidadeNivel.findFirst({
+            where: { estruturaId: enderecoDestino.estrutura.id, codigoNivel: enderecoDestino.codigoNivel, status: true },
+          })
+          if (capacidadeNivel) {
+            const enderecosNivel = await tx.endereco.findMany({
+              where: { estruturaId: enderecoDestino.estrutura.id, codigoNivel: enderecoDestino.codigoNivel, status: true },
+              select: { id: true },
+            })
+            const enderecoIdsNivel = enderecosNivel.map((e) => e.id)
+            const saldosNivel = await tx.saldoEndereco.findMany({
+              where: { enderecoId: { in: enderecoIdsNivel }, quantidade: { gt: 0 } },
+            })
+            const saldosComSku = await Promise.all(
+              saldosNivel.map(async (s) => {
+                const sku = await tx.sku.findFirst({
+                  where: { produtoId: s.produtoId },
+                  select: { pesoBruto: true, volume: true },
+                })
+                return {
+                  quantidade: Number(s.quantidade),
+                  pesoBruto: sku?.pesoBruto ? Number(sku.pesoBruto) : null,
+                  volume: sku?.volume ? Number(sku.volume) : null,
+                }
+              })
+            )
+            const ocupacaoAtual = calcularOcupacaoNivel(saldosComSku)
+            const skuIncoming = await tx.sku.findFirst({
+              where: { produtoId: produto.id },
+              select: { pesoBruto: true, volume: true },
+            })
+            const pesoIncoming = (skuIncoming?.pesoBruto ? Number(skuIncoming.pesoBruto) : 0) * Number(item.quantidade)
+            const volumeIncoming = (skuIncoming?.volume ? Number(skuIncoming.volume) : 0) * Number(item.quantidade)
+
+            const validacaoNivel = validarCapacidadeNivel({
+              config: {
+                pesoMaximo: capacidadeNivel.pesoMaximo ? Number(capacidadeNivel.pesoMaximo) : null,
+                volumeMaximo: capacidadeNivel.volumeMaximo ? Number(capacidadeNivel.volumeMaximo) : null,
+                paletesMaximo: capacidadeNivel.paletesMaximo,
+              },
+              ocupacaoAtual,
+              pesoIncoming,
+              volumeIncoming,
+              paletesIncoming: 1,
+            })
+
+            if (!validacaoNivel.permitido) {
+              // Skip this address, try next available in a different level
+              const alternativo = livres.find((e, i) => i >= enderecoIdx && e.codigoNivel !== enderecoDestino!.codigoNivel)
+              if (alternativo) {
+                enderecoDestino = alternativo
+                livres.splice(livres.indexOf(alternativo), 1)
+              } else {
+                // No alternative found, skip this item
+                continue
+              }
+            }
+          }
+        }
+
         await tx.saldoEndereco.create({
           data: {
             enderecoId: enderecoDestino.id,
@@ -645,6 +783,59 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       where: { empresaId: user.empresaId, codigo: item.codigoProduto || '' },
     })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
+
+    // Validate level capacity for manual addressing
+    if (endereco.estruturaId && endereco.codigoNivel) {
+      const capacidadeNivel = await prisma.capacidadeNivel.findFirst({
+        where: { estruturaId: endereco.estruturaId, codigoNivel: endereco.codigoNivel, status: true },
+      })
+      if (capacidadeNivel) {
+        const enderecosNivel = await prisma.endereco.findMany({
+          where: { estruturaId: endereco.estruturaId, codigoNivel: endereco.codigoNivel, status: true },
+          select: { id: true },
+        })
+        const enderecoIdsNivel = enderecosNivel.map((e) => e.id)
+        const saldosNivel = await prisma.saldoEndereco.findMany({
+          where: { enderecoId: { in: enderecoIdsNivel }, quantidade: { gt: 0 } },
+        })
+        const saldosComSku = await Promise.all(
+          saldosNivel.map(async (s) => {
+            const sku = await prisma.sku.findFirst({
+              where: { produtoId: s.produtoId },
+              select: { pesoBruto: true, volume: true },
+            })
+            return {
+              quantidade: Number(s.quantidade),
+              pesoBruto: sku?.pesoBruto ? Number(sku.pesoBruto) : null,
+              volume: sku?.volume ? Number(sku.volume) : null,
+            }
+          })
+        )
+        const ocupacaoAtual = calcularOcupacaoNivel(saldosComSku)
+        const skuIncoming = await prisma.sku.findFirst({
+          where: { produtoId: produto.id },
+          select: { pesoBruto: true, volume: true },
+        })
+        const pesoIncoming = (skuIncoming?.pesoBruto ? Number(skuIncoming.pesoBruto) : 0) * body.quantidade
+        const volumeIncoming = (skuIncoming?.volume ? Number(skuIncoming.volume) : 0) * body.quantidade
+
+        const validacaoNivel = validarCapacidadeNivel({
+          config: {
+            pesoMaximo: capacidadeNivel.pesoMaximo ? Number(capacidadeNivel.pesoMaximo) : null,
+            volumeMaximo: capacidadeNivel.volumeMaximo ? Number(capacidadeNivel.volumeMaximo) : null,
+            paletesMaximo: capacidadeNivel.paletesMaximo,
+          },
+          ocupacaoAtual,
+          pesoIncoming,
+          volumeIncoming,
+          paletesIncoming: 1,
+        })
+
+        if (!validacaoNivel.permitido) {
+          return reply.status(422).send({ message: validacaoNivel.motivo })
+        }
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       const saldoExistente = await tx.saldoEndereco.findFirst({

@@ -93,9 +93,77 @@ export async function produtoRoutes(app: FastifyInstance) {
       cstCOFINS: z.string().optional(),
       aliqCOFINS: z.number().optional(),
       origemProd: z.number().optional(),
+      shelfLifeMinimo: z.number().int().positive().nullable().optional(),
     }).parse(request.body)
 
     return prisma.produto.update({ where: { id }, data })
+  })
+
+  // POST /batch-shelf-life — atualização em lote do shelfLifeMinimo
+  app.post('/batch-shelf-life', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+
+    const body = z.object({
+      itens: z.array(z.object({
+        produtoId: z.string().uuid().optional(),
+        codigo: z.string().optional(),
+        shelfLifeMinimo: z.number().int().positive().nullable(),
+      })).min(1, 'A lista de itens não pode ser vazia'),
+    }).parse(request.body)
+
+    const resultados: Array<{ produtoId?: string; codigo?: string; sucesso: boolean; erro?: string }> = []
+    let sucessos = 0
+    let falhas = 0
+
+    for (const item of body.itens) {
+      try {
+        let produto = null
+
+        if (item.produtoId) {
+          produto = await prisma.produto.findFirst({
+            where: { id: item.produtoId, empresaId: user.empresaId },
+          })
+        } else if (item.codigo) {
+          produto = await prisma.produto.findFirst({
+            where: { codigo: item.codigo, empresaId: user.empresaId },
+          })
+        }
+
+        if (!produto) {
+          falhas++
+          resultados.push({
+            produtoId: item.produtoId,
+            codigo: item.codigo,
+            sucesso: false,
+            erro: `Produto não encontrado: ${item.produtoId || item.codigo}`,
+          })
+          continue
+        }
+
+        await prisma.produto.update({
+          where: { id: produto.id },
+          data: { shelfLifeMinimo: item.shelfLifeMinimo },
+        })
+
+        sucessos++
+        resultados.push({
+          produtoId: produto.id,
+          codigo: produto.codigo,
+          sucesso: true,
+        })
+      } catch (err: any) {
+        falhas++
+        resultados.push({
+          produtoId: item.produtoId,
+          codigo: item.codigo,
+          sucesso: false,
+          erro: err.message || 'Erro desconhecido',
+        })
+      }
+    }
+
+    return { total: body.itens.length, sucessos, falhas, resultados }
   })
 
   app.delete('/:id', async (request, reply) => {

@@ -206,6 +206,7 @@ model Produto {
   precoBase     Decimal  @default(0) @db.Decimal(12,4) @map("preco_base")
   status        Boolean  @default(true)
   imagemUrl     String?  @db.Text @map("imagem_url")
+  shelfLifeMinimo Int?   @map("shelf_life_minimo")
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 
@@ -935,8 +936,26 @@ model Estrutura {
   empresaId   String?  @map("empresa_id")
 
   enderecos   Endereco[]
+  capacidadesNivel CapacidadeNivel[]
 
   @@map("estrutura")
+}
+
+model CapacidadeNivel {
+  id            String    @id @default(uuid())
+  empresaId     String    @map("empresa_id")
+  estruturaId   String    @map("estrutura_id")
+  estrutura     Estrutura @relation(fields: [estruturaId], references: [id])
+  codigoNivel   String    @db.VarChar(10) @map("codigo_nivel")
+  pesoMaximo    Decimal?  @db.Decimal(12,3) @map("peso_maximo")
+  volumeMaximo  Decimal?  @db.Decimal(12,6) @map("volume_maximo")
+  paletesMaximo Int?      @map("paletes_maximo")
+  status        Boolean   @default(true)
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+  atualizadoEm  DateTime  @updatedAt @map("atualizado_em")
+
+  @@unique([estruturaId, codigoNivel])
+  @@map("capacidade_nivel")
 }
 
 model Endereco {

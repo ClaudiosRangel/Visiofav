@@ -8,6 +8,8 @@ import { registrarAudit } from '../auditoria/auditoria.routes'
 import { FichaService } from '../ficha-operacional/ficha.service'
 import { SugestaoEnderecoService } from './sugestao-endereco.service'
 import { ValidadorCapacidade } from '../endereco/validador-capacidade.service'
+import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
+import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
 import type { ItemNotaEntrada, Produto } from '@prisma/client'
 import crypto from 'node:crypto'
 
@@ -113,6 +115,67 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
       })
       if (!capacityResult.permitido) {
         return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
+      }
+
+      // Validate level capacity
+      if (endereco.codigoNivel) {
+        const capacidadeNivel = await prisma.capacidadeNivel.findFirst({
+          where: { estruturaId: endereco.estruturaId, codigoNivel: endereco.codigoNivel, status: true },
+        })
+        if (capacidadeNivel) {
+          // Get all addresses in this level
+          const enderecosNivel = await prisma.endereco.findMany({
+            where: { estruturaId: endereco.estruturaId, codigoNivel: endereco.codigoNivel, status: true },
+            select: { id: true },
+          })
+          const enderecoIdsNivel = enderecosNivel.map((e) => e.id)
+
+          // Get current saldos for this level
+          const saldosNivel = await prisma.saldoEndereco.findMany({
+            where: { enderecoId: { in: enderecoIdsNivel }, quantidade: { gt: 0 } },
+          })
+
+          // Get SKU data for occupancy calculation
+          const saldosComSku = await Promise.all(
+            saldosNivel.map(async (s) => {
+              const sku = await prisma.sku.findFirst({
+                where: { produtoId: s.produtoId },
+                select: { pesoBruto: true, volume: true },
+              })
+              return {
+                quantidade: Number(s.quantidade),
+                pesoBruto: sku?.pesoBruto ? Number(sku.pesoBruto) : null,
+                volume: sku?.volume ? Number(sku.volume) : null,
+              }
+            })
+          )
+
+          const ocupacaoAtual = calcularOcupacaoNivel(saldosComSku)
+
+          // Get incoming item weight/volume from SKU
+          const skuIncoming = await prisma.sku.findFirst({
+            where: { produtoId: body.produtoId },
+            select: { pesoBruto: true, volume: true },
+          })
+          const pesoIncoming = (skuIncoming?.pesoBruto ? Number(skuIncoming.pesoBruto) : 0) * body.quantidade
+          const volumeIncoming = (skuIncoming?.volume ? Number(skuIncoming.volume) : 0) * body.quantidade
+
+          const validacaoNivel = validarCapacidadeNivel({
+            config: {
+              pesoMaximo: capacidadeNivel.pesoMaximo ? Number(capacidadeNivel.pesoMaximo) : null,
+              volumeMaximo: capacidadeNivel.volumeMaximo ? Number(capacidadeNivel.volumeMaximo) : null,
+              paletesMaximo: capacidadeNivel.paletesMaximo,
+            },
+            ocupacaoAtual,
+            pesoIncoming,
+            volumeIncoming,
+            paletesIncoming: 1,
+          })
+
+          if (!validacaoNivel.permitido) {
+            return reply.status(422).send({ message: validacaoNivel.motivo })
+          }
+        }
       }
     }
 
@@ -456,6 +519,63 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
       })
       if (!capacityResult.permitido) {
         return reply.status(422).send({ message: capacityResult.motivo || 'Capacidade excedida' })
+      }
+
+      // Validate level capacity
+      if (endereco.codigoNivel) {
+        const capacidadeNivel = await prisma.capacidadeNivel.findFirst({
+          where: { estruturaId: endereco.estruturaId, codigoNivel: endereco.codigoNivel, status: true },
+        })
+        if (capacidadeNivel) {
+          const enderecosNivel = await prisma.endereco.findMany({
+            where: { estruturaId: endereco.estruturaId, codigoNivel: endereco.codigoNivel, status: true },
+            select: { id: true },
+          })
+          const enderecoIdsNivel = enderecosNivel.map((e) => e.id)
+
+          const saldosNivel = await prisma.saldoEndereco.findMany({
+            where: { enderecoId: { in: enderecoIdsNivel }, quantidade: { gt: 0 } },
+          })
+
+          const saldosComSku = await Promise.all(
+            saldosNivel.map(async (s) => {
+              const sku = await prisma.sku.findFirst({
+                where: { produtoId: s.produtoId },
+                select: { pesoBruto: true, volume: true },
+              })
+              return {
+                quantidade: Number(s.quantidade),
+                pesoBruto: sku?.pesoBruto ? Number(sku.pesoBruto) : null,
+                volume: sku?.volume ? Number(sku.volume) : null,
+              }
+            })
+          )
+
+          const ocupacaoAtual = calcularOcupacaoNivel(saldosComSku)
+
+          const skuIncoming = await prisma.sku.findFirst({
+            where: { produtoId: body.produtoId },
+            select: { pesoBruto: true, volume: true },
+          })
+          const pesoIncoming = (skuIncoming?.pesoBruto ? Number(skuIncoming.pesoBruto) : 0) * body.quantidade
+          const volumeIncoming = (skuIncoming?.volume ? Number(skuIncoming.volume) : 0) * body.quantidade
+
+          const validacaoNivel = validarCapacidadeNivel({
+            config: {
+              pesoMaximo: capacidadeNivel.pesoMaximo ? Number(capacidadeNivel.pesoMaximo) : null,
+              volumeMaximo: capacidadeNivel.volumeMaximo ? Number(capacidadeNivel.volumeMaximo) : null,
+              paletesMaximo: capacidadeNivel.paletesMaximo,
+            },
+            ocupacaoAtual,
+            pesoIncoming,
+            volumeIncoming,
+            paletesIncoming: 1,
+          })
+
+          if (!validacaoNivel.permitido) {
+            return reply.status(422).send({ message: validacaoNivel.motivo })
+          }
+        }
       }
     }
 

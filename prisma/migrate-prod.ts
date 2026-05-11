@@ -228,6 +228,31 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_compra" ADD COLUMN IF NOT EXISTS "unidade" VARCHAR(6) DEFAULT 'UN'`)
   console.log('✅ ItemPedidoCompra: campo unidade adicionado')
 
+  // Shelf Life Mínimo no Produto
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "shelf_life_minimo" INTEGER`)
+  console.log('✅ Produto: campo shelf_life_minimo adicionado')
+
+  // Capacidade por Nível de Estrutura
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "capacidade_nivel" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "estrutura_id" TEXT NOT NULL,
+      "codigo_nivel" VARCHAR(10) NOT NULL,
+      "peso_maximo" DECIMAL(12,3),
+      "volume_maximo" DECIMAL(12,6),
+      "paletes_maximo" INTEGER,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "capacidade_nivel_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "capacidade_nivel_estrutura_id_codigo_nivel_key" UNIQUE ("estrutura_id", "codigo_nivel")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_capacidade_nivel_empresa_id" ON "capacidade_nivel"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_capacidade_nivel_estrutura_id" ON "capacidade_nivel"("estrutura_id")`)
+  console.log('✅ Tabela capacidade_nivel criada')
+
   // De-Para Produto Fornecedor table
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "depara_produto_fornecedor" (
