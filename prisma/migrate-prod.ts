@@ -220,6 +220,10 @@ async function main() {
     console.log('⚠️ Admin password update skipped:', e.message)
   }
 
+  // Produto - campo imagem_url
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "imagem_url" TEXT`)
+  console.log('✅ Produto: campo imagem_url adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 

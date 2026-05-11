@@ -103,4 +103,46 @@ export async function produtoRoutes(app: FastifyInstance) {
     await prisma.produto.delete({ where: { id } })
     return reply.status(204).send()
   })
+
+  // POST /:id/imagem — Upload de imagem do produto (base64)
+  app.post('/:id/imagem', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const user = request.user as { id: string; empresaId?: string }
+
+    const data = await request.file()
+    if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' })
+
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    if (!allowedMimes.includes(data.mimetype)) {
+      return reply.status(400).send({ message: 'Formato inválido. Use JPEG, PNG, WebP ou GIF.' })
+    }
+
+    const buffer = await data.toBuffer()
+    // Limitar a 2MB
+    if (buffer.length > 2 * 1024 * 1024) {
+      return reply.status(400).send({ message: 'Imagem muito grande. Máximo 2MB.' })
+    }
+
+    const base64 = `data:${data.mimetype};base64,${buffer.toString('base64')}`
+
+    const produto = await prisma.produto.findFirst({ where: { id, empresaId: user.empresaId } })
+    if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
+
+    await prisma.produto.update({ where: { id }, data: { imagemUrl: base64 } })
+
+    return { message: 'Imagem salva com sucesso', imagemUrl: base64 }
+  })
+
+  // DELETE /:id/imagem — Remover imagem do produto
+  app.delete('/:id/imagem', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const user = request.user as { id: string; empresaId?: string }
+
+    const produto = await prisma.produto.findFirst({ where: { id, empresaId: user.empresaId } })
+    if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
+
+    await prisma.produto.update({ where: { id }, data: { imagemUrl: null } })
+
+    return reply.status(204).send()
+  })
 }
