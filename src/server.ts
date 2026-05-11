@@ -78,6 +78,7 @@ import { relatorioExpedicaoRoutes } from './modules/relatorio-expedicao/relatori
 import { deparaFornecedorRoutes } from './modules/depara-fornecedor/depara-fornecedor.routes'
 import { importarXmlDeparaRoutes } from './modules/nota-entrada/importar-xml-depara.routes'
 import { capacidadeNivelRoutes } from './modules/capacidade-nivel/capacidade-nivel.routes'
+import { enderecamentoInteligenteRoutes } from './modules/enderecamento-inteligente/enderecamento-inteligente.routes'
 
 import { registerTenantContext } from './middleware/tenant-context'
 import multipart from '@fastify/multipart'
@@ -142,6 +143,7 @@ async function bootstrap() {
   await app.register(ordemServicoWmsRoutes, { prefix: '/api/os-wms' })
   await app.register(pendenciaLogisticaRoutes, { prefix: '/api/pendencias-logisticas' })
   await app.register(capacidadeNivelRoutes, { prefix: '/api/capacidades-nivel' })
+  await app.register(enderecamentoInteligenteRoutes, { prefix: '/api/enderecamento-inteligente' })
 
   // Fichas Operacionais, OCR e Scanner
   await app.register(fichaOperacionalRoutes, { prefix: '/api/fichas-operacionais' })

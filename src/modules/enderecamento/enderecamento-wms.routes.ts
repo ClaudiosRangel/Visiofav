@@ -10,6 +10,10 @@ import { SugestaoEnderecoService } from './sugestao-endereco.service'
 import { ValidadorCapacidade } from '../endereco/validador-capacidade.service'
 import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
 import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
+import { selecionarSkuMaster, converterParaUnidadeMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
+import { validarCubagem, type DimensoesSku, type DimensoesEstrutura, type CapacidadeNivelConfig } from '../enderecamento-inteligente/validador-cubagem.service'
+import { ordenarPorProximidade, type EnderecoCandidate } from '../enderecamento-inteligente/alocador-proximidade.service'
+import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
 import type { ItemNotaEntrada, Produto } from '@prisma/client'
 import crypto from 'node:crypto'
 
@@ -851,34 +855,261 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
       })
     }
 
-    // Build input for sugerirLote
-    const sugestaoService = new SugestaoEnderecoService()
-    const itensParaSugestao = itensComProduto
-      .filter((i) => i.produto !== null)
-      .map((i) => ({
-        itemId: i.item.id,
-        produtoId: i.produto!.id,
-        quantidade: Number(i.item.quantidade),
-        lote: i.item.lote ?? undefined,
-        validade: i.item.validade ?? undefined,
-      }))
+    // Use new motor for split distribution
+    const resultado = await Promise.all(
+      nota.itens.map(async (item) => {
+        const produtoInfo = itensComProduto.find((i) => i.item.id === item.id)
+        const produto = produtoInfo?.produto
 
-    const sugestoes = await sugestaoService.sugerirLote(itensParaSugestao, user.empresaId)
+        if (!produto) {
+          return {
+            itemId: item.id,
+            produtoId: null,
+            produtoCodigo: item.codigoProduto ?? '',
+            produtoNome: item.descricao,
+            quantidade: Number(item.quantidade),
+            lote: item.lote ?? null,
+            validade: item.validade?.toISOString() ?? null,
+            sugestao: null,
+            distribuicao: null,
+          }
+        }
 
-    // Build response
-    const resultado = nota.itens.map((item) => {
-      const produtoInfo = itensComProduto.find((i) => i.item.id === item.id)
-      return {
-        itemId: item.id,
-        produtoId: produtoInfo?.produto?.id ?? null,
-        produtoCodigo: item.codigoProduto ?? '',
-        produtoNome: produtoInfo?.produto?.nome ?? item.descricao,
-        quantidade: Number(item.quantidade),
-        lote: item.lote ?? null,
-        validade: item.validade?.toISOString() ?? null,
-        sugestao: sugestoes.get(item.id) ?? null,
-      }
-    })
+        // Try to use the new motor for split distribution
+        try {
+          const skusRaw = await prisma.sku.findMany({
+            where: { produtoId: produto.id },
+            orderBy: { sequencia: 'asc' },
+          })
+
+          const skus: SkuInfo[] = skusRaw.map((s) => ({
+            id: s.id,
+            sequencia: s.sequencia,
+            qtdEmbalagem: s.qtdEmbalagem,
+            lastro: s.lastro,
+            camada: s.camada,
+          }))
+
+          const skuMaster = selecionarSkuMaster(skus)
+          const skuExpedicao = skus[0]
+
+          const { quantidadeMaster } = converterParaUnidadeMaster({
+            quantidade: Number(item.quantidade),
+            skuExpedicao,
+            skuMaster,
+          })
+
+          const dadosArmazenagem = await prisma.dadosLogisticosArmazenagem.findFirst({
+            where: { produtoId: produto.id },
+          })
+          const dadosPicking = await prisma.dadosLogisticosPicking.findFirst({
+            where: { produtoId: produto.id },
+          })
+
+          let predioOrigem = 1
+          let ruaOrigem = 'A'
+          let nivelMin = dadosArmazenagem?.nivelMinPP ?? 1
+          let nivelMax = dadosArmazenagem?.nivelMaxPP ?? 99
+          if (nivelMin === 0) nivelMin = 1
+          if (nivelMax === 0) nivelMax = 99
+
+          if (dadosPicking?.enderecoPickingId) {
+            const ep = await prisma.endereco.findUnique({ where: { id: dadosPicking.enderecoPickingId } })
+            if (ep) {
+              predioOrigem = parseInt(ep.codigoPredio || '1', 10) || 1
+              ruaOrigem = ep.codigoRua || 'A'
+            }
+          } else if (dadosArmazenagem?.enderecoFixoId) {
+            const ef = await prisma.endereco.findUnique({ where: { id: dadosArmazenagem.enderecoFixoId } })
+            if (ef) {
+              predioOrigem = parseInt(ef.codigoPredio || '1', 10) || 1
+              ruaOrigem = ef.codigoRua || 'A'
+            }
+          }
+
+          // Build priority chain: fixed → consolidation → free
+          const enderecosComCapacidade: EnderecoComCapacidade[] = []
+
+          // Priority 1: Fixed address
+          if (dadosArmazenagem?.enderecoFixoId) {
+            const enderecoFixo = await prisma.endereco.findFirst({
+              where: { id: dadosArmazenagem.enderecoFixoId, status: true },
+              include: { estrutura: true },
+            })
+            if (enderecoFixo) {
+              const saldoFixo = await prisma.saldoEndereco.aggregate({
+                where: { enderecoId: enderecoFixo.id, quantidade: { gt: 0 } },
+                _sum: { quantidade: true },
+              })
+              const saldoAtual = Number(saldoFixo._sum.quantidade ?? 0)
+              const capacidade = calcularCapacidadePalete(
+                skuMaster.lastro, skuMaster.camada,
+                enderecoFixo.estrutura?.capacidade ? Number(enderecoFixo.estrutura.capacidade) : null,
+              )
+              const disponivel = Math.max(0, capacidade - saldoAtual)
+              if (disponivel > 0) {
+                enderecosComCapacidade.push({
+                  id: enderecoFixo.id,
+                  enderecoCompleto: enderecoFixo.enderecoCompleto ?? '',
+                  rua: enderecoFixo.codigoRua ?? '',
+                  predio: enderecoFixo.codigoPredio ?? '',
+                  nivel: enderecoFixo.codigoNivel ?? '',
+                  apartamento: enderecoFixo.codigoApto ?? '',
+                  capacidadePalete: capacidade,
+                  saldoAtual,
+                  disponivel,
+                })
+              }
+            }
+          }
+
+          // Priority 2: Consolidation
+          const saldosConsolidacao = await prisma.saldoEndereco.findMany({
+            where: {
+              produtoId: produto.id,
+              quantidade: { gt: 0 },
+              endereco: { status: true, tipo: { in: ['ARMAZENAGEM', 'LIVRE'] } },
+            },
+            include: { endereco: { include: { estrutura: true } } },
+          })
+
+          for (const saldo of saldosConsolidacao) {
+            if (enderecosComCapacidade.some((e) => e.id === saldo.enderecoId)) continue
+            const saldoAtual = Number(saldo.quantidade)
+            const capacidade = calcularCapacidadePalete(
+              skuMaster.lastro, skuMaster.camada,
+              saldo.endereco.estrutura?.capacidade ? Number(saldo.endereco.estrutura.capacidade) : null,
+            )
+            const disponivel = Math.max(0, capacidade - saldoAtual)
+            if (disponivel > 0) {
+              enderecosComCapacidade.push({
+                id: saldo.enderecoId,
+                enderecoCompleto: saldo.endereco.enderecoCompleto ?? '',
+                rua: saldo.endereco.codigoRua ?? '',
+                predio: saldo.endereco.codigoPredio ?? '',
+                nivel: saldo.endereco.codigoNivel ?? '',
+                apartamento: saldo.endereco.codigoApto ?? '',
+                capacidadePalete: capacidade,
+                saldoAtual,
+                disponivel,
+              })
+            }
+          }
+
+          // Priority 3: Free addresses
+          const enderecosCandidatos = await prisma.endereco.findMany({
+            where: {
+              tipo: { in: ['ARMAZENAGEM', 'LIVRE'] },
+              status: true,
+              empresaId: user.empresaId,
+              saldos: { none: { quantidade: { gt: 0 } } },
+            },
+            include: { estrutura: true },
+          })
+
+          const candidatosProximidade: EnderecoCandidate[] = enderecosCandidatos
+            .filter((e) => !enderecosComCapacidade.some((ec) => ec.id === e.id))
+            .map((e) => ({
+              id: e.id,
+              rua: e.codigoRua ?? '',
+              predio: parseInt(e.codigoPredio || '1', 10) || 1,
+              nivel: parseInt(e.codigoNivel || '1', 10) || 1,
+              apartamento: parseInt(e.codigoApto || '1', 10) || 1,
+              enderecoCompleto: e.enderecoCompleto ?? '',
+              estruturaId: e.estruturaId,
+              classificacaoProdutoId: e.classificacaoProdutoId,
+            }))
+
+          const ordenados = ordenarPorProximidade({
+            candidatos: candidatosProximidade,
+            predioOrigem,
+            ruaOrigem,
+            nivelMin,
+            nivelMax,
+          })
+
+          for (const candidato of ordenados) {
+            const enderecoOriginal = enderecosCandidatos.find((e) => e.id === candidato.id)!
+            const capacidade = calcularCapacidadePalete(
+              skuMaster.lastro, skuMaster.camada,
+              enderecoOriginal.estrutura?.capacidade ? Number(enderecoOriginal.estrutura.capacidade) : null,
+            )
+            if (capacidade > 0) {
+              enderecosComCapacidade.push({
+                id: candidato.id,
+                enderecoCompleto: candidato.enderecoCompleto,
+                rua: candidato.rua,
+                predio: enderecoOriginal.codigoPredio ?? '',
+                nivel: enderecoOriginal.codigoNivel ?? '',
+                apartamento: enderecoOriginal.codigoApto ?? '',
+                capacidadePalete: capacidade,
+                saldoAtual: 0,
+                disponivel: capacidade,
+              })
+            }
+          }
+
+          const distribuicao = calcularDistribuicao({
+            quantidade: quantidadeMaster,
+            enderecosOrdenados: enderecosComCapacidade,
+          })
+
+          // For backward compatibility: return first allocation as sugestao
+          const primeiraSugestao = distribuicao.alocacoes.length > 0
+            ? {
+                sugestao: dadosArmazenagem?.enderecoFixoId && distribuicao.alocacoes[0].enderecoId === dadosArmazenagem.enderecoFixoId
+                  ? 'ENDERECO_FIXO' as const
+                  : saldosConsolidacao.some((s) => s.enderecoId === distribuicao.alocacoes[0].enderecoId)
+                    ? 'CONSOLIDAR' as const
+                    : 'ENDERECO_LIVRE' as const,
+                enderecoId: distribuicao.alocacoes[0].enderecoId,
+                enderecoCompleto: distribuicao.alocacoes[0].enderecoCompleto,
+                motivo: distribuicao.completa
+                  ? `Distribuição completa em ${distribuicao.alocacoes.length} posição(ões)`
+                  : `Distribuição parcial — ${distribuicao.quantidadeRestante} unidades sem endereço`,
+                rua: distribuicao.alocacoes[0].rua,
+                predio: distribuicao.alocacoes[0].predio,
+                nivel: distribuicao.alocacoes[0].nivel,
+                apto: distribuicao.alocacoes[0].apartamento,
+              }
+            : null
+
+          return {
+            itemId: item.id,
+            produtoId: produto.id,
+            produtoCodigo: item.codigoProduto ?? '',
+            produtoNome: produto.nome ?? item.descricao,
+            quantidade: Number(item.quantidade),
+            lote: item.lote ?? null,
+            validade: item.validade?.toISOString() ?? null,
+            sugestao: primeiraSugestao,
+            distribuicao,
+          }
+        } catch {
+          // Fallback to legacy service if motor fails (e.g., no SKU master)
+          const sugestaoService = new SugestaoEnderecoService()
+          const sugestao = await sugestaoService.sugerir({
+            produtoId: produto.id,
+            empresaId: user.empresaId,
+            quantidade: Number(item.quantidade),
+            lote: item.lote ?? undefined,
+            validade: item.validade ?? undefined,
+          })
+
+          return {
+            itemId: item.id,
+            produtoId: produto.id,
+            produtoCodigo: item.codigoProduto ?? '',
+            produtoNome: produto.nome ?? item.descricao,
+            quantidade: Number(item.quantidade),
+            lote: item.lote ?? null,
+            validade: item.validade?.toISOString() ?? null,
+            sugestao,
+            distribuicao: null,
+          }
+        }
+      }),
+    )
 
     return { sugestoes: resultado }
   })
