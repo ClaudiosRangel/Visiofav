@@ -142,7 +142,7 @@ export async function portariaRoutes(app: FastifyInstance) {
             item: idx + 1,
             descricao: item.produto.nome,
             codigoProduto: item.produto.codigo,
-            unidade: item.produto.unidade,
+            unidade: (item as any).unidade || item.produto.unidade,
             quantidade: Number(item.quantidade),
           }))
         }

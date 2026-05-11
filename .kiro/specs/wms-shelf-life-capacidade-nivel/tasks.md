@@ -161,7 +161,7 @@ Implementação incremental em 5 fases: Schema/Migração → Serviços Puros �
 - [x] 9. Checkpoint — Verificar integrações backend
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 10. Frontend — Campo shelfLifeMinimo no cadastro de Produto
+- [x] 10. Frontend — Campo shelfLifeMinimo no cadastro de Produto
   - [ ] 10.1 Adicionar campo shelfLifeMinimo ao formulário de Produto (ProdutoModal)
     - Adicionar NumberInput com label "Shelf Life Mínimo (dias)" ao modal de edição de produto
     - Campo opcional, aceita null (limpar para desabilitar)
