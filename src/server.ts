@@ -75,6 +75,8 @@ import { scannerRoutes } from './modules/scanner/scanner.routes'
 import { stockViewRoutes } from './modules/estoque/stock-view.routes'
 import { mapaCarregamentoRoutes } from './modules/mapa-carregamento/mapa-carregamento.routes'
 import { relatorioExpedicaoRoutes } from './modules/relatorio-expedicao/relatorio-expedicao.routes'
+import { deparaFornecedorRoutes } from './modules/depara-fornecedor/depara-fornecedor.routes'
+import { importarXmlDeparaRoutes } from './modules/nota-entrada/importar-xml-depara.routes'
 
 import { registerTenantContext } from './middleware/tenant-context'
 import multipart from '@fastify/multipart'
@@ -179,6 +181,8 @@ async function bootstrap() {
   // Operacional
   await app.register(notaEntradaRoutes, { prefix: '/api/notas-entrada' })
   await app.register(importarXmlRoutes, { prefix: '/api/notas-entrada' })
+  await app.register(importarXmlDeparaRoutes, { prefix: '/api/notas-entrada' })
+  await app.register(deparaFornecedorRoutes, { prefix: '/api/depara-fornecedor' })
   await app.register(conferenciaRoutes, { prefix: '/api/conferencias' })
   await app.register(saldoRoutes, { prefix: '/api/saldos' })
   await app.register(enderecamentoRoutes, { prefix: '/api/operacoes' })

@@ -224,6 +224,31 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "imagem_url" TEXT`)
   console.log('✅ Produto: campo imagem_url adicionado')
 
+  // De-Para Produto Fornecedor table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "depara_produto_fornecedor" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "fornecedor_id" TEXT NOT NULL,
+      "codigo_produto_fornecedor" VARCHAR(60) NOT NULL,
+      "descricao_fornecedor" VARCHAR(200),
+      "produto_id" TEXT NOT NULL,
+      "sku_id" TEXT,
+      "unidade_fornecedor" VARCHAR(6) NOT NULL,
+      "fator_conversao" DECIMAL(12,4) NOT NULL DEFAULT 1,
+      "c_ean" VARCHAR(14),
+      "c_ean_trib" VARCHAR(14),
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "depara_produto_fornecedor_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "depara_produto_fornecedor_empresa_id_fornecedor_id_codigo_pr_key" ON "depara_produto_fornecedor"("empresa_id", "fornecedor_id", "codigo_produto_fornecedor")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "depara_produto_fornecedor_empresa_id_fornecedor_id_idx" ON "depara_produto_fornecedor"("empresa_id", "fornecedor_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "depara_produto_fornecedor_produto_id_idx" ON "depara_produto_fornecedor"("produto_id")`)
+  console.log('✅ De-Para Produto Fornecedor table created')
+
   console.log('✅ All migrations applied successfully')
 }
 

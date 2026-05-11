@@ -65,6 +65,7 @@ model Empresa {
   apiKeys             ApiKey[]
   webhooks            WebhookConfig[]
   fichasOperacionais  FichaOperacional[]
+  deparasProdutoFornecedor DeparaProdutoFornecedor[]
 
   @@map("empresa")
 }
@@ -137,6 +138,7 @@ model Fornecedor {
 
   pedidosCompra PedidoCompra[]
   contasPagar   ContaPagar[]
+  deparasProduto DeparaProdutoFornecedor[]
 
   @@unique([empresaId, cnpj])
   @@map("fornecedor")
@@ -229,6 +231,7 @@ model Produto {
   itensTransferencia ItemTransferencia[]
   estoques           Estoque[]
   saldosEndereco     SaldoEndereco[]
+  deparasFornecedor  DeparaProdutoFornecedor[]
 
   @@unique([empresaId, codigo])
   @@map("produto")
@@ -1471,4 +1474,34 @@ model MapaCarregamentoNf {
 
   @@unique([mapaCarregamentoId, nfeId])
   @@map("mapa_carregamento_nf")
+}
+
+// ============================================================================
+// DE-PARA FORNECEDOR x PRODUTO
+// ============================================================================
+
+model DeparaProdutoFornecedor {
+  id                       String   @id @default(uuid())
+  empresaId                String   @map("empresa_id")
+  fornecedorId             String   @map("fornecedor_id")
+  codigoProdutoFornecedor  String   @db.VarChar(60) @map("codigo_produto_fornecedor")
+  descricaoFornecedor      String?  @db.VarChar(200) @map("descricao_fornecedor")
+  produtoId                String   @map("produto_id")
+  skuId                    String?  @map("sku_id")
+  unidadeFornecedor        String   @db.VarChar(6) @map("unidade_fornecedor")
+  fatorConversao           Decimal  @default(1) @db.Decimal(12,4) @map("fator_conversao")
+  cEAN                     String?  @db.VarChar(14) @map("c_ean")
+  cEANTrib                 String?  @db.VarChar(14) @map("c_ean_trib")
+  status                   Boolean  @default(true)
+  criadoEm                 DateTime @default(now()) @map("criado_em")
+  atualizadoEm             DateTime @updatedAt @map("atualizado_em")
+
+  empresa     Empresa     @relation(fields: [empresaId], references: [id])
+  fornecedor  Fornecedor  @relation(fields: [fornecedorId], references: [id])
+  produto     Produto     @relation(fields: [produtoId], references: [id])
+
+  @@unique([empresaId, fornecedorId, codigoProdutoFornecedor])
+  @@index([empresaId, fornecedorId])
+  @@index([produtoId])
+  @@map("depara_produto_fornecedor")
 }
