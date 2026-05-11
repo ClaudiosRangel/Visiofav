@@ -224,6 +224,10 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "imagem_url" TEXT`)
   console.log('✅ Produto: campo imagem_url adicionado')
 
+  // ItemPedidoCompra - campo unidade
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_compra" ADD COLUMN IF NOT EXISTS "unidade" VARCHAR(6) DEFAULT 'UN'`)
+  console.log('✅ ItemPedidoCompra: campo unidade adicionado')
+
   // De-Para Produto Fornecedor table
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "depara_produto_fornecedor" (

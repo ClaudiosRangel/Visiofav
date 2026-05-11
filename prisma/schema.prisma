@@ -291,6 +291,7 @@ model ItemPedidoCompra {
   produto         Produto  @relation(fields: [produtoId], references: [id])
   quantidade      Decimal  @db.Decimal(12,4)
   precoUnitario   Decimal  @db.Decimal(12,4) @map("preco_unitario")
+  unidade         String   @default("UN") @db.VarChar(6)
   classificacao   String   @default("REVENDA") @db.VarChar(20)
   valorTotal      Decimal  @db.Decimal(12,2) @map("valor_total")
 

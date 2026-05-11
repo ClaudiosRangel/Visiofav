@@ -614,6 +614,7 @@ export async function compraRoutes(app: FastifyInstance) {
               produtoId: produtoIds[idx],
               quantidade: item.qCom,
               precoUnitario: item.vUnCom,
+              unidade: item.uCom || 'UN',
               classificacao: 'REVENDA',
               valorTotal: item.vProd,
             })),
