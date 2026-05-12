@@ -29,11 +29,28 @@ export async function enderecoRoutes(app: FastifyInstance) {
           deposito: { select: { descricao: true } },
           zona: { select: { descricao: true } },
           estrutura: { select: { descricao: true } },
+          saldos: { where: { quantidade: { gt: 0 } }, select: { quantidade: true } },
         },
       }),
       db.endereco.count({ where }),
     ])
-    return { data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) }
+
+    // Calcular campo 'estado' baseado nos saldos
+    const dataComEstado = data.map((e: any) => {
+      const saldoTotal = e.saldos?.reduce((acc: number, s: any) => acc + Number(s.quantidade), 0) ?? 0
+      let estado: string
+      if (!e.status) {
+        estado = 'BLOQUEADO'
+      } else if (saldoTotal > 0) {
+        estado = 'OCUPADO'
+      } else {
+        estado = 'LIVRE'
+      }
+      const { saldos, ...rest } = e
+      return { ...rest, estado }
+    })
+
+    return { data: dataComEstado, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) }
   })
 
   app.post('/', async (request, reply) => {
