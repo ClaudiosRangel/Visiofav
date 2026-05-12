@@ -78,14 +78,14 @@ export async function dadosLogisticosRoutes(app: FastifyInstance) {
   app.post('/picking', async (request, reply) => {
     const body = z.object({
       produtoId: z.string().uuid(),
-      skuSeq: z.number().int().default(1),
-      sequencia: z.number().int(),
+      skuSeq: z.coerce.number().int().default(1),
+      sequencia: z.coerce.number().int(),
       enderecoPickingId: z.string().uuid().optional(),
       tipoPicking: z.enum(['NORMAL', 'FLOW_RACK']).default('NORMAL'),
-      capacidade: z.number().default(0),
-      pontoReposicao: z.number().default(0),
-      pontoReposicaoPercent: z.number().default(0),
-      pontoReposicaoDias: z.number().int().default(0),
+      capacidade: z.coerce.number().default(0),
+      pontoReposicao: z.coerce.number().default(0),
+      pontoReposicaoPercent: z.coerce.number().default(0),
+      pontoReposicaoDias: z.coerce.number().int().default(0),
     }).parse(request.body)
     const item = await prisma.dadosLogisticosPicking.create({ data: body })
     return reply.status(201).send(item)
@@ -96,10 +96,10 @@ export async function dadosLogisticosRoutes(app: FastifyInstance) {
     const body = z.object({
       enderecoPickingId: z.string().uuid().nullable().optional(),
       tipoPicking: z.enum(['NORMAL', 'FLOW_RACK']).optional(),
-      capacidade: z.number().optional(),
-      pontoReposicao: z.number().optional(),
-      pontoReposicaoPercent: z.number().optional(),
-      pontoReposicaoDias: z.number().int().optional(),
+      capacidade: z.coerce.number().optional(),
+      pontoReposicao: z.coerce.number().optional(),
+      pontoReposicaoPercent: z.coerce.number().optional(),
+      pontoReposicaoDias: z.coerce.number().int().optional(),
     }).parse(request.body)
     return prisma.dadosLogisticosPicking.update({ where: { id }, data: body })
   })
