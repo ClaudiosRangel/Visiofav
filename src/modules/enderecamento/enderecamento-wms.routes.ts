@@ -1096,6 +1096,24 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
             validade: item.validade ?? undefined,
           })
 
+          // Build a minimal distribuicao from the fallback suggestion
+          const distribuicaoFallback = sugestao ? {
+            alocacoes: [{
+              enderecoId: sugestao.enderecoId,
+              enderecoCompleto: sugestao.enderecoCompleto,
+              rua: sugestao.rua ?? '',
+              predio: sugestao.predio ?? '',
+              nivel: sugestao.nivel ?? '',
+              apartamento: sugestao.apto ?? '',
+              quantidadeAlocada: Number(item.quantidade),
+              areaArmazenagem: (sugestao.nivel === '001' || sugestao.nivel === '01' || sugestao.nivel === '1') ? 'PICKING' : 'PULMAO',
+            }],
+            quantidadeTotal: Number(item.quantidade),
+            quantidadeAlocada: Number(item.quantidade),
+            quantidadeRestante: 0,
+            completa: true,
+          } : null
+
           return {
             itemId: item.id,
             produtoId: produto.id,
@@ -1105,7 +1123,7 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
             lote: item.lote ?? null,
             validade: item.validade?.toISOString() ?? null,
             sugestao,
-            distribuicao: null,
+            distribuicao: distribuicaoFallback,
           }
         }
       }),

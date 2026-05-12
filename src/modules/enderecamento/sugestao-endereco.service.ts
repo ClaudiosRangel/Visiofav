@@ -151,6 +151,10 @@ export class SugestaoEnderecoService {
         status: true,
         id: { notIn: Array.from(excludeEnderecoIds) },
         saldos: { none: { quantidade: { gt: 0 } } },
+        OR: [
+          { empresaId: input.empresaId },
+          { empresaId: null },
+        ],
       },
       orderBy: [
         { codigoRua: 'asc' },
