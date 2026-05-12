@@ -177,7 +177,40 @@ export class SugestaoEnderecoService {
       }
     }
 
-    // 5. No address available
+    // 5. Fall back to any address (even occupied) — just pick the first available
+    // This ensures we always return a suggestion when addresses exist
+    const qualquerEndereco = await prisma.endereco.findFirst({
+      where: {
+        tipo: { in: ['ARMAZENAGEM', 'LIVRE'] },
+        status: true,
+        id: { notIn: Array.from(excludeEnderecoIds) },
+        OR: [
+          { empresaId: input.empresaId },
+          { empresaId: null },
+        ],
+      },
+      orderBy: [
+        { codigoRua: 'asc' },
+        { codigoPredio: 'asc' },
+        { codigoNivel: 'asc' },
+        { codigoApto: 'asc' },
+      ],
+    })
+
+    if (qualquerEndereco) {
+      return {
+        sugestao: 'ENDERECO_LIVRE',
+        enderecoId: qualquerEndereco.id,
+        enderecoCompleto: qualquerEndereco.enderecoCompleto ?? '',
+        motivo: 'Endereço disponível (pode conter estoque de outro produto)',
+        rua: qualquerEndereco.codigoRua,
+        predio: qualquerEndereco.codigoPredio,
+        nivel: qualquerEndereco.codigoNivel,
+        apto: qualquerEndereco.codigoApto,
+      }
+    }
+
+    // 6. No address available
     return null
   }
 
