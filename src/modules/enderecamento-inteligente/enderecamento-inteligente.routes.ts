@@ -394,6 +394,10 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
             }
           : undefined
 
+        // Determinar área de armazenagem (PICKING ou PULMAO)
+        const areaArmazenagem: 'PICKING' | 'PULMAO' =
+          endereco.areaArmazenagem === 'PICKING' ? 'PICKING' : 'PULMAO'
+
         return {
           id: endereco.id,
           enderecoCompleto: endereco.enderecoCompleto ?? '',
@@ -402,6 +406,7 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
           nivel: endereco.codigoNivel ?? '',
           apartamento: endereco.codigoApto ?? '',
           status,
+          areaArmazenagem,
           percentualOcupacao: Math.round(percentualOcupacao * 100) / 100,
           capacidadePalete,
           saldoAtual: saldoTotal,
