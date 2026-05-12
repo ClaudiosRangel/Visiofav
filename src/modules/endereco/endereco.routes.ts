@@ -85,6 +85,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
       situacao: z.string().optional().default('ARMAZENAGEM'),
       lado: z.enum(['PAR', 'IMPAR', 'AMBOS']).optional().default('AMBOS'),
       tipo: z.string().optional().default('ARMAZENAGEM'),
+      nivelPicking: z.number().int().min(0).optional(),
       ruaInicio: z.number().int().positive(),
       ruaFim: z.number().int().positive(),
       predioInicio: z.number().int().positive(),

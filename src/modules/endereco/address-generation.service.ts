@@ -14,6 +14,7 @@ export interface GenerationParams {
   situacao?: string
   lado?: 'PAR' | 'IMPAR' | 'AMBOS'
   tipo?: string
+  nivelPicking?: number
   ruaInicio: number
   ruaFim: number
   predioInicio: number
@@ -114,7 +115,7 @@ export class AddressGenerationService {
               enderecoCompleto,
               codigoBarras,
               tipo: params.situacao || params.tipo || 'ARMAZENAGEM',
-              areaArmazenagem: params.areaArmazenagem || ((params.tipo === 'PICKING' || params.situacao === 'PICKING') ? 'PICKING' : 'PULMAO'),
+              areaArmazenagem: this.determinarAreaArmazenagem(params, nivel),
               centroDistribuicaoId: params.centroDistribuicaoId,
               depositoId: params.depositoId,
               ...(params.zonaId ? { zonaId: params.zonaId } : {}),
@@ -129,6 +130,20 @@ export class AddressGenerationService {
     }
 
     return addresses
+  }
+
+  /**
+   * Determines areaArmazenagem for a given level based on params:
+   * 1. If areaArmazenagem is explicitly set → use it
+   * 2. If tipo is PICKING → PICKING
+   * 3. If nivelPicking is set → levels <= nivelPicking are PICKING, rest PULMAO
+   * 4. Default → PULMAO
+   */
+  private determinarAreaArmazenagem(params: GenerationParams, nivel: number): string {
+    if (params.areaArmazenagem) return params.areaArmazenagem
+    if (params.tipo === 'PICKING' || params.situacao === 'PICKING') return 'PICKING'
+    if (params.nivelPicking && params.nivelPicking > 0 && nivel <= params.nivelPicking) return 'PICKING'
+    return 'PULMAO'
   }
 
   /**
