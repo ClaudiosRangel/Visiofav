@@ -434,7 +434,10 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
     where: {
       tipo: { in: ['ARMAZENAGEM', 'LIVRE'] },
       status: true,
-      empresaId,
+      OR: [
+        { empresaId },
+        { empresaId: null },
+      ],
       saldos: { none: { quantidade: { gt: 0 } } },
     },
     include: { estrutura: true },
