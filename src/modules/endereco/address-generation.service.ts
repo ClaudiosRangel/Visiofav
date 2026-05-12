@@ -114,7 +114,7 @@ export class AddressGenerationService {
               enderecoCompleto,
               codigoBarras,
               tipo: params.situacao || params.tipo || 'ARMAZENAGEM',
-              areaArmazenagem: params.areaArmazenagem || 'PULMAO',
+              areaArmazenagem: params.areaArmazenagem || ((params.tipo === 'PICKING' || params.situacao === 'PICKING') ? 'PICKING' : 'PULMAO'),
               centroDistribuicaoId: params.centroDistribuicaoId,
               depositoId: params.depositoId,
               ...(params.zonaId ? { zonaId: params.zonaId } : {}),
