@@ -13,6 +13,7 @@ import { converterParaUnidadeMaster, selecionarSkuMaster, type SkuInfo } from '.
 import { validarCubagem, type DimensoesSku, type DimensoesEstrutura, type CapacidadeNivelConfig } from './validador-cubagem.service'
 import { ordenarPorProximidade, type EnderecoCandidate } from './alocador-proximidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade, type DistribuicaoResult } from './motor-distribuicao.service'
+import { calcularAbastecimentoPicking, type DadosPickingConfig, type AlocacaoPicking } from './abastecimento-picking.service'
 
 // ── Zod Schemas ────────────────────────────────────────────────────────
 
@@ -122,7 +123,77 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
       }
     }
 
-    // 8. Implementar cadeia de prioridade: fixo → consolidação → livre
+    // 8. Buscar DadosLogisticosPicking do produto (Task 4.1)
+    // Multi-tenant: o isolamento é garantido pelo produtoId já validado como pertencente à empresa do usuário
+    const dadosLogisticosPickingList = await prisma.dadosLogisticosPicking.findMany({
+      where: {
+        produtoId: body.produtoId,
+      },
+      orderBy: { sequencia: 'asc' },
+    })
+
+    // 9. Montar array de DadosPickingConfig (Task 4.2)
+    const dadosPickingConfigs: DadosPickingConfig[] = []
+
+    for (const dadosLogPicking of dadosLogisticosPickingList) {
+      // Pular se enderecoPickingId é nulo
+      if (!dadosLogPicking.enderecoPickingId) {
+        console.warn(
+          `[abastecimento-picking] DadosLogisticosPicking ${dadosLogPicking.id} sem enderecoPickingId, pulando`,
+        )
+        continue
+      }
+
+      // Buscar endereço de picking (verificar existência e status) filtrado por empresaId
+      const enderecoPick = await prisma.endereco.findFirst({
+        where: {
+          id: dadosLogPicking.enderecoPickingId,
+          empresaId: user.empresaId,
+        },
+        select: { id: true, status: true, enderecoCompleto: true, empresaId: true },
+      })
+
+      if (!enderecoPick) {
+        console.warn(
+          `[abastecimento-picking] Endereço de picking ${dadosLogPicking.enderecoPickingId} não encontrado no DB para produto ${body.produtoId}, pulando`,
+        )
+        continue
+      }
+
+      // Buscar saldo físico atual via SaldoEndereco.aggregate (sum quantidade) filtrado por empresaId
+      let saldoAtual = 0
+      try {
+        const saldoAggregate = await prisma.saldoEndereco.aggregate({
+          where: {
+            enderecoId: dadosLogPicking.enderecoPickingId,
+            produtoId: body.produtoId,
+            empresaId: user.empresaId,
+          },
+          _sum: { quantidade: true },
+        })
+        // Se não há registros, _sum.quantidade será null → considerar saldo = 0
+        saldoAtual = Number(saldoAggregate._sum.quantidade ?? 0)
+      } catch (err) {
+        console.error(
+          `[abastecimento-picking] Erro ao buscar saldo do endereço ${dadosLogPicking.enderecoPickingId}:`,
+          err,
+        )
+        // Se saldo não pode ser determinado, considerar saldo = 0
+        saldoAtual = 0
+      }
+
+      dadosPickingConfigs.push({
+        enderecoPickingId: enderecoPick.id,
+        enderecoCompleto: enderecoPick.enderecoCompleto ?? '',
+        capacidade: Number(dadosLogPicking.capacidade),
+        pontoReposicao: Number(dadosLogPicking.pontoReposicao) || null,
+        saldoAtual,
+        enderecoAtivo: enderecoPick.status,
+        sequencia: dadosLogPicking.sequencia,
+      })
+    }
+
+    // 10. Implementar cadeia de prioridade: fixo → consolidação → livre
     const resultado = await executarCadeiaPrioridade({
       produtoId: body.produtoId,
       empresaId: user.empresaId,
@@ -134,6 +205,7 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
       nivelMax,
       skuMaster,
       skuMasterRaw: skusRaw.find((s) => s.id === skuMaster.id)!,
+      dadosPickingConfigs,
     })
 
     return resultado
@@ -148,6 +220,7 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
         enderecoId: z.string().uuid(),
         enderecoCompleto: z.string(),
         quantidadeAlocada: z.number().positive(),
+        areaArmazenagem: z.enum(['PICKING', 'PULMAO']).optional(),
       })).min(1),
       lote: z.string().optional(),
       validade: z.string().optional(),
@@ -206,6 +279,19 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
         }
 
         // Registrar LogMovimentacao para cada alocação
+        // Para alocações de picking, incluir lote e validade no motivo (Req 3.3, 7.3)
+        const isPicking = alocacao.areaArmazenagem === 'PICKING'
+        let motivo = isPicking
+          ? `Endereçamento picking — ${alocacao.enderecoCompleto}`
+          : `Endereçamento inteligente — ${alocacao.enderecoCompleto}`
+
+        if (isPicking && (body.lote || body.validade)) {
+          const detalhes: string[] = []
+          if (body.lote) detalhes.push(`lote: ${body.lote}`)
+          if (body.validade) detalhes.push(`validade: ${body.validade}`)
+          motivo += ` (${detalhes.join(', ')})`
+        }
+
         await tx.logMovimentacao.create({
           data: {
             empresaId: user.empresaId,
@@ -215,7 +301,7 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
             quantidade: alocacao.quantidadeAlocada,
             saldoAnterior,
             saldoNovo,
-            motivo: `Endereçamento inteligente — ${alocacao.enderecoCompleto}`,
+            motivo,
             usuarioId: user.id,
           },
         })
@@ -345,16 +431,93 @@ interface CadeiaPrioridadeInput {
   nivelMax: number
   skuMaster: SkuInfo
   skuMasterRaw: { largura: any; altura: any; comprimento: any; volume: any; pesoBruto: any }
+  dadosPickingConfigs: DadosPickingConfig[]
 }
 
 async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<DistribuicaoResult> {
   const {
     produtoId, empresaId, quantidadeMaster, dadosArmazenagem,
     predioOrigem, ruaOrigem, nivelMin, nivelMax, skuMaster, skuMasterRaw,
+    dadosPickingConfigs,
   } = input
 
+  // ── Abastecimento do Picking (Task 4.3) ──────────────────────────────
+  // Invocar calcularAbastecimentoPicking ANTES do motor de distribuição.
+  // A quantidade passada ao motor será reduzida pela alocação no picking.
+  let alocacoesPicking: AlocacaoPicking[] = []
+  let quantidadeAbastecidaPicking = 0
+  let quantidadeParaMotor = quantidadeMaster
+  let pickingInfo: { capacidadeTotal: number; saldoResultante: number; quantidadeAbastecida: number } | undefined
+
+  try {
+    if (dadosPickingConfigs.length > 0) {
+      const resultadoPicking = calcularAbastecimentoPicking({
+        quantidadeRestante: quantidadeMaster,
+        dadosPicking: dadosPickingConfigs,
+      })
+
+      if (!resultadoPicking.sucesso) {
+        // Log do erro, graceful degradation: quantidade total → pulmão
+        console.error(
+          '[abastecimento-picking] Erro no cálculo de picking:',
+          resultadoPicking.erro,
+        )
+        // quantidadeParaMotor permanece = quantidadeMaster
+      } else {
+        quantidadeAbastecidaPicking = resultadoPicking.resultado.quantidadeAbastecida
+        alocacoesPicking = resultadoPicking.resultado.alocacoes
+        quantidadeParaMotor = resultadoPicking.resultado.quantidadeRestante
+
+        // Registrar avisos se houver
+        if (resultadoPicking.resultado.avisos.length > 0) {
+          for (const aviso of resultadoPicking.resultado.avisos) {
+            console.warn('[abastecimento-picking]', aviso)
+          }
+        }
+
+        // Montar pickingInfo se houve abastecimento
+        if (quantidadeAbastecidaPicking > 0) {
+          const ultimaAlocacao = alocacoesPicking[alocacoesPicking.length - 1]
+          pickingInfo = {
+            capacidadeTotal: alocacoesPicking.reduce((sum, a) => sum + a.capacidadeTotal, 0),
+            saldoResultante: ultimaAlocacao.saldoResultante,
+            quantidadeAbastecida: quantidadeAbastecidaPicking,
+          }
+        }
+
+        // Se picking consumiu TODA a quantidade: retornar apenas alocação picking (completa=true)
+        if (quantidadeAbastecidaPicking === quantidadeMaster) {
+          return {
+            alocacoes: alocacoesPicking.map((a) => ({
+              enderecoId: a.enderecoId,
+              enderecoCompleto: a.enderecoCompleto,
+              rua: '',
+              predio: '',
+              nivel: '',
+              apartamento: '',
+              quantidadeAlocada: a.quantidadeAlocada,
+              areaArmazenagem: 'PICKING' as const,
+            })),
+            quantidadeTotal: quantidadeMaster,
+            quantidadeAlocada: quantidadeAbastecidaPicking,
+            quantidadeRestante: 0,
+            completa: true,
+            pickingInfo,
+          } as any
+        }
+      }
+    }
+  } catch (err) {
+    // Erro inesperado — graceful degradation: quantidade total → pulmão
+    console.error('[abastecimento-picking] Erro inesperado no abastecimento picking:', err)
+    alocacoesPicking = []
+    quantidadeAbastecidaPicking = 0
+    quantidadeParaMotor = quantidadeMaster
+    pickingInfo = undefined
+  }
+
   const enderecosComCapacidade: EnderecoComCapacidade[] = []
-  let quantidadeRestante = quantidadeMaster
+  let quantidadeRestante = quantidadeParaMotor
 
   // ── Prioridade 1: Endereço fixo ──────────────────────────────────────
   if (dadosArmazenagem?.enderecoFixoId) {
@@ -536,9 +699,93 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
     }
   }
 
-  // ── Calcular distribuição ────────────────────────────────────────────
-  return calcularDistribuicao({
-    quantidade: quantidadeMaster,
-    enderecosOrdenados: enderecosComCapacidade,
-  })
+  // ── Calcular distribuição (motor de distribuição para pulmão) ────────
+  // Se quantidadeAbastecidaPicking === 0: invocar motor com quantidade total original
+  // Se quantidadeAbastecidaPicking > 0 e quantidadeParaMotor > 0: invocar motor com quantidadeRestante
+  // Se quantidadeAbastecidaPicking === quantidadeMaster: já retornou acima (não chega aqui)
+  let resultadoMotor: DistribuicaoResult | null = null
+
+  try {
+    resultadoMotor = calcularDistribuicao({
+      quantidade: quantidadeParaMotor,
+      enderecosOrdenados: enderecosComCapacidade,
+    })
+  } catch (err) {
+    // Se motor de distribuição falha após picking: retornar resultado parcial com picking + restante
+    console.error('[enderecamento-inteligente] Erro no motor de distribuição:', err)
+
+    if (quantidadeAbastecidaPicking > 0) {
+      // Retornar resultado parcial com picking + quantidade restante não alocada
+      const alocacoesPickingFormatadas = alocacoesPicking.map((a) => ({
+        enderecoId: a.enderecoId,
+        enderecoCompleto: a.enderecoCompleto,
+        rua: '',
+        predio: '',
+        nivel: '',
+        apartamento: '',
+        quantidadeAlocada: a.quantidadeAlocada,
+        areaArmazenagem: 'PICKING' as const,
+      }))
+
+      return {
+        alocacoes: alocacoesPickingFormatadas,
+        quantidadeTotal: quantidadeMaster,
+        quantidadeAlocada: quantidadeAbastecidaPicking,
+        quantidadeRestante: quantidadeParaMotor,
+        completa: false,
+        pickingInfo,
+      } as any
+    }
+
+    // Se não houve picking, retornar resultado vazio com erro
+    return {
+      alocacoes: [],
+      quantidadeTotal: quantidadeMaster,
+      quantidadeAlocada: 0,
+      quantidadeRestante: quantidadeMaster,
+      completa: false,
+    } as any
+  }
+
+  // ── Montar resultado final com picking + pulmão (Task 4.4) ───────────
+  // Cada alocação de pulmão recebe campo areaArmazenagem: 'PULMAO'
+  const alocacoesPulmaoFormatadas = resultadoMotor.alocacoes.map((a) => ({
+    ...a,
+    areaArmazenagem: 'PULMAO' as const,
+  }))
+
+  if (quantidadeAbastecidaPicking > 0) {
+    // Alocação de picking como primeiro item, seguida pelas alocações de pulmão (ordem de proximidade do motor)
+    const alocacoesPickingFormatadas = alocacoesPicking.map((a) => ({
+      enderecoId: a.enderecoId,
+      enderecoCompleto: a.enderecoCompleto,
+      rua: '',
+      predio: '',
+      nivel: '',
+      apartamento: '',
+      quantidadeAlocada: a.quantidadeAlocada,
+      areaArmazenagem: 'PICKING' as const,
+    }))
+
+    const todasAlocacoes = [...alocacoesPickingFormatadas, ...alocacoesPulmaoFormatadas]
+    const quantidadeAlocadaTotal = quantidadeAbastecidaPicking + resultadoMotor.quantidadeAlocada
+
+    return {
+      alocacoes: todasAlocacoes,
+      quantidadeTotal: quantidadeMaster,
+      quantidadeAlocada: quantidadeAlocadaTotal,
+      quantidadeRestante: resultadoMotor.quantidadeRestante,
+      completa: resultadoMotor.quantidadeRestante === 0,
+      pickingInfo,
+    } as any
+  }
+
+  // Se não houve abastecimento de picking, retornar resultado do motor com areaArmazenagem: 'PULMAO'
+  return {
+    alocacoes: alocacoesPulmaoFormatadas,
+    quantidadeTotal: resultadoMotor.quantidadeTotal,
+    quantidadeAlocada: resultadoMotor.quantidadeAlocada,
+    quantidadeRestante: resultadoMotor.quantidadeRestante,
+    completa: resultadoMotor.completa,
+  }
 }
