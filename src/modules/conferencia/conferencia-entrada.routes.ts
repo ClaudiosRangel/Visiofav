@@ -9,6 +9,24 @@ import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.s
 import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
 
+/**
+ * Parseia data no formato DD/MM/AAAA (brasileiro) ou ISO (AAAA-MM-DD).
+ * Retorna Date válido ou null se não conseguir parsear.
+ */
+function parseDateBR(value: string | null | undefined): Date | null {
+  if (!value) return null
+  // Formato DD/MM/AAAA
+  const brMatch = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (brMatch) {
+    const [, dia, mes, ano] = brMatch
+    return new Date(Number(ano), Number(mes) - 1, Number(dia))
+  }
+  // Formato ISO AAAA-MM-DD ou AAAA-MM-DDTHH:mm:ss
+  const isoDate = new Date(value)
+  if (!isNaN(isoDate.getTime())) return isoDate
+  return null
+}
+
 function getHojeRange() {
   const hojeStr = new Date().toISOString().split('T')[0]
   const hojeUtc = new Date(hojeStr + 'T00:00:00.000Z')
@@ -98,7 +116,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       if (produto && produto.shelfLifeMinimo) {
         const resultado = validarShelfLife({
           shelfLifeMinimo: produto.shelfLifeMinimo,
-          dataValidade: new Date(body.validade),
+          dataValidade: parseDateBR(body.validade)!,
           dataAtual: new Date(),
           produtoNome: produto.nome,
         })
@@ -121,7 +139,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       where: { id: item.id },
       data: {
         lote: body.lote || item.lote,
-        validade: body.validade ? new Date(body.validade) : item.validade,
+        validade: body.validade ? parseDateBR(body.validade)! : item.validade,
       },
     })
 
@@ -302,7 +320,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       if (produto && produto.shelfLifeMinimo) {
         const resultado = validarShelfLife({
           shelfLifeMinimo: produto.shelfLifeMinimo,
-          dataValidade: new Date(body.validade),
+          dataValidade: parseDateBR(body.validade)!,
           dataAtual: new Date(),
           produtoNome: produto.nome,
         })
@@ -326,7 +344,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       where: { id: body.itemNotaEntradaId },
       data: {
         lote: body.lote || item.lote,
-        validade: body.validade ? new Date(body.validade) : item.validade,
+        validade: body.validade ? parseDateBR(body.validade)! : item.validade,
       },
     })
 
@@ -379,7 +397,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         if (produto && produto.shelfLifeMinimo) {
           const resultado = validarShelfLife({
             shelfLifeMinimo: produto.shelfLifeMinimo,
-            dataValidade: new Date(conferido.validade),
+            dataValidade: parseDateBR(conferido.validade)!,
             dataAtual: new Date(),
             produtoNome: produto.nome,
           })
@@ -403,7 +421,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         where: { id: item.id },
         data: {
           lote: conferido.lote || item.lote,
-          validade: conferido.validade ? new Date(conferido.validade) : item.validade,
+          validade: conferido.validade ? parseDateBR(conferido.validade)! : item.validade,
         },
       })
 
@@ -814,3 +832,4 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }))
   })
 }
+

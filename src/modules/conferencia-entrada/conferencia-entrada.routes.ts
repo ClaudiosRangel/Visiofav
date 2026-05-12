@@ -4,6 +4,21 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 
+/**
+ * Parseia data no formato DD/MM/AAAA (brasileiro) ou ISO (AAAA-MM-DD).
+ */
+function parseDateBR(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const brMatch = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (brMatch) {
+    const [, dia, mes, ano] = brMatch
+    return new Date(Number(ano), Number(mes) - 1, Number(dia))
+  }
+  const isoDate = new Date(value)
+  if (!isNaN(isoDate.getTime())) return isoDate
+  return null
+}
+
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
 const conferirItemSchema = z.object({
@@ -102,7 +117,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         where: { id: body.itemNotaEntradaId },
         data: {
           lote: body.lote || item.lote,
-          validade: body.validade ? new Date(body.validade) : item.validade,
+          validade: body.validade ? parseDateBR(body.validade) : item.validade,
         },
       })
     }
