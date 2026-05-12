@@ -6,6 +6,8 @@ import { moduloGuard } from '../../middleware/modulo-guard'
 import { validarShelfLife } from './shelf-life.service'
 import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
 import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
+import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
+import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
 
 function getHojeRange() {
   const hojeStr = new Date().toISOString().split('T')[0]
@@ -599,26 +601,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
     if (nota.status !== 'CONFERIDA') return reply.status(422).send({ message: 'Nota não está conferida' })
 
-    // Buscar todos os endereços de armazenagem ativos
-    const enderecosLivres = await prisma.endereco.findMany({
-      where: { tipo: 'ARMAZENAGEM', status: true },
-      orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
-      include: { estrutura: { select: { id: true, tipo: true } } },
-    })
-
-    const enderecosComSaldo = await prisma.saldoEndereco.findMany({
-      where: { quantidade: { gt: 0 } },
-      select: { enderecoId: true },
-    })
-    const endOcupados = new Set(enderecosComSaldo.map((s) => s.enderecoId))
-    const livres = enderecosLivres.filter((e) => !endOcupados.has(e.id))
-
-    if (livres.length === 0) {
-      return reply.status(422).send({ message: 'Nenhum endereço livre disponível' })
-    }
-
     const resultados: any[] = []
-    let enderecoIdx = 0
 
     await prisma.$transaction(async (tx) => {
       for (const item of nota.itens) {
@@ -627,126 +610,90 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         })
         if (!produto) continue
 
-        // Verificar se o produto tem dados logísticos de armazenagem com endereço fixo
-        let enderecoDestino = null
+        // Buscar SKUs do produto
+        const skusRaw = await tx.sku.findMany({
+          where: { produtoId: produto.id },
+          orderBy: { sequencia: 'asc' },
+        })
 
+        const skus: SkuInfo[] = skusRaw.map((s) => ({
+          id: s.id,
+          sequencia: s.sequencia,
+          qtdEmbalagem: s.qtdEmbalagem,
+          lastro: s.lastro,
+          camada: s.camada,
+        }))
+
+        // Selecionar SKU master para calcular capacidade
+        let skuMaster: SkuInfo | null = null
         try {
-          const dadosArmz = await tx.dadosLogisticosArmazenagem.findFirst({
-            where: { produtoId: produto.id, fixo: true },
-          })
-
-          if (dadosArmz?.enderecoFixoId) {
-            // Usar endereço fixo se disponível
-            const endFixo = livres.find((e) => e.id === dadosArmz.enderecoFixoId)
-            if (endFixo) {
-              enderecoDestino = endFixo
-            }
-          }
+          skuMaster = selecionarSkuMaster(skus)
         } catch {
-          // Tabela pode não existir ainda (antes do migrate) — ignorar
+          // Sem SKU master — endereçar tudo em um endereço (fallback)
         }
 
-        // Se não tem endereço fixo, usar o próximo livre
-        // Priorizar por classificação ABC: A = níveis baixos, C = níveis altos
-        if (!enderecoDestino) {
-          if (enderecoIdx >= livres.length) break
+        const quantidade = Number(item.quantidade)
 
-          // Tentar encontrar endereço compatível com curva ABC do produto
-          // A = níveis baixos (fácil acesso), C = níveis altos
-          const curvaAbc = (produto as any).curvaAbc || null
-          if (curvaAbc === 'A') {
-            // Buscar endereço de nível baixo (001, 002)
-            const endAbc = livres.find((e, i) => i >= enderecoIdx && (e.codigoNivel === '001' || e.codigoNivel === '01' || e.codigoNivel === '1') && !resultados.some((r: any) => r.enderecoId === e.id))
-            if (endAbc) {
-              enderecoDestino = endAbc
-              livres.splice(livres.indexOf(endAbc), 1)
-            }
-          }
-
-          if (!enderecoDestino) {
-            enderecoDestino = livres[enderecoIdx]
-            enderecoIdx++
-          }
-        }
-
-        // Validate level capacity for the selected address
-        if (enderecoDestino && enderecoDestino.estrutura?.id && enderecoDestino.codigoNivel) {
-          const capacidadeNivel = await tx.capacidadeNivel.findFirst({
-            where: { estruturaId: enderecoDestino.estrutura.id, codigoNivel: enderecoDestino.codigoNivel, status: true },
+        if (!skuMaster) {
+          // Fallback: endereçar tudo em um único endereço livre
+          const enderecoLivre = await tx.endereco.findFirst({
+            where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
+            orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
           })
-          if (capacidadeNivel) {
-            const enderecosNivel = await tx.endereco.findMany({
-              where: { estruturaId: enderecoDestino.estrutura.id, codigoNivel: enderecoDestino.codigoNivel, status: true },
-              select: { id: true },
+          if (enderecoLivre) {
+            await tx.saldoEndereco.create({
+              data: { enderecoId: enderecoLivre.id, produtoId: produto.id, quantidade, lote: item.lote || undefined, validade: item.validade || undefined },
             })
-            const enderecoIdsNivel = enderecosNivel.map((e) => e.id)
-            const saldosNivel = await tx.saldoEndereco.findMany({
-              where: { enderecoId: { in: enderecoIdsNivel }, quantidade: { gt: 0 } },
+            await tx.estoque.upsert({
+              where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: produto.id } },
+              update: { quantidade: { increment: quantidade } },
+              create: { empresaId: user.empresaId, produtoId: produto.id, quantidade },
             })
-            const saldosComSku = await Promise.all(
-              saldosNivel.map(async (s) => {
-                const sku = await tx.sku.findFirst({
-                  where: { produtoId: s.produtoId },
-                  select: { pesoBruto: true, volume: true },
-                })
-                return {
-                  quantidade: Number(s.quantidade),
-                  pesoBruto: sku?.pesoBruto ? Number(sku.pesoBruto) : null,
-                  volume: sku?.volume ? Number(sku.volume) : null,
-                }
-              })
-            )
-            const ocupacaoAtual = calcularOcupacaoNivel(saldosComSku)
-            const skuIncoming = await tx.sku.findFirst({
-              where: { produtoId: produto.id },
-              select: { pesoBruto: true, volume: true },
-            })
-            const pesoIncoming = (skuIncoming?.pesoBruto ? Number(skuIncoming.pesoBruto) : 0) * Number(item.quantidade)
-            const volumeIncoming = (skuIncoming?.volume ? Number(skuIncoming.volume) : 0) * Number(item.quantidade)
-
-            const validacaoNivel = validarCapacidadeNivel({
-              config: {
-                pesoMaximo: capacidadeNivel.pesoMaximo ? Number(capacidadeNivel.pesoMaximo) : null,
-                volumeMaximo: capacidadeNivel.volumeMaximo ? Number(capacidadeNivel.volumeMaximo) : null,
-                paletesMaximo: capacidadeNivel.paletesMaximo,
-              },
-              ocupacaoAtual,
-              pesoIncoming,
-              volumeIncoming,
-              paletesIncoming: 1,
-            })
-
-            if (!validacaoNivel.permitido) {
-              // Skip this address, try next available in a different level
-              const alternativo = livres.find((e, i) => i >= enderecoIdx && e.codigoNivel !== enderecoDestino!.codigoNivel)
-              if (alternativo) {
-                enderecoDestino = alternativo
-                livres.splice(livres.indexOf(alternativo), 1)
-              } else {
-                // No alternative found, skip this item
-                continue
-              }
-            }
+            resultados.push({ produto: produto.nome, quantidade, endereco: enderecoLivre.enderecoCompleto, split: false })
           }
+          continue
         }
 
-        await tx.saldoEndereco.create({
-          data: {
-            enderecoId: enderecoDestino.id,
-            produtoId: produto.id,
-            quantidade: Number(item.quantidade),
-            lote: item.lote || undefined,
-            validade: item.validade || undefined,
-          },
+        // Calcular capacidade por posição
+        const capacidadePalete = calcularCapacidadePalete(skuMaster.lastro, skuMaster.camada, null)
+
+        // Buscar endereços livres ordenados
+        const enderecosLivres = await tx.endereco.findMany({
+          where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
+          orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
         })
 
-        await tx.estoque.upsert({
-          where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: produto.id } },
-          update: { quantidade: { increment: Number(item.quantidade) } },
-          create: { empresaId: user.empresaId, produtoId: produto.id, quantidade: Number(item.quantidade) },
-        })
+        // Distribuir usando algoritmo greedy
+        const enderecosComCapacidade: EnderecoComCapacidade[] = enderecosLivres.map((e) => ({
+          id: e.id,
+          enderecoCompleto: e.enderecoCompleto ?? '',
+          rua: e.codigoRua ?? '',
+          predio: e.codigoPredio ?? '',
+          nivel: e.codigoNivel ?? '',
+          apartamento: e.codigoApto ?? '',
+          capacidadePalete,
+          saldoAtual: 0,
+          disponivel: capacidadePalete,
+        }))
 
-        resultados.push({ produto: produto.nome, quantidade: Number(item.quantidade), endereco: enderecoDestino.enderecoCompleto })
+        const distribuicao = calcularDistribuicao({ quantidade, enderecosOrdenados: enderecosComCapacidade })
+
+        // Gravar cada alocação
+        for (const alocacao of distribuicao.alocacoes) {
+          await tx.saldoEndereco.create({
+            data: { enderecoId: alocacao.enderecoId, produtoId: produto.id, quantidade: alocacao.quantidadeAlocada, lote: item.lote || undefined, validade: item.validade || undefined },
+          })
+          resultados.push({ produto: produto.nome, quantidade: alocacao.quantidadeAlocada, endereco: alocacao.enderecoCompleto, split: true })
+        }
+
+        // Atualizar estoque consolidado
+        if (distribuicao.quantidadeAlocada > 0) {
+          await tx.estoque.upsert({
+            where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: produto.id } },
+            update: { quantidade: { increment: distribuicao.quantidadeAlocada } },
+            create: { empresaId: user.empresaId, produtoId: produto.id, quantidade: distribuicao.quantidadeAlocada },
+          })
+        }
       }
 
       await tx.notaEntrada.update({ where: { id: notaId }, data: { status: 'ENDERECADA' } })
