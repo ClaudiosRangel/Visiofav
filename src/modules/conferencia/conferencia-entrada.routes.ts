@@ -596,6 +596,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   app.post('/enderecamento-automatico/:notaId', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
+    const body = z.object({ confirmar: z.boolean().default(false) }).parse(request.body || {})
 
     const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
@@ -603,112 +604,98 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     const resultados: any[] = []
 
-    await prisma.$transaction(async (tx) => {
-      for (const item of nota.itens) {
-        const produto = await tx.produto.findFirst({
-          where: { empresaId: user.empresaId, codigo: item.codigoProduto || '' },
-        })
-        if (!produto) continue
+    // Calcular distribuição para cada item
+    const distribuicoes: any[] = []
 
-        // Buscar SKUs do produto
-        const skusRaw = await tx.sku.findMany({
-          where: { produtoId: produto.id },
-          orderBy: { sequencia: 'asc' },
-        })
+    for (const item of nota.itens) {
+      const produto = await prisma.produto.findFirst({
+        where: { empresaId: user.empresaId, codigo: item.codigoProduto || '' },
+      })
+      if (!produto) continue
 
-        const skus: SkuInfo[] = skusRaw.map((s) => ({
-          id: s.id,
-          sequencia: s.sequencia,
-          qtdEmbalagem: s.qtdEmbalagem,
-          lastro: s.lastro,
-          camada: s.camada,
-        }))
+      const skusRaw = await prisma.sku.findMany({
+        where: { produtoId: produto.id },
+        orderBy: { sequencia: 'asc' },
+      })
 
-        // Selecionar SKU master para calcular capacidade
-        let skuMaster: SkuInfo | null = null
-        try {
-          skuMaster = selecionarSkuMaster(skus)
-        } catch {
-          // Sem SKU master — endereçar tudo em um endereço (fallback)
-        }
+      const skus: SkuInfo[] = skusRaw.map((s) => ({
+        id: s.id, sequencia: s.sequencia, qtdEmbalagem: s.qtdEmbalagem, lastro: s.lastro, camada: s.camada,
+      }))
 
-        const quantidade = Number(item.quantidade)
+      let skuMaster: SkuInfo | null = null
+      try { skuMaster = selecionarSkuMaster(skus) } catch { /* sem SKU master */ }
 
-        if (!skuMaster) {
-          // Fallback: endereçar tudo em um único endereço livre
-          const enderecoLivre = await tx.endereco.findFirst({
-            where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
-            orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
-          })
-          if (enderecoLivre) {
-            await tx.saldoEndereco.create({
-              data: { enderecoId: enderecoLivre.id, produtoId: produto.id, quantidade, lote: item.lote || undefined, validade: item.validade || undefined },
-            })
-            await tx.estoque.upsert({
-              where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: produto.id } },
-              update: { quantidade: { increment: quantidade } },
-              create: { empresaId: user.empresaId, produtoId: produto.id, quantidade },
-            })
-            resultados.push({ produto: produto.nome, quantidade, endereco: enderecoLivre.enderecoCompleto, split: false })
-          }
-          continue
-        }
+      const quantidade = Number(item.quantidade)
 
-        // Calcular capacidade por posição
-        const capacidadePalete = calcularCapacidadePalete(skuMaster.lastro, skuMaster.camada, null)
-
-        // Buscar endereços livres ordenados
-        const enderecosLivres = await tx.endereco.findMany({
+      if (!skuMaster) {
+        // Fallback: tudo em um endereço
+        const enderecoLivre = await prisma.endereco.findFirst({
           where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
           orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
         })
-
-        // Distribuir usando algoritmo greedy
-        const enderecosComCapacidade: EnderecoComCapacidade[] = enderecosLivres.map((e) => ({
-          id: e.id,
-          enderecoCompleto: e.enderecoCompleto ?? '',
-          rua: e.codigoRua ?? '',
-          predio: e.codigoPredio ?? '',
-          nivel: e.codigoNivel ?? '',
-          apartamento: e.codigoApto ?? '',
-          capacidadePalete,
-          saldoAtual: 0,
-          disponivel: capacidadePalete,
-        }))
-
-        const distribuicao = calcularDistribuicao({ quantidade, enderecosOrdenados: enderecosComCapacidade })
-
-        // Gravar cada alocação
-        for (const alocacao of distribuicao.alocacoes) {
-          await tx.saldoEndereco.create({
-            data: { enderecoId: alocacao.enderecoId, produtoId: produto.id, quantidade: alocacao.quantidadeAlocada, lote: item.lote || undefined, validade: item.validade || undefined },
+        if (enderecoLivre) {
+          distribuicoes.push({
+            produto: produto.nome, produtoId: produto.id, lote: item.lote, validade: item.validade,
+            alocacoes: [{ enderecoId: enderecoLivre.id, enderecoCompleto: enderecoLivre.enderecoCompleto, quantidadeAlocada: quantidade }],
           })
-          resultados.push({ produto: produto.nome, quantidade: alocacao.quantidadeAlocada, endereco: alocacao.enderecoCompleto, split: true })
         }
+        continue
+      }
 
-        // Atualizar estoque consolidado
-        if (distribuicao.quantidadeAlocada > 0) {
+      const capacidadePalete = calcularCapacidadePalete(skuMaster.lastro, skuMaster.camada, null)
+
+      const enderecosLivres = await prisma.endereco.findMany({
+        where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
+        orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
+      })
+
+      const enderecosComCapacidade: EnderecoComCapacidade[] = enderecosLivres.map((e) => ({
+        id: e.id, enderecoCompleto: e.enderecoCompleto ?? '', rua: e.codigoRua ?? '',
+        predio: e.codigoPredio ?? '', nivel: e.codigoNivel ?? '', apartamento: e.codigoApto ?? '',
+        capacidadePalete, saldoAtual: 0, disponivel: capacidadePalete,
+      }))
+
+      const distribuicao = calcularDistribuicao({ quantidade, enderecosOrdenados: enderecosComCapacidade })
+
+      distribuicoes.push({
+        produto: produto.nome, produtoId: produto.id, lote: item.lote, validade: item.validade,
+        alocacoes: distribuicao.alocacoes, quantidadeRestante: distribuicao.quantidadeRestante, completa: distribuicao.completa,
+      })
+    }
+
+    // Se não é confirmação, retornar apenas a simulação
+    if (!body.confirmar) {
+      return { simulacao: true, distribuicoes }
+    }
+
+    // Confirmar: gravar no banco
+    await prisma.$transaction(async (tx) => {
+      for (const dist of distribuicoes) {
+        for (const alocacao of dist.alocacoes) {
+          await tx.saldoEndereco.create({
+            data: { enderecoId: alocacao.enderecoId, produtoId: dist.produtoId, quantidade: alocacao.quantidadeAlocada, lote: dist.lote || undefined, validade: dist.validade || undefined },
+          })
+          resultados.push({ produto: dist.produto, quantidade: alocacao.quantidadeAlocada, endereco: alocacao.enderecoCompleto })
+        }
+        const totalAlocado = dist.alocacoes.reduce((acc: number, a: any) => acc + a.quantidadeAlocada, 0)
+        if (totalAlocado > 0) {
           await tx.estoque.upsert({
-            where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: produto.id } },
-            update: { quantidade: { increment: distribuicao.quantidadeAlocada } },
-            create: { empresaId: user.empresaId, produtoId: produto.id, quantidade: distribuicao.quantidadeAlocada },
+            where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: dist.produtoId } },
+            update: { quantidade: { increment: totalAlocado } },
+            create: { empresaId: user.empresaId, produtoId: dist.produtoId, quantidade: totalAlocado },
           })
         }
       }
 
       await tx.notaEntrada.update({ where: { id: notaId }, data: { status: 'ENDERECADA' } })
 
-      // Concluir OS de ENDERECAMENTO
       const osEnd = await tx.ordemServicoWms.findFirst({
         where: { notaEntradaId: notaId, operacao: 'ENDERECAMENTO', status: { in: ['ABERTO', 'EXECUTANDO'] } },
         orderBy: { criadoEm: 'desc' },
       })
       if (osEnd) {
         const horaFim = new Date()
-        await tx.ordemServicoWms.update({
-          where: { id: osEnd.id },
-          data: { status: 'CONCLUIDO', horaInicio: osEnd.horaInicio || horaFim, horaFim },
-        })
+        await tx.ordemServicoWms.update({ where: { id: osEnd.id }, data: { status: 'CONCLUIDO', horaInicio: osEnd.horaInicio || horaFim, horaFim } })
       }
     })
 
