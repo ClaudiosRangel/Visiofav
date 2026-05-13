@@ -161,10 +161,21 @@ export async function portariaRoutes(app: FastifyInstance) {
         if (pedido) {
           // Tentar extrair lote/validade do XML da compra efetivada
           let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
-          const compra = await tx.compraEfetivada.findFirst({
-            where: { pedidoCompraId: ag.pedidoCompraId },
-            select: { xmlNfe: true },
-          })
+          let compra: { xmlNfe: string | null } | null = null
+          if (ag.pedidoCompraId) {
+            compra = await tx.compraEfetivada.findFirst({
+              where: { pedidoCompraId: ag.pedidoCompraId },
+              select: { xmlNfe: true },
+            })
+          }
+          // Fallback: buscar compra mais recente do fornecedor se não encontrou pelo pedido
+          if (!compra?.xmlNfe && ag.fornecedorId) {
+            compra = await tx.compraEfetivada.findFirst({
+              where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
+              orderBy: { criadoEm: 'desc' },
+              select: { xmlNfe: true },
+            })
+          }
           if (compra?.xmlNfe) {
             try {
               const parsed = parseNfeXml(compra.xmlNfe)
