@@ -195,7 +195,8 @@ async function bootstrap() {
   await app.register(ordemServicoRoutes, { prefix: '/api/ordens-servico' })
 
   // Health check
-  app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
+  const BUILD_DATE = new Date().toISOString()
+  app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString(), buildDate: BUILD_DATE }))
 
   // Fix database columns (one-time)
   app.post('/api/admin/fix-columns', async (request, reply) => {
