@@ -106,7 +106,7 @@ export async function formatoEnderecoRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
     const formatos = await service.listar(user.empresaId)
-    return formatos
+    return { data: formatos, total: formatos.length, page: 1, limit: formatos.length, totalPages: 1 }
   })
 
   // GET /resolver — resolver formato aplicável (depositoId, zonaId?)
