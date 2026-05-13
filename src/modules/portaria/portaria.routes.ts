@@ -151,44 +151,47 @@ export async function portariaRoutes(app: FastifyInstance) {
         if (forn) { fornecedorNome = forn.razaoSocial; fornecedorDoc = forn.cnpj }
       }
 
-      // Buscar itens do pedido de compra
+      // Buscar itens do pedido de compra OU da compra efetivada do fornecedor
       let itensNota: any[] = []
+      let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
+
+      // Buscar XML da compra efetivada (por pedidoCompraId ou fallback por fornecedorId)
+      let compra: { xmlNfe: string | null; pedidoCompraId: string } | null = null
       if (ag.pedidoCompraId) {
+        compra = await tx.compraEfetivada.findFirst({
+          where: { pedidoCompraId: ag.pedidoCompraId },
+          select: { xmlNfe: true, pedidoCompraId: true },
+        })
+      }
+      if (!compra && ag.fornecedorId) {
+        compra = await tx.compraEfetivada.findFirst({
+          where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
+          orderBy: { criadoEm: 'desc' },
+          select: { xmlNfe: true, pedidoCompraId: true },
+        })
+      }
+
+      // Extrair lote/validade do XML
+      if (compra?.xmlNfe) {
+        try {
+          const parsed = parseNfeXml(compra.xmlNfe)
+          xmlItens = parsed.itens.map(i => ({
+            codigoProduto: i.codigoProduto,
+            lote: i.lote || '',
+            validade: (i as any).validade || null,
+          }))
+        } catch { /* XML inválido, seguir sem lote/validade */ }
+      }
+
+      // Buscar itens do pedido de compra
+      const pedidoId = ag.pedidoCompraId || compra?.pedidoCompraId
+      if (pedidoId) {
         const pedido = await tx.pedidoCompra.findUnique({
-          where: { id: ag.pedidoCompraId },
+          where: { id: pedidoId },
           include: { itens: { include: { produto: { select: { nome: true, codigo: true, unidade: true } } } } },
         })
         if (pedido) {
-          // Tentar extrair lote/validade do XML da compra efetivada
-          let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
-          let compra: { xmlNfe: string | null } | null = null
-          if (ag.pedidoCompraId) {
-            compra = await tx.compraEfetivada.findFirst({
-              where: { pedidoCompraId: ag.pedidoCompraId },
-              select: { xmlNfe: true },
-            })
-          }
-          // Fallback: buscar compra mais recente do fornecedor se não encontrou pelo pedido
-          if (!compra?.xmlNfe && ag.fornecedorId) {
-            compra = await tx.compraEfetivada.findFirst({
-              where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
-              orderBy: { criadoEm: 'desc' },
-              select: { xmlNfe: true },
-            })
-          }
-          if (compra?.xmlNfe) {
-            try {
-              const parsed = parseNfeXml(compra.xmlNfe)
-              xmlItens = parsed.itens.map(i => ({
-                codigoProduto: i.codigoProduto,
-                lote: i.lote || '',
-                validade: (i as any).validade || null,
-              }))
-            } catch { /* XML inválido, seguir sem lote/validade */ }
-          }
-
           itensNota = pedido.itens.map((item, idx) => {
-            // Buscar lote/validade do XML pelo código do produto
             const xmlItem = xmlItens.find(x => x.codigoProduto === item.produto.codigo)
             return {
               item: idx + 1,
