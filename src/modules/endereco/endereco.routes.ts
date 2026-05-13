@@ -5,7 +5,6 @@ import { AddressGenerationService } from './address-generation.service'
 import { ValidadorCapacidade } from './validador-capacidade.service'
 import { resolverFormato } from '../formato-endereco/formato-endereco.service'
 import { AddressCompositionService } from '../formato-endereco/address-composition.service'
-import { AddressGenerationV2Service } from '../formato-endereco/address-generation-v2.service'
 import { validarEndereco } from '../formato-endereco/address-validation.service'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
@@ -133,50 +132,8 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }).parse(request.body)
 
     try {
-      // Resolver formato aplicável (Zona > Depósito > Padrão)
-      const formato = await resolverFormato(body.depositoId, body.zonaId)
-
-      // Se formato resolvido ≠ padrão E tem menos de 6 segmentos, delegar para AddressGenerationService v2
-      // Formatos com 6 segmentos são equivalentes ao legado — usar o serviço legado para compatibilidade
-      if (formato.id !== 'padrao' && formato.segmentos.length < 6) {
-        const v2Service = new AddressGenerationV2Service()
-        
-        // Montar faixas incluindo codigoDeposito e codigoZona como valores fixos
-        const todasFaixas = [
-          { campoFisico: 'codigoDeposito', inicio: parseInt(body.codigoDeposito) || 1, fim: parseInt(body.codigoDeposito) || 1 },
-          { campoFisico: 'codigoZona', inicio: parseInt(body.codigoZona) || 1, fim: parseInt(body.codigoZona) || 1 },
-          { campoFisico: 'codigoRua', inicio: body.ruaInicio, fim: body.ruaFim },
-          { campoFisico: 'codigoPredio', inicio: body.predioInicio, fim: body.predioFim },
-          { campoFisico: 'codigoNivel', inicio: body.nivelInicio, fim: body.nivelFim },
-          { campoFisico: 'codigoApto', inicio: body.aptoInicio, fim: body.aptoFim },
-        ].filter(f => {
-          // Incluir apenas faixas cujos campos são segmentos ativos do formato
-          return formato.segmentos.some(s => s.campoFisico === f.campoFisico)
-        })
-
-        const result = await v2Service.gerarEnderecos({
-          centroDistribuicaoId: body.centroDistribuicaoId,
-          depositoId: body.depositoId,
-          zonaId: body.zonaId,
-          formatoEnderecoId: formato.id,
-          faixas: todasFaixas,
-          estruturaId: body.estruturaId,
-          classificacaoProdutoId: body.classificacaoProdutoId,
-          ambienteArmazenagemId: body.ambienteArmazenagemId,
-          formaArmazenagemId: body.formaArmazenagemId,
-          areaArmazenagem: body.areaArmazenagem,
-          tipo: body.tipo,
-          lado: body.lado,
-          nivelPicking: body.nivelPicking,
-        })
-        return reply.status(201).send({
-          criados: result.criados,
-          ignorados: result.ignorados,
-          total: result.total,
-        })
-      }
-
-      // Formato = padrão → manter comportamento legado (compatibilidade)
+      // Endpoint legado SEMPRE usa o serviço legado de geração
+      // Para formatos customizados (< 6 segmentos), usar POST /formato-endereco/gerar
       const service = new AddressGenerationService()
       const result = await service.generate(body)
       return reply.status(201).send({
