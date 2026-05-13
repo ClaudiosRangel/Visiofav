@@ -1011,7 +1011,10 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
             where: {
               tipo: { in: ['ARMAZENAGEM', 'LIVRE'] },
               status: true,
-              empresaId: user.empresaId,
+              OR: [
+                { empresaId: user.empresaId },
+                { empresaId: null },
+              ],
               saldos: { none: { quantidade: { gt: 0 } } },
             },
             include: { estrutura: true },
