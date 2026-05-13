@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { analisarPendenciasLogisticas } from '../pendencia-logistica/pendencia-logistica.routes'
+import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -158,13 +159,36 @@ export async function portariaRoutes(app: FastifyInstance) {
           include: { itens: { include: { produto: { select: { nome: true, codigo: true, unidade: true } } } } },
         })
         if (pedido) {
-          itensNota = pedido.itens.map((item, idx) => ({
-            item: idx + 1,
-            descricao: item.produto.nome,
-            codigoProduto: item.produto.codigo,
-            unidade: (item as any).unidade || item.produto.unidade,
-            quantidade: Number(item.quantidade),
-          }))
+          // Tentar extrair lote/validade do XML da compra efetivada
+          let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
+          const compra = await tx.compraEfetivada.findFirst({
+            where: { pedidoCompraId: ag.pedidoCompraId },
+            select: { xmlNfe: true },
+          })
+          if (compra?.xmlNfe) {
+            try {
+              const parsed = parseNfeXml(compra.xmlNfe)
+              xmlItens = parsed.itens.map(i => ({
+                codigoProduto: i.codigoProduto,
+                lote: i.lote || '',
+                validade: (i as any).validade || null,
+              }))
+            } catch { /* XML inválido, seguir sem lote/validade */ }
+          }
+
+          itensNota = pedido.itens.map((item, idx) => {
+            // Buscar lote/validade do XML pelo código do produto
+            const xmlItem = xmlItens.find(x => x.codigoProduto === item.produto.codigo)
+            return {
+              item: idx + 1,
+              descricao: item.produto.nome,
+              codigoProduto: item.produto.codigo,
+              unidade: (item as any).unidade || item.produto.unidade,
+              quantidade: Number(item.quantidade),
+              lote: xmlItem?.lote || undefined,
+              validade: xmlItem?.validade ? new Date(xmlItem.validade) : undefined,
+            }
+          })
         }
       }
 

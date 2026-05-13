@@ -299,6 +299,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         unidade: item.unidade,
         // Conferência cega: NÃO mostra quantidade esperada
         lote: item.lote,
+        validade: item.validade,
         shelfLifeMinimo: item.codigoProduto ? shelfLifeMap.get(item.codigoProduto) ?? null : null,
       })),
     }
