@@ -850,11 +850,12 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
         // Se não encontrou pelo código, tentar pelo EAN
         if (!produto) {
           const sku = await prisma.sku.findFirst({
-            where: { ean: item.codigoProduto },
-            include: { produto: true },
+            where: { codigoBarra: item.codigoProduto },
           })
-          if (sku?.produto && sku.produto.empresaId === user.empresaId) {
-            produto = sku.produto
+          if (sku) {
+            produto = await prisma.produto.findFirst({
+              where: { id: sku.produtoId, empresaId: user.empresaId },
+            })
           }
         }
       }
