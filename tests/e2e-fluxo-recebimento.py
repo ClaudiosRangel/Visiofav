@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 
 API_URL = os.environ.get("API_URL", "https://visiofav.onrender.com/api")
 EMAIL = os.environ.get("TEST_EMAIL", "admin@visiofab.com")
-PASSWORD = os.environ.get("TEST_PASSWORD", "123456")
+PASSWORD = os.environ.get("TEST_PASSWORD", "987123")
 
 # XML de teste com rastro (lote + validade)
 TEST_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -225,14 +225,46 @@ def run_tests():
         t.fail("POST /notas-entrada/importar-xml", f"status={r.status_code} body={r.text[:200]}")
 
     # ── STEP 4: Verificar endereços livres existem ────────────────────────
-    print("\n▶ STEP 4: Verificar endereços livres")
+    print("\n▶ STEP 4: Verificar endereços livres (criar se necessário)")
     r = api_get("/enderecos", token, {"limit": 50})
     if r.status_code == 200:
         enderecos = r.json().get("data", [])
         livres = [e for e in enderecos if e.get("tipo") in ("ARMAZENAGEM", "LIVRE") and e.get("status") == True]
         t.ok("Endereços encontrados", f"total={len(enderecos)} livres/armazenagem={len(livres)}")
         if len(livres) == 0:
-            t.fail("Nenhum endereço livre", "Gere endereços antes de testar endereçamento")
+            # Criar endereços automaticamente
+            print("    → Criando endereços automaticamente...")
+            # Buscar depósito e CD
+            r_dep = api_get("/depositos", token, {"limit": 5})
+            r_cd = api_get("/centros-distribuicao", token, {"limit": 5})
+            if r_dep.status_code == 200 and r_cd.status_code == 200:
+                deps = r_dep.json().get("data", [])
+                cds = r_cd.json().get("data", [])
+                if deps and cds:
+                    dep_id = deps[0]["id"]
+                    cd_id = cds[0]["id"]
+                    # Gerar 8 endereços via endpoint legado
+                    gerar_body = {
+                        "centroDistribuicaoId": cd_id,
+                        "depositoId": dep_id,
+                        "codigoDeposito": "001",
+                        "codigoZona": "001",
+                        "tipo": "ARMAZENAGEM",
+                        "ruaInicio": 1, "ruaFim": 1,
+                        "predioInicio": 1, "predioFim": 2,
+                        "nivelInicio": 1, "nivelFim": 2,
+                        "aptoInicio": 1, "aptoFim": 2,
+                    }
+                    r_gerar = api_post("/enderecos/gerar", token, gerar_body)
+                    if r_gerar.status_code == 201:
+                        criados = r_gerar.json().get("criados", 0)
+                        t.ok("Endereços criados automaticamente", f"criados={criados}")
+                    else:
+                        t.fail("Falha ao gerar endereços", f"status={r_gerar.status_code} body={r_gerar.text[:200]}")
+                else:
+                    t.fail("Sem depósito ou CD cadastrado")
+            else:
+                t.fail("Falha ao buscar depósito/CD")
     else:
         t.fail("GET /enderecos", f"status={r.status_code}")
 
