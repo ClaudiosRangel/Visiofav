@@ -96,6 +96,8 @@ export async function depositoRoutes(app: FastifyInstance) {
       cep: z.string().optional(),
       telefone1: z.string().optional(),
       telefone2: z.string().optional(),
+      formatoEnderecoId: z.string().uuid().nullable().optional(),
+      centroDistribuicaoId: z.string().uuid().optional(),
     })
 
     const data = bodySchema.parse(request.body)
