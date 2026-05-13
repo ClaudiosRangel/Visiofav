@@ -2,9 +2,24 @@
 inclusion: auto
 ---
 
-# Padrões de Teste — VisioFab WMS
+# Padrões de Teste e Deploy — VisioFab WMS Backend
 
-## Regra Obrigatória
+## Deploy para Produção
+
+O deploy é automático via push para `main`:
+
+```bash
+git add -A
+git commit -m "feat/fix: descrição"
+git push origin main
+```
+
+- **Hosting**: Render (https://visiofav.onrender.com)
+- **Migração**: Executada automaticamente no start via `prisma/migrate-prod.ts`
+- **Seed**: Incluir novos seeds no `migrate-prod.ts` (idempotente com `IF NOT EXISTS`)
+- **Tempo de deploy**: ~2 minutos após push
+
+## Regra Obrigatória de Testes
 
 Toda nova funcionalidade ou correção de bug DEVE incluir testes automatizados antes do deploy.
 
