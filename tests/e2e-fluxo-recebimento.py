@@ -169,6 +169,17 @@ def run_tests():
         t.fail("Login", str(e))
         return t
 
+    # ── STEP 1.5: Limpeza de dados (antes de testar) ─────────────────────
+    print("\n▶ STEP 1.5: Limpeza de dados operacionais")
+    try:
+        r = requests.post(f"{API_URL}/admin/cleanup", json={"senha": "caio1420"}, timeout=30)
+        if r.status_code == 200:
+            t.ok("Cleanup executado", f"resultado={r.json().get('message', 'ok')}")
+        else:
+            t.fail("Cleanup", f"status={r.status_code} body={r.text[:200]}")
+    except Exception as e:
+        t.fail("Cleanup", str(e))
+
     # ── STEP 2: Verificar produto existe (MOCA395CX48) ────────────────────
     print("\n▶ STEP 2: Verificar produto e SKU")
     r = api_get("/produtos", token, {"search": "MOCA395CX48", "limit": 5})
@@ -429,20 +440,13 @@ def run_tests():
                 t.fail("Conferir shelf test", f"status={r3.status_code}")
         else:
             t.fail("Iniciar shelf test", f"status={r2.status_code} body={r2.text[:200]}")
-        # Cleanup: excluir nota de teste
-        requests.delete(f"{API_URL}/notas-entrada/{nota_shelf_id}", headers={"Authorization": f"Bearer {token}"})
     else:
         t.fail("Criar nota shelf test", f"status={r.status_code}")
 
-    # ── CLEANUP ───────────────────────────────────────────────────────────
-    print("\n▶ CLEANUP")
+    # ── DADOS MANTIDOS ──────────────────────────────────────────────────
+    print("\n▶ DADOS DO TESTE MANTIDOS (não excluídos)")
     if nota_id:
-        # Tentar excluir nota de teste
-        r = requests.delete(f"{API_URL}/notas-entrada/{nota_id}", headers={"Authorization": f"Bearer {token}"})
-        if r.status_code in (200, 204):
-            t.ok("Nota de teste excluída")
-        else:
-            t.ok("Nota de teste mantida (pode estar conferida)", f"status={r.status_code}")
+        t.ok("Nota de teste mantida", f"id={nota_id}")
 
     # ── SUMMARY ───────────────────────────────────────────────────────────
     return t
