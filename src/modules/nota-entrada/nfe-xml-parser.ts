@@ -61,6 +61,18 @@ export function parseNfeXml(xml: string) {
     const rawUTrib = getTag('uTrib', prod)
     const rawQTrib = getTag('qTrib', prod)
 
+    // Extrair lote e validade do bloco <rastro> dentro do item
+    const rastros = getAllBlocks('rastro', prod)
+    let lote = ''
+    let validade: string | null = null
+    if (rastros.length > 0) {
+      // Usar o primeiro rastro do item
+      lote = getTag('nLote', rastros[0]) || ''
+      const dFab = getTag('dFab', rastros[0]) // data fabricação
+      const dVal = getTag('dVal', rastros[0]) // data validade
+      validade = dVal || null
+    }
+
     return {
       item: index + 1,
       codigoProduto: getTag('cProd', prod),
@@ -75,16 +87,8 @@ export function parseNfeXml(xml: string) {
       cEANTrib: normalizeEan(rawCEANTrib),
       uTrib: rawUTrib || null,
       qTrib: rawQTrib ? parseFloat(rawQTrib) || null : null,
-      lote: '',
-    }
-  })
-
-  // Tenta extrair lotes do bloco rastro
-  const rastros = getAllBlocks('rastro', xml)
-  rastros.forEach((rastro, i) => {
-    const nLote = getTag('nLote', rastro)
-    if (nLote && itens[i]) {
-      itens[i].lote = nLote
+      lote,
+      validade,
     }
   })
 
