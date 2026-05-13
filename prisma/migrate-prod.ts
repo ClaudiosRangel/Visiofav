@@ -282,6 +282,48 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "depara_produto_fornecedor_produto_id_idx" ON "depara_produto_fornecedor"("produto_id")`)
   console.log('✅ De-Para Produto Fornecedor table created')
 
+  // Formato de Endereço de Armazém
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "formato_endereco" (
+      "id" TEXT NOT NULL,
+      "nome" VARCHAR(100) NOT NULL,
+      "descricao" VARCHAR(255),
+      "segmentos" JSONB NOT NULL,
+      "empresa_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT "formato_endereco_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "formato_endereco_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "formato_endereco_id" TEXT`)
+  console.log('✅ Tabela formato_endereco criada + colunas FK em deposito/zona')
+
+  // Seed dos formatos pré-configurados
+  try {
+    const formatosPreConfigurados = [
+      { nome: 'Porta-palete (6 seg)', descricao: 'Formato legado completo com 6 segmentos', segmentos: [{ nome: 'Depósito', campoFisico: 'codigoDeposito', ordem: 1, numerico: true },{ nome: 'Zona', campoFisico: 'codigoZona', ordem: 2, numerico: true },{ nome: 'Rua', campoFisico: 'codigoRua', ordem: 3, numerico: true },{ nome: 'Prédio', campoFisico: 'codigoPredio', ordem: 4, numerico: true },{ nome: 'Nível', campoFisico: 'codigoNivel', ordem: 5, numerico: true },{ nome: 'Apto', campoFisico: 'codigoApto', ordem: 6, numerico: true }] },
+      { nome: 'Picking de chão', descricao: 'Formato para áreas de picking com 2 segmentos', segmentos: [{ nome: 'Zona', campoFisico: 'codigoZona', ordem: 1, numerico: true },{ nome: 'Posição', campoFisico: 'codigoRua', ordem: 2, numerico: true }] },
+      { nome: 'Flow rack', descricao: 'Formato para flow racks com 2 segmentos', segmentos: [{ nome: 'Corredor', campoFisico: 'codigoRua', ordem: 1, numerico: true },{ nome: 'Posição', campoFisico: 'codigoPredio', ordem: 2, numerico: true }] },
+      { nome: 'Blocado', descricao: 'Formato para áreas blocadas com 3 segmentos', segmentos: [{ nome: 'Zona', campoFisico: 'codigoZona', ordem: 1, numerico: true },{ nome: 'Fileira', campoFisico: 'codigoRua', ordem: 2, numerico: true },{ nome: 'Coluna', campoFisico: 'codigoPredio', ordem: 3, numerico: true }] },
+      { nome: 'Doca', descricao: 'Formato para docas com 1 segmento', segmentos: [{ nome: 'Código', campoFisico: 'codigoRua', ordem: 1, numerico: true, prefixo: 'DOCA' }] },
+      { nome: 'Área de avaria', descricao: 'Formato para áreas de avaria com 1 segmento', segmentos: [{ nome: 'Código', campoFisico: 'codigoRua', ordem: 1, numerico: true, prefixo: 'AVARIA' }] },
+    ]
+
+    const empresas = await prisma.empresa.findMany({ select: { id: true } })
+    for (const empresa of empresas) {
+      for (const fmt of formatosPreConfigurados) {
+        const existing = await prisma.formatoEndereco.findFirst({ where: { nome: fmt.nome, empresaId: empresa.id } })
+        if (!existing) {
+          await prisma.formatoEndereco.create({ data: { nome: fmt.nome, descricao: fmt.descricao, segmentos: fmt.segmentos, empresaId: empresa.id } })
+        }
+      }
+    }
+    console.log('✅ 6 formatos de endereço pré-configurados criados para todas as empresas')
+  } catch (e: any) {
+    console.log('⚠️ Seed formatos de endereço skipped:', e.message)
+  }
+
   console.log('✅ All migrations applied successfully')
 }
 
