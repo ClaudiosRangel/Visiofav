@@ -279,6 +279,16 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
 
     // Retornar itens para conferência cega (sem mostrar qtd esperada)
+    // Buscar shelfLifeMinimo dos produtos para alerta no frontend
+    const codigosProduto = nota.itens.map(i => i.codigoProduto).filter(Boolean) as string[]
+    const produtosShelfLife = codigosProduto.length > 0
+      ? await prisma.produto.findMany({
+          where: { empresaId: user.empresaId, codigo: { in: codigosProduto } },
+          select: { codigo: true, shelfLifeMinimo: true },
+        })
+      : []
+    const shelfLifeMap = new Map(produtosShelfLife.map(p => [p.codigo, p.shelfLifeMinimo]))
+
     return {
       nota: { id: nota.id, numero: nota.numero, serie: nota.serie, fornecedor: nota.fornecedor, fornecedorDoc: nota.fornecedorDoc, status: 'EM_CONFERENCIA' },
       itens: nota.itens.map((item) => ({
@@ -289,6 +299,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         unidade: item.unidade,
         // Conferência cega: NÃO mostra quantidade esperada
         lote: item.lote,
+        shelfLifeMinimo: item.codigoProduto ? shelfLifeMap.get(item.codigoProduto) ?? null : null,
       })),
     }
   })
