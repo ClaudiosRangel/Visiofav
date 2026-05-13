@@ -295,6 +295,80 @@ async function main() {
   console.log('✅ 2 contas a pagar + 1 conta a receber criadas')
 
   // ============================================================================
+  // 12.5. WMS — FORMATOS DE ENDEREÇO PRÉ-CONFIGURADOS
+  // ============================================================================
+  const formatosEndereco = [
+    {
+      nome: 'Porta-palete (6 seg)',
+      descricao: 'Formato legado completo com 6 segmentos: Depósito-Zona-Rua-Prédio-Nível-Apto',
+      segmentos: [
+        { nome: 'Depósito', campoFisico: 'codigoDeposito', ordem: 1, numerico: true },
+        { nome: 'Zona', campoFisico: 'codigoZona', ordem: 2, numerico: true },
+        { nome: 'Rua', campoFisico: 'codigoRua', ordem: 3, numerico: true },
+        { nome: 'Prédio', campoFisico: 'codigoPredio', ordem: 4, numerico: true },
+        { nome: 'Nível', campoFisico: 'codigoNivel', ordem: 5, numerico: true },
+        { nome: 'Apto', campoFisico: 'codigoApto', ordem: 6, numerico: true },
+      ],
+    },
+    {
+      nome: 'Picking de chão',
+      descricao: 'Formato para áreas de picking com 2 segmentos: Zona-Posição',
+      segmentos: [
+        { nome: 'Zona', campoFisico: 'codigoZona', ordem: 1, numerico: true },
+        { nome: 'Posição', campoFisico: 'codigoRua', ordem: 2, numerico: true },
+      ],
+    },
+    {
+      nome: 'Flow rack',
+      descricao: 'Formato para flow racks com 2 segmentos: Corredor-Posição',
+      segmentos: [
+        { nome: 'Corredor', campoFisico: 'codigoRua', ordem: 1, numerico: true },
+        { nome: 'Posição', campoFisico: 'codigoPredio', ordem: 2, numerico: true },
+      ],
+    },
+    {
+      nome: 'Blocado',
+      descricao: 'Formato para áreas blocadas com 3 segmentos: Zona-Fileira-Coluna',
+      segmentos: [
+        { nome: 'Zona', campoFisico: 'codigoZona', ordem: 1, numerico: true },
+        { nome: 'Fileira', campoFisico: 'codigoRua', ordem: 2, numerico: true },
+        { nome: 'Coluna', campoFisico: 'codigoPredio', ordem: 3, numerico: true },
+      ],
+    },
+    {
+      nome: 'Doca',
+      descricao: 'Formato para docas com 1 segmento: Código com prefixo DOCA',
+      segmentos: [
+        { nome: 'Código', campoFisico: 'codigoRua', ordem: 1, numerico: true, prefixo: 'DOCA' },
+      ],
+    },
+    {
+      nome: 'Área de avaria',
+      descricao: 'Formato para áreas de avaria com 1 segmento: Código com prefixo AVARIA',
+      segmentos: [
+        { nome: 'Código', campoFisico: 'codigoRua', ordem: 1, numerico: true, prefixo: 'AVARIA' },
+      ],
+    },
+  ]
+
+  for (const formato of formatosEndereco) {
+    const existing = await prisma.formatoEndereco.findFirst({
+      where: { nome: formato.nome, empresaId: empresa.id },
+    })
+    if (!existing) {
+      await prisma.formatoEndereco.create({
+        data: {
+          nome: formato.nome,
+          descricao: formato.descricao,
+          segmentos: formato.segmentos,
+          empresaId: empresa.id,
+        },
+      })
+    }
+  }
+  console.log('✅ 6 formatos de endereço pré-configurados criados')
+
+  // ============================================================================
   // 13. WMS — DEPÓSITOS, ZONAS, ESTRUTURAS, ENDEREÇOS
   // ============================================================================
   const dep1 = await prisma.deposito.create({ data: { centroDistribuicaoId: cd.id, descricao: 'Depósito Principal', cidade: 'São Paulo', uf: 'SP' } })
@@ -493,6 +567,7 @@ async function main() {
   console.log('   - WMS: 4 docas, 4 funcionários, 3 equipamentos')
   console.log('   - WMS: Formas, ambientes, classificações, tipos, veículos')
   console.log('   - WMS: 8 parâmetros configurados')
+  console.log('   - WMS: 6 formatos de endereço pré-configurados')
 }
 
 main()

@@ -3,6 +3,10 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { AddressGenerationService } from './address-generation.service'
 import { ValidadorCapacidade } from './validador-capacidade.service'
+import { resolverFormato } from '../formato-endereco/formato-endereco.service'
+import { AddressCompositionService } from '../formato-endereco/address-composition.service'
+import { AddressGenerationV2Service } from '../formato-endereco/address-generation-v2.service'
+import { validarEndereco } from '../formato-endereco/address-validation.service'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
@@ -56,8 +60,9 @@ export async function enderecoRoutes(app: FastifyInstance) {
   app.post('/', async (request, reply) => {
     const db = getDb(request)
     const data = z.object({
-      codigoDeposito: z.string(), codigoZona: z.string(), codigoRua: z.string(),
-      codigoPredio: z.string(), codigoNivel: z.string(), codigoApto: z.string(),
+      codigoDeposito: z.string().optional().default(''), codigoZona: z.string().optional().default(''),
+      codigoRua: z.string().optional().default(''), codigoPredio: z.string().optional().default(''),
+      codigoNivel: z.string().optional().default(''), codigoApto: z.string().optional().default(''),
       tipo: z.string().default('ARMAZENAGEM'),
       centroDistribuicaoId: z.string().uuid(), depositoId: z.string().uuid(),
       zonaId: z.string().uuid().optional(), estruturaId: z.string().uuid().optional(),
@@ -65,7 +70,38 @@ export async function enderecoRoutes(app: FastifyInstance) {
       classificacaoProdutoId: z.string().uuid().optional(),
     }).parse(request.body)
 
-    const enderecoCompleto = `${data.codigoDeposito}-${data.codigoZona}-${data.codigoRua}-${data.codigoPredio}-${data.codigoNivel}-${data.codigoApto}`
+    // Resolver formato de endereço aplicável (Zona > Depósito > Padrão)
+    const formato = await resolverFormato(data.depositoId, data.zonaId)
+
+    // Validar endereço conforme formato configurado
+    const validacao = validarEndereco(formato, {
+      codigoDeposito: data.codigoDeposito || null,
+      codigoZona: data.codigoZona || null,
+      codigoRua: data.codigoRua || null,
+      codigoPredio: data.codigoPredio || null,
+      codigoNivel: data.codigoNivel || null,
+      codigoApto: data.codigoApto || null,
+    })
+
+    if (!validacao.valido) {
+      return reply.status(400).send({
+        message: 'Validação de endereço falhou conforme formato configurado',
+        erros: validacao.erros,
+      })
+    }
+
+    // Compor enderecoCompleto via formato configurado (garante consistência com o formato)
+    const compositionService = new AddressCompositionService()
+    const valores: Record<string, string> = {
+      codigoDeposito: data.codigoDeposito,
+      codigoZona: data.codigoZona,
+      codigoRua: data.codigoRua,
+      codigoPredio: data.codigoPredio,
+      codigoNivel: data.codigoNivel,
+      codigoApto: data.codigoApto,
+    }
+    const enderecoCompleto = compositionService.compor(formato, valores)
+
     return reply.status(201).send(await db.endereco.create({ data: { ...data, enderecoCompleto } }))
   })
 
@@ -97,6 +133,43 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }).parse(request.body)
 
     try {
+      // Resolver formato aplicável (Zona > Depósito > Padrão)
+      const formato = await resolverFormato(body.depositoId, body.zonaId)
+
+      // Se formato resolvido ≠ padrão, delegar para AddressGenerationService v2
+      if (formato.id !== 'padrao') {
+        const v2Service = new AddressGenerationV2Service()
+        const result = await v2Service.gerarEnderecos({
+          centroDistribuicaoId: body.centroDistribuicaoId,
+          depositoId: body.depositoId,
+          zonaId: body.zonaId,
+          formatoEnderecoId: formato.id,
+          faixas: [
+            { campoFisico: 'codigoRua', inicio: body.ruaInicio, fim: body.ruaFim },
+            { campoFisico: 'codigoPredio', inicio: body.predioInicio, fim: body.predioFim },
+            { campoFisico: 'codigoNivel', inicio: body.nivelInicio, fim: body.nivelFim },
+            { campoFisico: 'codigoApto', inicio: body.aptoInicio, fim: body.aptoFim },
+          ].filter(f => {
+            // Incluir apenas faixas cujos campos são segmentos ativos do formato
+            return formato.segmentos.some(s => s.campoFisico === f.campoFisico)
+          }),
+          estruturaId: body.estruturaId,
+          classificacaoProdutoId: body.classificacaoProdutoId,
+          ambienteArmazenagemId: body.ambienteArmazenagemId,
+          formaArmazenagemId: body.formaArmazenagemId,
+          areaArmazenagem: body.areaArmazenagem,
+          tipo: body.tipo,
+          lado: body.lado,
+          nivelPicking: body.nivelPicking,
+        })
+        return reply.status(201).send({
+          criados: result.criados,
+          ignorados: result.ignorados,
+          total: result.total,
+        })
+      }
+
+      // Formato = padrão → manter comportamento legado (compatibilidade)
       const service = new AddressGenerationService()
       const result = await service.generate(body)
       return reply.status(201).send({
@@ -153,10 +226,45 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }
   })
 
-  app.put('/:id', async (request) => {
+  app.put('/:id', async (request, reply) => {
     const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const data = z.object({ tipo: z.string().optional(), estado: z.string().optional(), status: z.boolean().optional() }).parse(request.body)
+    const data = z.object({
+      tipo: z.string().optional(), estado: z.string().optional(), status: z.boolean().optional(),
+      codigoDeposito: z.string().optional(), codigoZona: z.string().optional(),
+      codigoRua: z.string().optional(), codigoPredio: z.string().optional(),
+      codigoNivel: z.string().optional(), codigoApto: z.string().optional(),
+    }).parse(request.body)
+
+    // Check if any segment field is being updated
+    const segmentFields = ['codigoDeposito', 'codigoZona', 'codigoRua', 'codigoPredio', 'codigoNivel', 'codigoApto'] as const
+    const hasSegmentUpdate = segmentFields.some(f => data[f] !== undefined)
+
+    if (hasSegmentUpdate) {
+      // Fetch existing address to merge segment values
+      const existing = await db.endereco.findUnique({ where: { id } })
+      if (!existing) {
+        return reply.status(404).send({ message: 'Endereço não encontrado' })
+      }
+
+      // Merge existing values with updated ones
+      const mergedValues: Record<string, string> = {
+        codigoDeposito: data.codigoDeposito ?? existing.codigoDeposito ?? '',
+        codigoZona: data.codigoZona ?? existing.codigoZona ?? '',
+        codigoRua: data.codigoRua ?? existing.codigoRua ?? '',
+        codigoPredio: data.codigoPredio ?? existing.codigoPredio ?? '',
+        codigoNivel: data.codigoNivel ?? existing.codigoNivel ?? '',
+        codigoApto: data.codigoApto ?? existing.codigoApto ?? '',
+      }
+
+      // Resolve format and recompose enderecoCompleto
+      const formato = await resolverFormato(existing.depositoId, existing.zonaId ?? undefined)
+      const compositionService = new AddressCompositionService()
+      const enderecoCompleto = compositionService.compor(formato, mergedValues)
+
+      return db.endereco.update({ where: { id }, data: { ...data, enderecoCompleto } })
+    }
+
     return db.endereco.update({ where: { id }, data })
   })
 

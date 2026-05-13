@@ -891,6 +891,21 @@ model CarregamentoVolume {
 // WMS — CADASTROS OPERACIONAIS
 // ============================================================================
 
+model FormatoEndereco {
+  id          String   @id @default(uuid())
+  nome        String   @db.VarChar(100)
+  descricao   String?  @db.VarChar(255)
+  segmentos   Json     // Array de FormatoEnderecoSegmento serializado
+  empresaId   String?  @map("empresa_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+  status      Boolean  @default(true)
+
+  depositos   Deposito[]
+  zonas       Zona[]
+
+  @@map("formato_endereco")
+}
+
 model Deposito {
   id                    String   @id @default(uuid())
   centroDistribuicaoId  String   @map("centro_distribuicao_id")
@@ -900,6 +915,8 @@ model Deposito {
   status                Boolean  @default(true)
   criadoEm              DateTime @default(now()) @map("criado_em")
   empresaId             String?  @map("empresa_id")
+  formatoEnderecoId     String?  @map("formato_endereco_id")
+  formatoEndereco       FormatoEndereco? @relation(fields: [formatoEnderecoId], references: [id])
 
   zonas     Zona[]
   enderecos Endereco[]
@@ -909,13 +926,15 @@ model Deposito {
 }
 
 model Zona {
-  id          String   @id @default(uuid())
-  descricao   String   @db.VarChar(150)
-  depositoId  String?  @map("deposito_id")
-  deposito    Deposito? @relation(fields: [depositoId], references: [id])
-  status      Boolean  @default(true)
-  criadoEm    DateTime @default(now()) @map("criado_em")
-  empresaId   String?  @map("empresa_id")
+  id                String   @id @default(uuid())
+  descricao         String   @db.VarChar(150)
+  depositoId        String?  @map("deposito_id")
+  deposito          Deposito? @relation(fields: [depositoId], references: [id])
+  status            Boolean  @default(true)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+  empresaId         String?  @map("empresa_id")
+  formatoEnderecoId String?  @map("formato_endereco_id")
+  formatoEndereco   FormatoEndereco? @relation(fields: [formatoEnderecoId], references: [id])
 
   enderecos   Endereco[]
 

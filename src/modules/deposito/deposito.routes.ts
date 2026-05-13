@@ -103,6 +103,43 @@ export async function depositoRoutes(app: FastifyInstance) {
     return item
   })
 
+  app.patch('/:id', async (request, reply) => {
+    const db = getDb(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const bodySchema = z.object({
+      formatoEnderecoId: z.string().uuid().nullable().optional(),
+    })
+
+    const data = bodySchema.parse(request.body)
+
+    // Validate that the deposito exists
+    const deposito = await db.deposito.findUnique({ where: { id } })
+    if (!deposito) {
+      return reply.status(404).send({ message: 'Depósito não encontrado' })
+    }
+
+    // Validate that formatoEnderecoId references an existing formato from the same empresa
+    if (data.formatoEnderecoId) {
+      const formato = await db.formatoEndereco.findUnique({
+        where: { id: data.formatoEnderecoId },
+      })
+      if (!formato) {
+        return reply.status(400).send({ message: 'Formato de endereço não encontrado' })
+      }
+      // Validate same empresa (extra safety beyond tenant scoping)
+      if (deposito.empresaId && formato.empresaId && formato.empresaId !== deposito.empresaId) {
+        return reply.status(400).send({ message: 'Formato de endereço não pertence à mesma empresa' })
+      }
+    }
+
+    const updated = await db.deposito.update({
+      where: { id },
+      data: { formatoEnderecoId: data.formatoEnderecoId ?? null },
+    })
+
+    return updated
+  })
+
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)

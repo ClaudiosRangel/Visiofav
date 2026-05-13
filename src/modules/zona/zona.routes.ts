@@ -38,6 +38,43 @@ export async function zonaRoutes(app: FastifyInstance) {
     return db.zona.update({ where: { id }, data })
   })
 
+  app.patch('/:id', async (request, reply) => {
+    const db = getDb(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const bodySchema = z.object({
+      formatoEnderecoId: z.string().uuid().nullable().optional(),
+    })
+
+    const data = bodySchema.parse(request.body)
+
+    // Validate that the zona exists
+    const zona = await db.zona.findUnique({ where: { id } })
+    if (!zona) {
+      return reply.status(404).send({ message: 'Zona não encontrada' })
+    }
+
+    // Validate that formatoEnderecoId references an existing formato from the same empresa
+    if (data.formatoEnderecoId) {
+      const formato = await db.formatoEndereco.findUnique({
+        where: { id: data.formatoEnderecoId },
+      })
+      if (!formato) {
+        return reply.status(400).send({ message: 'Formato de endereço não encontrado' })
+      }
+      // Validate same empresa (extra safety beyond tenant scoping)
+      if (zona.empresaId && formato.empresaId && formato.empresaId !== zona.empresaId) {
+        return reply.status(400).send({ message: 'Formato de endereço não pertence à mesma empresa' })
+      }
+    }
+
+    const updated = await db.zona.update({
+      where: { id },
+      data: { formatoEnderecoId: data.formatoEnderecoId ?? null },
+    })
+
+    return updated
+  })
+
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)

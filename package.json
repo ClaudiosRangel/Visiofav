@@ -7,6 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "echo 'build-v2' && npx prisma generate",
     "start": "(npx tsx prisma/migrate-prod.ts || true) && tsx src/server.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
@@ -32,6 +34,9 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^22.10.7"
+    "@types/node": "^22.10.7",
+    "@vitest/coverage-v8": "^4.1.6",
+    "fast-check": "^4.8.0",
+    "vitest": "^4.1.6"
   }
 }
