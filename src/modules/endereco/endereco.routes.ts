@@ -136,8 +136,9 @@ export async function enderecoRoutes(app: FastifyInstance) {
       // Resolver formato aplicável (Zona > Depósito > Padrão)
       const formato = await resolverFormato(body.depositoId, body.zonaId)
 
-      // Se formato resolvido ≠ padrão, delegar para AddressGenerationService v2
-      if (formato.id !== 'padrao') {
+      // Se formato resolvido ≠ padrão E tem menos de 6 segmentos, delegar para AddressGenerationService v2
+      // Formatos com 6 segmentos são equivalentes ao legado — usar o serviço legado para compatibilidade
+      if (formato.id !== 'padrao' && formato.segmentos.length < 6) {
         const v2Service = new AddressGenerationV2Service()
         
         // Montar faixas incluindo codigoDeposito e codigoZona como valores fixos

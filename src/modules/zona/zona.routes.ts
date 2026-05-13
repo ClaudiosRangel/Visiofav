@@ -34,7 +34,7 @@ export async function zonaRoutes(app: FastifyInstance) {
   app.put('/:id', async (request) => {
     const db = getDb(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const data = z.object({ descricao: z.string().optional(), status: z.boolean().optional() }).parse(request.body)
+    const data = z.object({ descricao: z.string().optional(), status: z.boolean().optional(), formatoEnderecoId: z.string().uuid().nullable().optional() }).parse(request.body)
     return db.zona.update({ where: { id }, data })
   })
 
