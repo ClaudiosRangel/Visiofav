@@ -139,20 +139,26 @@ export async function enderecoRoutes(app: FastifyInstance) {
       // Se formato resolvido ≠ padrão, delegar para AddressGenerationService v2
       if (formato.id !== 'padrao') {
         const v2Service = new AddressGenerationV2Service()
+        
+        // Montar faixas incluindo codigoDeposito e codigoZona como valores fixos
+        const todasFaixas = [
+          { campoFisico: 'codigoDeposito', inicio: parseInt(body.codigoDeposito) || 1, fim: parseInt(body.codigoDeposito) || 1 },
+          { campoFisico: 'codigoZona', inicio: parseInt(body.codigoZona) || 1, fim: parseInt(body.codigoZona) || 1 },
+          { campoFisico: 'codigoRua', inicio: body.ruaInicio, fim: body.ruaFim },
+          { campoFisico: 'codigoPredio', inicio: body.predioInicio, fim: body.predioFim },
+          { campoFisico: 'codigoNivel', inicio: body.nivelInicio, fim: body.nivelFim },
+          { campoFisico: 'codigoApto', inicio: body.aptoInicio, fim: body.aptoFim },
+        ].filter(f => {
+          // Incluir apenas faixas cujos campos são segmentos ativos do formato
+          return formato.segmentos.some(s => s.campoFisico === f.campoFisico)
+        })
+
         const result = await v2Service.gerarEnderecos({
           centroDistribuicaoId: body.centroDistribuicaoId,
           depositoId: body.depositoId,
           zonaId: body.zonaId,
           formatoEnderecoId: formato.id,
-          faixas: [
-            { campoFisico: 'codigoRua', inicio: body.ruaInicio, fim: body.ruaFim },
-            { campoFisico: 'codigoPredio', inicio: body.predioInicio, fim: body.predioFim },
-            { campoFisico: 'codigoNivel', inicio: body.nivelInicio, fim: body.nivelFim },
-            { campoFisico: 'codigoApto', inicio: body.aptoInicio, fim: body.aptoFim },
-          ].filter(f => {
-            // Incluir apenas faixas cujos campos são segmentos ativos do formato
-            return formato.segmentos.some(s => s.campoFisico === f.campoFisico)
-          }),
+          faixas: todasFaixas,
           estruturaId: body.estruturaId,
           classificacaoProdutoId: body.classificacaoProdutoId,
           ambienteArmazenagemId: body.ambienteArmazenagemId,
