@@ -82,7 +82,11 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
         enderecoCompleto: end.enderecoCompleto || '',
         tipo: end.tipo || 'ARMAZENAGEM',
         ocupacao,
-        areaArmazenagem: ((end.codigoNivel === '001' || end.codigoNivel === '01' || end.codigoNivel === '1') ? 'PICKING' : 'PULMAO'),
+        areaArmazenagem: (end as any).areaArmazenagem === 'PICKING'
+          ? 'PICKING'
+          : (end as any).areaArmazenagem === 'PULMAO'
+            ? 'PULMAO'
+            : ((end.codigoNivel === '001' || end.codigoNivel === '01' || end.codigoNivel === '1') ? 'PICKING' : 'PULMAO'),
         produtos,
         totalQuantidade,
       })

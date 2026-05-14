@@ -395,12 +395,15 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
           : undefined
 
         // Determinar área de armazenagem (PICKING ou PULMAO)
-        // Sempre inferir pelo nível: 001 = PICKING, demais = PULMAO
-        // (o campo areaArmazenagem no banco pode estar incorreto pois a geração automática gravou tudo como PULMAO)
+        // Usar campo do banco quando disponível, fallback pela heurística do nível
         const areaArmazenagem: 'PICKING' | 'PULMAO' =
-          (endereco.codigoNivel === '001' || endereco.codigoNivel === '01' || endereco.codigoNivel === '1')
+          (endereco as any).areaArmazenagem === 'PICKING'
             ? 'PICKING'
-            : 'PULMAO'
+            : (endereco as any).areaArmazenagem === 'PULMAO'
+              ? 'PULMAO'
+              : (endereco.codigoNivel === '001' || endereco.codigoNivel === '01' || endereco.codigoNivel === '1')
+                ? 'PICKING'
+                : 'PULMAO'
 
         return {
           id: endereco.id,
