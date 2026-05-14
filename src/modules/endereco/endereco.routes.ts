@@ -116,7 +116,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
       classificacaoProdutoId: z.string().uuid().optional(),
       ambienteArmazenagemId: z.string().uuid().optional(),
       formaArmazenagemId: z.string().uuid().optional(),
-      areaArmazenagem: z.enum(['PULMAO', 'PICKING']).optional().default('PULMAO'),
+      areaArmazenagem: z.enum(['PULMAO', 'PICKING']).optional(),
       situacao: z.string().optional().default('ARMAZENAGEM'),
       lado: z.enum(['PAR', 'IMPAR', 'AMBOS']).optional().default('AMBOS'),
       tipo: z.string().optional().default('ARMAZENAGEM'),
