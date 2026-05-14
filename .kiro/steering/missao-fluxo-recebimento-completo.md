@@ -38,9 +38,10 @@ O fluxo de recebimento (Compras → Portaria → Conferência → Endereçamento
 - **Status**: PRECISA INVESTIGAR — provavelmente erro no código que busca SKU + XML
 
 ### P3: Endereçamento não sugere endereços
-- **Causa raiz**: Query filtrava `empresaId: user.empresaId` mas endereços têm `empresaId: null`
-- **Fix aplicado**: OR [empresaId = user.empresaId, empresaId = null] (commit 077da91)
-- **Status**: PRECISA VALIDAR
+- **Causa raiz REAL (encontrada agora)**: DOIS bugs:
+  1. Query filtrava `empresaId: user.empresaId` mas endereços têm `empresaId: null` → Fix: OR [empresaId, null] (commit 077da91)
+  2. **Campo `ean` inexistente no modelo Sku** — a query `prisma.sku.findFirst({ where: { ean: ... } })` causava erro Prisma em runtime, quebrando TODO o endpoint `sugerir-lote`. O campo correto é `codigoBarra`. → Fix: commit 70c1448
+- **Status**: CORRIGIDO — ambos os bugs fixados
 
 ### P4: Aba "Estoque/Lotes" no Produto
 - **Requisito**: Mostrar lote, validade, unidade, qtd adquirida, saldo atual
@@ -83,7 +84,21 @@ O fluxo de recebimento (Compras → Portaria → Conferência → Endereçamento
 
 ## Próximos Passos
 
-1. Investigar e corrigir o ERRO na portaria (P2) — provavelmente o código de SKU/XML quebrou
-2. Validar que lote/validade chega na conferência (P1)
-3. Validar endereçamento sugere endereços (P3)
-4. Melhorar aba Estoque/Lotes com dados da nota (P4)
+### PRIORIDADE 1: Mudanças no Endereçamento (tela Conferência de Entrada → aba Conferidas)
+1. **Funcionário obrigatório** — Ao abrir endereçamento, pedir seleção de funcionário(s) antes de mostrar a grid. Não permitir confirmar sem funcionário.
+2. **Grid de endereços automáticos** — Em vez de campo "Destino" com select, mostrar GRID com linhas:
+   - Cada linha = 1 alocação sugerida (endereço + quantidade)
+   - Coluna de ação "Localizar" para trocar o endereço daquela linha
+   - Endereços devem ser compatíveis com o produto (respeitar dados logísticos)
+3. **Imprimir Ficha** — Deve incluir os endereços da grid + nome do conferente/funcionário selecionado
+4. **Botão único** — Remover "Confirmar Endereçamento" manual, manter apenas "Confirmar (Lote)" que confirma todas as linhas da grid de uma vez
+
+### PRIORIDADE 2: Cálculo de paletes na portaria
+- O cálculo depende do pedido ser carregado no GET /agendamentos-hoje
+- Quando pedidoCompraId é null, o pedido não é carregado → SKU não vem → cálculo não funciona
+- Fix: buscar pedido pelo fornecedorId como fallback no GET /agendamentos-hoje (mesmo padrão do conferir)
+
+### PRIORIDADE 3: Playwright/Selenium
+- Estimativa: ~2-3 créditos para criar script básico com Playwright
+- Cobre: login → importar XML → agendar → conferir portaria → conferência entrada → endereçamento
+- Requer: `pip install playwright && playwright install chromium`
