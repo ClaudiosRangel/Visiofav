@@ -20,7 +20,7 @@ export async function notaEntradaRoutes(app: FastifyInstance) {
     const [data, total] = await Promise.all([
       db.notaEntrada.findMany({
         where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { criadoEm: 'desc' },
-        include: { itens: true, conferencias: { select: { id: true, status: true } } },
+        include: { itens: true },
       }),
       db.notaEntrada.count({ where }),
     ])
