@@ -71,9 +71,32 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
 
       const totalQuantidade = produtos.reduce((s, p) => s + p.quantidade, 0)
 
+      // Calcular capacidade para determinar se é PARCIAL ou CHEIO
+      let capacidadePalete = 0
+      if (produtos.length > 0) {
+        // Buscar SKU do primeiro produto para calcular capacidade
+        const primeiroProdutoId = end.saldos[0]?.produto?.id || end.saldos[0]?.produtoId
+        if (primeiroProdutoId) {
+          const skuProd = await prisma.sku.findFirst({
+            where: { produtoId: primeiroProdutoId, lastro: { not: null }, camada: { not: null } },
+            orderBy: { sequencia: 'desc' },
+            select: { lastro: true, camada: true },
+          })
+          if (skuProd?.lastro && skuProd?.camada) {
+            capacidadePalete = skuProd.lastro * skuProd.camada
+          }
+        }
+      }
+      // Fallback: capacidade da estrutura
+      if (capacidadePalete === 0 && end.estruturaId) {
+        const estrutura = await prisma.estrutura.findUnique({ where: { id: end.estruturaId }, select: { capacidade: true } })
+        if (estrutura?.capacidade) capacidadePalete = Number(estrutura.capacidade)
+      }
+
       let ocupacao: 'LIVRE' | 'PARCIAL' | 'CHEIO' | 'BLOQUEADO' = 'LIVRE'
       if (end.tipo === 'BLOQUEADO') ocupacao = 'BLOQUEADO'
-      else if (totalQuantidade > 0) ocupacao = 'CHEIO'
+      else if (totalQuantidade > 0 && capacidadePalete > 0 && totalQuantidade >= capacidadePalete) ocupacao = 'CHEIO'
+      else if (totalQuantidade > 0) ocupacao = 'PARCIAL'
 
       mapa[rua][predio].push({
         nivel: end.codigoNivel || '001',
