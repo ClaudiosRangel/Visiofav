@@ -146,7 +146,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
             include: {
               pedidoVenda: {
                 include: {
-                  cliente: { select: { razaoSocial: true } },
+                  cliente: { select: { id: true, razaoSocial: true, nomeFantasia: true, cpfCnpj: true } },
                 },
               },
             },
@@ -177,7 +177,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const data = nfs.map((nf) => {
       const pedido = nf.vendaEfetivada?.pedidoVenda
       const rota = pedido?.rotaId ? rotaLookup.get(pedido.rotaId) : null
-      const clienteFromInclude = pedido?.cliente?.razaoSocial || (pedido as any)?.cliente?.nomeFantasia
+      const clienteFromInclude = pedido?.cliente?.razaoSocial || pedido?.cliente?.nomeFantasia || (pedido?.cliente as any)?.cpfCnpj
       const clienteFromLookup = pedido?.clienteId ? clienteLookup.get(pedido.clienteId) : null
       return {
         nfeId: nf.id,
