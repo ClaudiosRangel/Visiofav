@@ -208,7 +208,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       }
     })
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit), _debug: { clienteIds, pedidoVendaIds: pedidoVendaIds, vendaEfetivadaIds, clientesEncontrados: clientes.length } }
   })
 
   // ==========================================================================
