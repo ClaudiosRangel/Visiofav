@@ -156,16 +156,43 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       prisma.nfe.count({ where: nfeWhere }),
     ])
 
-    const data = nfs.map((nf) => ({
-      nfeId: nf.id,
-      numero: nf.numero,
-      serie: nf.serie,
-      cliente: nf.vendaEfetivada?.pedidoVenda?.cliente?.razaoSocial || null,
-      rotaId: nf.vendaEfetivada?.pedidoVenda?.rotaId || null,
-      valorTotal: nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0),
-      pesoTotal: nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0),
-      mapaOk: nf.mapaOk,
-    }))
+    // Buscar rotas para os pedidos que têm rotaId
+    const rotaIds = Array.from(new Set(
+      nfs.map((nf) => nf.vendaEfetivada?.pedidoVenda?.rotaId).filter((id): id is string => !!id)
+    ))
+    const rotas = rotaIds.length > 0
+      ? await prisma.rota.findMany({ where: { id: { in: rotaIds } }, select: { id: true, codigo: true, descricao: true } })
+      : []
+    const rotaLookup = new Map(rotas.map((r) => [r.id, r]))
+
+    // Fallback: buscar clientes diretamente se o include não trouxe
+    const clienteIds = Array.from(new Set(
+      nfs.map((nf) => nf.vendaEfetivada?.pedidoVenda?.clienteId).filter((id): id is string => !!id)
+    ))
+    const clientes = clienteIds.length > 0
+      ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } })
+      : []
+    const clienteLookup = new Map(clientes.map((c) => [c.id, c]))
+
+    const data = nfs.map((nf) => {
+      const pedido = nf.vendaEfetivada?.pedidoVenda
+      const rota = pedido?.rotaId ? rotaLookup.get(pedido.rotaId) : null
+      const clienteFromInclude = pedido?.cliente?.razaoSocial || (pedido as any)?.cliente?.nomeFantasia
+      const clienteFromLookup = pedido?.clienteId ? clienteLookup.get(pedido.clienteId) : null
+      return {
+        nfeId: nf.id,
+        numero: nf.numero,
+        serie: nf.serie,
+        cliente: clienteFromInclude || clienteFromLookup?.razaoSocial || clienteFromLookup?.nomeFantasia || null,
+        clienteId: pedido?.clienteId || null,
+        rotaId: pedido?.rotaId || null,
+        rotaCodigo: rota?.codigo || null,
+        rotaDescricao: rota?.descricao || null,
+        valorTotal: nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0),
+        pesoTotal: nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0),
+        mapaOk: nf.mapaOk,
+      }
+    })
 
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
