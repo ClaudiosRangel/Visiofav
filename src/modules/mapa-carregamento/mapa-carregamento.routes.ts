@@ -179,6 +179,12 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       const rota = pedido?.rotaId ? rotaLookup.get(pedido.rotaId) : null
       const clienteFromInclude = pedido?.cliente?.razaoSocial || pedido?.cliente?.nomeFantasia || (pedido?.cliente as any)?.cpfCnpj
       const clienteFromLookup = pedido?.clienteId ? clienteLookup.get(pedido.clienteId) : null
+
+      // Debug: log para identificar o problema
+      if (!clienteFromInclude && !clienteFromLookup) {
+        console.warn(`[nfs-disponiveis] NF ${nf.numero}: pedido=${pedido?.id || 'null'}, clienteId=${pedido?.clienteId || 'null'}, cliente include=${JSON.stringify(pedido?.cliente)}, lookup=${JSON.stringify(clienteFromLookup)}`)
+      }
+
       return {
         nfeId: nf.id,
         numero: nf.numero,
