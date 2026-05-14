@@ -145,8 +145,10 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
           vendaEfetivada: {
             include: {
               pedidoVenda: {
-                include: {
-                  cliente: { select: { id: true, razaoSocial: true, nomeFantasia: true, cpfCnpj: true } },
+                select: {
+                  id: true,
+                  clienteId: true,
+                  rotaId: true,
                 },
               },
             },
@@ -165,7 +167,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       : []
     const rotaLookup = new Map(rotas.map((r) => [r.id, r]))
 
-    // Fallback: buscar clientes diretamente se o include não trouxe
+    // Buscar clientes para os pedidos que têm clienteId
     const clienteIds = Array.from(new Set(
       nfs.map((nf) => nf.vendaEfetivada?.pedidoVenda?.clienteId).filter((id): id is string => !!id)
     ))
@@ -177,19 +179,13 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const data = nfs.map((nf) => {
       const pedido = nf.vendaEfetivada?.pedidoVenda
       const rota = pedido?.rotaId ? rotaLookup.get(pedido.rotaId) : null
-      const clienteFromInclude = pedido?.cliente?.razaoSocial || pedido?.cliente?.nomeFantasia || (pedido?.cliente as any)?.cpfCnpj
-      const clienteFromLookup = pedido?.clienteId ? clienteLookup.get(pedido.clienteId) : null
-
-      // Debug: log para identificar o problema
-      if (!clienteFromInclude && !clienteFromLookup) {
-        console.warn(`[nfs-disponiveis] NF ${nf.numero}: pedido=${pedido?.id || 'null'}, clienteId=${pedido?.clienteId || 'null'}, cliente include=${JSON.stringify(pedido?.cliente)}, lookup=${JSON.stringify(clienteFromLookup)}`)
-      }
+      const cliente = pedido?.clienteId ? clienteLookup.get(pedido.clienteId) : null
 
       return {
         nfeId: nf.id,
         numero: nf.numero,
         serie: nf.serie,
-        cliente: clienteFromInclude || clienteFromLookup?.razaoSocial || clienteFromLookup?.nomeFantasia || null,
+        cliente: cliente?.razaoSocial || cliente?.nomeFantasia || null,
         clienteId: pedido?.clienteId || null,
         rotaId: pedido?.rotaId || null,
         rotaCodigo: rota?.codigo || null,
