@@ -142,25 +142,32 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
         orderBy: { numero: 'asc' },
         include: {
           itens: { select: { qCom: true, vProd: true } },
-          vendaEfetivada: {
-            include: {
-              pedidoVenda: {
-                select: {
-                  id: true,
-                  clienteId: true,
-                  rotaId: true,
-                },
-              },
-            },
-          },
         },
       }),
       prisma.nfe.count({ where: nfeWhere }),
     ])
 
+    // Buscar vendaEfetivada → pedidoVenda separadamente
+    const vendaEfetivadaIds = nfs.map((nf) => nf.vendaEfetivadaId).filter((id): id is string => !!id)
+    const vendasEfetivadas = vendaEfetivadaIds.length > 0
+      ? await prisma.vendaEfetivada.findMany({
+          where: { id: { in: vendaEfetivadaIds } },
+          select: { id: true, pedidoVendaId: true },
+        })
+      : []
+    const pedidoVendaIds = vendasEfetivadas.map((v) => v.pedidoVendaId)
+    const pedidosVenda = pedidoVendaIds.length > 0
+      ? await prisma.pedidoVenda.findMany({
+          where: { id: { in: pedidoVendaIds } },
+          select: { id: true, clienteId: true, rotaId: true },
+        })
+      : []
+    const pedidoLookup = new Map(pedidosVenda.map((p) => [p.id, p]))
+    const vendaLookup = new Map(vendasEfetivadas.map((v) => [v.id, { ...v, pedidoVenda: pedidoLookup.get(v.pedidoVendaId) }]))
+
     // Buscar rotas para os pedidos que têm rotaId
     const rotaIds = Array.from(new Set(
-      nfs.map((nf) => nf.vendaEfetivada?.pedidoVenda?.rotaId).filter((id): id is string => !!id)
+      pedidosVenda.map((p) => p.rotaId).filter((id): id is string => !!id)
     ))
     const rotas = rotaIds.length > 0
       ? await prisma.rota.findMany({ where: { id: { in: rotaIds } }, select: { id: true, codigo: true, descricao: true } })
@@ -169,10 +176,11 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
 
     // Buscar clientes para os pedidos que têm clienteId
     const clienteIds = Array.from(new Set(
-      nfs.map((nf) => nf.vendaEfetivada?.pedidoVenda?.clienteId).filter((id): id is string => !!id)
+      pedidosVenda.map((p) => p.clienteId).filter((id): id is string => !!id)
     ))
     console.log('[DEBUG nfs-disponiveis] clienteIds extraidos:', clienteIds)
-    console.log('[DEBUG nfs-disponiveis] nfs pedidoVenda:', nfs.map(nf => ({ nfNumero: nf.numero, vendaEfetivada: nf.vendaEfetivada ? { id: nf.vendaEfetivada.id, pedidoVenda: nf.vendaEfetivada.pedidoVenda } : null })))
+    console.log('[DEBUG nfs-disponiveis] pedidosVenda:', pedidosVenda)
+    console.log('[DEBUG nfs-disponiveis] vendasEfetivadas:', vendasEfetivadas)
     const clientes = clienteIds.length > 0
       ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } })
       : []
@@ -180,7 +188,8 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const clienteLookup = new Map(clientes.map((c) => [c.id, c]))
 
     const data = nfs.map((nf) => {
-      const pedido = nf.vendaEfetivada?.pedidoVenda
+      const venda = nf.vendaEfetivadaId ? vendaLookup.get(nf.vendaEfetivadaId) : null
+      const pedido = venda?.pedidoVenda
       const rota = pedido?.rotaId ? rotaLookup.get(pedido.rotaId) : null
       const cliente = pedido?.clienteId ? clienteLookup.get(pedido.clienteId) : null
 
