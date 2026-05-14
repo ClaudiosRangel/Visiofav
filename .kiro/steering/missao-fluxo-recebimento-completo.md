@@ -84,21 +84,19 @@ O fluxo de recebimento (Compras → Portaria → Conferência → Endereçamento
 
 ## Próximos Passos
 
-### PRIORIDADE 1: Mudanças no Endereçamento (tela Conferência de Entrada → aba Conferidas)
-1. **Funcionário obrigatório** — Ao abrir endereçamento, pedir seleção de funcionário(s) antes de mostrar a grid. Não permitir confirmar sem funcionário.
-2. **Grid de endereços automáticos** — Em vez de campo "Destino" com select, mostrar GRID com linhas:
-   - Cada linha = 1 alocação sugerida (endereço + quantidade)
-   - Coluna de ação "Localizar" para trocar o endereço daquela linha
-   - Endereços devem ser compatíveis com o produto (respeitar dados logísticos)
-3. **Imprimir Ficha** — Deve incluir os endereços da grid + nome do conferente/funcionário selecionado
-4. **Botão único** — Remover "Confirmar Endereçamento" manual, manter apenas "Confirmar (Lote)" que confirma todas as linhas da grid de uma vez
+### PRIORIDADE 1: Mudanças no Endereçamento (tela Conferência de Entrada → aba Conferidas) ✅ CONCLUÍDO
+1. ✅ **Funcionário obrigatório** — Modal obrigatório ao abrir endereçamento, sem botão "Pular". Confirmar desabilitado sem funcionário.
+2. ✅ **Grid de endereços automáticos** — Coluna "Alocações / Destino" com sub-linhas por alocação + botão "Localizar" inline.
+3. ✅ **Imprimir Ficha** — Ficha HTML com endereços da grid + nome do(s) funcionário(s) selecionado(s).
+4. ✅ **Botão único** — Removido "Confirmar Endereçamento" (indigo), mantido apenas "Confirmar (Lote)" (teal).
 
-### PRIORIDADE 2: Cálculo de paletes na portaria
-- O cálculo depende do pedido ser carregado no GET /agendamentos-hoje
-- Quando pedidoCompraId é null, o pedido não é carregado → SKU não vem → cálculo não funciona
-- Fix: buscar pedido pelo fornecedorId como fallback no GET /agendamentos-hoje (mesmo padrão do conferir)
+### PRIORIDADE 2: Cálculo de paletes na portaria ✅ CONCLUÍDO
+- Fix: quando `pedidoCompraId` é null, buscar pedido mais recente pelo `fornecedorId` como fallback no GET /agendamentos-hoje
+- O enriquecimento com SKU (lastro, camada) agora funciona mesmo para agendamentos manuais sem pedido vinculado
 
-### PRIORIDADE 3: Playwright/Selenium
-- Estimativa: ~2-3 créditos para criar script básico com Playwright
-- Cobre: login → importar XML → agendar → conferir portaria → conferência entrada → endereçamento
-- Requer: `pip install playwright && playwright install chromium`
+### PRIORIDADE 3: Playwright/Selenium ✅ CONCLUÍDO
+- Script Playwright criado em `VisioFab.Wms.Front/tests/e2e/fluxo-recebimento.spec.ts`
+- Configuração em `VisioFab.Wms.Front/playwright.config.ts`
+- Dependência `@playwright/test` adicionada ao package.json
+- Cobre: login → selecionar empresa → importar XML → portaria → conferência entrada → shelf life → endereçamento
+- Para rodar: `npm install && npx playwright install chromium && npx playwright test`

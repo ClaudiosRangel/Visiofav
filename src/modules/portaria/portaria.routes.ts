@@ -78,26 +78,37 @@ export async function portariaRoutes(app: FastifyInstance) {
             itens: { include: { produto: { select: { id: true, nome: true, codigo: true, unidade: true } } } },
           },
         })
-        // Enriquecer itens com dados de SKU (lastro, camada) para cálculo de paletes
-        if (pedido?.itens) {
-          const produtoIds = pedido.itens.map((i: any) => i.produto?.id).filter(Boolean)
-          const skus = produtoIds.length > 0
-            ? await prisma.sku.findMany({
-                where: { produtoId: { in: produtoIds }, status: true },
-                select: { produtoId: true, sequencia: true, lastro: true, camada: true, qtdEmbalagem: true, unidade: true },
-                orderBy: { sequencia: 'asc' },
-              })
-            : []
-          const skuMap = new Map<string, any>()
-          for (const sku of skus) {
-            // Usar o primeiro SKU (sequência 1) de cada produto
-            if (!skuMap.has(sku.produtoId)) skuMap.set(sku.produtoId, sku)
-          }
-          ;(pedido as any).itens = pedido.itens.map((item: any) => ({
-            ...item,
-            sku: item.produto?.id ? skuMap.get(item.produto.id) || null : null,
-          }))
+      }
+      // Fallback: se não tem pedidoCompraId mas tem fornecedorId, buscar pedido mais recente do fornecedor
+      if (!pedido && ag.fornecedorId) {
+        pedido = await prisma.pedidoCompra.findFirst({
+          where: { fornecedorId: ag.fornecedorId, status: { notIn: ['CANCELADO'] } },
+          orderBy: { criadoEm: 'desc' },
+          select: {
+            numero: true, valorTotal: true,
+            itens: { include: { produto: { select: { id: true, nome: true, codigo: true, unidade: true } } } },
+          },
+        })
+      }
+      // Enriquecer itens com dados de SKU (lastro, camada) para cálculo de paletes
+      if (pedido?.itens) {
+        const produtoIds = pedido.itens.map((i: any) => i.produto?.id).filter(Boolean)
+        const skus = produtoIds.length > 0
+          ? await prisma.sku.findMany({
+              where: { produtoId: { in: produtoIds }, status: true },
+              select: { produtoId: true, sequencia: true, lastro: true, camada: true, qtdEmbalagem: true, unidade: true },
+              orderBy: { sequencia: 'asc' },
+            })
+          : []
+        const skuMap = new Map<string, any>()
+        for (const sku of skus) {
+          // Usar o primeiro SKU (sequência 1) de cada produto
+          if (!skuMap.has(sku.produtoId)) skuMap.set(sku.produtoId, sku)
         }
+        ;(pedido as any).itens = pedido.itens.map((item: any) => ({
+          ...item,
+          sku: item.produto?.id ? skuMap.get(item.produto.id) || null : null,
+        }))
       }
       if (ag.docaId) {
         doca = await prisma.doca.findUnique({ where: { id: ag.docaId }, select: { descricao: true, tipo: true } })
