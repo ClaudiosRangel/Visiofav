@@ -178,13 +178,9 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const clienteIds = Array.from(new Set(
       pedidosVenda.map((p) => p.clienteId).filter((id): id is string => !!id)
     ))
-    console.log('[DEBUG nfs-disponiveis] clienteIds extraidos:', clienteIds)
-    console.log('[DEBUG nfs-disponiveis] pedidosVenda:', pedidosVenda)
-    console.log('[DEBUG nfs-disponiveis] vendasEfetivadas:', vendasEfetivadas)
     const clientes = clienteIds.length > 0
       ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } })
       : []
-    console.log('[DEBUG nfs-disponiveis] clientes encontrados:', clientes)
     const clienteLookup = new Map(clientes.map((c) => [c.id, c]))
 
     const data = nfs.map((nf) => {
@@ -208,7 +204,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       }
     })
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit), _debug: { clienteIds, pedidoVendaIds: pedidoVendaIds, vendaEfetivadaIds, clientesEncontrados: clientes.length } }
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
   // ==========================================================================
