@@ -95,6 +95,8 @@ export async function produtoRoutes(app: FastifyInstance) {
       origemProd: z.number().optional(),
       shelfLifeMinimo: z.number().int().positive().nullable().optional(),
       curvaAbc: z.enum(['A', 'B', 'C']).nullable().optional(),
+      classificacaoPcp: z.enum(['MATERIA_PRIMA', 'INTERMEDIARIO', 'PRODUTO_ACABADO', 'EMBALAGEM', 'INSUMO']).nullable().optional(),
+      tipoFisico: z.enum(['UNIDADE_PADRAO', 'FISICO_LINEAR', 'FISICO_SUPERFICIAL', 'LIQUIDO', 'PESO']).nullable().optional(),
     }).parse(request.body)
 
     return prisma.produto.update({ where: { id }, data })

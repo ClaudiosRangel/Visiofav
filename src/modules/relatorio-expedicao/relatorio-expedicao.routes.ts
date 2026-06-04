@@ -325,12 +325,17 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
       })
     }
 
-    const nfsDetalhadas = mapa.nfs.map((mapaNf) => {
+    // Sort NFs: if sequenciaValida, sort by ordemEntrega ascending; otherwise keep insertion order
+    const nfsOrdenadas = mapa.sequenciaValida
+      ? [...mapa.nfs].sort((a, b) => (a.ordemEntrega ?? Infinity) - (b.ordemEntrega ?? Infinity))
+      : mapa.nfs
+
+    const nfsDetalhadas = nfsOrdenadas.map((mapaNf) => {
       const nfe = nfeLookup.get(mapaNf.nfeId)
       const valorTotal = nfe?.itens.reduce((sum, item) => sum + Number(item.vProd), 0) || 0
       const pesoTotal = nfe?.itens.reduce((sum, item) => sum + Number(item.qCom), 0) || 0
 
-      return {
+      const nfItem: any = {
         nfeId: mapaNf.nfeId,
         statusEntrega: mapaNf.statusEntrega,
         motivoDevolucao: mapaNf.motivoDevolucao,
@@ -342,9 +347,19 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
         pesoTotalKg: Math.round(pesoTotal * 1000) / 1000,
         totalItens: nfe?.itens.length || 0,
       }
+
+      // Include delivery sequence fields when sequence is saved
+      if (mapa.sequenciaValida) {
+        nfItem.ordemEntrega = mapaNf.ordemEntrega
+        nfItem.distanciaParcialKm = mapaNf.distanciaParcialKm != null
+          ? Number(mapaNf.distanciaParcialKm)
+          : null
+      }
+
+      return nfItem
     })
 
-    return {
+    const response: any = {
       id: mapa.id,
       numero: mapa.numero,
       emissao: mapa.emissaoEm,
@@ -358,5 +373,14 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
       finalizadoEm: mapa.finalizadoEm,
       nfs: nfsDetalhadas,
     }
+
+    // Include total distance when sequence is saved
+    if (mapa.sequenciaValida) {
+      response.distanciaTotalKm = mapa.distanciaTotalKm != null
+        ? Number(mapa.distanciaTotalKm)
+        : null
+    }
+
+    return response
   })
 }

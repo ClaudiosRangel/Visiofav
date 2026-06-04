@@ -1,0 +1,599 @@
+import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { prisma } from '../../lib/prisma'
+import { authenticate } from '../../middleware/authenticate'
+import { moduloGuard } from '../../middleware/modulo-guard'
+import {
+  validarTransicaoStatus,
+  getTransicoesPermitidas,
+  proximoNumeroOp,
+  explodirBomParaOp,
+  gerarEtapasOp,
+  calcularConsumoAutomatico,
+} from './ordem-producao.service'
+
+const idParamsSchema = z.object({ id: z.string().uuid() })
+
+const criarOpSchema = z.object({
+  produtoId: z.string().uuid(),
+  quantidade: z.number().positive('Quantidade deve ser maior que zero'),
+  unidadeMedida: z.string().min(1).max(10),
+  dataEntregaPrevista: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  prioridade: z.enum(['BAIXA', 'NORMAL', 'ALTA', 'URGENTE']).optional().default('NORMAL'),
+  pedidoVendaId: z.string().uuid().optional().nullable(),
+  clienteId: z.string().uuid().optional().nullable(),
+  lote: z.string().max(50).optional().nullable(),
+  cor: z.string().max(50).optional().nullable(),
+  observacoes: z.string().optional().nullable(),
+  explodirBom: z.boolean().optional().default(true),
+  gerarEtapas: z.boolean().optional().default(true),
+})
+
+const listQuerySchema = z.object({
+  status: z.string().optional(),
+  prioridade: z.enum(['BAIXA', 'NORMAL', 'ALTA', 'URGENTE']).optional(),
+  produtoId: z.string().uuid().optional(),
+  clienteId: z.string().uuid().optional(),
+  pedidoVendaId: z.string().uuid().optional(),
+  dataEntregaDe: z.string().optional(),
+  dataEntregaAte: z.string().optional(),
+  numero: z.coerce.number().int().optional(),
+  page: z.coerce.number().int().positive().optional().default(1),
+  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  orderBy: z.enum(['numero', 'dataEmissao', 'dataEntregaPrevista', 'prioridade']).optional().default('numero'),
+  orderDir: z.enum(['asc', 'desc']).optional().default('desc'),
+})
+
+export async function ordemProducaoRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+  app.addHook('preHandler', moduloGuard('PCP'))
+
+  // =========================================================================
+  // GET /api/ordens-producao — Listagem com filtros
+  // =========================================================================
+  app.get('/', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const query = listQuerySchema.parse(request.query)
+
+    const where: any = { empresaId: user.empresaId }
+
+    if (query.status) {
+      const statusList = query.status.split(',').map((s) => s.trim())
+      where.status = { in: statusList }
+    }
+    if (query.prioridade) where.prioridade = query.prioridade
+    if (query.produtoId) where.produtoId = query.produtoId
+    if (query.clienteId) where.clienteId = query.clienteId
+    if (query.pedidoVendaId) where.pedidoVendaId = query.pedidoVendaId
+    if (query.numero) where.numero = query.numero
+
+    if (query.dataEntregaDe || query.dataEntregaAte) {
+      where.dataEntregaPrevista = {}
+      if (query.dataEntregaDe) where.dataEntregaPrevista.gte = new Date(query.dataEntregaDe)
+      if (query.dataEntregaAte) where.dataEntregaPrevista.lte = new Date(query.dataEntregaAte)
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.ordemProducao.findMany({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: { [query.orderBy]: query.orderDir },
+      }),
+      prisma.ordemProducao.count({ where }),
+    ])
+
+    // Calcula percentual concluído e busca nomes dos produtos
+    const produtoIds = [...new Set(data.map((op) => op.produtoId))]
+    const produtos = await prisma.produto.findMany({
+      where: { id: { in: produtoIds } },
+      select: { id: true, codigo: true, nome: true },
+    })
+    const produtoMap = new Map(produtos.map((p) => [p.id, `${p.codigo} - ${p.nome}`]))
+
+    const dataComPercentual = data.map((op) => ({
+      ...op,
+      produtoNome: produtoMap.get(op.produtoId) || op.produtoId,
+      percentualConcluido: Number(op.quantidade) > 0
+        ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
+        : 0,
+    }))
+
+    return { data: dataComPercentual, total, page: query.page, limit: query.limit }
+  })
+
+  // =========================================================================
+  // GET /api/ordens-producao/:id — Detalhe completo
+  // =========================================================================
+  app.get('/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      include: {
+        itens: { orderBy: { descricaoProduto: 'asc' } },
+        etapas: {
+          orderBy: { sequencia: 'asc' },
+          include: {
+            centroProducao: { select: { id: true, codigo: true, descricao: true } },
+            recurso: { select: { id: true, codigo: true, descricao: true } },
+          },
+        },
+        apontamentos: { orderBy: { criadoEm: 'desc' }, take: 20 },
+        logs: { orderBy: { criadoEm: 'desc' } },
+        liberacoes: { orderBy: { criadoEm: 'desc' } },
+      },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    // Busca nome do produto
+    const produto = await prisma.produto.findFirst({
+      where: { id: op.produtoId, empresaId: user.empresaId },
+      select: { codigo: true, nome: true },
+    })
+
+    const percentualConcluido = Number(op.quantidade) > 0
+      ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
+      : 0
+
+    return { ...op, produtoNome: produto ? `${produto.codigo} - ${produto.nome}` : op.produtoId, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
+  })
+
+  // =========================================================================
+  // POST /api/ordens-producao — Criar OP
+  // =========================================================================
+  app.post('/', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = criarOpSchema.parse(request.body)
+
+    // Valida produto
+    const produto = await prisma.produto.findFirst({
+      where: { id: body.produtoId, empresaId: user.empresaId },
+    })
+    if (!produto) {
+      return reply.status(400).send({ message: 'Produto não encontrado nesta empresa' })
+    }
+
+    // Busca estrutura ativa
+    const estrutura = await prisma.estruturaProduto.findFirst({
+      where: { empresaId: user.empresaId, produtoId: body.produtoId, status: 'ATIVA' },
+    })
+    if (!estrutura) {
+      return reply.status(400).send({ message: 'Produto não possui estrutura (BOM) ativa cadastrada' })
+    }
+
+    const numero = await proximoNumeroOp(user.empresaId)
+
+    const op = await prisma.ordemProducao.create({
+      data: {
+        empresaId: user.empresaId,
+        numero,
+        produtoId: body.produtoId,
+        estruturaProdutoId: estrutura.id,
+        quantidade: body.quantidade,
+        unidadeMedida: body.unidadeMedida,
+        dataEntregaPrevista: new Date(body.dataEntregaPrevista),
+        prioridade: body.prioridade,
+        pedidoVendaId: body.pedidoVendaId ?? undefined,
+        clienteId: body.clienteId ?? undefined,
+        lote: body.lote ?? undefined,
+        cor: body.cor ?? undefined,
+        observacoes: body.observacoes ?? undefined,
+      },
+    })
+
+    // Explode BOM automaticamente
+    let itensGerados = { total: 0 }
+    if (body.explodirBom) {
+      itensGerados = await explodirBomParaOp(op.id, estrutura.id, body.quantidade, user.empresaId)
+    }
+
+    // Gera etapas do roteiro
+    let etapasGeradas = { total: 0 }
+    if (body.gerarEtapas) {
+      etapasGeradas = await gerarEtapasOp(op.id, body.produtoId, body.quantidade, user.empresaId)
+    }
+
+    // Log de criação
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: op.id,
+        statusAnterior: '',
+        statusNovo: 'RASCUNHO',
+        usuarioId: user.id,
+        observacao: 'Ordem de produção criada',
+      },
+    })
+
+    // 3. Cálculo automático de consumo gráfico (folhas/metros → kg)
+    const consumoGrafico = await calcularConsumoAutomatico(op.id, body.produtoId, body.quantidade, user.empresaId)
+
+    return reply.status(201).send({
+      ...op,
+      itensGerados: itensGerados.total,
+      etapasGeradas: etapasGeradas.total,
+      consumoGrafico,
+    })
+  })
+
+  // =========================================================================
+  // PATCH /api/ordens-producao/:id/status — Transição de status
+  // =========================================================================
+  app.patch('/:id/status', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      status: z.string(),
+      motivoCancelamento: z.string().min(10).optional(),
+      observacao: z.string().optional(),
+    }).parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    if (!validarTransicaoStatus(op.status, body.status)) {
+      const permitidas = getTransicoesPermitidas(op.status)
+      return reply.status(400).send({
+        message: `Transição de '${op.status}' para '${body.status}' não é permitida. Transições válidas: ${permitidas.join(', ') || 'nenhuma'}`,
+      })
+    }
+
+    if (body.status === 'CANCELADA' && !body.motivoCancelamento) {
+      return reply.status(400).send({ message: 'Motivo de cancelamento é obrigatório (mínimo 10 caracteres)' })
+    }
+
+    // Validações específicas por transição
+    if (body.status === 'PLANEJADA') {
+      const itensCount = await prisma.itemOrdemProducao.count({ where: { ordemProducaoId: id } })
+      if (itensCount === 0) {
+        return reply.status(400).send({ message: 'A OP precisa ter pelo menos um item de material para ser planejada' })
+      }
+    }
+
+    const dataUpdate: any = { status: body.status }
+
+    if (body.status === 'CANCELADA') {
+      dataUpdate.motivoCancelamento = body.motivoCancelamento
+    }
+    if (body.status === 'EM_PRODUCAO' && !op.dataInicioReal) {
+      dataUpdate.dataInicioReal = new Date()
+    }
+    if (body.status === 'CONCLUIDA') {
+      dataUpdate.dataFimReal = new Date()
+    }
+
+    const atualizada = await prisma.ordemProducao.update({
+      where: { id },
+      data: dataUpdate,
+    })
+
+    // Log de transição
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: id,
+        statusAnterior: op.status,
+        statusNovo: body.status,
+        usuarioId: user.id,
+        observacao: body.observacao || body.motivoCancelamento || null,
+      },
+    })
+
+    return { ...atualizada, transicoesPermitidas: getTransicoesPermitidas(body.status) }
+  })
+
+  // =========================================================================
+  // GET /api/ordens-producao/:id/verificar-materiais
+  // =========================================================================
+  app.get('/:id/verificar-materiais', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      include: { itens: true },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    const verificacao = await Promise.all(
+      op.itens.map(async (item) => {
+        const estoque = await prisma.estoque.findUnique({
+          where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: item.produtoComponenteId } },
+        })
+
+        const estoqueDisponivel = estoque ? Number(estoque.quantidade) : 0
+        const estoqueReservado = estoque ? Number(estoque.reservado) : 0
+        const saldoLivre = estoqueDisponivel - estoqueReservado
+        const quantidadeNecessaria = Number(item.quantidade) - Number(item.quantidadeLiberada)
+
+        let situacao: 'SUFICIENTE' | 'INSUFICIENTE' | 'SEM_ESTOQUE'
+        if (estoqueDisponivel === 0) situacao = 'SEM_ESTOQUE'
+        else if (saldoLivre >= quantidadeNecessaria) situacao = 'SUFICIENTE'
+        else situacao = 'INSUFICIENTE'
+
+        return {
+          produtoComponenteId: item.produtoComponenteId,
+          descricao: item.descricaoProduto,
+          unidade: item.unidadeMedida,
+          quantidadeNecessaria: Math.round(quantidadeNecessaria * 10000) / 10000,
+          estoqueDisponivel,
+          estoqueReservado,
+          saldoLivre: Math.round(saldoLivre * 10000) / 10000,
+          situacao,
+          quantidadeAComprar: situacao !== 'SUFICIENTE' ? Math.max(0, quantidadeNecessaria - saldoLivre) : 0,
+        }
+      }),
+    )
+
+    const totalItens = verificacao.length
+    const itensSuficientes = verificacao.filter((v) => v.situacao === 'SUFICIENTE').length
+    const itensInsuficientes = verificacao.filter((v) => v.situacao === 'INSUFICIENTE').length
+    const itensSemEstoque = verificacao.filter((v) => v.situacao === 'SEM_ESTOQUE').length
+
+    return {
+      ordemProducaoId: id,
+      numero: op.numero,
+      totalItens,
+      itensSuficientes,
+      itensInsuficientes,
+      itensSemEstoque,
+      podeLiberar: itensSuficientes === totalItens,
+      itens: verificacao,
+    }
+  })
+
+  // =========================================================================
+  // POST /api/ordens-producao/:id/explodir-bom — Re-explosão manual
+  // =========================================================================
+  app.post('/:id/explodir-bom', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    if (op.status !== 'RASCUNHO') {
+      return reply.status(400).send({ message: 'Explosão de BOM só é permitida em OPs com status RASCUNHO' })
+    }
+
+    if (!op.estruturaProdutoId) {
+      return reply.status(400).send({ message: 'OP não possui estrutura vinculada' })
+    }
+
+    // Remove itens existentes
+    await prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: id } })
+
+    // Re-explode
+    const resultado = await explodirBomParaOp(id, op.estruturaProdutoId, Number(op.quantidade), user.empresaId)
+
+    return { message: 'BOM explodida com sucesso', itensGerados: resultado.total }
+  })
+
+  // =========================================================================
+  // POST /api/ordens-producao/gerar-de-pedido — Gerar OPs a partir de pedido
+  // =========================================================================
+  app.post('/gerar-de-pedido', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      pedidoVendaId: z.string().uuid(),
+      itens: z.array(z.object({
+        itemPedidoVendaId: z.string().uuid(),
+        quantidade: z.number().positive(),
+      })).min(1),
+    }).parse(request.body)
+
+    // Valida pedido
+    const pedido = await prisma.pedidoVenda.findFirst({
+      where: { id: body.pedidoVendaId, empresaId: user.empresaId },
+      include: { itens: true },
+    })
+
+    if (!pedido) {
+      return reply.status(404).send({ message: 'Pedido de venda não encontrado' })
+    }
+
+    const opsGeradas: Array<{ opId: string; numero: number; produtoId: string; quantidade: number }> = []
+    const erros: Array<{ itemPedidoVendaId: string; erro: string }> = []
+
+    for (const itemReq of body.itens) {
+      const itemPedido = pedido.itens.find((i) => i.id === itemReq.itemPedidoVendaId)
+      if (!itemPedido) {
+        erros.push({ itemPedidoVendaId: itemReq.itemPedidoVendaId, erro: 'Item não encontrado no pedido' })
+        continue
+      }
+
+      // Verifica se tem estrutura
+      const estrutura = await prisma.estruturaProduto.findFirst({
+        where: { empresaId: user.empresaId, produtoId: itemPedido.produtoId, status: 'ATIVA' },
+      })
+
+      if (!estrutura) {
+        erros.push({ itemPedidoVendaId: itemReq.itemPedidoVendaId, erro: 'Produto não possui estrutura (BOM) ativa' })
+        continue
+      }
+
+      // Verifica duplicidade
+      const opExistente = await prisma.ordemProducao.findFirst({
+        where: {
+          empresaId: user.empresaId,
+          pedidoVendaId: body.pedidoVendaId,
+          produtoId: itemPedido.produtoId,
+          status: { notIn: ['CANCELADA', 'CONCLUIDA'] },
+        },
+      })
+
+      if (opExistente) {
+        erros.push({ itemPedidoVendaId: itemReq.itemPedidoVendaId, erro: `Já existe OP ativa (#${opExistente.numero}) para este produto neste pedido` })
+        continue
+      }
+
+      const numero = await proximoNumeroOp(user.empresaId)
+
+      const op = await prisma.ordemProducao.create({
+        data: {
+          empresaId: user.empresaId,
+          numero,
+          produtoId: itemPedido.produtoId,
+          estruturaProdutoId: estrutura.id,
+          quantidade: itemReq.quantidade,
+          unidadeMedida: itemPedido.unidade,
+          dataEntregaPrevista: pedido.criadoEm, // usa data do pedido como referência
+          prioridade: 'NORMAL',
+          pedidoVendaId: body.pedidoVendaId,
+          clienteId: pedido.clienteId,
+        },
+      })
+
+      await explodirBomParaOp(op.id, estrutura.id, itemReq.quantidade, user.empresaId)
+      await gerarEtapasOp(op.id, itemPedido.produtoId, itemReq.quantidade, user.empresaId)
+
+      await prisma.logOrdemProducao.create({
+        data: {
+          ordemProducaoId: op.id,
+          statusAnterior: '',
+          statusNovo: 'RASCUNHO',
+          usuarioId: user.id,
+          observacao: `Gerada a partir do pedido de venda #${pedido.numero}`,
+        },
+      })
+
+      opsGeradas.push({ opId: op.id, numero, produtoId: itemPedido.produtoId, quantidade: itemReq.quantidade })
+    }
+
+    return reply.status(201).send({
+      pedidoVendaId: body.pedidoVendaId,
+      opsGeradas,
+      erros,
+      totalGeradas: opsGeradas.length,
+      totalErros: erros.length,
+    })
+  })
+
+  // =========================================================================
+  // GET /api/ordens-producao/kanban — Visão Kanban
+  // =========================================================================
+  app.get('/kanban', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { prioridade, clienteId } = z.object({
+      prioridade: z.enum(['BAIXA', 'NORMAL', 'ALTA', 'URGENTE']).optional(),
+      clienteId: z.string().uuid().optional(),
+    }).parse(request.query)
+
+    const where: any = {
+      empresaId: user.empresaId,
+      status: { notIn: ['CANCELADA'] },
+    }
+    if (prioridade) where.prioridade = prioridade
+    if (clienteId) where.clienteId = clienteId
+
+    const ops = await prisma.ordemProducao.findMany({
+      where,
+      orderBy: [
+        { prioridade: 'desc' },
+        { dataEntregaPrevista: 'asc' },
+      ],
+    })
+
+    const colunas: Record<string, any[]> = {
+      RASCUNHO: [],
+      PLANEJADA: [],
+      PROGRAMADA: [],
+      LIBERADA: [],
+      EM_PRODUCAO: [],
+      CONCLUIDA: [],
+    }
+
+    for (const op of ops) {
+      const percentual = Number(op.quantidade) > 0
+        ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
+        : 0
+
+      const item = {
+        id: op.id,
+        numero: op.numero,
+        produtoId: op.produtoId,
+        quantidade: Number(op.quantidade),
+        unidadeMedida: op.unidadeMedida,
+        prioridade: op.prioridade,
+        dataEntregaPrevista: op.dataEntregaPrevista,
+        clienteId: op.clienteId,
+        lote: op.lote,
+        percentualConcluido: percentual,
+      }
+
+      if (colunas[op.status]) {
+        colunas[op.status].push(item)
+      }
+    }
+
+    const contadores = Object.entries(colunas).map(([status, items]) => ({
+      status,
+      total: items.length,
+      quantidadeTotal: items.reduce((acc, i) => acc + i.quantidade, 0),
+    }))
+
+    return { colunas, contadores }
+  })
+
+  // =========================================================================
+  // PATCH /api/ordens-producao/:id — Atualização parcial
+  // =========================================================================
+  app.patch('/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      quantidade: z.number().positive().optional(),
+      unidadeMedida: z.string().max(10).optional(),
+      dataEntregaPrevista: z.string().optional(),
+      prioridade: z.enum(['BAIXA', 'NORMAL', 'ALTA', 'URGENTE']).optional(),
+      lote: z.string().max(50).optional().nullable(),
+      cor: z.string().max(50).optional().nullable(),
+      observacoes: z.string().optional().nullable(),
+      dataInicioPrevista: z.string().optional().nullable(),
+      dataFimPrevista: z.string().optional().nullable(),
+    }).parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    if (['CONCLUIDA', 'CANCELADA'].includes(op.status)) {
+      return reply.status(400).send({ message: 'Não é possível editar uma OP concluída ou cancelada' })
+    }
+
+    const data: any = {}
+    if (body.quantidade !== undefined) data.quantidade = body.quantidade
+    if (body.unidadeMedida !== undefined) data.unidadeMedida = body.unidadeMedida
+    if (body.dataEntregaPrevista !== undefined) data.dataEntregaPrevista = new Date(body.dataEntregaPrevista)
+    if (body.prioridade !== undefined) data.prioridade = body.prioridade
+    if (body.lote !== undefined) data.lote = body.lote
+    if (body.cor !== undefined) data.cor = body.cor
+    if (body.observacoes !== undefined) data.observacoes = body.observacoes
+    if (body.dataInicioPrevista !== undefined) data.dataInicioPrevista = body.dataInicioPrevista ? new Date(body.dataInicioPrevista) : null
+    if (body.dataFimPrevista !== undefined) data.dataFimPrevista = body.dataFimPrevista ? new Date(body.dataFimPrevista) : null
+
+    const atualizada = await prisma.ordemProducao.update({ where: { id }, data })
+
+    return atualizada
+  })
+}

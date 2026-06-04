@@ -80,6 +80,29 @@ import { importarXmlDeparaRoutes } from './modules/nota-entrada/importar-xml-dep
 import { capacidadeNivelRoutes } from './modules/capacidade-nivel/capacidade-nivel.routes'
 import { enderecamentoInteligenteRoutes } from './modules/enderecamento-inteligente/enderecamento-inteligente.routes'
 import { formatoEnderecoRoutes } from './modules/formato-endereco/formato-endereco.routes'
+import { geoRoutes } from './modules/geolocalizacao/geo.routes'
+
+// PCP — Planejamento e Controle da Produção
+import { centroProducaoRoutes } from './modules/centro-producao/centro-producao.routes'
+import { recursoProducaoRoutes } from './modules/recurso-producao/recurso-producao.routes'
+import { turnoProducaoRoutes } from './modules/turno-producao/turno-producao.routes'
+import { estruturaProdutoRoutes } from './modules/estrutura-produto/estrutura-produto.routes'
+import { roteiroProducaoRoutes } from './modules/roteiro-producao/roteiro-producao.routes'
+import { atributoGraficoRoutes } from './modules/atributo-grafico/atributo-grafico.routes'
+import { conversaoUnidadesRoutes } from './modules/pcp/conversao-unidades.routes'
+import { controleBobinaRoutes } from './modules/pcp/controle-bobina.routes'
+import { estoqueTerceirosRoutes } from './modules/pcp/estoque-terceiros.routes'
+import { paletizacaoRoutes } from './modules/pcp/paletizacao.routes'
+import { configuracaoPcpRoutes } from './modules/pcp/configuracao-pcp.routes'
+import { calculoConsumoGraficoRoutes } from './modules/pcp/calculo-consumo-grafico.routes'
+import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
+import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
+import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
+import { firebaseAuthAdapter } from './middleware/firebase-auth-adapter'
+import { ordemProducaoRoutes } from './modules/ordem-producao/ordem-producao.routes'
+import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entrega.routes'
+import { liberacaoMaterialRoutes } from './modules/liberacao-material/liberacao-material.routes'
+import { apontamentoProducaoRoutes } from './modules/apontamento-producao/apontamento-producao.routes'
 
 import { registerTenantContext } from './middleware/tenant-context'
 import multipart from '@fastify/multipart'
@@ -92,6 +115,9 @@ async function bootstrap() {
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } })
 
   registerTenantContext(app)
+
+  // Adapter Firebase Auth (período de migração)
+  app.addHook('onRequest', firebaseAuthAdapter)
 
   // Auth
   await app.register(authRoutes, { prefix: '/api/auth' })
@@ -146,6 +172,32 @@ async function bootstrap() {
   await app.register(capacidadeNivelRoutes, { prefix: '/api/capacidades-nivel' })
   await app.register(enderecamentoInteligenteRoutes, { prefix: '/api/enderecamento-inteligente' })
   await app.register(formatoEnderecoRoutes, { prefix: '/api/formato-endereco' })
+
+  // Módulo Geolocalização — Roteirização
+  await app.register(geoRoutes, { prefix: '/api/geo' })
+
+  // Módulo PCP — Planejamento e Controle da Produção
+  await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })
+  await app.register(recursoProducaoRoutes, { prefix: '/api/recursos-producao' })
+  await app.register(turnoProducaoRoutes, { prefix: '/api/turnos-producao' })
+  await app.register(estruturaProdutoRoutes, { prefix: '/api/estruturas-produto' })
+  await app.register(roteiroProducaoRoutes, { prefix: '/api/roteiros-producao' })
+  await app.register(atributoGraficoRoutes, { prefix: '/api/atributos-graficos' })
+  await app.register(ordemProducaoRoutes, { prefix: '/api/ordens-producao' })
+  await app.register(variacoesEntregaRoutes, { prefix: '/api/ordens-producao' })
+  await app.register(liberacaoMaterialRoutes, { prefix: '/api/liberacoes-material' })
+  await app.register(apontamentoProducaoRoutes, { prefix: '/api/apontamentos-producao' })
+  await app.register(conversaoUnidadesRoutes, { prefix: '/api/pcp' })
+  await app.register(controleBobinaRoutes, { prefix: '/api/pcp' })
+  await app.register(estoqueTerceirosRoutes, { prefix: '/api/pcp' })
+  await app.register(paletizacaoRoutes, { prefix: '/api/pcp' })
+  await app.register(configuracaoPcpRoutes, { prefix: '/api/pcp' })
+  await app.register(calculoConsumoGraficoRoutes, { prefix: '/api/pcp' })
+  await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
+  await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
+
+  // Acompanhamento público (sem auth) — visão do cliente
+  await app.register(acompanhamentoClienteRoutes, { prefix: '/api/acompanhamento' })
 
   // Fichas Operacionais, OCR e Scanner
   await app.register(fichaOperacionalRoutes, { prefix: '/api/fichas-operacionais' })

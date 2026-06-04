@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
+import { coordenadasOptionalSchema } from '../geolocalizacao/coord-validation'
 
 export async function clienteRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -37,7 +38,7 @@ export async function clienteRoutes(app: FastifyInstance) {
 
   app.post('/', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
-    const data = z.object({
+    const baseSchema = z.object({
       razaoSocial: z.string().min(1),
       nomeFantasia: z.string().optional(),
       cpfCnpj: z.string().min(1),
@@ -52,7 +53,18 @@ export async function clienteRoutes(app: FastifyInstance) {
       telefone: z.string().optional(),
       email: z.string().optional(),
       rotaId: z.string().uuid().optional().nullable(),
-    }).parse(request.body)
+    })
+
+    const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(
+      (data) => {
+        const hasLat = data.latitude !== undefined && data.latitude !== null
+        const hasLng = data.longitude !== undefined && data.longitude !== null
+        return hasLat === hasLng
+      },
+      { message: 'Latitude e longitude devem ser fornecidas em conjunto' }
+    )
+
+    const data = schema.parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
 
@@ -70,7 +82,7 @@ export async function clienteRoutes(app: FastifyInstance) {
   app.put('/:id', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const data = z.object({
+    const baseSchema = z.object({
       razaoSocial: z.string().optional(),
       nomeFantasia: z.string().optional(),
       cpfCnpj: z.string().optional(),
@@ -85,7 +97,18 @@ export async function clienteRoutes(app: FastifyInstance) {
       telefone: z.string().optional(),
       email: z.string().optional(),
       rotaId: z.string().uuid().optional().nullable(),
-    }).parse(request.body)
+    })
+
+    const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(
+      (data) => {
+        const hasLat = data.latitude !== undefined && data.latitude !== null
+        const hasLng = data.longitude !== undefined && data.longitude !== null
+        return hasLat === hasLng
+      },
+      { message: 'Latitude e longitude devem ser fornecidas em conjunto' }
+    )
+
+    const data = schema.parse(request.body)
 
     // Validate rotaId belongs to same empresa
     if (data.rotaId) {
@@ -96,7 +119,62 @@ export async function clienteRoutes(app: FastifyInstance) {
       if (!rota) return reply.status(422).send({ message: 'Rota não encontrada ou não pertence a esta empresa' })
     }
 
-    return prisma.cliente.update({ where: { id }, data })
+    const updated = await prisma.cliente.update({ where: { id }, data })
+
+    // Invalidar sequências de entrega quando coordenadas são alteradas
+    if (data.latitude !== undefined || data.longitude !== undefined) {
+      // Buscar nfeIds vinculadas a este cliente (via Nfe → vendaEfetivada → pedidoVenda → clienteId)
+      const nfesDoCliente = await prisma.nfe.findMany({
+        where: {
+          empresaId: updated.empresaId,
+          vendaEfetivada: {
+            pedidoVenda: {
+              clienteId: id,
+            },
+          },
+        },
+        select: { id: true },
+      })
+
+      if (nfesDoCliente.length > 0) {
+        const nfeIds = nfesDoCliente.map((n) => n.id)
+
+        // Buscar MapaCarregamentos em status AGUARDANDO_SEPARACAO ou EM_CARREGAMENTO
+        // que contenham NFs desse cliente e tenham sequência válida
+        const mapasAfetados = await prisma.mapaCarregamento.findMany({
+          where: {
+            empresaId: updated.empresaId,
+            sequenciaValida: true,
+            status: { in: ['AGUARDANDO_SEPARACAO', 'EM_CARREGAMENTO'] },
+            nfs: {
+              some: {
+                nfeId: { in: nfeIds },
+              },
+            },
+          },
+          select: { id: true },
+        })
+
+        if (mapasAfetados.length > 0) {
+          const mapaIds = mapasAfetados.map((m) => m.id)
+
+          await prisma.$transaction([
+            // Invalidar os mapas
+            prisma.mapaCarregamento.updateMany({
+              where: { id: { in: mapaIds } },
+              data: { sequenciaValida: false, distanciaTotalKm: null },
+            }),
+            // Limpar ordemEntrega e distanciaParcialKm nas NFs desses mapas
+            prisma.mapaCarregamentoNf.updateMany({
+              where: { mapaCarregamentoId: { in: mapaIds } },
+              data: { ordemEntrega: null, distanciaParcialKm: null },
+            }),
+          ])
+        }
+      }
+    }
+
+    return updated
   })
 
   app.patch('/:id/inativar', async (request, reply) => {

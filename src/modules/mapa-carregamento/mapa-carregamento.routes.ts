@@ -325,7 +325,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
   app.get('/totalizacao', async (request) => {
     const user = request.user as { id: string; empresaId: string }
 
-    // Get all marked NFs with their route info and items
+    // Get all marked NFs with their route info, items, and client geocoding info
     const nfsMarcadas = await prisma.nfe.findMany({
       where: {
         empresaId: user.empresaId,
@@ -336,7 +336,13 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
         vendaEfetivada: {
           include: {
             pedidoVenda: {
-              select: { rotaId: true },
+              select: {
+                rotaId: true,
+                clienteId: true,
+                cliente: {
+                  select: { id: true, latitude: true, longitude: true },
+                },
+              },
             },
           },
         },
@@ -349,14 +355,24 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       valorTotal: number
       pesoTotalKg: number
       totalVolumes: number
+      clienteIdsGeocodificados: Set<string>
+      clienteIdsNaoGeocodificados: Set<string>
     }>()
 
     for (const nf of nfsMarcadas) {
-      const rotaId = nf.vendaEfetivada?.pedidoVenda?.rotaId || null
+      const pedido = nf.vendaEfetivada?.pedidoVenda
+      const rotaId = pedido?.rotaId || null
       const key = rotaId
 
       if (!porRotaMap.has(key)) {
-        porRotaMap.set(key, { quantidadeNfs: 0, valorTotal: 0, pesoTotalKg: 0, totalVolumes: 0 })
+        porRotaMap.set(key, {
+          quantidadeNfs: 0,
+          valorTotal: 0,
+          pesoTotalKg: 0,
+          totalVolumes: 0,
+          clienteIdsGeocodificados: new Set(),
+          clienteIdsNaoGeocodificados: new Set(),
+        })
       }
 
       const grupo = porRotaMap.get(key)!
@@ -364,6 +380,16 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       grupo.valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0)
       grupo.pesoTotalKg += nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0)
       grupo.totalVolumes += nf.itens.length
+
+      // Track geocoding status per distinct client (Task 15.2)
+      const cliente = pedido?.cliente
+      if (cliente) {
+        if (cliente.latitude !== null && cliente.longitude !== null) {
+          grupo.clienteIdsGeocodificados.add(cliente.id)
+        } else {
+          grupo.clienteIdsNaoGeocodificados.add(cliente.id)
+        }
+      }
     }
 
     // Build response with rota details
@@ -387,6 +413,8 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
         valorTotal: Math.round(totais.valorTotal * 100) / 100,
         pesoTotalKg: Math.round(totais.pesoTotalKg * 1000) / 1000,
         totalVolumes: totais.totalVolumes,
+        clientesGeocodificados: totais.clienteIdsGeocodificados.size,
+        clientesNaoGeocodificados: totais.clienteIdsNaoGeocodificados.size,
       }
     })
 
@@ -395,6 +423,8 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       valorTotal: Math.round(porRota.reduce((s, r) => s + r.valorTotal, 0) * 100) / 100,
       pesoTotalKg: Math.round(porRota.reduce((s, r) => s + r.pesoTotalKg, 0) * 1000) / 1000,
       totalVolumes: porRota.reduce((s, r) => s + r.totalVolumes, 0),
+      clientesGeocodificados: porRota.reduce((s, r) => s + r.clientesGeocodificados, 0),
+      clientesNaoGeocodificados: porRota.reduce((s, r) => s + r.clientesNaoGeocodificados, 0),
     }
 
     return { porRota, geral }
@@ -461,7 +491,25 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       return novoMapa
     })
 
-    return reply.status(201).send(mapa)
+    // Check if any NFs' clients have geocoded coordinates (Task 15.1)
+    const nfeIdsNoMapa = nfsMarcadas.map((n) => n.id)
+    const clientesGeocodificados = await prisma.nfe.findMany({
+      where: {
+        id: { in: nfeIdsNoMapa },
+        vendaEfetivada: {
+          pedidoVenda: {
+            cliente: {
+              latitude: { not: null },
+              longitude: { not: null },
+            },
+          },
+        },
+      },
+      select: { id: true },
+    })
+    const podeOtimizar = clientesGeocodificados.length > 0
+
+    return reply.status(201).send({ ...mapa, podeOtimizar })
   })
 
   // ==========================================================================
@@ -499,6 +547,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
 
     const dataComTotais = data.map((m) => ({
       ...m,
+      distanciaTotalKm: m.distanciaTotalKm !== null ? Number(m.distanciaTotalKm) : null,
       totalNfs: m.nfs.length,
     }))
 
@@ -550,7 +599,11 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       nfe: nfeLookup.get(mapaNf.nfeId) || null,
     }))
 
-    return { ...mapa, nfs: nfsComDetalhes }
+    return {
+      ...mapa,
+      distanciaTotalKm: mapa.distanciaTotalKm !== null ? Number(mapa.distanciaTotalKm) : null,
+      nfs: nfsComDetalhes,
+    }
   })
 
   // ==========================================================================
@@ -638,6 +691,97 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
+  // POST /:id/adicionar-nfs — Add NFs to an existing map (Task 11.2)
+  // ==========================================================================
+  app.post('/:id/adicionar-nfs', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const { nfeIds } = marcarNfsSchema.parse(request.body)
+
+    const mapa = await prisma.mapaCarregamento.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+
+    if (!mapa) {
+      return reply.status(404).send({ message: 'Mapa de carregamento não encontrado' })
+    }
+
+    if (mapa.status === 'FINALIZADO' || mapa.status === 'CANCELADO') {
+      return reply.status(422).send({ message: 'Não é possível adicionar NFs a um mapa finalizado ou cancelado' })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Add NFs to the mapa
+      await tx.mapaCarregamentoNf.createMany({
+        data: nfeIds.map((nfeId) => ({
+          mapaCarregamentoId: id,
+          nfeId,
+        })),
+        skipDuplicates: true,
+      })
+
+      // Invalidate sequence if mapa has a saved sequence
+      if (mapa.sequenciaValida) {
+        await tx.mapaCarregamento.update({
+          where: { id },
+          data: { sequenciaValida: false, distanciaTotalKm: null },
+        })
+        await tx.mapaCarregamentoNf.updateMany({
+          where: { mapaCarregamentoId: id },
+          data: { ordemEntrega: null, distanciaParcialKm: null },
+        })
+      }
+    })
+
+    return { message: 'NFs adicionadas com sucesso' }
+  })
+
+  // ==========================================================================
+  // POST /:id/remover-nfs — Remove NFs from an existing map (Task 11.2)
+  // ==========================================================================
+  app.post('/:id/remover-nfs', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const { nfeIds } = marcarNfsSchema.parse(request.body)
+
+    const mapa = await prisma.mapaCarregamento.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+
+    if (!mapa) {
+      return reply.status(404).send({ message: 'Mapa de carregamento não encontrado' })
+    }
+
+    if (mapa.status === 'FINALIZADO' || mapa.status === 'CANCELADO') {
+      return reply.status(422).send({ message: 'Não é possível remover NFs de um mapa finalizado ou cancelado' })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Remove NFs from the mapa
+      await tx.mapaCarregamentoNf.deleteMany({
+        where: {
+          mapaCarregamentoId: id,
+          nfeId: { in: nfeIds },
+        },
+      })
+
+      // Invalidate sequence if mapa has a saved sequence
+      if (mapa.sequenciaValida) {
+        await tx.mapaCarregamento.update({
+          where: { id },
+          data: { sequenciaValida: false, distanciaTotalKm: null },
+        })
+        await tx.mapaCarregamentoNf.updateMany({
+          where: { mapaCarregamentoId: id },
+          data: { ordemEntrega: null, distanciaParcialKm: null },
+        })
+      }
+    })
+
+    return { message: 'NFs removidas com sucesso' }
+  })
+
+  // ==========================================================================
   // POST /transferir-nfs — Transfer NFs between maps (Task 8.8)
   // ==========================================================================
   app.post('/transferir-nfs', async (request, reply) => {
@@ -675,6 +819,30 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
         },
         data: { mapaCarregamentoId: targetMapaId },
       })
+
+      // Invalidate sequence on source map if it has a saved sequence
+      if (sourceMapa.sequenciaValida) {
+        await tx.mapaCarregamento.update({
+          where: { id: sourceMapaId },
+          data: { sequenciaValida: false, distanciaTotalKm: null },
+        })
+        await tx.mapaCarregamentoNf.updateMany({
+          where: { mapaCarregamentoId: sourceMapaId },
+          data: { ordemEntrega: null, distanciaParcialKm: null },
+        })
+      }
+
+      // Invalidate sequence on target map if it has a saved sequence
+      if (targetMapa.sequenciaValida) {
+        await tx.mapaCarregamento.update({
+          where: { id: targetMapaId },
+          data: { sequenciaValida: false, distanciaTotalKm: null },
+        })
+        await tx.mapaCarregamentoNf.updateMany({
+          where: { mapaCarregamentoId: targetMapaId },
+          data: { ordemEntrega: null, distanciaParcialKm: null },
+        })
+      }
     })
 
     return { message: 'NFs transferidas com sucesso' }
