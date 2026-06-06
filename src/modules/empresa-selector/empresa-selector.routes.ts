@@ -40,8 +40,9 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
    */
   app.get('/', async (request, reply) => {
     const user = request.user as { id: string; perfil: string }
-    if (!ADMIN_PROFILES.includes(user.perfil)) {
-      return reply.status(403).send({ message: 'Acesso negado' })
+    const perfilUpper = (user.perfil || '').toUpperCase()
+    if (!ADMIN_PROFILES.includes(perfilUpper)) {
+      return reply.status(403).send({ message: `Acesso negado (perfil: ${user.perfil})` })
     }
 
     const empresas = await prisma.empresa.findMany({
