@@ -10,9 +10,148 @@ const paramsSchema = z.object({
   id: z.string().uuid(),
 })
 
+const ADMIN_PROFILES = ['SUPER_ADMIN', 'ADMIN', 'DIRETOR']
+
+const empresaBodySchema = z.object({
+  razaoSocial: z.string().min(1, 'Razão Social é obrigatória'),
+  nomeFantasia: z.string().optional().default(''),
+  cnpj: z.string().min(1, 'CNPJ é obrigatório'),
+  inscEstadual: z.string().optional().default(''),
+  logradouro: z.string().optional().default(''),
+  numero: z.string().optional().default(''),
+  complemento: z.string().optional().default(''),
+  bairro: z.string().optional().default(''),
+  cidade: z.string().optional().default(''),
+  uf: z.string().optional().default(''),
+  cep: z.string().optional().default(''),
+  telefone: z.string().optional().default(''),
+  email: z.string().optional().default(''),
+  usaWms: z.boolean().optional().default(false),
+  status: z.boolean().optional().default(true),
+})
+
 export async function empresaSelectorRoutes(app: FastifyInstance) {
   // Todas as rotas exigem autenticação
   app.addHook('onRequest', authenticate)
+
+  /**
+   * GET /api/empresas
+   * Lista TODAS as empresas (somente para perfis admin).
+   */
+  app.get('/', async (request, reply) => {
+    const user = request.user as { id: string; perfil: string }
+    if (!ADMIN_PROFILES.includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Acesso negado' })
+    }
+
+    const empresas = await prisma.empresa.findMany({
+      orderBy: { razaoSocial: 'asc' },
+      select: {
+        id: true,
+        razaoSocial: true,
+        nomeFantasia: true,
+        cnpj: true,
+        inscEstadual: true,
+        logradouro: true,
+        numero: true,
+        complemento: true,
+        bairro: true,
+        cidade: true,
+        uf: true,
+        cep: true,
+        telefone: true,
+        email: true,
+        usaWms: true,
+        status: true,
+        criadoEm: true,
+      },
+    })
+
+    return { data: empresas }
+  })
+
+  /**
+   * POST /api/empresas
+   * Cria nova empresa (somente para perfis admin).
+   */
+  app.post('/', async (request, reply) => {
+    const user = request.user as { id: string; perfil: string }
+    if (!ADMIN_PROFILES.includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Acesso negado' })
+    }
+
+    const body = empresaBodySchema.parse(request.body)
+
+    // Verificar CNPJ duplicado
+    const existe = await prisma.empresa.findUnique({ where: { cnpj: body.cnpj } })
+    if (existe) {
+      return reply.status(409).send({ message: 'Já existe uma empresa com este CNPJ' })
+    }
+
+    const empresa = await prisma.empresa.create({ data: body })
+
+    // Vincular o usuário criador à nova empresa
+    await prisma.usuarioEmpresa.create({
+      data: {
+        usuarioId: user.id,
+        empresaId: empresa.id,
+        modulos: '*',
+      },
+    })
+
+    return reply.status(201).send(empresa)
+  })
+
+  /**
+   * PUT /api/empresas/:id
+   * Atualiza empresa existente (somente para perfis admin).
+   */
+  app.put('/:id', async (request, reply) => {
+    const user = request.user as { id: string; perfil: string }
+    if (!ADMIN_PROFILES.includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Acesso negado' })
+    }
+
+    const { id } = paramsSchema.parse(request.params)
+    const body = empresaBodySchema.partial().parse(request.body)
+
+    // Se cnpj alterado, verificar duplicidade
+    if (body.cnpj) {
+      const existe = await prisma.empresa.findFirst({
+        where: { cnpj: body.cnpj, id: { not: id } },
+      })
+      if (existe) {
+        return reply.status(409).send({ message: 'Já existe uma empresa com este CNPJ' })
+      }
+    }
+
+    const empresa = await prisma.empresa.update({
+      where: { id },
+      data: body,
+    })
+
+    return empresa
+  })
+
+  /**
+   * DELETE /api/empresas/:id
+   * Soft-delete: inativa a empresa (somente para perfis admin).
+   */
+  app.delete('/:id', async (request, reply) => {
+    const user = request.user as { id: string; perfil: string }
+    if (!ADMIN_PROFILES.includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Acesso negado' })
+    }
+
+    const { id } = paramsSchema.parse(request.params)
+
+    await prisma.empresa.update({
+      where: { id },
+      data: { status: false },
+    })
+
+    return reply.status(204).send()
+  })
 
   /**
    * GET /api/empresas/minhas
