@@ -145,6 +145,12 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
         status: true,
         latitude: true,
         longitude: true,
+        regimeTributario: true,
+        ambienteNFe: true,
+        serieNFe: true,
+        proximoNumeroNFe: true,
+        serieCTe: true,
+        proximoNumeroCTe: true,
       },
     })
 
@@ -179,6 +185,15 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       cep: z.string().optional(),
       telefone: z.string().optional(),
       email: z.string().optional(),
+      // Fiscal / NF-e
+      regimeTributario: z.number().int().min(1).max(3).optional(),
+      ambienteNFe: z.number().int().min(1).max(2).optional(),
+      serieNFe: z.number().int().min(0).optional(),
+      proximoNumeroNFe: z.number().int().min(1).optional(),
+      serieCTe: z.number().int().min(0).optional(),
+      proximoNumeroCTe: z.number().int().min(1).optional(),
+      // Módulos
+      usaWms: z.boolean().optional(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(

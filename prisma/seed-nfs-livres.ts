@@ -5,7 +5,13 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('🌱 Criando NFs livres para Montagem de Carga...\n')
 
-  const empresa = await prisma.empresa.findFirst()
+  const empresas = await prisma.empresa.findMany()
+  let empresa = empresas[0]
+  let maxP = 0
+  for (const e of empresas) {
+    const c = await prisma.produto.count({ where: { empresaId: e.id } })
+    if (c > maxP) { maxP = c; empresa = e }
+  }
   if (!empresa) throw new Error('Empresa não encontrada')
 
   const produtos = await prisma.produto.findMany({ where: { empresaId: empresa.id } })

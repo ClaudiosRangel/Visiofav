@@ -8,7 +8,14 @@ async function main() {
   // ============================================================================
   // BUSCAR ENTIDADES BASE
   // ============================================================================
-  const empresa = await prisma.empresa.findFirst()
+  const empresas = await prisma.empresa.findMany()
+  // Pick the empresa with most products
+  let empresa = empresas[0]
+  let maxProds = 0
+  for (const e of empresas) {
+    const count = await prisma.produto.count({ where: { empresaId: e.id } })
+    if (count > maxProds) { maxProds = count; empresa = e }
+  }
   if (!empresa) throw new Error('❌ Execute prisma/seed.ts primeiro — empresa não encontrada')
 
   const produtos = await prisma.produto.findMany({ where: { empresaId: empresa.id } })
