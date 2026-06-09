@@ -82,6 +82,15 @@ import { enderecamentoInteligenteRoutes } from './modules/enderecamento-intelige
 import { formatoEnderecoRoutes } from './modules/formato-endereco/formato-endereco.routes'
 import { geoRoutes } from './modules/geolocalizacao/geo.routes'
 
+// Fase 1 — Profissionalização WMS
+import { crossDockRoutes } from './modules/cross-dock/cross-dock.routes'
+import { logisticaReversaRoutes } from './modules/logistica-reversa/logistica-reversa.routes'
+import { kpiRoutes } from './modules/kpi/kpi.routes'
+import { agendaDocaRoutes } from './modules/agenda-doca/agenda-doca.routes'
+import { etiquetasZplRoutes } from './modules/etiquetas-zpl/etiquetas-zpl.routes'
+import { iniciarKpiWorker } from './modules/kpi/kpi.worker'
+import { iniciarEtiquetasWorker } from './modules/etiquetas-zpl/etiquetas-zpl.worker'
+
 // PCP — Planejamento e Controle da Produção
 import { centroProducaoRoutes } from './modules/centro-producao/centro-producao.routes'
 import { recursoProducaoRoutes } from './modules/recurso-producao/recurso-producao.routes'
@@ -175,6 +184,13 @@ async function bootstrap() {
 
   // Módulo Geolocalização — Roteirização
   await app.register(geoRoutes, { prefix: '/api/geo' })
+
+  // Fase 1 — Profissionalização WMS
+  await app.register(crossDockRoutes, { prefix: '/api/cross-dock' })
+  await app.register(logisticaReversaRoutes, { prefix: '/api/logistica-reversa' })
+  await app.register(kpiRoutes, { prefix: '/api/kpi' })
+  await app.register(agendaDocaRoutes, { prefix: '/api/agenda-doca' })
+  await app.register(etiquetasZplRoutes, { prefix: '/api/etiquetas-zpl' })
 
   // Módulo PCP — Planejamento e Controle da Produção
   await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })
@@ -352,6 +368,10 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || 3333
   await app.listen({ port, host: '0.0.0.0' })
   console.log(`🚀 VisioFab WMS API rodando em http://localhost:${port}`)
+
+  // Iniciar workers de background
+  iniciarKpiWorker()
+  iniciarEtiquetasWorker()
 }
 
 bootstrap()
