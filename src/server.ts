@@ -90,6 +90,17 @@ import { agendaDocaRoutes } from './modules/agenda-doca/agenda-doca.routes'
 import { etiquetasZplRoutes } from './modules/etiquetas-zpl/etiquetas-zpl.routes'
 import { iniciarKpiWorker } from './modules/kpi/kpi.worker'
 import { iniciarEtiquetasWorker } from './modules/etiquetas-zpl/etiquetas-zpl.worker'
+import { startFaturamentoWorker } from './modules/faturamento/faturamento.worker'
+import { startLmsWorker } from './modules/lms/lms.worker'
+import { startMultiCdWorker } from './modules/multi-cd/multi-cd.worker'
+import { startPatioWorker } from './modules/patio/patio.worker'
+
+// Fase 2 — Escalar WMS
+import { faturamentoRoutes } from './modules/faturamento/faturamento.routes'
+import { pickingZonaRoutes } from './modules/picking-zona/picking-zona.routes'
+import { lmsRoutes } from './modules/lms/lms.routes'
+import { patioRoutes } from './modules/patio/patio.routes'
+import { multiCdRoutes } from './modules/multi-cd/multi-cd.routes'
 
 // PCP — Planejamento e Controle da Produção
 import { centroProducaoRoutes } from './modules/centro-producao/centro-producao.routes'
@@ -191,6 +202,13 @@ async function bootstrap() {
   await app.register(kpiRoutes, { prefix: '/api/kpi' })
   await app.register(agendaDocaRoutes, { prefix: '/api/agenda-doca' })
   await app.register(etiquetasZplRoutes, { prefix: '/api/etiquetas-zpl' })
+
+  // Fase 2 — Escalar WMS
+  await app.register(faturamentoRoutes, { prefix: '/api/faturamento' })
+  await app.register(pickingZonaRoutes, { prefix: '/api/picking-zona' })
+  await app.register(lmsRoutes, { prefix: '/api/lms' })
+  await app.register(patioRoutes, { prefix: '/api/patio' })
+  await app.register(multiCdRoutes, { prefix: '/api/multi-cd' })
 
   // Módulo PCP — Planejamento e Controle da Produção
   await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })
@@ -372,6 +390,10 @@ async function bootstrap() {
   // Iniciar workers de background
   iniciarKpiWorker()
   iniciarEtiquetasWorker()
+  startFaturamentoWorker()
+  startLmsWorker()
+  startMultiCdWorker()
+  startPatioWorker()
 }
 
 bootstrap()

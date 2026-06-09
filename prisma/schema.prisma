@@ -70,6 +70,10 @@ model Empresa {
   webhooks                 WebhookConfig[]
   fichasOperacionais       FichaOperacional[]
   deparasProdutoFornecedor DeparaProdutoFornecedor[]
+  veiculosPatio            VeiculoPatio[]
+  contratosArmazenagem     ContratoArmazenagem[]
+  zonasPicking             ZonaPicking[]
+  solicitacoesTransferencia SolicitacaoTransferencia[]
 
   @@map("empresa")
 }
@@ -173,8 +177,9 @@ model Cliente {
   latitude  Decimal? @db.Decimal(10, 7)
   longitude Decimal? @db.Decimal(10, 7)
 
-  pedidosVenda  PedidoVenda[]
-  contasReceber ContaReceber[]
+  pedidosVenda         PedidoVenda[]
+  contasReceber        ContaReceber[]
+  contratosArmazenagem ContratoArmazenagem[] @relation("ContratosArmazenagemCliente")
 
   @@unique([empresaId, cpfCnpj])
   @@map("cliente")
@@ -619,6 +624,12 @@ model CentroDistribuicao {
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
   docas        Doca[]
+  veiculosPatio                  VeiculoPatio[]
+  zonasPicking                   ZonaPicking[]
+  solicitacoesTransferenciaOrigem  SolicitacaoTransferencia[] @relation("SolicitacaoTransferenciaOrigem")
+  solicitacoesTransferenciaDestino SolicitacaoTransferencia[] @relation("SolicitacaoTransferenciaDestino")
+  mercadoriasTransitoOrigem      MercadoriaTransito[]       @relation("MercadoriaTransitoOrigem")
+  mercadoriasTransitoDestino     MercadoriaTransito[]       @relation("MercadoriaTransitoDestino")
 
   @@unique([empresaId, codigo])
   @@map("centro_distribuicao")
@@ -748,6 +759,7 @@ model OndaSeparacao {
   conferencias  ConferenciaSaida[]
   volumes       Volume[]
   ordensServico OrdemServicoWms[]
+  subOndas      SubOnda[]
 
   @@unique([empresaId, numero])
   @@map("onda_separacao")
@@ -1046,6 +1058,9 @@ model Doca {
   criadoEm             DateTime            @default(now()) @map("criado_em")
   empresaId            String?             @map("empresa_id")
 
+  veiculosPatio VeiculoPatio[]
+  chamadasDoca  ChamadaDoca[]
+
   @@map("doca")
 }
 
@@ -1227,6 +1242,7 @@ model OrdemServicoWms {
   carregamento       Carregamento?      @relation(fields: [carregamentoId], references: [id])
   funcionarios       OsFuncionarioWms[]
   fichasOperacionais FichaOperacional[]
+  registrosProdutividade RegistroProdutividade[]
 
   @@unique([empresaId, numero])
   @@map("ordem_servico_wms")
@@ -2264,4 +2280,459 @@ model FilaImpressao {
 
   @@index([empresaId, status, prioridade])
   @@map("fila_impressao")
+}
+
+// ============================================================================
+// WMS — FATURAMENTO DE ARMAZENAGEM
+// ============================================================================
+
+model ContratoArmazenagem {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  empresa             Empresa  @relation(fields: [empresaId], references: [id])
+  clienteId           String   @map("cliente_id")
+  cliente             Cliente  @relation("ContratosArmazenagemCliente", fields: [clienteId], references: [id])
+  dataInicio          DateTime @map("data_inicio")
+  dataFim             DateTime @map("data_fim")
+  periodicidade       String   @db.VarChar(20) @default("MENSAL")
+  moeda               String   @db.VarChar(3) @default("BRL")
+  status              String   @db.VarChar(20) @default("ATIVO")
+  observacao          String?  @db.Text
+  criadoPorId         String   @map("criado_por_id")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  atualizadoEm        DateTime @updatedAt @map("atualizado_em")
+
+  tarifas             TarifaContrato[]
+  medicoes            MedicaoOcupacao[]
+  faturas             FaturaArmazenagem[]
+
+  @@index([empresaId, status])
+  @@map("contrato_armazenagem")
+}
+
+model TarifaContrato {
+  id                  String   @id @default(uuid())
+  contratoId          String   @map("contrato_id")
+  contrato            ContratoArmazenagem @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  tipo                String   @db.VarChar(30)
+  valorUnitario       Decimal  @db.Decimal(12, 4) @map("valor_unitario")
+  carenciaDias        Int?     @map("carencia_dias")
+  descricao           String?  @db.VarChar(200)
+
+  @@unique([contratoId, tipo])
+  @@map("tarifa_contrato")
+}
+
+model MedicaoOcupacao {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  contratoId          String   @map("contrato_id")
+  contrato            ContratoArmazenagem @relation(fields: [contratoId], references: [id])
+  clienteId           String   @map("cliente_id")
+  dataMedicao         DateTime @map("data_medicao")
+  quantidadePallets   Int      @map("quantidade_pallets")
+  volumeM3            Decimal  @db.Decimal(12, 4) @map("volume_m3")
+  posicoesOcupadas    Int      @map("posicoes_ocupadas")
+  detalhamento        Json?
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, contratoId, dataMedicao])
+  @@map("medicao_ocupacao")
+}
+
+model MovimentacaoFaturavel {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  contratoId          String   @map("contrato_id")
+  clienteId           String   @map("cliente_id")
+  tipo                String   @db.VarChar(20)
+  data                DateTime
+  produtoId           String   @map("produto_id")
+  quantidade          Decimal  @db.Decimal(12, 4)
+  referenciaId        String?  @map("referencia_id")
+  faturado            Boolean  @default(false)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, contratoId, faturado])
+  @@map("movimentacao_faturavel")
+}
+
+model FaturaArmazenagem {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  contratoId          String   @map("contrato_id")
+  contrato            ContratoArmazenagem @relation(fields: [contratoId], references: [id])
+  clienteId           String   @map("cliente_id")
+  numero              String   @db.VarChar(20)
+  periodoInicio       DateTime @map("periodo_inicio")
+  periodoFim          DateTime @map("periodo_fim")
+  valorTotal          Decimal  @db.Decimal(12, 2) @map("valor_total")
+  dataVencimento      DateTime @map("data_vencimento")
+  status              String   @db.VarChar(20) @default("GERADA")
+  motivoCancelamento  String?  @db.Text @map("motivo_cancelamento")
+  observacao          String?  @db.Text
+  criadoPorId         String   @map("criado_por_id")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  atualizadoEm        DateTime @updatedAt @map("atualizado_em")
+
+  itens               ItemFatura[]
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, status])
+  @@map("fatura_armazenagem")
+}
+
+model ItemFatura {
+  id                  String   @id @default(uuid())
+  faturaId            String   @map("fatura_id")
+  fatura              FaturaArmazenagem @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+  tipoTarifa          String   @db.VarChar(30) @map("tipo_tarifa")
+  descricao           String   @db.VarChar(200)
+  quantidade          Decimal  @db.Decimal(12, 4)
+  valorUnitario       Decimal  @db.Decimal(12, 4) @map("valor_unitario")
+  subtotal            Decimal  @db.Decimal(12, 2)
+
+  @@map("item_fatura")
+}
+
+// ============================================================================
+// WMS — PICKING POR ZONA / CLUSTER
+// ============================================================================
+
+model ZonaPicking {
+  id                  String             @id @default(uuid())
+  empresaId           String             @map("empresa_id")
+  empresa             Empresa            @relation(fields: [empresaId], references: [id])
+  cdId                String             @map("cd_id")
+  centroDistribuicao  CentroDistribuicao @relation(fields: [cdId], references: [id])
+  nome                String             @db.VarChar(50)
+  codigo              String             @db.VarChar(10)
+  cor                 String             @db.VarChar(7)
+  status              String             @db.VarChar(10) @default("ATIVA")
+  pontoConsolidacaoId String?            @map("ponto_consolidacao_id")
+  criadoEm            DateTime           @default(now()) @map("criado_em")
+  atualizadoEm        DateTime           @updatedAt @map("atualizado_em")
+
+  enderecos           EnderecoZonaPicking[]
+  separadores         SeparadorZona[]
+  subOndas            SubOnda[]
+
+  @@unique([empresaId, cdId, codigo])
+  @@index([empresaId, status])
+  @@map("zona_picking")
+}
+
+model EnderecoZonaPicking {
+  id                  String   @id @default(uuid())
+  zonaPickingId       String   @map("zona_picking_id")
+  zonaPicking         ZonaPicking @relation(fields: [zonaPickingId], references: [id], onDelete: Cascade)
+  enderecoId          String   @unique @map("endereco_id")
+  @@map("endereco_zona_picking")
+}
+
+model SeparadorZona {
+  id                  String   @id @default(uuid())
+  zonaPickingId       String   @map("zona_picking_id")
+  zonaPicking         ZonaPicking @relation(fields: [zonaPickingId], references: [id], onDelete: Cascade)
+  usuarioId           String   @map("usuario_id")
+  tipo                String   @db.VarChar(15) @default("PRINCIPAL")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  @@unique([zonaPickingId, usuarioId])
+  @@map("separador_zona")
+}
+
+model PontoConsolidacao {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  cdId                String   @map("cd_id")
+  nome                String   @db.VarChar(50)
+  enderecoId          String   @map("endereco_id")
+  ativo               Boolean  @default(true)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  @@map("ponto_consolidacao")
+}
+
+model SubOnda {
+  id                  String        @id @default(uuid())
+  empresaId           String        @map("empresa_id")
+  ondaSeparacaoId     String        @map("onda_separacao_id")
+  ondaSeparacao       OndaSeparacao @relation(fields: [ondaSeparacaoId], references: [id])
+  zonaPickingId       String        @map("zona_picking_id")
+  zonaPicking         ZonaPicking   @relation(fields: [zonaPickingId], references: [id])
+  separadorId         String?       @map("separador_id")
+  status              String        @db.VarChar(30) @default("PENDENTE")
+  totalItens          Int           @map("total_itens")
+  itensConcluidos     Int           @default(0) @map("itens_concluidos")
+  iniciadaEm          DateTime?     @map("iniciada_em")
+  concluidaEm         DateTime?     @map("concluida_em")
+  criadoEm            DateTime      @default(now()) @map("criado_em")
+  atualizadoEm        DateTime      @updatedAt @map("atualizado_em")
+  itens               ItemSubOnda[]
+  @@index([empresaId, ondaSeparacaoId])
+  @@index([zonaPickingId, status])
+  @@map("sub_onda")
+}
+
+model ItemSubOnda {
+  id                  String   @id @default(uuid())
+  subOndaId           String   @map("sub_onda_id")
+  subOnda             SubOnda  @relation(fields: [subOndaId], references: [id], onDelete: Cascade)
+  itemOndaId          String   @map("item_onda_id")
+  produtoId           String   @map("produto_id")
+  enderecoOrigemId    String   @map("endereco_origem_id")
+  quantidade          Decimal  @db.Decimal(12, 4)
+  separado            Boolean  @default(false)
+  separadoEm          DateTime? @map("separado_em")
+  @@map("item_sub_onda")
+}
+
+// ============================================================================
+// WMS — LABOR MANAGEMENT SYSTEM (LMS)
+// ============================================================================
+
+model MetaOperacao {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  tipoOperacao        String   @db.VarChar(30) @map("tipo_operacao")
+  tempoMetaMinutos    Decimal  @db.Decimal(8, 2) @map("tempo_meta_minutos")
+  unidadeMedida       String   @db.VarChar(20) @map("unidade_medida")
+  toleranciaPercentual Decimal @db.Decimal(5, 2) @default(15) @map("tolerancia_percentual")
+  categoriaProduto    String?  @db.VarChar(30) @map("categoria_produto")
+  ativo               Boolean  @default(true)
+  criadoPorId         String   @map("criado_por_id")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  atualizadoEm        DateTime @updatedAt @map("atualizado_em")
+
+  historico           HistoricoMetaOperacao[]
+
+  @@index([empresaId, tipoOperacao, ativo])
+  @@map("meta_operacao")
+}
+
+model HistoricoMetaOperacao {
+  id                  String   @id @default(uuid())
+  metaOperacaoId      String   @map("meta_operacao_id")
+  metaOperacao        MetaOperacao @relation(fields: [metaOperacaoId], references: [id])
+  usuarioId           String   @map("usuario_id")
+  campo               String   @db.VarChar(50)
+  valorAnterior       String?  @db.Text @map("valor_anterior")
+  valorNovo           String?  @db.Text @map("valor_novo")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@map("historico_meta_operacao")
+}
+
+model RegistroProdutividade {
+  id                  String          @id @default(uuid())
+  empresaId           String          @map("empresa_id")
+  operadorId          String          @map("operador_id")
+  ordemServicoId      String          @map("ordem_servico_id")
+  ordemServico        OrdemServicoWms @relation(fields: [ordemServicoId], references: [id])
+  tipoOperacao        String          @db.VarChar(30) @map("tipo_operacao")
+  tempoMetaMinutos    Decimal         @db.Decimal(8, 2) @map("tempo_meta_minutos")
+  tempoRealMinutos    Decimal         @db.Decimal(8, 2) @map("tempo_real_minutos")
+  tempoPausaMinutos   Decimal         @db.Decimal(8, 2) @default(0) @map("tempo_pausa_minutos")
+  indiceProdutividade Decimal         @db.Decimal(8, 2) @map("indice_produtividade")
+  quantidadeItens     Int             @map("quantidade_itens")
+  faixaDesempenho     String          @db.VarChar(15) @map("faixa_desempenho")
+  iniciadoEm          DateTime        @map("iniciado_em")
+  concluidoEm         DateTime        @map("concluido_em")
+  criadoEm            DateTime        @default(now()) @map("criado_em")
+
+  @@index([empresaId, operadorId, criadoEm])
+  @@index([empresaId, tipoOperacao, criadoEm])
+  @@map("registro_produtividade")
+}
+
+model ConfigIncentivo {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  faixa               String   @db.VarChar(15)
+  pontosIncentivo     Int      @map("pontos_incentivo")
+  descricao           String?  @db.VarChar(200)
+  ativo               Boolean  @default(true)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, faixa])
+  @@map("config_incentivo")
+}
+
+model PausaOperador {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  operadorId          String   @map("operador_id")
+  ordemServicoId      String?  @map("ordem_servico_id")
+  tipo                String   @db.VarChar(20)
+  inicioEm            DateTime @map("inicio_em")
+  fimEm               DateTime? @map("fim_em")
+  duracaoMinutos      Decimal? @db.Decimal(8, 2) @map("duracao_minutos")
+
+  @@index([empresaId, operadorId, inicioEm])
+  @@map("pausa_operador")
+}
+
+// ============================================================================
+// WMS — YARD MANAGEMENT (GESTÃO DE PÁTIO)
+// ============================================================================
+
+model VeiculoPatio {
+  id                  String              @id @default(uuid())
+  empresaId           String              @map("empresa_id")
+  empresa             Empresa             @relation(fields: [empresaId], references: [id])
+  cdId                String              @map("cd_id")
+  centroDistribuicao  CentroDistribuicao  @relation(fields: [cdId], references: [id])
+  placa               String              @db.VarChar(10)
+  motoristaNome       String              @db.VarChar(150) @map("motorista_nome")
+  motoristaDocumento  String              @db.VarChar(20) @map("motorista_documento")
+  transportadoraId    String?             @map("transportadora_id")
+  tipoOperacao        String              @db.VarChar(20) @map("tipo_operacao")
+  agendamentoId       String?             @map("agendamento_id")
+  status              String              @db.VarChar(20) @default("AGUARDANDO")
+  docaId              String?             @map("doca_id")
+  doca                Doca?               @relation(fields: [docaId], references: [id])
+  entradaEm           DateTime            @map("entrada_em")
+  chamadaDocaEm       DateTime?           @map("chamada_doca_em")
+  chegadaDocaEm       DateTime?           @map("chegada_doca_em")
+  saidaEm             DateTime?           @map("saida_em")
+  tempoPermMinutos    Int?                @map("tempo_perm_minutos")
+  criadoPorId         String              @map("criado_por_id")
+  criadoEm            DateTime            @default(now()) @map("criado_em")
+  atualizadoEm        DateTime            @updatedAt @map("atualizado_em")
+
+  filaPosicao         FilaEsperaPatio?
+  chamadasDoca        ChamadaDoca[]
+
+  @@index([empresaId, cdId, status])
+  @@index([placa])
+  @@map("veiculo_patio")
+}
+
+model FilaEsperaPatio {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  cdId                String   @map("cd_id")
+  veiculoId           String   @unique @map("veiculo_id")
+  veiculo             VeiculoPatio @relation(fields: [veiculoId], references: [id])
+  posicao             Int
+  prioridade          Int      @default(0)
+  justificativaPrioridade String? @db.Text @map("justificativa_prioridade")
+  entradaFilaEm       DateTime @map("entrada_fila_em")
+
+  @@index([empresaId, cdId, prioridade, posicao])
+  @@map("fila_espera_patio")
+}
+
+model ChamadaDoca {
+  id                  String       @id @default(uuid())
+  empresaId           String       @map("empresa_id")
+  veiculoId           String       @map("veiculo_id")
+  veiculo             VeiculoPatio @relation(fields: [veiculoId], references: [id])
+  docaId              String       @map("doca_id")
+  doca                Doca         @relation(fields: [docaId], references: [id])
+  status              String       @db.VarChar(20) @default("CHAMADO")
+  chamadoEm           DateTime     @map("chamado_em")
+  atendidoEm          DateTime?    @map("atendido_em")
+  canceladoEm         DateTime?    @map("cancelado_em")
+  motivoCancelamento  String?      @db.Text @map("motivo_cancelamento")
+  tempoRespostaMin    Int?         @map("tempo_resposta_min")
+  chamadoPorId        String       @map("chamado_por_id")
+  criadoEm            DateTime     @default(now()) @map("criado_em")
+
+  @@index([empresaId, status])
+  @@map("chamada_doca")
+}
+
+model ConfigPatio {
+  id                  String @id @default(uuid())
+  empresaId           String @map("empresa_id")
+  cdId                String @map("cd_id")
+  limitePermMinutos   Int    @default(240) @map("limite_perm_minutos")
+  alertaPermAtivo     Boolean @default(true) @map("alerta_perm_ativo")
+  prioridadeAgendado  Int    @default(10) @map("prioridade_agendado")
+  prioridadeDescarga  Int    @default(5) @map("prioridade_descarga")
+  prioridadeCarga     Int    @default(3) @map("prioridade_carga")
+  prioridadePadrao    Int    @default(1) @map("prioridade_padrao")
+
+  @@unique([empresaId, cdId])
+  @@map("config_patio")
+}
+
+// ============================================================================
+// WMS — MULTI-CD COM TRANSFERÊNCIAS
+// ============================================================================
+
+model SolicitacaoTransferencia {
+  id                  String             @id @default(uuid())
+  empresaId           String             @map("empresa_id")
+  empresa             Empresa            @relation(fields: [empresaId], references: [id])
+  numero              String             @db.VarChar(20)
+  cdOrigemId          String             @map("cd_origem_id")
+  cdOrigem            CentroDistribuicao @relation("SolicitacaoTransferenciaOrigem", fields: [cdOrigemId], references: [id])
+  cdDestinoId         String             @map("cd_destino_id")
+  cdDestino           CentroDistribuicao @relation("SolicitacaoTransferenciaDestino", fields: [cdDestinoId], references: [id])
+  motivo              String             @db.VarChar(200)
+  prioridade          String             @db.VarChar(10) @default("NORMAL")
+  dataPrevistaEnvio   DateTime?          @map("data_prevista_envio")
+  status              String             @db.VarChar(20) @default("PENDENTE")
+  criadoPorId         String             @map("criado_por_id")
+  aprovadoPorId       String?            @map("aprovado_por_id")
+  aprovadoEm          DateTime?          @map("aprovado_em")
+  criadoEm            DateTime           @default(now()) @map("criado_em")
+  atualizadoEm        DateTime           @updatedAt @map("atualizado_em")
+
+  itens               ItemSolicitacaoTransferencia[]
+  documentoSaida      DocumentoSaidaTransferencia?
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, status])
+  @@map("solicitacao_transferencia")
+}
+
+model ItemSolicitacaoTransferencia {
+  id                       String   @id @default(uuid())
+  solicitacaoTransferenciaId String  @map("solicitacao_transferencia_id")
+  solicitacaoTransferencia SolicitacaoTransferencia @relation(fields: [solicitacaoTransferenciaId], references: [id], onDelete: Cascade)
+  produtoId                String   @map("produto_id")
+  quantidadeSolicitada     Decimal  @db.Decimal(12, 4) @map("quantidade_solicitada")
+  quantidadeExpedida       Decimal? @db.Decimal(12, 4) @map("quantidade_expedida")
+  quantidadeRecebida       Decimal? @db.Decimal(12, 4) @map("quantidade_recebida")
+
+  @@map("item_solicitacao_transferencia")
+}
+
+model DocumentoSaidaTransferencia {
+  id                       String    @id @default(uuid())
+  empresaId                String    @map("empresa_id")
+  solicitacaoTransferenciaId String  @unique @map("solicitacao_transferencia_id")
+  solicitacaoTransferencia SolicitacaoTransferencia @relation(fields: [solicitacaoTransferenciaId], references: [id])
+  numero                   String    @db.VarChar(20)
+  veiculoPlaca             String?   @db.VarChar(10) @map("veiculo_placa")
+  motoristaId              String?   @map("motorista_id")
+  dataSaida                DateTime  @map("data_saida")
+  previsaoChegada          DateTime? @map("previsao_chegada")
+  criadoPorId              String    @map("criado_por_id")
+  criadoEm                 DateTime  @default(now()) @map("criado_em")
+
+  @@unique([empresaId, numero])
+  @@map("documento_saida_transferencia")
+}
+
+model MercadoriaTransito {
+  id                       String             @id @default(uuid())
+  empresaId                String             @map("empresa_id")
+  solicitacaoTransferenciaId String           @map("solicitacao_transferencia_id")
+  produtoId                String             @map("produto_id")
+  quantidade               Decimal            @db.Decimal(12, 4)
+  cdOrigemId               String             @map("cd_origem_id")
+  cdOrigem                 CentroDistribuicao @relation("MercadoriaTransitoOrigem", fields: [cdOrigemId], references: [id])
+  cdDestinoId              String             @map("cd_destino_id")
+  cdDestino                CentroDistribuicao @relation("MercadoriaTransitoDestino", fields: [cdDestinoId], references: [id])
+  dataSaida                DateTime           @map("data_saida")
+  previsaoChegada          DateTime?          @map("previsao_chegada")
+  status                   String             @db.VarChar(20) @default("EM_TRANSITO")
+  recebidoEm               DateTime?          @map("recebido_em")
+  criadoEm                 DateTime           @default(now()) @map("criado_em")
+
+  @@index([empresaId, status])
+  @@map("mercadoria_transito")
 }
