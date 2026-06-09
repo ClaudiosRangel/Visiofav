@@ -2736,3 +2736,257 @@ model MercadoriaTransito {
   @@index([empresaId, status])
   @@map("mercadoria_transito")
 }
+
+// ============================================================================
+// WMS — PREVISÃO DE DEMANDA / SLOTTING
+// ============================================================================
+
+model PrevisaoDemanda {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  produtoId           String   @map("produto_id")
+  dataPrevisao        DateTime @map("data_previsao")
+  quantidadePrevista  Decimal  @db.Decimal(12, 4) @map("quantidade_prevista")
+  quantidadeReal      Decimal? @db.Decimal(12, 4) @map("quantidade_real")
+  metodo              String   @db.VarChar(20) // MEDIA_MOVEL, SAZONAL
+  horizonte           Int      // 7, 14, 30 (dias)
+  confianca           Decimal  @db.Decimal(5, 2) // 0-100
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, produtoId, dataPrevisao])
+  @@map("previsao_demanda")
+}
+
+model ClassificacaoAbc {
+  id                    String   @id @default(uuid())
+  empresaId             String   @map("empresa_id")
+  produtoId             String   @map("produto_id")
+  criterio              String   @db.VarChar(20) // FREQUENCIA, VALOR, VOLUME
+  classificacao         String   @db.VarChar(1) // A, B, C
+  valor                 Decimal  @db.Decimal(14, 4)
+  percentualAcumulado   Decimal  @db.Decimal(5, 2) @map("percentual_acumulado")
+  periodoInicio         DateTime @map("periodo_inicio")
+  periodoFim            DateTime @map("periodo_fim")
+  criadoEm              DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, produtoId, criterio, periodoInicio])
+  @@map("classificacao_abc")
+}
+
+model SugestaoSlotting {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  produtoId           String    @map("produto_id")
+  enderecoAtualId     String?   @map("endereco_atual_id")
+  enderecoSugeridoId  String    @map("endereco_sugerido_id")
+  motivo              String    @db.VarChar(200)
+  prioridade          String    @db.VarChar(10) // ALTA, MEDIA, BAIXA
+  score               Decimal   @db.Decimal(8, 2)
+  status              String    @db.VarChar(15) @default("PENDENTE") // PENDENTE, APLICADA, REJEITADA
+  aplicadaEm          DateTime? @map("aplicada_em")
+  aplicadaPorId       String?   @map("aplicada_por_id")
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+
+  @@index([empresaId, status])
+  @@map("sugestao_slotting")
+}
+
+model ConfigPrevisao {
+  id                      String  @id @default(uuid())
+  empresaId               String  @map("empresa_id")
+  periodoHistoricoDias    Int     @default(90) @map("periodo_historico_dias")
+  metodoPreferido         String  @db.VarChar(20) @default("MEDIA_MOVEL") @map("metodo_preferido")
+  frequenciaAtualizacao   String  @db.VarChar(15) @default("DIARIA") @map("frequencia_atualizacao") // DIARIA, SEMANAL
+  estoqueSegurancaDias    Int     @default(7) @map("estoque_seguranca_dias")
+  ativo                   Boolean @default(true)
+
+  @@unique([empresaId])
+  @@map("config_previsao")
+}
+
+// ============================================================================
+// WMS — PORTAL 3PL (CLIENTES)
+// ============================================================================
+
+model PortalUsuario {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  clienteId           String    @map("cliente_id")
+  nome                String    @db.VarChar(150)
+  email               String    @db.VarChar(200)
+  senhaHash           String    @map("senha_hash")
+  status              String    @db.VarChar(10) @default("ATIVO") // ATIVO, INATIVO
+  ultimoAcesso        DateTime? @map("ultimo_acesso")
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+  atualizadoEm        DateTime  @updatedAt @map("atualizado_em")
+
+  solicitacoes        SolicitacaoExpedicaoPortal[]
+  notificacoes        NotificacaoPortal[]
+
+  @@unique([empresaId, email])
+  @@map("portal_usuario")
+}
+
+model SolicitacaoExpedicaoPortal {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  clienteId           String    @map("cliente_id")
+  portalUsuarioId     String    @map("portal_usuario_id")
+  portalUsuario       PortalUsuario @relation(fields: [portalUsuarioId], references: [id])
+  numero              String    @db.VarChar(20) // SOL-YYYY-NNNNNN
+  observacao          String?   @db.Text
+  status              String    @db.VarChar(20) @default("PENDENTE") // PENDENTE, APROVADA, EM_SEPARACAO, EXPEDIDA, CANCELADA
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+  atualizadoEm        DateTime  @updatedAt @map("atualizado_em")
+
+  itens               ItemSolicitacaoExpedicaoPortal[]
+
+  @@unique([empresaId, numero])
+  @@map("solicitacao_expedicao_portal")
+}
+
+model ItemSolicitacaoExpedicaoPortal {
+  id                  String   @id @default(uuid())
+  solicitacaoId       String   @map("solicitacao_id")
+  solicitacao         SolicitacaoExpedicaoPortal @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  produtoId           String   @map("produto_id")
+  quantidade          Decimal  @db.Decimal(12, 4)
+  quantidadeAtendida  Decimal? @db.Decimal(12, 4) @map("quantidade_atendida")
+
+  @@map("item_solicitacao_expedicao_portal")
+}
+
+model NotificacaoPortal {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  clienteId           String   @map("cliente_id")
+  portalUsuarioId     String?  @map("portal_usuario_id")
+  portalUsuario       PortalUsuario? @relation(fields: [portalUsuarioId], references: [id])
+  tipo                String   @db.VarChar(30) // FATURA_GERADA, EXPEDICAO_CONCLUIDA, ESTOQUE_MINIMO, CONTRATO_VENCENDO
+  titulo              String   @db.VarChar(200)
+  mensagem            String   @db.Text
+  lida                Boolean  @default(false)
+  enviadaEmail        Boolean  @default(false) @map("enviada_email")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, clienteId, lida])
+  @@map("notificacao_portal")
+}
+
+// ============================================================================
+// WMS — BUSINESS INTELLIGENCE
+// ============================================================================
+
+model CustoOperacao {
+  id                    String   @id @default(uuid())
+  empresaId             String   @map("empresa_id")
+  data                  DateTime
+  tipoOperacao          String   @db.VarChar(30) @map("tipo_operacao") // RECEBIMENTO, ENDERECAMENTO, SEPARACAO, EXPEDICAO, INVENTARIO
+  custoMaoObra          Decimal  @db.Decimal(12, 2) @map("custo_mao_obra")
+  custoEquipamento      Decimal  @db.Decimal(12, 2) @map("custo_equipamento")
+  custoEspaco           Decimal  @db.Decimal(12, 2) @map("custo_espaco")
+  custoTotal            Decimal  @db.Decimal(12, 2) @map("custo_total")
+  quantidadeOperacoes   Int      @map("quantidade_operacoes")
+  custoUnitario         Decimal  @db.Decimal(12, 4) @map("custo_unitario")
+  criadoEm              DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, data, tipoOperacao])
+  @@map("custo_operacao")
+}
+
+model ConfigCusto {
+  id                      String   @id @default(uuid())
+  empresaId               String   @map("empresa_id")
+  custoHoraOperador       Decimal  @db.Decimal(10, 2) @map("custo_hora_operador")
+  custoHoraEquipamento    Decimal  @db.Decimal(10, 2) @map("custo_hora_equipamento")
+  custoM2Mes              Decimal  @db.Decimal(10, 2) @map("custo_m2_mes")
+  depreciacao             Decimal  @db.Decimal(5, 2) // percentual
+  criadoEm                DateTime @default(now()) @map("criado_em")
+  atualizadoEm            DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId])
+  @@map("config_custo")
+}
+
+model SnapshotBI {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  data                DateTime
+  indicador           String   @db.VarChar(30) // THROUGHPUT, ACURACIA, OCUPACAO, CUSTO_MEDIO, PRODUTIVIDADE_MEDIA
+  valor               Decimal  @db.Decimal(14, 4)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, indicador, data])
+  @@map("snapshot_bi")
+}
+
+model AlertaCorrelacao {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  tipo                String    @db.VarChar(30) // CORRELACAO, ANOMALIA, TENDENCIA
+  indicador1          String    @db.VarChar(30)
+  valor1              Decimal   @db.Decimal(14, 4)
+  indicador2          String?   @db.VarChar(30)
+  valor2              Decimal?  @db.Decimal(14, 4)
+  mensagem            String    @db.Text
+  severidade          String    @db.VarChar(10) // ALTA, MEDIA, BAIXA
+  status              String    @db.VarChar(15) @default("ABERTO") // ABERTO, RESOLVIDO
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+  resolvidoEm         DateTime? @map("resolvido_em")
+
+  @@index([empresaId, status])
+  @@map("alerta_correlacao")
+}
+
+// ============================================================================
+// WMS — WAVE PLANNING
+// ============================================================================
+
+model RegraOnda {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  nome                String   @db.VarChar(100)
+  prioridade          Int      // ordem de aplicação (menor = primeiro)
+  tipo                String   @db.VarChar(30) // CORTE_HORARIO, AGRUPAMENTO_ROTA, CAPACIDADE_DOCA, PRIORIDADE_CLIENTE
+  parametros          Json     // configuração específica por tipo
+  ativo               Boolean  @default(true)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, ativo])
+  @@map("regra_onda")
+}
+
+model PlanejamentoOnda {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  dataReferencia      DateTime  @map("data_referencia")
+  status              String    @db.VarChar(15) @default("SIMULADO") // SIMULADO, CONFIRMADO, EM_EXECUCAO, CONCLUIDO
+  totalOndas          Int       @map("total_ondas")
+  totalPedidos        Int       @map("total_pedidos")
+  totalItens          Int       @map("total_itens")
+  geradoEm            DateTime  @map("gerado_em")
+  confirmadoPorId     String?   @map("confirmado_por_id")
+  confirmadoEm        DateTime? @map("confirmado_em")
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+
+  simulacoes          SimulacaoOnda[]
+
+  @@map("planejamento_onda")
+}
+
+model SimulacaoOnda {
+  id                    String    @id @default(uuid())
+  planejamentoOndaId    String    @map("planejamento_onda_id")
+  planejamentoOnda      PlanejamentoOnda @relation(fields: [planejamentoOndaId], references: [id], onDelete: Cascade)
+  ondaNumero            Int       @map("onda_numero")
+  docaId                String?   @map("doca_id")
+  rotaId                String?   @map("rota_id")
+  totalPedidos          Int       @map("total_pedidos")
+  totalItens            Int       @map("total_itens")
+  horaInicioEstimada    DateTime  @map("hora_inicio_estimada")
+  horaFimEstimada       DateTime  @map("hora_fim_estimada")
+  cargaKg               Decimal?  @db.Decimal(12, 2) @map("carga_kg")
+  volumeM3              Decimal?  @db.Decimal(12, 4) @map("volume_m3")
+
+  @@map("simulacao_onda")
+}

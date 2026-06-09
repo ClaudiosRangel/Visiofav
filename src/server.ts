@@ -102,6 +102,16 @@ import { lmsRoutes } from './modules/lms/lms.routes'
 import { patioRoutes } from './modules/patio/patio.routes'
 import { multiCdRoutes } from './modules/multi-cd/multi-cd.routes'
 
+// Fase 3 — Diferenciar WMS
+import { demandaRoutes } from './modules/demanda/demanda.routes'
+import { portalRoutes } from './modules/portal/portal.routes'
+import { biRoutes } from './modules/bi/bi.routes'
+import { waveRoutes } from './modules/wave/wave.routes'
+import { startDemandaWorker } from './modules/demanda/demanda.worker'
+import { startPortalWorker } from './modules/portal/portal.worker'
+import { startBiWorkers } from './modules/bi/bi.worker'
+import { startWaveWorker } from './modules/wave/wave.worker'
+
 // PCP — Planejamento e Controle da Produção
 import { centroProducaoRoutes } from './modules/centro-producao/centro-producao.routes'
 import { recursoProducaoRoutes } from './modules/recurso-producao/recurso-producao.routes'
@@ -209,6 +219,12 @@ async function bootstrap() {
   await app.register(lmsRoutes, { prefix: '/api/lms' })
   await app.register(patioRoutes, { prefix: '/api/patio' })
   await app.register(multiCdRoutes, { prefix: '/api/multi-cd' })
+
+  // Fase 3 — Diferenciar WMS
+  await app.register(demandaRoutes, { prefix: '/api/demanda' })
+  await app.register(portalRoutes, { prefix: '/api/portal' })
+  await app.register(biRoutes, { prefix: '/api/bi' })
+  await app.register(waveRoutes, { prefix: '/api/wave' })
 
   // Módulo PCP — Planejamento e Controle da Produção
   await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })
@@ -394,6 +410,10 @@ async function bootstrap() {
   startLmsWorker()
   startMultiCdWorker()
   startPatioWorker()
+  startDemandaWorker()
+  startPortalWorker()
+  startBiWorkers()
+  startWaveWorker()
 }
 
 bootstrap()
