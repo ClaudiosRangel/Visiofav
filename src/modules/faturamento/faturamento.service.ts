@@ -153,7 +153,7 @@ export class FaturamentoService {
         where,
         include: {
           tarifas: true,
-          cliente: { select: { razaoSocial: true, cnpj: true } },
+          cliente: { select: { razaoSocial: true, cpfCnpj: true } },
         },
         orderBy: { criadoEm: 'desc' },
         skip,
@@ -181,7 +181,7 @@ export class FaturamentoService {
       where: { id, empresaId },
       include: {
         tarifas: true,
-        cliente: { select: { razaoSocial: true, cnpj: true } },
+        cliente: { select: { razaoSocial: true, cpfCnpj: true } },
         faturas: {
           orderBy: { periodoFim: 'desc' },
           take: 10,
@@ -716,7 +716,7 @@ export class FaturamentoService {
         where,
         include: {
           contrato: { select: { id: true, periodicidade: true, status: true } },
-          cliente: { select: { razaoSocial: true, cnpj: true } },
+          cliente: { select: { razaoSocial: true, cpfCnpj: true } },
           _count: { select: { itens: true } },
         },
         orderBy: { criadoEm: 'desc' },
@@ -746,7 +746,7 @@ export class FaturamentoService {
       include: {
         itens: true,
         contrato: { select: { id: true, periodicidade: true, status: true } },
-        cliente: { select: { razaoSocial: true, cnpj: true } },
+        cliente: { select: { razaoSocial: true, cpfCnpj: true } },
       },
     })
 
