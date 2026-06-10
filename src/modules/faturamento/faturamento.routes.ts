@@ -24,6 +24,29 @@ export async function faturamentoRoutes(app: FastifyInstance) {
   app.addHook('preHandler', moduloGuard('WMS'))
 
   // ==========================================================================
+  // DASHBOARD RESUMO
+  // ==========================================================================
+
+  // GET /api/faturamento/resumo — Dashboard resumo
+  app.get('/resumo', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    try {
+      const { prisma } = await import('../../lib/prisma')
+      const [faturasEnviadas, faturasPagas, faturasGeradas] = await Promise.all([
+        prisma.faturaArmazenagem.aggregate({ where: { empresaId: user.empresaId, status: 'ENVIADA' }, _sum: { valorTotal: true } }),
+        prisma.faturaArmazenagem.aggregate({ where: { empresaId: user.empresaId, status: 'PAGA' }, _sum: { valorTotal: true } }),
+        prisma.faturaArmazenagem.aggregate({ where: { empresaId: user.empresaId, status: 'GERADA' }, _sum: { valorTotal: true } }),
+      ])
+      return {
+        totalFaturado: Number(faturasPagas._sum.valorTotal || 0),
+        aReceber: Number(faturasEnviadas._sum.valorTotal || 0),
+        inadimplente: Number(faturasGeradas._sum.valorTotal || 0),
+      }
+    } catch (err: any) { return reply.status(500).send({ message: err.message }) }
+  })
+
+  // ==========================================================================
   // CONTRATOS
   // ==========================================================================
 

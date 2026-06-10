@@ -33,6 +33,25 @@ export async function lmsRoutes(app: FastifyInstance) {
   app.addHook('preHandler', moduloGuard('WMS'))
 
   // ==========================================================================
+  // GET /dashboard — Dashboard LMS com resumo de produtividade
+  // ==========================================================================
+  app.get('/dashboard', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    try {
+      const ranking = await lmsService.ranking(user.empresaId, 'SEMANA')
+      const alertasAbertos = await prisma.alertaKpi.count({ where: { empresaId: user.empresaId, status: 'ABERTO' } })
+      const prodMedia = ranking.ranking.length > 0 ? Math.round(ranking.ranking.reduce((a, r) => a + r.indiceMedio, 0) / ranking.ranking.length) : 0
+      return {
+        produtividadeMedia: prodMedia,
+        topPerformers: ranking.ranking.slice(0, 3).map(r => ({ operador: r.operadorId, indice: r.indiceMedio })),
+        totalAlertasAbertos: alertasAbertos,
+        rankingTop5: ranking.ranking.slice(0, 5).map(r => ({ operadorId: r.operadorId, operador: r.operadorId, totalTarefas: r.totalTarefas, indiceMedio: r.indiceMedio, faixa: r.indiceMedio > 100 ? 'ACIMA_META' : r.indiceMedio > 85 ? 'NA_META' : 'ABAIXO_META' })),
+      }
+    } catch (err: any) { return reply.status(500).send({ message: err.message }) }
+  })
+
+  // ==========================================================================
   // GET /metas — Listar metas de operação
   // ==========================================================================
   app.get('/metas', async (request, reply) => {

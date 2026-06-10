@@ -27,6 +27,31 @@ export async function demandaRoutes(app: FastifyInstance) {
   app.addHook('preHandler', moduloGuard('WMS'))
 
   // ==========================================================================
+  // GET /dashboard — Dashboard de demanda com resumo
+  // ==========================================================================
+  app.get('/dashboard', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    try {
+      const [previsoes, abcA, abcB, abcC, sugestoes, criticos] = await Promise.all([
+        prisma.previsaoDemanda.count({ where: { empresaId: user.empresaId } }),
+        prisma.classificacaoAbc.count({ where: { empresaId: user.empresaId, classificacao: 'A' } }),
+        prisma.classificacaoAbc.count({ where: { empresaId: user.empresaId, classificacao: 'B' } }),
+        prisma.classificacaoAbc.count({ where: { empresaId: user.empresaId, classificacao: 'C' } }),
+        prisma.sugestaoSlotting.count({ where: { empresaId: user.empresaId, status: 'PENDENTE' } }),
+        demandaService.produtosCriticos(user.empresaId),
+      ])
+      return {
+        previsoesAtivas: previsoes,
+        produtosA: abcA, produtosB: abcB, produtosC: abcC,
+        sugestoesPendentes: sugestoes,
+        produtosCriticos: criticos.length,
+        produtosCriticosList: criticos.slice(0, 5),
+      }
+    } catch (err: any) { return reply.status(500).send({ message: err.message }) }
+  })
+
+  // ==========================================================================
   // GET /previsoes — Listar previsões de demanda
   // ==========================================================================
   app.get('/previsoes', async (request, reply) => {

@@ -38,7 +38,32 @@ export async function biRoutes(app: FastifyInstance) {
     try {
       const { dias } = dashboardQuerySchema.parse(request.query)
       const resultado = await biService.dashboardExecutivo(user.empresaId, dias)
-      return resultado
+
+      // Converter kpis de objeto para array (frontend espera array)
+      const kpiLabels: Record<string, { label: string; unidade: string }> = {
+        throughput: { label: 'Throughput', unidade: 'itens/dia' },
+        acuracia: { label: 'Acurácia', unidade: '%' },
+        ocupacao: { label: 'Ocupação', unidade: '%' },
+        custoMedio: { label: 'Custo Médio', unidade: 'R$' },
+        produtividadeMedia: { label: 'Produtividade Média', unidade: 'itens/h' },
+      }
+
+      const kpisArray = Object.entries(resultado.kpis).map(([chave, val]) => ({
+        chave,
+        label: kpiLabels[chave]?.label || chave,
+        valorAtual: (val as any).atual,
+        media: (val as any).media,
+        variacao: (val as any).media > 0
+          ? Number((((val as any).atual - (val as any).media) / (val as any).media * 100).toFixed(1))
+          : 0,
+        unidade: kpiLabels[chave]?.unidade || '',
+      }))
+
+      return {
+        periodo: resultado.periodo,
+        kpis: kpisArray,
+        totalSnapshots: resultado.totalSnapshots,
+      }
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro interno' })

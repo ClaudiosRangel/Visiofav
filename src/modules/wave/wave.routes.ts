@@ -27,6 +27,24 @@ export async function waveRoutes(app: FastifyInstance) {
   app.addHook('preHandler', moduloGuard('WMS'))
 
   // ==========================================================================
+  // GET /dashboard — Dashboard de ondas com resumo de execução
+  // ==========================================================================
+  app.get('/dashboard', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    try {
+      const ondas = await waveService.painelExecucao(user.empresaId)
+      return {
+        totalOndas: ondas.length,
+        emAndamento: ondas.filter(o => o.status === 'EM_SEPARACAO').length,
+        concluidas: ondas.filter(o => o.status === 'CONCLUIDA').length,
+        totalPedidos: ondas.reduce((a, o) => a + (o.totalPedidos || 0), 0),
+        ondasHoje: ondas.map(o => ({ id: o.id, numero: o.prioridade, status: o.status, percentual: o.percentual, pedidos: o.totalPedidos, itens: o.totalItens })),
+      }
+    } catch (err: any) { return reply.status(500).send({ message: err.message }) }
+  })
+
+  // ==========================================================================
   // GET /regras — Listar regras de onda
   // ==========================================================================
   app.get('/regras', async (request, reply) => {
