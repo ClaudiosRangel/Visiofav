@@ -92,11 +92,6 @@ export async function verificarTransitoExcedido() {
         status: 'EM_TRANSITO',
         dataSaida: { lt: limite48h },
       },
-      include: {
-        solicitacaoTransferencia: {
-          select: { numero: true },
-        },
-      },
     })
 
     if (mercadoriasAtrasadas.length === 0) {
@@ -141,8 +136,7 @@ export async function verificarTransitoExcedido() {
           (Date.now() - item.dataSaida.getTime()) / (1000 * 60 * 60),
         )
 
-        const numeroSolicitacao =
-          item.solicitacaoTransferencia?.numero || 'N/A'
+        const numeroSolicitacao = item.solicitacaoTransferenciaId || 'N/A'
 
         const mensagem =
           `Mercadoria em trânsito há mais de 48h (Solicitação: ${numeroSolicitacao})`

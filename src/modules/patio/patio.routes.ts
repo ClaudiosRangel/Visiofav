@@ -211,7 +211,7 @@ export async function patioRoutes(app: FastifyInstance) {
       // Notificar clientes SSE sobre a nova chamada à doca
       notificarChamadaDoca(user.empresaId, resultado)
 
-      audit(user.empresaId, 'ChamadaDoca', resultado.id, 'EMITIR_CHAMADA', 'Chamada à doca emitida', user.id, { docaId: body.docaId, veiculoPatioId: body.veiculoPatioId })
+      audit(user.empresaId, 'ChamadaDoca', resultado.id, 'EMITIR_CHAMADA', 'Chamada à doca emitida', user.id, { docaId: body.docaId, veiculoId: body.veiculoId })
       return reply.status(201).send(resultado)
     } catch (err: any) {
       const statusCode = err.statusCode || 500

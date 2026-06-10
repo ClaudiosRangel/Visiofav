@@ -716,7 +716,6 @@ export class FaturamentoService {
         where,
         include: {
           contrato: { select: { id: true, periodicidade: true, status: true } },
-          cliente: { select: { razaoSocial: true, cpfCnpj: true } },
           _count: { select: { itens: true } },
         },
         orderBy: { criadoEm: 'desc' },
@@ -746,7 +745,6 @@ export class FaturamentoService {
       include: {
         itens: true,
         contrato: { select: { id: true, periodicidade: true, status: true } },
-        cliente: { select: { razaoSocial: true, cpfCnpj: true } },
       },
     })
 
@@ -1010,15 +1008,12 @@ export class FaturamentoService {
 
     const faturas = await prisma.faturaArmazenagem.findMany({
       where,
-      include: {
-        cliente: { select: { razaoSocial: true } },
-      },
       orderBy: { periodoInicio: 'asc' },
     })
 
     return faturas.map((f) => ({
       numero: f.numero,
-      cliente: f.cliente?.razaoSocial || f.clienteId,
+      cliente: f.clienteId,
       periodo: `${f.periodoInicio.toISOString().split('T')[0]} a ${f.periodoFim.toISOString().split('T')[0]}`,
       valor: Number(f.valorTotal).toFixed(2),
       status: f.status,

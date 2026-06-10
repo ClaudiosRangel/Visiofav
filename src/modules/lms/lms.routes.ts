@@ -326,7 +326,7 @@ export async function lmsRoutes(app: FastifyInstance) {
     }
 
     try {
-      const incentivos = await prisma.incentivoLms.findMany({
+      const incentivos = await prisma.configIncentivo.findMany({
         where: { empresaId: user.empresaId, ativo: true },
         orderBy: { criadoEm: 'desc' },
       })
@@ -348,7 +348,7 @@ export async function lmsRoutes(app: FastifyInstance) {
 
     try {
       const body = createIncentivoSchema.parse(request.body)
-      const incentivo = await prisma.incentivoLms.create({
+      const incentivo = await prisma.configIncentivo.create({
         data: {
           empresaId: user.empresaId,
           faixa: body.faixa,
@@ -377,14 +377,14 @@ export async function lmsRoutes(app: FastifyInstance) {
       const { id } = incentivoParamsSchema.parse(request.params)
       const body = updateIncentivoSchema.parse(request.body)
 
-      const existente = await prisma.incentivoLms.findFirst({
+      const existente = await prisma.configIncentivo.findFirst({
         where: { id, empresaId: user.empresaId },
       })
       if (!existente) {
         return reply.status(404).send({ message: 'Incentivo não encontrado' })
       }
 
-      const incentivo = await prisma.incentivoLms.update({
+      const incentivo = await prisma.configIncentivo.update({
         where: { id },
         data: {
           ...(body.faixa !== undefined && { faixa: body.faixa }),

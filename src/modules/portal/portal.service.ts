@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret'
@@ -145,7 +145,6 @@ export class PortalService {
     const where: any = {
       empresaId,
       quantidade: { gt: 0 },
-      produto: { clienteId },
     }
 
     const [data, total] = await Promise.all([
@@ -154,10 +153,10 @@ export class PortalService {
         skip,
         take: limit,
         include: {
-          produto: { select: { id: true, descricao: true, codigoInterno: true, unidadeMedida: true } },
-          endereco: { select: { id: true, codigo: true } },
+          produto: { select: { id: true, descricao: true, codigo: true, unidade: true } },
+          endereco: { select: { id: true, enderecoCompleto: true } },
         },
-        orderBy: { produto: { descricao: 'asc' } },
+        orderBy: { produto: { nome: 'asc' } },
       }),
       prisma.saldoEndereco.count({ where }),
     ])
@@ -207,22 +206,22 @@ export class PortalService {
     // Validar estoque disponível
     for (const item of data.itens) {
       const saldoTotal = await prisma.saldoEndereco.aggregate({
-        where: { empresaId, produtoId: item.produtoId, produto: { clienteId } },
+        where: { empresaId, produtoId: item.produtoId },
         _sum: { quantidade: true },
       })
-      const disponivel = Number(saldoTotal._sum.quantidade || 0)
+      const disponivel = Number(saldoTotal._sum?.quantidade || 0)
       if (disponivel < item.quantidade) {
-        const produto = await prisma.produto.findUnique({ where: { id: item.produtoId }, select: { descricao: true } })
+        const produto = await prisma.produto.findUnique({ where: { id: item.produtoId }, select: { nome: true } })
         throw {
           statusCode: 422,
-          message: `Estoque insuficiente para ${produto?.descricao || item.produtoId}. Disponível: ${disponivel}, Solicitado: ${item.quantidade}`,
+          message: `Estoque insuficiente para ${produto?.nome || item.produtoId}. Disponível: ${disponivel}, Solicitado: ${item.quantidade}`,
         }
       }
     }
 
     // Gerar número sequencial
     const ano = new Date().getFullYear()
-    const ultimaSolicitacao = await prisma.solicitacaoExpedicao.findFirst({
+    const ultimaSolicitacao = await prisma.solicitacaoExpedicaoPortal.findFirst({
       where: { empresaId, numero: { startsWith: `SOL-${ano}` } },
       orderBy: { criadoEm: 'desc' },
       select: { numero: true },
@@ -236,7 +235,7 @@ export class PortalService {
 
     const numero = `SOL-${ano}-${sequencial.toString().padStart(6, '0')}`
 
-    const solicitacao = await prisma.solicitacaoExpedicao.create({
+    const solicitacao = await prisma.solicitacaoExpedicaoPortal.create({
       data: {
         empresaId,
         clienteId,
@@ -273,14 +272,14 @@ export class PortalService {
     if (filters?.status) where.status = filters.status
 
     const [data, total] = await Promise.all([
-      prisma.solicitacaoExpedicao.findMany({
+      prisma.solicitacaoExpedicaoPortal.findMany({
         where,
         skip,
         take: limit,
-        include: { itens: { include: { produto: { select: { descricao: true, codigoInterno: true } } } } },
+        include: { itens: true },
         orderBy: { criadoEm: 'desc' },
       }),
-      prisma.solicitacaoExpedicao.count({ where }),
+      prisma.solicitacaoExpedicaoPortal.count({ where }),
     ])
 
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
@@ -290,7 +289,7 @@ export class PortalService {
    * Cancela uma solicitação PENDENTE.
    */
   async cancelarSolicitacao(empresaId: string, clienteId: string, id: string) {
-    const solicitacao = await prisma.solicitacaoExpedicao.findFirst({
+    const solicitacao = await prisma.solicitacaoExpedicaoPortal.findFirst({
       where: { id, empresaId, clienteId },
     })
 
@@ -302,7 +301,7 @@ export class PortalService {
       throw { statusCode: 422, message: `Não é possível cancelar solicitação com status ${solicitacao.status}` }
     }
 
-    const atualizada = await prisma.solicitacaoExpedicao.update({
+    const atualizada = await prisma.solicitacaoExpedicaoPortal.update({
       where: { id },
       data: { status: 'CANCELADA' },
     })
@@ -356,7 +355,7 @@ export class PortalService {
 
     const atualizada = await prisma.notificacaoPortal.update({
       where: { id },
-      data: { lida: true, lidaEm: new Date() },
+      data: { lida: true },
     })
 
     return atualizada
@@ -368,7 +367,7 @@ export class PortalService {
   async marcarTodasLidas(empresaId: string, clienteId: string, portalUsuarioId: string) {
     const result = await prisma.notificacaoPortal.updateMany({
       where: { empresaId, clienteId, portalUsuarioId, lida: false },
-      data: { lida: true, lidaEm: new Date() },
+      data: { lida: true },
     })
 
     return { marcadas: result.count }

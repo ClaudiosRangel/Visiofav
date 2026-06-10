@@ -183,7 +183,7 @@ export async function pickingZonaRoutes(app: FastifyInstance) {
     try {
       const body = atribuirSeparadorSchema.parse(request.body)
       const resultado = await pickingZonaService.atribuirSeparador(user.empresaId, body)
-      audit(user.empresaId, 'SeparadorZona', resultado.id, 'ATRIBUIR_SEPARADOR', 'Separador atribuído à zona', user.id, { zonaId: body.zonaId, usuarioId: body.usuarioId })
+      audit(user.empresaId, 'SeparadorZona', resultado.id, 'ATRIBUIR_SEPARADOR', 'Separador atribuído à zona', user.id, { zonaId: body.zonaPickingId, usuarioId: body.usuarioId })
       return reply.status(201).send(resultado)
     } catch (err: any) {
       const statusCode = err.statusCode || 500

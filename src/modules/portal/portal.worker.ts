@@ -57,7 +57,6 @@ async function verificarContratosVencendo() {
         id: true,
         empresaId: true,
         clienteId: true,
-        numero: true,
         dataFim: true,
       },
     })
@@ -73,7 +72,6 @@ async function verificarContratosVencendo() {
           empresaId: contrato.empresaId,
           clienteId: contrato.clienteId,
           tipo: 'CONTRATO_VENCENDO',
-          referenciaId: contrato.id,
           criadoEm: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
         },
       })
@@ -103,8 +101,7 @@ async function verificarContratosVencendo() {
             portalUsuarioId: usuario.id,
             tipo: 'CONTRATO_VENCENDO',
             titulo: 'Contrato próximo do vencimento',
-            mensagem: `O contrato ${contrato.numero || contrato.id} vence em ${diasRestantes} dia(s) (${contrato.dataFim.toLocaleDateString('pt-BR')}).`,
-            referenciaId: contrato.id,
+            mensagem: `O contrato ${contrato.id} vence em ${diasRestantes} dia(s) (${contrato.dataFim.toLocaleDateString('pt-BR')}).`,
             lida: false,
           },
         })
