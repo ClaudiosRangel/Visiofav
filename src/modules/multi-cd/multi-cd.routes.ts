@@ -111,6 +111,38 @@ export async function multiCdRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
+  // POST /solicitacoes/aprovar-lote — Aprovar solicitações em lote
+  // ==========================================================================
+  app.post('/solicitacoes/aprovar-lote', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { ids } = request.body as { ids: string[] }
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send({ message: 'Informe ao menos um ID' })
+      }
+
+      const resultados = []
+      for (const id of ids) {
+        try {
+          const resultado = await multiCdService.aprovarSolicitacao(user.empresaId, id, user.id)
+          audit(user.empresaId, 'SolicitacaoTransferencia', id, 'APROVAR_SOLICITACAO', 'Solicitação de transferência aprovada em lote', user.id)
+          resultados.push({ id, status: 'aprovada' })
+        } catch (err: any) {
+          resultados.push({ id, status: 'erro', message: err.message || 'Erro ao aprovar' })
+        }
+      }
+
+      return { resultados, aprovadas: resultados.filter(r => r.status === 'aprovada').length, total: ids.length }
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
   // PUT /solicitacoes/:id/aprovar — Aprovar solicitação
   // ==========================================================================
   app.put('/solicitacoes/:id/aprovar', async (request, reply) => {
