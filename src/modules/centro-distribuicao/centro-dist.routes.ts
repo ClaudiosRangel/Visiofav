@@ -8,6 +8,7 @@ export async function centroDistRoutes(app: FastifyInstance) {
 
   // Listar
   app.get('/', async (request) => {
+    const user = request.user as { id: string; empresaId?: string }
     const querySchema = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(20),
@@ -15,9 +16,9 @@ export async function centroDistRoutes(app: FastifyInstance) {
     })
     const { page, limit, search } = querySchema.parse(request.query)
 
-    const where = search
-      ? { descricao: { contains: search, mode: 'insensitive' as const } }
-      : {}
+    const where: any = {}
+    if (user.empresaId) where.empresaId = user.empresaId
+    if (search) where.descricao = { contains: search, mode: 'insensitive' as const }
 
     const [data, total] = await Promise.all([
       prisma.centroDistribuicao.findMany({
