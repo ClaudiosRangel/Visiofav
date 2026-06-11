@@ -31,6 +31,28 @@ export async function multiCdRoutes(app: FastifyInstance) {
   app.addHook('preHandler', moduloGuard('WMS'))
 
   // ==========================================================================
+  // GET /estoque/:cdId/:produtoId — Consultar estoque disponível por CD e produto
+  // ==========================================================================
+  app.get('/estoque/:cdId/:produtoId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { cdId, produtoId } = request.params as { cdId: string; produtoId: string }
+      const estoque = await prisma.estoque.findUnique({
+        where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId } },
+      })
+      const quantidade = estoque ? Number(estoque.quantidade) : 0
+      const reservado = estoque ? Number(estoque.reservado) : 0
+      return { quantidadeDisponivel: quantidade - reservado, quantidade, reservado }
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
   // GET /solicitacoes — Listar solicitações de transferência
   // ==========================================================================
   app.get('/solicitacoes', async (request, reply) => {
