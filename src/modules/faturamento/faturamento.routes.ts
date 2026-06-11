@@ -202,8 +202,54 @@ export async function faturamentoRoutes(app: FastifyInstance) {
     }
 
     try {
+      const { prisma } = await import('../../lib/prisma')
       const filters = listFaturasSchema.parse(request.query)
-      return await faturamentoService.listarFaturas(user.empresaId, filters)
+      const resultado = await faturamentoService.listarFaturas(user.empresaId, filters)
+
+      // Enrich with client names
+      const clienteIds = [...new Set(resultado.data.map((f: any) => f.clienteId))]
+      const clientes = await prisma.cliente.findMany({
+        where: { id: { in: clienteIds } },
+        select: { id: true, razaoSocial: true },
+      })
+      const clienteMap = new Map(clientes.map((c) => [c.id, c.razaoSocial]))
+      resultado.data = resultado.data.map((f: any) => ({
+        ...f,
+        clienteNome: clienteMap.get(f.clienteId) || f.clienteId,
+        periodo: f.periodoInicio && f.periodoFim
+          ? `${new Date(f.periodoInicio).toLocaleDateString('pt-BR')} a ${new Date(f.periodoFim).toLocaleDateString('pt-BR')}`
+          : undefined,
+      }))
+
+      return resultado
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // GET /api/faturamento/faturas/:id — Buscar fatura por ID
+  app.get('/faturas/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { prisma } = await import('../../lib/prisma')
+      const { id } = faturaParamsSchema.parse(request.params)
+      const fatura = await faturamentoService.buscarFatura(user.empresaId, id)
+
+      // Enrich with client name
+      const cliente = await prisma.cliente.findUnique({
+        where: { id: fatura.clienteId },
+        select: { razaoSocial: true },
+      })
+
+      return {
+        ...fatura,
+        clienteNome: cliente?.razaoSocial || fatura.clienteId,
+      }
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
