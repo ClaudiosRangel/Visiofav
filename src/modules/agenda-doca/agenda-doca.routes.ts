@@ -45,12 +45,32 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
         dataFim = new Date(data + 'T23:59:59')
       }
 
-      // Fetch docas
-      const docas = await prisma.doca.findMany({
+      // Fetch docas — include docas with matching empresaId OR linked to CDs of the empresa OR with null empresaId (legacy)
+      const empresaCds = await prisma.centroDistribuicao.findMany({
         where: { empresaId: user.empresaId },
-        select: { id: true, descricao: true, tipo: true },
+        select: { id: true },
+      })
+      const cdIds = empresaCds.map((cd) => cd.id)
+
+      const docas = await prisma.doca.findMany({
+        where: {
+          OR: [
+            { empresaId: user.empresaId },
+            { centroDistribuicaoId: { in: cdIds } },
+            ...(cdIds.length > 0 ? [] : [{ empresaId: null }]),
+          ],
+        },
+        select: { id: true, descricao: true, tipo: true, codigo: true },
         orderBy: { descricao: 'asc' },
       })
+
+      // Map docas to include 'nome' field expected by frontend
+      const docasMapped = docas.map((d) => ({
+        id: d.id,
+        nome: d.descricao || `Doca ${d.codigo}`,
+        codigo: d.codigo ? String(d.codigo) : null,
+        tipo: d.tipo,
+      }))
 
       // Fetch agendamentos
       const agendamentos = await prisma.agendaWms.findMany({
@@ -61,18 +81,36 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
         orderBy: { horaInicio: 'asc' },
       })
 
-      // Map agendamentos to timeline slots
-      const slots = agendamentos.map((ag) => ({
-        id: ag.id,
-        docaId: ag.docaId,
-        horaInicio: ag.horaInicio,
-        horaFim: ag.horaFim,
-        motorista: ag.motorista,
-        placa: ag.placa,
-        status: ag.status,
-        dataPrevista: ag.dataPrevista.toISOString().split('T')[0],
-        horaChegadaReal: ag.horaChegadaReal?.toISOString() || null,
-      }))
+      // Map agendamentos to timeline slots — frontend expects dataHoraInicio/dataHoraFim as ISO datetime
+      const slots = agendamentos.map((ag) => {
+        const dateStr = ag.dataPrevista.toISOString().split('T')[0]
+        const dataHoraInicio = ag.horaInicio ? `${dateStr}T${ag.horaInicio}:00` : null
+        const dataHoraFim = ag.horaFim ? `${dateStr}T${ag.horaFim}:00` : null
+
+        // Calculate duration in minutes from horaInicio/horaFim
+        let duracaoMinutos = 60
+        if (ag.horaInicio && ag.horaFim) {
+          const [hi, mi] = ag.horaInicio.split(':').map(Number)
+          const [hf, mf] = ag.horaFim.split(':').map(Number)
+          duracaoMinutos = (hf * 60 + mf) - (hi * 60 + mi)
+          if (duracaoMinutos <= 0) duracaoMinutos = 60
+        }
+
+        return {
+          id: ag.id,
+          docaId: ag.docaId,
+          dataHoraInicio,
+          dataHoraFim,
+          duracaoMinutos,
+          transportadora: ag.fornecedorId ? null : (ag.motorista || null),
+          motorista: ag.motorista,
+          placa: ag.placa,
+          status: ag.status,
+          dataPrevista: dateStr,
+          horaChegadaReal: ag.horaChegadaReal?.toISOString() || null,
+          observacao: ag.observacao || null,
+        }
+      })
 
       // Fetch bloqueios
       const bloqueios = await prisma.bloqueioSlotDoca.findMany({
@@ -86,7 +124,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       return {
         data,
         visualizacao,
-        docas,
+        docas: docasMapped,
         agendamentos: slots,
         bloqueios: bloqueios.map((b) => ({
           id: b.id,
