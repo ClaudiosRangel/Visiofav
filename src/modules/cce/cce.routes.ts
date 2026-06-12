@@ -5,7 +5,9 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 
 const listQuerySchema = z.object({
-  notaEntradaId: z.string().uuid(),
+  notaEntradaId: z.string().uuid().optional(),
+  status: z.enum(['PENDENTE', 'AUTORIZADA', 'REJEITADA']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50).optional(),
 })
 
 const idParamsSchema = z.object({
@@ -16,17 +18,19 @@ export async function cceRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
   app.addHook('preHandler', moduloGuard('WMS'))
 
-  // GET / — listar CC-e de uma nota (escopado por empresaId)
+  // GET / — listar CC-e da empresa (opcionalmente filtrar por nota e status)
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const { notaEntradaId } = listQuerySchema.parse(request.query)
+    const { notaEntradaId, status, limit } = listQuerySchema.parse(request.query)
+
+    const where: any = { empresaId: user.empresaId }
+    if (notaEntradaId) where.notaEntradaId = notaEntradaId
+    if (status) where.status = status
 
     const data = await prisma.cartaCorrecao.findMany({
-      where: {
-        empresaId: user.empresaId,
-        notaEntradaId,
-      },
+      where,
       orderBy: { criadoEm: 'desc' },
+      take: limit || 50,
       select: {
         id: true,
         notaEntradaId: true,
