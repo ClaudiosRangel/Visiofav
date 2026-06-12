@@ -324,6 +324,88 @@ async function main() {
     console.log('⚠️ Seed formatos de endereço skipped:', e.message)
   }
 
+  // =========================================================================
+  // Conferência Avançada — novos campos e tabelas
+  // =========================================================================
+
+  // Empresa — configurações de conferência
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "conferencia_quantidade_cega" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "conferencia_lote_cega" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "permite_recebimento_parcial" BOOLEAN DEFAULT false`)
+
+  // Produto — controle de lote
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "exige_lote" BOOLEAN DEFAULT false`)
+
+  // NotaEntrada — status de recebimento parcial
+  await prisma.$executeRawUnsafe(`ALTER TABLE "nota_entrada" ADD COLUMN IF NOT EXISTS "status_recebimento" VARCHAR(30) DEFAULT 'PENDENTE'`)
+
+  // DivergenciaConferencia table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "divergencia_conferencia" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nota_entrada_id" TEXT NOT NULL,
+      "item_nota_entrada_id" TEXT NOT NULL,
+      "tipo" VARCHAR(30) NOT NULL,
+      "quantidade_esperada" DECIMAL(12,4),
+      "quantidade_conferida" DECIMAL(12,4),
+      "lote_esperado" VARCHAR(30),
+      "lote_conferido" VARCHAR(30),
+      "validade_esperada" TIMESTAMP(3),
+      "validade_conferida" TIMESTAMP(3),
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "observacao" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "divergencia_conferencia_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_divergencia_conferencia_empresa_id" ON "divergencia_conferencia"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_divergencia_conferencia_nota_entrada_id" ON "divergencia_conferencia"("nota_entrada_id")`)
+
+  // CartaCorrecao table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "carta_correcao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nota_entrada_id" TEXT NOT NULL,
+      "divergencia_id" TEXT NOT NULL,
+      "chave_nfe" VARCHAR(44) NOT NULL,
+      "sequencia_evento" INTEGER NOT NULL,
+      "texto_correcao" TEXT NOT NULL,
+      "xml_enviado" TEXT,
+      "xml_retorno" TEXT,
+      "protocolo" VARCHAR(20),
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "motivo_rejeicao" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "carta_correcao_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "carta_correcao_divergencia_id_key" UNIQUE ("divergencia_id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_carta_correcao_empresa_id" ON "carta_correcao"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_carta_correcao_nota_entrada_id" ON "carta_correcao"("nota_entrada_id")`)
+
+  // SaldoPendenteItem table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "saldo_pendente_item" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nota_entrada_id" TEXT NOT NULL,
+      "item_nota_entrada_id" TEXT NOT NULL,
+      "quantidade_nf" DECIMAL(12,4) NOT NULL,
+      "quantidade_recebida" DECIMAL(12,4) NOT NULL,
+      "saldo_pendente" DECIMAL(12,4) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "saldo_pendente_item_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_saldo_pendente_item_empresa_id" ON "saldo_pendente_item"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_saldo_pendente_item_nota_entrada_id" ON "saldo_pendente_item"("nota_entrada_id")`)
+
+  console.log('✅ Conferência Avançada: tabelas e colunas criadas')
+
   console.log('✅ All migrations applied successfully')
 }
 

@@ -81,6 +81,7 @@ import { capacidadeNivelRoutes } from './modules/capacidade-nivel/capacidade-niv
 import { enderecamentoInteligenteRoutes } from './modules/enderecamento-inteligente/enderecamento-inteligente.routes'
 import { formatoEnderecoRoutes } from './modules/formato-endereco/formato-endereco.routes'
 import { geoRoutes } from './modules/geolocalizacao/geo.routes'
+import { cceRoutes } from './modules/cce/cce.routes'
 
 // Fase 1 — Profissionalização WMS
 import { crossDockRoutes } from './modules/cross-dock/cross-dock.routes'
@@ -175,6 +176,7 @@ async function bootstrap() {
   // Módulo Fiscal — NF-e
   await app.register(nfeRoutes, { prefix: '/api/nfe' })
   await app.register(cteRoutes, { prefix: '/api/cte' })
+  await app.register(cceRoutes, { prefix: '/api/cce' })
 
   // Integração WMS
   await app.register(dashboardWmsRoutes, { prefix: '/api/dashboard-wms' })

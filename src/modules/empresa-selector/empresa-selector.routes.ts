@@ -28,6 +28,10 @@ const empresaBodySchema = z.object({
   email: z.string().optional().default(''),
   usaWms: z.boolean().optional().default(false),
   status: z.boolean().optional().default(true),
+  // Configurações de Conferência Avançada
+  conferenciaQuantidadeCega: z.boolean().optional().default(false),
+  conferenciaLoteCega: z.boolean().optional().default(false),
+  permiteRecebimentoParcial: z.boolean().optional().default(false),
 })
 
 export async function empresaSelectorRoutes(app: FastifyInstance) {
@@ -291,6 +295,9 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
         proximoNumeroNFe: true,
         serieCTe: true,
         proximoNumeroCTe: true,
+        conferenciaQuantidadeCega: true,
+        conferenciaLoteCega: true,
+        permiteRecebimentoParcial: true,
       },
     })
 
@@ -334,6 +341,10 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       proximoNumeroCTe: z.number().int().min(1).optional(),
       // Módulos
       usaWms: z.boolean().optional(),
+      // Configurações de Conferência Avançada
+      conferenciaQuantidadeCega: z.boolean().optional(),
+      conferenciaLoteCega: z.boolean().optional(),
+      permiteRecebimentoParcial: z.boolean().optional(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(

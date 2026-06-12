@@ -75,6 +75,11 @@ model Empresa {
   zonasPicking             ZonaPicking[]
   solicitacoesTransferencia SolicitacaoTransferencia[]
 
+  // Configurações de Conferência
+  conferenciaQuantidadeCega  Boolean @default(false) @map("conferencia_quantidade_cega")
+  conferenciaLoteCega        Boolean @default(false) @map("conferencia_lote_cega")
+  permiteRecebimentoParcial  Boolean @default(false) @map("permite_recebimento_parcial")
+
   @@map("empresa")
 }
 
@@ -222,6 +227,7 @@ model Produto {
   curvaAbc         String?  @map("curva_abc") @db.VarChar(1)
   classificacaoPcp String?  @map("classificacao_pcp") @db.VarChar(20) // MATERIA_PRIMA, INTERMEDIARIO, PRODUTO_ACABADO, EMBALAGEM, INSUMO
   tipoFisico       String?  @map("tipo_fisico") @db.VarChar(20) // UNIDADE_PADRAO, FISICO_LINEAR, FISICO_SUPERFICIAL, LIQUIDO, PESO
+  exigeLote        Boolean  @default(false) @map("exige_lote")
   criadoEm         DateTime @default(now()) @map("criado_em")
   atualizadoEm     DateTime @updatedAt @map("atualizado_em")
 
@@ -1195,7 +1201,13 @@ model NotaEntrada {
   criadoEm             DateTime  @default(now()) @map("criado_em")
   empresaId            String?   @map("empresa_id")
 
-  itens ItemNotaEntrada[]
+  // Conferência avançada — status de recebimento parcial
+  statusRecebimento String @default("PENDENTE") @map("status_recebimento") @db.VarChar(30)
+
+  itens           ItemNotaEntrada[]
+  divergencias    DivergenciaConferencia[]
+  saldosPendentes SaldoPendenteItem[]
+  cartasCorrecao  CartaCorrecao[]
 
   @@map("nota_entrada")
 }
@@ -2989,4 +3001,67 @@ model SimulacaoOnda {
   volumeM3              Decimal?  @db.Decimal(12, 4) @map("volume_m3")
 
   @@map("simulacao_onda")
+}
+
+
+// ============================================================================
+// WMS — CONFERÊNCIA AVANÇADA (DIVERGÊNCIA, CC-e, SALDO PENDENTE)
+// ============================================================================
+
+model DivergenciaConferencia {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  notaEntradaId       String    @map("nota_entrada_id")
+  notaEntrada         NotaEntrada @relation(fields: [notaEntradaId], references: [id])
+  itemNotaEntradaId   String    @map("item_nota_entrada_id")
+  tipo                String    @db.VarChar(30) // QUANTIDADE_FALTA, QUANTIDADE_EXCESSO, VALIDADE_DIVERGENTE, LOTE_DIVERGENTE
+  quantidadeEsperada  Decimal?  @map("quantidade_esperada") @db.Decimal(12, 4)
+  quantidadeConferida Decimal?  @map("quantidade_conferida") @db.Decimal(12, 4)
+  loteEsperado        String?   @map("lote_esperado") @db.VarChar(30)
+  loteConferido       String?   @map("lote_conferido") @db.VarChar(30)
+  validadeEsperada    DateTime? @map("validade_esperada")
+  validadeConferida   DateTime? @map("validade_conferida")
+  status              String    @default("PENDENTE") @db.VarChar(20) // PENDENTE, ACEITA, REJEITADA, PENDENTE_CCE
+  observacao          String?   @db.Text
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+
+  cartaCorrecao CartaCorrecao?
+
+  @@map("divergencia_conferencia")
+}
+
+model CartaCorrecao {
+  id              String                  @id @default(uuid())
+  empresaId       String                  @map("empresa_id")
+  notaEntradaId   String                  @map("nota_entrada_id")
+  notaEntrada     NotaEntrada             @relation(fields: [notaEntradaId], references: [id])
+  divergenciaId   String                  @unique @map("divergencia_id")
+  divergencia     DivergenciaConferencia  @relation(fields: [divergenciaId], references: [id])
+  chaveNfe        String                  @map("chave_nfe") @db.VarChar(44)
+  sequenciaEvento Int                     @map("sequencia_evento") // 1 a 20
+  textoCorrecao   String                  @map("texto_correcao") @db.Text
+  xmlEnviado      String?                 @map("xml_enviado") @db.Text
+  xmlRetorno      String?                 @map("xml_retorno") @db.Text
+  protocolo       String?                 @db.VarChar(20)
+  status          String                  @default("PENDENTE") @db.VarChar(20) // PENDENTE, AUTORIZADA, REJEITADA
+  motivoRejeicao  String?                 @map("motivo_rejeicao") @db.Text
+  criadoEm        DateTime                @default(now()) @map("criado_em")
+
+  @@map("carta_correcao")
+}
+
+model SaldoPendenteItem {
+  id                  String      @id @default(uuid())
+  empresaId           String      @map("empresa_id")
+  notaEntradaId       String      @map("nota_entrada_id")
+  notaEntrada         NotaEntrada @relation(fields: [notaEntradaId], references: [id])
+  itemNotaEntradaId   String      @map("item_nota_entrada_id")
+  quantidadeNf        Decimal     @map("quantidade_nf") @db.Decimal(12, 4)
+  quantidadeRecebida  Decimal     @map("quantidade_recebida") @db.Decimal(12, 4)
+  saldoPendente       Decimal     @map("saldo_pendente") @db.Decimal(12, 4)
+  status              String      @default("PENDENTE") @db.VarChar(20) // PENDENTE, RECEBIDO
+  criadoEm            DateTime    @default(now()) @map("criado_em")
+  atualizadoEm        DateTime    @updatedAt @map("atualizado_em")
+
+  @@map("saldo_pendente_item")
 }
