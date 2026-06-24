@@ -506,6 +506,14 @@ async function main() {
 
   console.log('✅ Multi-CD com Transferências: tabelas criadas')
 
+  // =========================================================================
+  // PCP — Programação por Máquina: novos campos
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "posicao_fila" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "data_entrega_original" TIMESTAMP`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "vezes_postergada" INTEGER NOT NULL DEFAULT 0`)
+  console.log('✅ PCP Programação: campos posicao_fila, data_entrega_original, vezes_postergada adicionados')
+
   console.log('✅ All migrations applied successfully')
 }
 
