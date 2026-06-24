@@ -516,7 +516,27 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "posicao_fila" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "data_entrega_original" TIMESTAMP`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "vezes_postergada" INTEGER NOT NULL DEFAULT 0`)
-  console.log('✅ PCP Programação: campos posicao_fila, data_entrega_original, vezes_postergada adicionados')
+
+  // Tabela de_para_importacao (mapeamento de importação PDF)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "de_para_importacao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "sistema_origem" VARCHAR(50) NOT NULL,
+      "tipo_entidade" VARCHAR(30) NOT NULL,
+      "codigo_externo" VARCHAR(100) NOT NULL,
+      "nome_externo" VARCHAR(200) NOT NULL,
+      "entidade_interna_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVO',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "de_para_importacao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "de_para_importacao_empresa_id_sistema_origem_tipo_entidade_co_key" ON "de_para_importacao"("empresa_id", "sistema_origem", "tipo_entidade", "codigo_externo")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_de_para_importacao_empresa_id_sistema_origem" ON "de_para_importacao"("empresa_id", "sistema_origem")`)
+
+  console.log('✅ PCP Programação: campos posicao_fila, data_entrega_original, vezes_postergada + tabela de_para_importacao')
 
   console.log('✅ All migrations applied successfully')
 }
