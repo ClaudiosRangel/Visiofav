@@ -46,6 +46,13 @@ import { contaReceberRoutes } from './modules/conta-receber/conta-receber.routes
 import { nfeRoutes } from './modules/nfe/nfe.routes'
 import { cteRoutes } from './modules/cte/cte.routes'
 import { agendaWmsRoutes } from './modules/agenda-wms/agenda-wms.routes'
+
+// Módulo Agenda unificado (coexiste com agenda-wms e agenda-doca)
+import { agendaRoutes } from './modules/agenda/agenda.routes'
+import { agendaTimelineRoutes } from './modules/agenda/agenda-timeline.routes'
+import { agendaBloqueiosRoutes } from './modules/agenda/agenda-bloqueios.routes'
+import { agendaConfigRoutes } from './modules/agenda/agenda-config.routes'
+import { agendaEstatisticasRoutes } from './modules/agenda/agenda-estatisticas.routes'
 import { ondaSeparacaoRoutes } from './modules/onda-separacao/onda-separacao.routes'
 import { itemSeparacaoRoutes } from './modules/item-separacao/item-separacao.routes'
 import { conferenciaSaidaRoutes } from './modules/conferencia-saida/conferencia-saida.routes'
@@ -101,6 +108,8 @@ import { faturamentoRoutes } from './modules/faturamento/faturamento.routes'
 import { pickingZonaRoutes } from './modules/picking-zona/picking-zona.routes'
 import { lmsRoutes } from './modules/lms/lms.routes'
 import { patioRoutes } from './modules/patio/patio.routes'
+import { chamadaDocaRoutes } from './modules/patio/chamada-doca.routes'
+import { painelOperacionalRoutes } from './modules/painel-operacional/painel-operacional.routes'
 import { multiCdRoutes } from './modules/multi-cd/multi-cd.routes'
 
 // Fase 3 — Diferenciar WMS
@@ -129,6 +138,7 @@ import { calculoConsumoGraficoRoutes } from './modules/pcp/calculo-consumo-grafi
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
+import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
 import { firebaseAuthAdapter } from './middleware/firebase-auth-adapter'
 import { ordemProducaoRoutes } from './modules/ordem-producao/ordem-producao.routes'
 import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entrega.routes'
@@ -186,6 +196,13 @@ async function bootstrap() {
   await app.register(ressuprimentoRoutes, { prefix: '/api/ressuprimento' })
   await app.register(dadosLogisticosRoutes, { prefix: '/api/dados-logisticos' })
   await app.register(agendaWmsRoutes, { prefix: '/api/agenda-wms' })
+
+  // Módulo Agenda unificado (coexiste com agenda-wms e agenda-doca para backward compatibility)
+  await app.register(agendaRoutes, { prefix: '/api/agenda' })
+  await app.register(agendaTimelineRoutes, { prefix: '/api/agenda' })
+  await app.register(agendaBloqueiosRoutes, { prefix: '/api/agenda/bloqueios' })
+  await app.register(agendaConfigRoutes, { prefix: '/api/agenda/config' })
+  await app.register(agendaEstatisticasRoutes, { prefix: '/api/agenda/estatisticas' })
   await app.register(ondaSeparacaoRoutes, { prefix: '/api/ondas-separacao' })
   await app.register(itemSeparacaoRoutes, { prefix: '/api/itens-separacao' })
   await app.register(conferenciaSaidaRoutes, { prefix: '/api/conferencias-saida' })
@@ -220,6 +237,8 @@ async function bootstrap() {
   await app.register(pickingZonaRoutes, { prefix: '/api/picking-zona' })
   await app.register(lmsRoutes, { prefix: '/api/lms' })
   await app.register(patioRoutes, { prefix: '/api/patio' })
+  await app.register(chamadaDocaRoutes, { prefix: '/api/patio/chamada-doca' })
+  await app.register(painelOperacionalRoutes, { prefix: '/api/painel-operacional' })
   await app.register(multiCdRoutes, { prefix: '/api/multi-cd' })
 
   // Fase 3 — Diferenciar WMS
@@ -247,6 +266,7 @@ async function bootstrap() {
   await app.register(calculoConsumoGraficoRoutes, { prefix: '/api/pcp' })
   await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
+  await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
 
   // Acompanhamento público (sem auth) — visão do cliente
   await app.register(acompanhamentoClienteRoutes, { prefix: '/api/acompanhamento' })

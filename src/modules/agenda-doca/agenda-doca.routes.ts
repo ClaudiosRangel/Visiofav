@@ -30,19 +30,18 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
     try {
       const { data, visualizacao } = timelineQuerySchema.parse(request.query)
 
-      // Determine date range based on visualization mode
-      const dataBase = new Date(data + 'T00:00:00')
+      // Determine date range based on visualization mode (using UTC to match dataPrevista stored as UTC midnight)
+      const dataBase = new Date(data + 'T00:00:00.000Z')
       let dataFim: Date
 
       if (visualizacao === 'semana') {
         dataFim = new Date(dataBase)
-        dataFim.setDate(dataFim.getDate() + 6)
+        dataFim.setUTCDate(dataFim.getUTCDate() + 7)
       } else if (visualizacao === 'mes') {
         dataFim = new Date(dataBase)
-        dataFim.setMonth(dataFim.getMonth() + 1)
-        dataFim.setDate(dataFim.getDate() - 1)
+        dataFim.setUTCMonth(dataFim.getUTCMonth() + 1)
       } else {
-        dataFim = new Date(data + 'T23:59:59')
+        dataFim = new Date(data + 'T23:59:59.999Z')
       }
 
       // Fetch docas — include docas with matching empresaId OR linked to CDs of the empresa OR with null empresaId (legacy)

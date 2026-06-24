@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
-import { calcularOcupacaoContrato } from './faturamento.worker'
+import { calcularOcupacaoContrato, reprocessarMedicao as reprocessarMedicaoWorker } from './faturamento.worker'
 
 // === Types ===
 
@@ -74,6 +74,15 @@ export class FaturamentoService {
       throw { statusCode: 422, message: 'Data fim deve ser posterior à data início' }
     }
 
+    // Validar que clienteId pertence à mesma empresa
+    const cliente = await prisma.cliente.findFirst({
+      where: { id: data.clienteId, empresaId },
+    })
+
+    if (!cliente) {
+      throw { statusCode: 422, message: 'Cliente não encontrado ou não pertence a esta empresa' }
+    }
+
     // Verificar sobreposição de vigência com contratos ATIVO do mesmo cliente
     const contratoExistente = await prisma.contratoArmazenagem.findFirst({
       where: {
@@ -87,8 +96,8 @@ export class FaturamentoService {
 
     if (contratoExistente) {
       throw {
-        statusCode: 409,
-        message: 'Já existe contrato ativo para este cliente no período',
+        statusCode: 422,
+        message: 'Cliente já possui contrato vigente no período',
       }
     }
 
@@ -226,6 +235,30 @@ export class FaturamentoService {
     if (data.moeda) updateData.moeda = data.moeda
     if (data.status) updateData.status = data.status
     if (data.observacao !== undefined) updateData.observacao = data.observacao
+
+    // Re-validar sobreposição se dataFim foi alterada
+    if (data.dataFim) {
+      const novaDataFim = new Date(data.dataFim)
+      const dataInicio = contrato.dataInicio
+
+      const contratoSobreposto = await prisma.contratoArmazenagem.findFirst({
+        where: {
+          empresaId,
+          clienteId: contrato.clienteId,
+          status: 'ATIVO',
+          id: { not: id },
+          dataInicio: { lte: novaDataFim },
+          dataFim: { gte: dataInicio },
+        },
+      })
+
+      if (contratoSobreposto) {
+        throw {
+          statusCode: 422,
+          message: 'Cliente já possui contrato vigente no período',
+        }
+      }
+    }
 
     const atualizado = await prisma.contratoArmazenagem.update({
       where: { id },
@@ -692,6 +725,8 @@ export class FaturamentoService {
 
   /**
    * Lista faturas com paginação e filtros por status, clienteId, contratoId.
+   * Inclui nome do cliente (via contrato) e contagem de itens.
+   * Ordenação por periodoFim desc.
    */
   async listarFaturas(
     empresaId: string,
@@ -715,10 +750,17 @@ export class FaturamentoService {
       prisma.faturaArmazenagem.findMany({
         where,
         include: {
-          contrato: { select: { id: true, periodicidade: true, status: true } },
+          contrato: {
+            select: {
+              id: true,
+              periodicidade: true,
+              status: true,
+              cliente: { select: { razaoSocial: true, cpfCnpj: true } },
+            },
+          },
           _count: { select: { itens: true } },
         },
-        orderBy: { criadoEm: 'desc' },
+        orderBy: { periodoFim: 'desc' },
         skip,
         take: limit,
       }),
@@ -737,14 +779,22 @@ export class FaturamentoService {
   }
 
   /**
-   * Busca uma fatura por ID com todos os itens.
+   * Busca uma fatura por ID com todos os itens e detalhes do contrato/cliente.
+   * Multi-tenant scope (empresaId). 404 se não encontrada.
    */
   async buscarFatura(empresaId: string, id: string) {
     const fatura = await prisma.faturaArmazenagem.findFirst({
       where: { id, empresaId },
       include: {
         itens: true,
-        contrato: { select: { id: true, periodicidade: true, status: true } },
+        contrato: {
+          select: {
+            id: true,
+            periodicidade: true,
+            status: true,
+            cliente: { select: { razaoSocial: true, cpfCnpj: true } },
+          },
+        },
       },
     })
 
@@ -833,11 +883,21 @@ export class FaturamentoService {
   }
 
   /**
-   * Envia a fatura (muda status de GERADA → ENVIADA).
+   * Ajusta valores de itens individuais de uma fatura.
+   * Valida que a fatura existe e está em status GERADA.
+   * Para cada ajuste: localiza ItemFatura por ID, atualiza valor, registra justificativa.
+   * Recalcula fatura.valorTotal ao final.
+   * Usa $transaction para garantir atomicidade.
    */
-  async enviarFatura(empresaId: string, id: string, usuarioId: string) {
+  async ajustarFatura(
+    empresaId: string,
+    id: string,
+    itensAjuste: { itemFaturaId: string; novoValor: number; justificativa: string }[],
+    usuarioId: string,
+  ) {
     const fatura = await prisma.faturaArmazenagem.findFirst({
       where: { id, empresaId },
+      include: { itens: true },
     })
 
     if (!fatura) {
@@ -845,77 +905,179 @@ export class FaturamentoService {
     }
 
     if (fatura.status !== 'GERADA') {
-      throw { statusCode: 422, message: 'Somente faturas com status GERADA podem ser enviadas' }
+      throw { statusCode: 422, message: 'Somente faturas com status GERADA podem ser ajustadas' }
+    }
+
+    const resultado = await prisma.$transaction(async (tx) => {
+      const ajustesRealizados: { itemFaturaId: string; valorAnterior: string; novoValor: number; justificativa: string }[] = []
+
+      for (const ajuste of itensAjuste) {
+        // Localizar o item da fatura
+        const item = fatura.itens.find((i) => i.id === ajuste.itemFaturaId)
+        if (!item) {
+          throw { statusCode: 422, message: `Item de fatura não encontrado: ${ajuste.itemFaturaId}` }
+        }
+
+        const valorAnterior = item.subtotal.toString()
+        const novoSubtotal = new Decimal(ajuste.novoValor)
+
+        // Atualizar o subtotal do item e registrar justificativa na descricao
+        await tx.itemFatura.update({
+          where: { id: ajuste.itemFaturaId },
+          data: {
+            subtotal: novoSubtotal,
+            descricao: `${item.descricao} [Ajuste: ${ajuste.justificativa}]`,
+          },
+        })
+
+        ajustesRealizados.push({
+          itemFaturaId: ajuste.itemFaturaId,
+          valorAnterior,
+          novoValor: ajuste.novoValor,
+          justificativa: ajuste.justificativa,
+        })
+      }
+
+      // Recalcular valorTotal da fatura
+      const itensAtualizados = await tx.itemFatura.findMany({
+        where: { faturaId: id },
+      })
+      const novoTotal = itensAtualizados.reduce(
+        (acc, item) => acc.add(new Decimal(item.subtotal.toString())),
+        new Decimal(0),
+      )
+
+      // Atualizar fatura com novo total
+      const faturaAtualizada = await tx.faturaArmazenagem.update({
+        where: { id },
+        data: { valorTotal: novoTotal },
+        include: { itens: true },
+      })
+
+      return { fatura: faturaAtualizada, ajustes: ajustesRealizados }
+    })
+
+    registrarAudit(empresaId, id, 'AJUSTAR_FATURA', 'Itens da fatura ajustados manualmente', usuarioId, {
+      ajustes: resultado.ajustes,
+    })
+
+    return resultado.fatura
+  }
+
+  /**
+   * Altera status de uma fatura com validação de transições permitidas.
+   * Transições válidas:
+   *   GERADA → ENVIADA
+   *   ENVIADA → PAGA
+   *   GERADA → CANCELADA (requer justificativa)
+   *   ENVIADA → CANCELADA (requer justificativa)
+   * Registra responsável (usuarioId) para cada transição.
+   */
+  async alterarStatusFatura(
+    empresaId: string,
+    id: string,
+    novoStatus: string,
+    justificativa: string | undefined,
+    usuarioId: string,
+  ) {
+    const fatura = await prisma.faturaArmazenagem.findFirst({
+      where: { id, empresaId },
+    })
+
+    if (!fatura) {
+      throw { statusCode: 404, message: 'Fatura não encontrada' }
+    }
+
+    // Validar transições permitidas
+    const transicoesValidas: Record<string, string[]> = {
+      GERADA: ['ENVIADA', 'CANCELADA'],
+      ENVIADA: ['PAGA', 'CANCELADA'],
+    }
+
+    const transicoesPermitidas = transicoesValidas[fatura.status]
+    if (!transicoesPermitidas || !transicoesPermitidas.includes(novoStatus)) {
+      throw {
+        statusCode: 422,
+        message: `Transição de status inválida: ${fatura.status} → ${novoStatus}`,
+      }
+    }
+
+    // Justificativa obrigatória para cancelamento
+    if (novoStatus === 'CANCELADA') {
+      if (!justificativa || justificativa.trim().length === 0) {
+        throw { statusCode: 422, message: 'Justificativa obrigatória para cancelamento' }
+      }
+    }
+
+    // Aplicar a transição
+    const updateData: any = { status: novoStatus }
+    if (novoStatus === 'CANCELADA') {
+      updateData.motivoCancelamento = justificativa!.trim()
     }
 
     const atualizada = await prisma.faturaArmazenagem.update({
       where: { id },
-      data: { status: 'ENVIADA' },
+      data: updateData,
+      include: { itens: true },
     })
 
-    registrarAudit(empresaId, id, 'ENVIAR_FATURA', 'Fatura enviada ao cliente', usuarioId)
+    // Registrar auditoria com detalhes da transição
+    const acaoMap: Record<string, string> = {
+      ENVIADA: 'ENVIAR_FATURA',
+      PAGA: 'PAGAR_FATURA',
+      CANCELADA: 'CANCELAR_FATURA',
+    }
+
+    const descricaoMap: Record<string, string> = {
+      ENVIADA: 'Fatura enviada ao cliente',
+      PAGA: 'Fatura marcada como paga',
+      CANCELADA: 'Fatura cancelada',
+    }
+
+    registrarAudit(
+      empresaId,
+      id,
+      acaoMap[novoStatus] || 'ALTERAR_STATUS',
+      descricaoMap[novoStatus] || `Status alterado para ${novoStatus}`,
+      usuarioId,
+      {
+        statusAnterior: fatura.status,
+        novoStatus,
+        justificativa: justificativa || null,
+      },
+    )
 
     return atualizada
+  }
+
+  /**
+   * Envia a fatura (muda status de GERADA → ENVIADA).
+   * Shortcut para alterarStatusFatura(ENVIADA).
+   */
+  async enviarFatura(empresaId: string, id: string, usuarioId: string) {
+    return this.alterarStatusFatura(empresaId, id, 'ENVIADA', undefined, usuarioId)
   }
 
   /**
    * Registra pagamento da fatura (muda status de ENVIADA → PAGA).
+   * Shortcut para alterarStatusFatura(PAGA).
    */
   async pagarFatura(empresaId: string, id: string, usuarioId: string) {
-    const fatura = await prisma.faturaArmazenagem.findFirst({
-      where: { id, empresaId },
-    })
-
-    if (!fatura) {
-      throw { statusCode: 404, message: 'Fatura não encontrada' }
-    }
-
-    if (fatura.status !== 'ENVIADA') {
-      throw { statusCode: 422, message: 'Somente faturas com status ENVIADA podem ser pagas' }
-    }
-
-    const atualizada = await prisma.faturaArmazenagem.update({
-      where: { id },
-      data: { status: 'PAGA' },
-    })
-
-    registrarAudit(empresaId, id, 'PAGAR_FATURA', 'Fatura marcada como paga', usuarioId)
-
-    return atualizada
+    return this.alterarStatusFatura(empresaId, id, 'PAGA', undefined, usuarioId)
   }
 
   /**
    * Cancela uma fatura com justificativa.
-   * Não permite cancelar faturas já CANCELADA ou PAGA.
+   * Shortcut para alterarStatusFatura(CANCELADA).
+   * Valida que PAGA faturas não podem ser canceladas.
+   * Requer motivo (string não vazia).
    */
   async cancelarFatura(empresaId: string, id: string, motivo: string, usuarioId: string) {
-    const fatura = await prisma.faturaArmazenagem.findFirst({
-      where: { id, empresaId },
-    })
-
-    if (!fatura) {
-      throw { statusCode: 404, message: 'Fatura não encontrada' }
-    }
-
-    if (fatura.status === 'CANCELADA' || fatura.status === 'PAGA') {
-      throw {
-        statusCode: 422,
-        message: 'Não é possível cancelar fatura com status CANCELADA ou PAGA',
-      }
-    }
-
     if (!motivo || motivo.trim().length === 0) {
       throw { statusCode: 422, message: 'Motivo de cancelamento é obrigatório' }
     }
 
-    const atualizada = await prisma.faturaArmazenagem.update({
-      where: { id },
-      data: { status: 'CANCELADA', motivoCancelamento: motivo.trim() },
-    })
-
-    registrarAudit(empresaId, id, 'CANCELAR_FATURA', 'Fatura cancelada', usuarioId, { motivo })
-
-    return atualizada
+    return this.alterarStatusFatura(empresaId, id, 'CANCELADA', motivo.trim(), usuarioId)
   }
 
   // =============================================
@@ -1025,15 +1187,22 @@ export class FaturamentoService {
   // =============================================
 
   /**
-   * Reprocessa medição de ocupação para uma data específica.
-   * Deleta medição existente (se houver) e recalcula usando a mesma lógica do worker.
+   * Reprocessa medição de ocupação para um intervalo de datas.
+   * Deleta medições existentes no range e recalcula dia a dia usando a lógica do worker.
    */
   async reprocessarMedicao(
     empresaId: string,
-    data: { contratoId: string; data: string },
+    data: { contratoId: string; dataInicio: string; dataFim: string },
   ) {
-    const dataMedicao = new Date(data.data)
-    dataMedicao.setHours(0, 0, 0, 0)
+    const dataInicio = new Date(data.dataInicio)
+    dataInicio.setHours(0, 0, 0, 0)
+
+    const dataFim = new Date(data.dataFim)
+    dataFim.setHours(0, 0, 0, 0)
+
+    if (dataFim < dataInicio) {
+      throw { statusCode: 422, message: 'dataFim deve ser posterior ou igual a dataInicio' }
+    }
 
     // Verificar se o contrato existe
     const contrato = await prisma.contratoArmazenagem.findFirst({
@@ -1045,37 +1214,10 @@ export class FaturamentoService {
       throw { statusCode: 404, message: 'Contrato não encontrado' }
     }
 
-    // Deletar medição existente para esta data (se houver)
-    await prisma.medicaoOcupacao.deleteMany({
-      where: {
-        empresaId,
-        contratoId: data.contratoId,
-        dataMedicao,
-      },
-    })
+    // Delegar para a função do worker que faz reprocessamento em range
+    const resultado = await reprocessarMedicaoWorker(empresaId, data.contratoId, dataInicio, dataFim)
 
-    // Recalcular ocupação usando a mesma lógica do worker
-    const medicao = await calcularOcupacaoContrato(
-      empresaId,
-      contrato.clienteId,
-      contrato.id,
-    )
-
-    // Criar novo registro de medição
-    const novaMedicao = await prisma.medicaoOcupacao.create({
-      data: {
-        empresaId,
-        contratoId: data.contratoId,
-        clienteId: contrato.clienteId,
-        dataMedicao,
-        quantidadePallets: medicao.quantidadePallets,
-        volumeM3: medicao.volumeM3,
-        posicoesOcupadas: medicao.posicoesOcupadas,
-        detalhamento: medicao.detalhamento,
-      },
-    })
-
-    return novaMedicao
+    return resultado
   }
 }
 

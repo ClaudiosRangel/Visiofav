@@ -90,7 +90,7 @@ export async function verificarTransitoExcedido() {
     const mercadoriasAtrasadas = await prisma.mercadoriaTransito.findMany({
       where: {
         status: 'EM_TRANSITO',
-        dataSaida: { lt: limite48h },
+        dataExpedicao: { lt: limite48h },
       },
     })
 
@@ -133,10 +133,10 @@ export async function verificarTransitoExcedido() {
 
         // Calcular horas em trânsito
         const horasTransito = Math.round(
-          (Date.now() - item.dataSaida.getTime()) / (1000 * 60 * 60),
+          (Date.now() - item.dataExpedicao.getTime()) / (1000 * 60 * 60),
         )
 
-        const numeroSolicitacao = item.solicitacaoTransferenciaId || 'N/A'
+        const numeroSolicitacao = item.solicitacaoId || 'N/A'
 
         const mensagem =
           `Mercadoria em trânsito há mais de 48h (Solicitação: ${numeroSolicitacao})`

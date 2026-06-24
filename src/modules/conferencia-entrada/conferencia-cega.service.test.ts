@@ -83,7 +83,7 @@ describe('filtrarDadosConforme', () => {
     expect(dto.lote).toBeUndefined()
   })
 
-  it('deve sempre manter campos base (id, descricao, codigoProduto, unidade, validade)', () => {
+  it('deve sempre manter campos base (id, descricao, codigoProduto, unidade) e omitir validade quando loteCega ativa', () => {
     const config: ConfigConferenciaCega = {
       conferenciaQuantidadeCega: true,
       conferenciaLoteCega: true,
@@ -95,6 +95,17 @@ describe('filtrarDadosConforme', () => {
     expect(dto.descricao).toBe('Produto Teste')
     expect(dto.codigoProduto).toBe('PROD-001')
     expect(dto.unidade).toBe('UN')
+    expect(dto.validade).toBeNull()
+  })
+
+  it('deve manter validade quando loteCega inativa', () => {
+    const config: ConfigConferenciaCega = {
+      conferenciaQuantidadeCega: true,
+      conferenciaLoteCega: false,
+    }
+    const item = makeItem()
+    const dto = filtrarDadosConforme(item, config)
+
     expect(dto.validade).toEqual(new Date('2025-12-31'))
   })
 

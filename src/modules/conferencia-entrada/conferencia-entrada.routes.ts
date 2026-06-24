@@ -13,6 +13,7 @@ import {
 import { compararValidade, verificarProdutoVencido } from './validade.service'
 import { CceService } from '../cce/cce.service'
 import { registrarSaldoPendente, receberSaldo, verificarNotaCompleta } from './recebimento-parcial.service'
+import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
 
 /**
  * Parseia data no formato DD/MM/AAAA (brasileiro) ou ISO (AAAA-MM-DD).
@@ -193,11 +194,12 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       }
     })
 
-    return { ...nota, itens }
+    const { itens: _rawItens, ...notaData } = nota as any
+    return { ...notaData, itens }
   })
 
-  // POST /:id/iniciar — inicia conferência de uma nota
-  app.post('/:id/iniciar', async (request, reply) => {
+  // POST /iniciar/:id — inicia conferência de uma nota
+  app.post('/iniciar/:id', async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params)
 
     const nota = await prisma.notaEntrada.findUnique({ where: { id } })
@@ -582,6 +584,13 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
     await prisma.notaEntrada.update({ where: { id }, data: { status: 'CONFERIDA' } })
+
+    // Hook faturamento: registrar movimentações de entrada (non-blocking, pós-commit)
+    const empresaId = (request.user as any).empresaId
+    if (empresaId) {
+      registrarMovimentacoesEntradaNota(empresaId, id).catch(() => {})
+    }
+
     return { message: 'Conferência concluída', totalItens: nota.itens.length }
   })
 }

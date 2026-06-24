@@ -1,8 +1,9 @@
-import { FastifyInstance, FastifyReply } from 'fastify'
+import { FastifyInstance } from 'fastify'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { patioService } from './patio.service'
 import { prisma } from '../../lib/prisma'
+import { sseService } from './sse.service'
 import {
   entradaVeiculoSchema,
   saidaVeiculoSchema,
@@ -10,6 +11,8 @@ import {
   listFilaSchema,
   alterarPrioridadeParamsSchema,
   alterarPrioridadeSchema,
+  overridePrioridadeParamsSchema,
+  overridePrioridadeBodySchema,
   emitirChamadaSchema,
   atenderChamadaSchema,
   cancelarChamadaParamsSchema,
@@ -21,7 +24,9 @@ import {
   relatorioFilaSchema,
   relatorioOcupacaoSchema,
   exportarPatioSchema,
+  kpiQuerySchema,
 } from './patio.schemas'
+import { kpiService } from './kpi.service'
 
 // === Audit helper (fire-and-forget) ===
 function audit(empresaId: string, entidade: string, entidadeId: string, acao: string, descricao: string, usuarioId: string, dados?: object) {
@@ -30,27 +35,12 @@ function audit(empresaId: string, entidade: string, entidadeId: string, acao: st
   }).catch(() => {})
 }
 
-// ==========================================================================
-// SSE — Conexões ativas por empresa para notificações de chamada à doca
-// ==========================================================================
-const sseConnections = new Map<string, Set<FastifyReply>>()
-
 /**
  * Notifica todos os clientes SSE conectados para uma empresa sobre chamada à doca.
+ * Delega para o SseService centralizado.
  */
 export function notificarChamadaDoca(empresaId: string, dados: any) {
-  const connections = sseConnections.get(empresaId)
-  if (!connections || connections.size === 0) return
-
-  const eventData = `event: chamada-doca\ndata: ${JSON.stringify(dados)}\n\n`
-
-  for (const reply of connections) {
-    try {
-      reply.raw.write(eventData)
-    } catch {
-      connections.delete(reply)
-    }
-  }
+  sseService.broadcast(empresaId, { type: 'chamada-doca', data: dados })
 }
 
 export async function patioRoutes(app: FastifyInstance) {
@@ -66,6 +56,8 @@ export async function patioRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
     }
 
+    const empresaId = user.empresaId
+
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -75,25 +67,15 @@ export async function patioRoutes(app: FastifyInstance) {
     // Enviar comentário inicial para manter conexão viva
     reply.raw.write(':ok\n\n')
 
-    // Registrar conexão
-    if (!sseConnections.has(user.empresaId)) {
-      sseConnections.set(user.empresaId, new Set())
-    }
-    sseConnections.get(user.empresaId)!.add(reply)
+    // Registrar conexão no SseService centralizado
+    sseService.addConnection(empresaId, reply)
 
-    // Limpar ao desconectar
+    // Remover conexão ao desconectar
     request.raw.on('close', () => {
-      const connections = sseConnections.get(user.empresaId!)
-      if (connections) {
-        connections.delete(reply)
-        if (connections.size === 0) {
-          sseConnections.delete(user.empresaId!)
-        }
-      }
+      sseService.removeConnection(empresaId, reply)
     })
 
     // Não fechar a resposta — manter stream aberta
-    return reply
   })
 
   // ==========================================================================
@@ -188,6 +170,27 @@ export async function patioRoutes(app: FastifyInstance) {
       const body = alterarPrioridadeSchema.parse(request.body)
       const resultado = await patioService.alterarPrioridade(user.empresaId, id, body)
       audit(user.empresaId, 'FilaEsperaPatio', id, 'ALTERAR_PRIORIDADE', 'Prioridade alterada na fila de pátio', user.id, { novaPrioridade: body.prioridade, justificativa: body.justificativa })
+      return resultado
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // PATCH /fila/:veiculoId/prioridade — Override manual de prioridade por veiculoId
+  // ==========================================================================
+  app.patch('/fila/:veiculoId/prioridade', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { veiculoId } = overridePrioridadeParamsSchema.parse(request.params)
+      const body = overridePrioridadeBodySchema.parse(request.body)
+      const resultado = await patioService.overridePrioridade(user.empresaId, veiculoId, body)
+      audit(user.empresaId, 'FilaEsperaPatio', resultado.id, 'OVERRIDE_PRIORIDADE', 'Override manual de prioridade na fila de pátio', user.id, { veiculoId, novaPrioridade: body.prioridade, justificativaPrioridade: body.justificativaPrioridade })
       return resultado
     } catch (err: any) {
       const statusCode = err.statusCode || 500
@@ -512,6 +515,66 @@ export async function patioRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
+  // PATCH /veiculos/:id/iniciar-conferencia — Iniciar conferência do veículo na doca
+  // ==========================================================================
+  app.patch('/veiculos/:id/iniciar-conferencia', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = saidaVeiculoSchema.parse(request.params)
+      const resultado = await patioService.iniciarConferencia(user.empresaId, id)
+      audit(user.empresaId, 'VeiculoPatio', id, 'INICIAR_CONFERENCIA', 'Conferência iniciada', user.id)
+      return resultado
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // PATCH /veiculos/:id/concluir-conferencia — Concluir conferência do veículo
+  // ==========================================================================
+  app.patch('/veiculos/:id/concluir-conferencia', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = saidaVeiculoSchema.parse(request.params)
+      const resultado = await patioService.concluirConferencia(user.empresaId, id)
+      audit(user.empresaId, 'VeiculoPatio', id, 'CONCLUIR_CONFERENCIA', 'Conferência concluída', user.id)
+      return resultado
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // PATCH /veiculos/:id/liberar — Liberar veículo após conferência
+  // ==========================================================================
+  app.patch('/veiculos/:id/liberar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = saidaVeiculoSchema.parse(request.params)
+      const resultado = await patioService.liberarVeiculo(user.empresaId, id)
+      audit(user.empresaId, 'VeiculoPatio', id, 'LIBERAR_VEICULO', 'Veículo liberado do pátio', user.id)
+      return resultado
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
   // GET /relatorio/exportar — Exportar relatório do pátio em CSV
   // ==========================================================================
   app.get('/relatorio/exportar', async (request, reply) => {
@@ -571,6 +634,29 @@ export async function patioRoutes(app: FastifyInstance) {
       reply.header('Content-Type', 'text/csv')
       reply.header('Content-Disposition', `attachment; filename=patio-${tipo.toLowerCase()}-${dataInicio}.csv`)
       return reply.send(csvContent)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // GET /kpis — Métricas KPI agregadas do pátio
+  // ==========================================================================
+  app.get('/kpis', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { cdId, dataInicio, dataFim } = kpiQuerySchema.parse(request.query)
+      const metricas = await kpiService.computarMetricas(user.empresaId, {
+        cdId,
+        dataInicio: new Date(dataInicio),
+        dataFim: new Date(dataFim),
+      })
+      return metricas
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro interno' })

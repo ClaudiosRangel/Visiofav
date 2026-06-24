@@ -59,6 +59,16 @@ export const alterarPrioridadeSchema = z.object({
   justificativa: z.string().min(5),
 })
 
+// PATCH /api/patio/fila/:veiculoId/prioridade — Params + Body
+export const overridePrioridadeParamsSchema = z.object({
+  veiculoId: z.string().uuid(),
+})
+
+export const overridePrioridadeBodySchema = z.object({
+  prioridade: z.number().int().min(0).max(100),
+  justificativaPrioridade: z.string().min(5),
+})
+
 // ─── Chamada ───────────────────────────────────────────────────────────────────
 
 // POST /api/patio/chamadas — Body
@@ -122,6 +132,15 @@ export const relatorioFilaSchema = relatorioBaseSchema
 
 // GET /api/patio/relatorios/ocupacao — Query
 export const relatorioOcupacaoSchema = relatorioBaseSchema
+
+// ─── KPIs ──────────────────────────────────────────────────────────────────────
+
+// GET /api/patio/kpis — Query
+export const kpiQuerySchema = z.object({
+  cdId: z.string().uuid().optional(),
+  dataInicio: z.string().min(1),
+  dataFim: z.string().min(1),
+})
 
 // ─── Exportar ──────────────────────────────────────────────────────────────────
 

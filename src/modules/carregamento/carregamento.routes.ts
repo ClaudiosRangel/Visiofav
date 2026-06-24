@@ -10,6 +10,7 @@ import { OsAutoCreateService } from '../ordem-servico-wms/os-auto-create.service
 import { MonitorService } from '../monitor/monitor.service'
 import { StockService } from '../estoque/stock.service'
 import { validarTransicaoCarregamento } from './status-machine.service'
+import { registrarMovimentacoesSaidaCarregamento } from '../faturamento/movimentacao-faturavel.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -265,6 +266,9 @@ export async function carregamentoRoutes(app: FastifyInstance) {
       })
     } catch { /* silenciar erros de webhook */ }
 
+    // Hook faturamento: registrar movimentações de saída (non-blocking, pós-commit)
+    registrarMovimentacoesSaidaCarregamento(user.empresaId, id).catch(() => {})
+
     return { message: 'Carregamento concluído — pedidos atualizados para FATURADO' }
   })
 
@@ -488,6 +492,11 @@ export async function carregamentoRoutes(app: FastifyInstance) {
       } catch {
         // OS sync is non-blocking
       }
+    }
+
+    // Hook faturamento: registrar movimentações de saída quando scanner completa o carregamento
+    if (carregamentoConcluido) {
+      registrarMovimentacoesSaidaCarregamento(user.empresaId, id).catch(() => {})
     }
 
     return {

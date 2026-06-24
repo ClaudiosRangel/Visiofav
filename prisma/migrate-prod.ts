@@ -406,6 +406,106 @@ async function main() {
 
   console.log('✅ Conferência Avançada: tabelas e colunas criadas')
 
+  // =========================================================================
+  // Divergência Lote/Validade — ConfigConferenciaProduto + supervisor_id
+  // =========================================================================
+
+  // ConfigConferenciaProduto table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "config_conferencia_produto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "modo_resolucao_lote" VARCHAR(20) NOT NULL DEFAULT 'BLOQUEAR',
+      "modo_resolucao_validade" VARCHAR(20) NOT NULL DEFAULT 'BLOQUEAR',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "config_conferencia_produto_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "config_conferencia_produto_empresa_id_produto_id_key" UNIQUE ("empresa_id", "produto_id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_config_conferencia_produto_empresa_id" ON "config_conferencia_produto"("empresa_id")`)
+
+  // DivergenciaConferencia — supervisor_id column
+  await prisma.$executeRawUnsafe(`ALTER TABLE "divergencia_conferencia" ADD COLUMN IF NOT EXISTS "supervisor_id" VARCHAR(36)`)
+
+  console.log('✅ Divergência Lote/Validade: tabela config_conferencia_produto e coluna supervisor_id criadas')
+
+  // =========================================================================
+  // WMS Fase 2 — Multi-CD com Transferências: tabelas de transferência
+  // =========================================================================
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "solicitacao_transferencia" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "numero" VARCHAR(20) NOT NULL,
+      "cd_origem_id" TEXT NOT NULL,
+      "cd_destino_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "prioridade" VARCHAR(10) NOT NULL DEFAULT 'NORMAL',
+      "observacoes" TEXT,
+      "aprovador_id" TEXT,
+      "aprovado_em" TIMESTAMP(3),
+      "criado_por_id" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "solicitacao_transferencia_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "solicitacao_transferencia_empresa_id_numero_key" ON "solicitacao_transferencia"("empresa_id", "numero")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_solicitacao_transferencia_empresa_id" ON "solicitacao_transferencia"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_solicitacao_transferencia_empresa_id_status" ON "solicitacao_transferencia"("empresa_id", "status")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_solicitacao_transferencia" (
+      "id" TEXT NOT NULL,
+      "solicitacao_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" INTEGER NOT NULL,
+      "quantidade_expedida" INTEGER NOT NULL DEFAULT 0,
+      "quantidade_recebida" INTEGER NOT NULL DEFAULT 0,
+      "lote" VARCHAR(30),
+      CONSTRAINT "item_solicitacao_transferencia_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_item_solicitacao_transferencia_solicitacao_id" ON "item_solicitacao_transferencia"("solicitacao_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "documento_saida_transferencia" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "solicitacao_id" TEXT NOT NULL,
+      "numero" VARCHAR(20) NOT NULL,
+      "data_emissao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "responsavel_id" TEXT NOT NULL,
+      "observacoes" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "documento_saida_transferencia_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_documento_saida_transferencia_empresa_id" ON "documento_saida_transferencia"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "mercadoria_transito" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "solicitacao_id" TEXT NOT NULL,
+      "documento_saida_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" INTEGER NOT NULL,
+      "lote" VARCHAR(30),
+      "data_expedicao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "data_recebimento" TIMESTAMP(3),
+      "status" VARCHAR(20) NOT NULL DEFAULT 'EM_TRANSITO',
+      CONSTRAINT "mercadoria_transito_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id" ON "mercadoria_transito"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id_status" ON "mercadoria_transito"("empresa_id", "status")`)
+
+  console.log('✅ Multi-CD com Transferências: tabelas criadas')
+
   console.log('✅ All migrations applied successfully')
 }
 

@@ -66,7 +66,7 @@ export function filtrarDadosConforme(
     descricao: item.descricao,
     codigoProduto: item.codigoProduto,
     unidade: item.unidade,
-    validade: item.validade,
+    validade: config.conferenciaLoteCega ? null : item.validade,
   }
 
   if (!config.conferenciaQuantidadeCega) {

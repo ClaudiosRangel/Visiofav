@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma'
 import { StockService } from '../estoque/stock.service'
+import { registrarMovimentacaoPicking } from '../faturamento/movimentacao-faturavel.service'
 
 const stockService = new StockService()
 
@@ -94,6 +95,25 @@ export async function confirmarItem(itemId: string, quantidadeSeparada: number, 
 
     return itemAtualizado
   })
+
+  // Hook faturamento: registrar movimentação de picking (non-blocking, pós-commit)
+  try {
+    // Buscar clienteId via pedidoVenda do item
+    const pedido = await prisma.pedidoVenda.findUnique({
+      where: { id: item.pedidoVendaId },
+      select: { clienteId: true },
+    })
+
+    if (pedido?.clienteId) {
+      registrarMovimentacaoPicking(empresaId, pedido.clienteId, {
+        produtoId: item.produtoId,
+        quantidade: quantidadeSeparada,
+        referenciaId: ondaId,
+      }).catch(() => {})
+    }
+  } catch {
+    // Non-blocking: não impacta a operação principal
+  }
 
   return result
 }

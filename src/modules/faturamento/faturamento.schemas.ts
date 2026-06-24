@@ -81,8 +81,12 @@ export const listMedicoesSchema = z.object({
 // POST /api/faturamento/medicoes/reprocessar — Body
 export const reprocessarMedicaoSchema = z.object({
   contratoId: z.string().uuid(),
-  data: z.string().min(1), // YYYY-MM-DD
-})
+  dataInicio: z.string().min(1).describe('Data início YYYY-MM-DD'),
+  dataFim: z.string().min(1).describe('Data fim YYYY-MM-DD'),
+}).refine(
+  (data) => new Date(data.dataFim) > new Date(data.dataInicio),
+  { message: 'dataFim deve ser posterior a dataInicio', path: ['dataFim'] }
+)
 
 // === Faturas ===
 
@@ -91,6 +95,7 @@ export const gerarFaturaSchema = z.object({
   contratoId: z.string().uuid(),
   periodoInicio: z.string().datetime(),
   periodoFim: z.string().datetime(),
+  observacoes: z.string().optional(),
 })
 
 // GET /api/faturamento/faturas — Query
@@ -113,6 +118,24 @@ export const updateFaturaSchema = z.object({
     valorUnitario: z.string().regex(/^\d+(\.\d{1,4})?$/, 'Deve ser um decimal com até 4 casas'),
   })).optional(),
 })
+
+// PUT /api/faturamento/faturas/:id/ajustar — Body
+export const ajustarFaturaSchema = z.object({
+  itensAjuste: z.array(z.object({
+    itemFaturaId: z.string().uuid(),
+    novoValor: z.number().positive(),
+    justificativa: z.string().min(3).describe('Justificativa para o ajuste'),
+  })).min(1),
+})
+
+// PUT /api/faturamento/faturas/:id/status — Body
+export const alterarStatusFaturaSchema = z.object({
+  novoStatus: z.enum(['ENVIADA', 'PAGA', 'CANCELADA']).describe('Novo status da fatura'),
+  justificativa: z.string().min(3).optional(),
+}).refine(
+  (data) => data.novoStatus !== 'CANCELADA' || (data.justificativa && data.justificativa.length >= 3),
+  { message: 'Justificativa obrigatória para cancelamento (mínimo 3 caracteres)', path: ['justificativa'] }
+)
 
 // PUT /api/faturamento/faturas/:id/cancelar — Body
 export const cancelarFaturaSchema = z.object({
@@ -142,4 +165,19 @@ export const faturamentoParamsSchema = z.object({
 // :id para faturas (enviar, pagar, cancelar)
 export const faturaParamsSchema = z.object({
   id: z.string().uuid(),
+})
+
+// === Common validators ===
+
+// Param genérico com id uuid
+export const idParamSchema = z.object({
+  id: z.string().uuid(),
+})
+
+// Query genérica para listagens paginadas
+export const listQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.string().optional(),
+  clienteId: z.string().uuid().optional(),
 })

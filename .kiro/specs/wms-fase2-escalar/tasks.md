@@ -11,18 +11,18 @@ Plano de implementação dos 5 módulos da Fase 2 do WMS: Faturamento de Armazen
 - [x] 1.1 Criar migration Prisma com modelos ContratoArmazenagem, TarifaContrato, MedicaoOcupacao, MovimentacaoFaturavel, FaturaArmazenagem e ItemFatura
 - [x] 1.2 Criar migration Prisma com modelos ZonaPicking, EnderecoZonaPicking, SeparadorZona, PontoConsolidacao, SubOnda e ItemSubOnda
 - [x] 1.3 Criar migration Prisma com modelos MetaOperacao, HistoricoMetaOperacao, RegistroProdutividade, ConfigIncentivo e PausaOperador
-- [ ] 1.4 Criar migration Prisma com modelos VeiculoPatio, FilaEsperaPatio, ChamadaDoca e ConfigPatio
-- [ ] 1.5 Criar migration Prisma com modelos SolicitacaoTransferencia, ItemSolicitacaoTransferencia, DocumentoSaidaTransferencia e MercadoriaTransito
-- [ ] 1.6 Atualizar schema.prisma com relações entre novos modelos e modelos existentes (Empresa, Produto, CentroDistribuicao, Estoque, Doca, etc.)
+- [x] 1.4 Criar migration Prisma com modelos VeiculoPatio, FilaEsperaPatio, ChamadaDoca e ConfigPatio
+- [x] 1.5 Criar migration Prisma com modelos SolicitacaoTransferencia, ItemSolicitacaoTransferencia, DocumentoSaidaTransferencia e MercadoriaTransito
+- [x] 1.6 Atualizar schema.prisma com relações entre novos modelos e modelos existentes (Empresa, Produto, CentroDistribuicao, Estoque, Doca, etc.)
 
 ## 2. Módulo Faturamento de Armazenagem — Backend
 
-- [ ] 2.1 Criar schemas Zod de validação para faturamento (faturamento.schemas.ts)
-- [ ] 2.2 Implementar service de CRUD de contratos (criação com validação de vigência sobreposta, encerramento com fatura proporcional)
-- [ ] 2.3 Implementar worker de medição automática diária de ocupação (pallets, m³, posições por cliente/contrato)
-- [ ] 2.4 Implementar registro automático de movimentações faturáveis (hooks nos services de recebimento/expedição/separação)
+- [x] 2.1 Criar schemas Zod de validação para faturamento (faturamento.schemas.ts)
+- [x] 2.2 Implementar service de CRUD de contratos (criação com validação de vigência sobreposta, encerramento com fatura proporcional)
+- [x] 2.3 Implementar worker de medição automática diária de ocupação (pallets, m³, posições por cliente/contrato)
+- [x] 2.4 Implementar registro automático de movimentações faturáveis (hooks nos services de recebimento/expedição/separação)
 - [x] 2.5 Implementar service de cálculo e geração de faturas (somatório por tarifa, aplicação de fórmulas, geração de itens)
-- [ ] 2.6 Implementar CRUD de faturas (ajustes manuais, envio, pagamento, cancelamento com justificativa)
+- [x] 2.6 Implementar CRUD de faturas (ajustes manuais, envio, pagamento, cancelamento com justificativa)
 - [ ] 2.7 Implementar relatório consolidado de faturamento por período com exportação CSV
 - [ ] 2.8 Implementar reprocessamento de medição para datas faltantes
 - [ ] 2.9 Criar rotas Fastify para faturamento (contratos CRUD + medições + faturas CRUD + relatórios + exportar)

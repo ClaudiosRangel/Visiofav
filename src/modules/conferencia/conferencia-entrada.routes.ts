@@ -8,6 +8,12 @@ import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
 import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
 import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
+import { CceService } from '../cce/cce.service'
+import { validarCredenciaisSupervisor } from '../conferencia-entrada/validar-supervisor.service'
+import { obterModoResolucao } from '../conferencia-entrada/config-conferencia-produto.service'
+import { resolverModo, gerarTextoCCeLoteValidade } from '../conferencia-entrada/divergencia-lote-validade.service'
+import type { ModoResolucao } from '../conferencia-entrada/divergencia-lote-validade.service'
+import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
 
 /**
  * Parseia data no formato DD/MM/AAAA (brasileiro) ou ISO (AAAA-MM-DD).
@@ -392,13 +398,60 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
+    // Buscar configuração de conferência cega da empresa
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: userConf2.empresaId },
+      select: { conferenciaLoteCega: true },
+    })
+    const loteCegaAtiva = empresa?.conferenciaLoteCega ?? false
+
     const resultados = []
     let temDivergencia = false
     const falhasShelfLife: Array<{ itemId: string; descricao: string; mensagem: string }> = []
+    const divergenciasLoteValidade: Array<{
+      divergenciaId: string
+      itemId: string
+      descricao: string
+      tipo: 'LOTE_DIVERGENTE' | 'VALIDADE_DIVERGENTE'
+      valorEsperado: string | null
+      valorConferido: string | null
+      modoResolucao: string
+      status: 'PENDENTE'
+    }> = []
 
     for (const conferido of body.itens) {
       const item = nota.itens.find((i) => i.id === conferido.itemNotaEntradaId)
       if (!item) continue
+
+      // Validação de lote/validade obrigatórios quando conferência cega de lote está ativa
+      if (loteCegaAtiva) {
+        if (!conferido.lote || conferido.lote.trim() === '') {
+          resultados.push({
+            itemId: item.id,
+            descricao: item.descricao,
+            quantidadeNota: Number(item.quantidade),
+            quantidadeConferida: conferido.quantidadeConferida,
+            divergencia: 0,
+            status: 'DIVERGENTE',
+            tipoDivergencia: 'LOTE_NAO_INFORMADO',
+          })
+          temDivergencia = true
+          continue
+        }
+        if (!conferido.validade || conferido.validade.trim() === '') {
+          resultados.push({
+            itemId: item.id,
+            descricao: item.descricao,
+            quantidadeNota: Number(item.quantidade),
+            quantidadeConferida: conferido.quantidadeConferida,
+            divergencia: 0,
+            status: 'DIVERGENTE',
+            tipoDivergencia: 'VALIDADE_NAO_INFORMADA',
+          })
+          temDivergencia = true
+          continue
+        }
+      }
 
       // Validação de Shelf Life por item
       if (conferido.validade && item.codigoProduto) {
@@ -421,6 +474,93 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             })
             continue // Skip this item
           }
+        }
+      }
+
+      // ─── Detecção de divergência de lote/validade ────────────────────────────
+      // Comparar lote conferido vs lote da NF-e
+      if (item.lote && conferido.lote && item.lote.trim() !== '' && conferido.lote.trim() !== '' && item.lote.trim() !== conferido.lote.trim()) {
+        // Buscar produto para obter produtoId
+        const produtoLote = await prisma.produto.findFirst({
+          where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto! },
+          select: { id: true },
+        })
+
+        // Criar registro de divergência
+        const divergenciaLote = await prisma.divergenciaConferencia.create({
+          data: {
+            empresaId: userConf2.empresaId,
+            notaEntradaId: notaId,
+            itemNotaEntradaId: item.id,
+            tipo: 'LOTE_DIVERGENTE',
+            loteEsperado: item.lote,
+            loteConferido: conferido.lote,
+          },
+        })
+
+        // Obter modo de resolução do produto
+        const configResolucao = produtoLote
+          ? await obterModoResolucao(userConf2.empresaId, produtoLote.id)
+          : { modoResolucaoLote: 'BLOQUEAR' as const, modoResolucaoValidade: 'BLOQUEAR' as const }
+
+        divergenciasLoteValidade.push({
+          divergenciaId: divergenciaLote.id,
+          itemId: item.id,
+          descricao: item.descricao,
+          tipo: 'LOTE_DIVERGENTE',
+          valorEsperado: item.lote,
+          valorConferido: conferido.lote,
+          modoResolucao: configResolucao.modoResolucaoLote,
+          status: 'PENDENTE',
+        })
+
+        temDivergencia = true
+      }
+
+      // Comparar validade conferida vs validade da NF-e (ignorando horas)
+      const validadeConferidaDate = conferido.validade ? parseDateBR(conferido.validade) : null
+      const validadeNfDate = item.validade
+
+      if (validadeNfDate && validadeConferidaDate) {
+        const nfDia = new Date(validadeNfDate.getFullYear(), validadeNfDate.getMonth(), validadeNfDate.getDate()).getTime()
+        const confDia = new Date(validadeConferidaDate.getFullYear(), validadeConferidaDate.getMonth(), validadeConferidaDate.getDate()).getTime()
+
+        if (nfDia !== confDia) {
+          // Buscar produto para obter produtoId
+          const produtoVal = await prisma.produto.findFirst({
+            where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto! },
+            select: { id: true },
+          })
+
+          // Criar registro de divergência
+          const divergenciaValidade = await prisma.divergenciaConferencia.create({
+            data: {
+              empresaId: userConf2.empresaId,
+              notaEntradaId: notaId,
+              itemNotaEntradaId: item.id,
+              tipo: 'VALIDADE_DIVERGENTE',
+              validadeEsperada: validadeNfDate,
+              validadeConferida: validadeConferidaDate,
+            },
+          })
+
+          // Obter modo de resolução do produto
+          const configResolucao = produtoVal
+            ? await obterModoResolucao(userConf2.empresaId, produtoVal.id)
+            : { modoResolucaoLote: 'BLOQUEAR' as const, modoResolucaoValidade: 'BLOQUEAR' as const }
+
+          divergenciasLoteValidade.push({
+            divergenciaId: divergenciaValidade.id,
+            itemId: item.id,
+            descricao: item.descricao,
+            tipo: 'VALIDADE_DIVERGENTE',
+            valorEsperado: validadeNfDate.toISOString(),
+            valorConferido: validadeConferidaDate.toISOString(),
+            modoResolucao: configResolucao.modoResolucaoValidade,
+            status: 'PENDENTE',
+          })
+
+          temDivergencia = true
         }
       }
 
@@ -456,6 +596,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       divergentes: resultados.filter((r) => r.status === 'DIVERGENTE').length,
       itens: resultados,
       falhasShelfLife: falhasShelfLife.length > 0 ? falhasShelfLife : undefined,
+      divergenciasLoteValidade: divergenciasLoteValidade.length > 0 ? divergenciasLoteValidade : undefined,
     }
   })
 
@@ -531,6 +672,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         }
       }
     })
+
+    // Hook faturamento: registrar movimentações de entrada (non-blocking, pós-commit)
+    registrarMovimentacoesEntradaNota(user.empresaId, notaId).catch(() => {})
 
     return { message: 'Conferência confirmada — OS de endereçamento criada' }
   })
@@ -842,6 +986,181 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       ocupado: e.saldos.length > 0,
       quantidadeTotal: e.saldos.reduce((s, sal) => s + Number(sal.quantidade), 0),
     }))
+  })
+
+  // POST /resolver-divergencia-lv — resolver divergência de lote/validade
+  const resolverDivergenciaLvSchema = z.object({
+    divergenciaId: z.string().uuid(),
+    acao: z.enum(['ACEITAR', 'REJEITAR']),
+    credenciaisSupervisor: z.object({
+      usuario: z.string().min(1),
+      senha: z.string().min(1),
+    }).optional(),
+  })
+
+  app.post('/resolver-divergencia-lv', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = resolverDivergenciaLvSchema.parse(request.body)
+
+    // 1. Buscar divergência por ID + empresaId (multi-tenancy)
+    const divergencia = await prisma.divergenciaConferencia.findFirst({
+      where: { id: body.divergenciaId, empresaId: user.empresaId },
+    })
+
+    if (!divergencia) {
+      return reply.status(404).send({ message: 'Divergência não encontrada' })
+    }
+
+    // 2. Se ação é REJEITAR, atualizar status e retornar
+    if (body.acao === 'REJEITAR') {
+      await prisma.divergenciaConferencia.update({
+        where: { id: divergencia.id },
+        data: { status: 'REJEITADA' },
+      })
+      return {
+        divergenciaId: divergencia.id,
+        status: 'REJEITADA' as const,
+        modo: 'BLOQUEAR' as ModoResolucao,
+        mensagem: 'Divergência rejeitada pelo operador',
+      }
+    }
+
+    // 3. Buscar produto via itemNotaEntrada → codigoProduto → Produto
+    const itemNota = await prisma.itemNotaEntrada.findUnique({
+      where: { id: divergencia.itemNotaEntradaId },
+    })
+
+    if (!itemNota || !itemNota.codigoProduto) {
+      return reply.status(404).send({ message: 'Divergência não encontrada' })
+    }
+
+    const produto = await prisma.produto.findFirst({
+      where: { empresaId: user.empresaId, codigo: itemNota.codigoProduto },
+    })
+
+    if (!produto) {
+      return reply.status(404).send({ message: 'Divergência não encontrada' })
+    }
+
+    // 4. Buscar ConfigConferenciaProduto (usar obterModoResolucao)
+    const config = await obterModoResolucao(user.empresaId, produto.id)
+
+    // 5. Determinar modo aplicável (lote→modoResolucaoLote, validade→modoResolucaoValidade)
+    const modo: ModoResolucao = divergencia.tipo === 'LOTE_DIVERGENTE'
+      ? config.modoResolucaoLote
+      : config.modoResolucaoValidade
+
+    // 6. Switch por modo
+    const resultado = resolverModo(modo)
+
+    // BLOQUEAR → 422
+    if (modo === 'BLOQUEAR') {
+      return reply.status(422).send({
+        message: 'Produto não permite aceitação de divergência de lote/validade',
+        bloqueio: true,
+      })
+    }
+
+    // ACEITAR_LIVRE → atualizar status para ACEITA
+    if (modo === 'ACEITAR_LIVRE') {
+      await prisma.divergenciaConferencia.update({
+        where: { id: divergencia.id },
+        data: { status: 'ACEITA' },
+      })
+      return {
+        divergenciaId: divergencia.id,
+        status: 'ACEITA' as const,
+        modo,
+        mensagem: resultado.mensagem,
+      }
+    }
+
+    // ACEITAR_SENHA → validar credenciais de supervisor
+    if (modo === 'ACEITAR_SENHA') {
+      if (!body.credenciaisSupervisor) {
+        return reply.status(401).send({ message: 'Credenciais inválidas' })
+      }
+
+      const validacao = await validarCredenciaisSupervisor({
+        usuario: body.credenciaisSupervisor.usuario,
+        senha: body.credenciaisSupervisor.senha,
+        empresaId: user.empresaId,
+      })
+
+      if (!validacao.valido) {
+        if (validacao.erro === 'Perfil insuficiente para autorizar esta operação') {
+          return reply.status(403).send({ message: validacao.erro })
+        }
+        return reply.status(401).send({ message: validacao.erro || 'Credenciais inválidas' })
+      }
+
+      await prisma.divergenciaConferencia.update({
+        where: { id: divergencia.id },
+        data: { status: 'ACEITA', supervisorId: validacao.supervisorId },
+      })
+
+      return {
+        divergenciaId: divergencia.id,
+        status: 'ACEITA' as const,
+        modo,
+        mensagem: resultado.mensagem,
+      }
+    }
+
+    // ACEITAR_CCE → emitir CC-e
+    if (modo === 'ACEITAR_CCE') {
+      // Gerar texto de correção para lote/validade
+      const textoCorrecao = gerarTextoCCeLoteValidade({
+        tipo: divergencia.tipo as 'LOTE_DIVERGENTE' | 'VALIDADE_DIVERGENTE',
+        valorEsperado: divergencia.tipo === 'LOTE_DIVERGENTE'
+          ? divergencia.loteEsperado
+          : divergencia.validadeEsperada?.toISOString() ?? null,
+        valorConferido: divergencia.tipo === 'LOTE_DIVERGENTE'
+          ? divergencia.loteConferido
+          : divergencia.validadeConferida?.toISOString() ?? null,
+        descricaoProduto: produto.nome,
+      })
+
+      const cceService = new CceService()
+      const resultadoCCe = await cceService.emitirCCe({
+        empresaId: user.empresaId,
+        notaEntradaId: divergencia.notaEntradaId,
+        divergenciaId: divergencia.id,
+        item: String(itemNota.item),
+        textoCorrecao,
+      })
+
+      // Verificar se limite foi atingido
+      if (!resultadoCCe.sucesso && resultadoCCe.motivoRejeicao?.includes('Limite')) {
+        return reply.status(422).send({
+          message: 'Limite de CC-e por NF-e excedido (20/20)',
+          limiteCCe: true,
+        })
+      }
+
+      // CC-e rejeitada pela SEFAZ
+      if (!resultadoCCe.sucesso) {
+        return reply.status(422).send({
+          message: `CC-e rejeitada: ${resultadoCCe.motivoRejeicao}`,
+          cceRejeitada: true,
+        })
+      }
+
+      // CC-e autorizada
+      return {
+        divergenciaId: divergencia.id,
+        status: 'ACEITA' as const,
+        modo,
+        cce: {
+          sucesso: resultadoCCe.sucesso,
+          protocolo: resultadoCCe.protocolo,
+        },
+        mensagem: 'Divergência aceita — CC-e emitida com sucesso',
+      }
+    }
+
+    // Fallback: modo inválido (não deveria chegar aqui)
+    return reply.status(400).send({ message: 'Modo de resolução inválido' })
   })
 }
 

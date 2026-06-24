@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
 
 export async function conferenciaRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
@@ -41,6 +42,12 @@ export async function conferenciaRoutes(app: FastifyInstance) {
 
     // Atualiza status da NF
     await prisma.notaEntrada.update({ where: { id: body.notaEntradaId }, data: { status: 'CONFERIDA' } })
+
+    // Hook faturamento: registrar movimentações de entrada (non-blocking, pós-commit)
+    const nota = await prisma.notaEntrada.findUnique({ where: { id: body.notaEntradaId }, select: { empresaId: true } })
+    if (nota?.empresaId) {
+      registrarMovimentacoesEntradaNota(nota.empresaId, body.notaEntradaId).catch(() => {})
+    }
 
     return reply.status(201).send(conf)
   })

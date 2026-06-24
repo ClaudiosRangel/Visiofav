@@ -11,6 +11,38 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   app.addHook('preHandler', moduloGuard('PCP'))
 
   // =========================================================================
+  // PATCH /api/pcp/etapas/reordenar — Reordena etapas na fila de uma máquina
+  // =========================================================================
+  app.patch('/etapas/reordenar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      centroProducaoId: z.string().uuid(),
+      etapaIds: z.array(z.string().uuid()).min(1),
+    }).parse(request.body)
+
+    // Verify all etapas belong to this empresa and centro
+    const etapas = await prisma.etapaOrdemProducao.findMany({
+      where: {
+        id: { in: body.etapaIds },
+        centroProducaoId: body.centroProducaoId,
+        ordemProducao: { empresaId: user.empresaId },
+      },
+    })
+
+    if (etapas.length !== body.etapaIds.length) {
+      return reply.status(400).send({ message: 'Uma ou mais etapas não pertencem ao centro informado' })
+    }
+
+    // Update posicaoFila for each etapa based on array order
+    const updates = body.etapaIds.map((id, index) =>
+      prisma.etapaOrdemProducao.update({ where: { id }, data: { posicaoFila: index + 1 } })
+    )
+    await prisma.$transaction(updates)
+
+    return { success: true, reordenadas: body.etapaIds.length }
+  })
+
+  // =========================================================================
   // PATCH /api/pcp/etapas/:id/iniciar — Operador inicia a etapa
   // =========================================================================
   app.patch('/etapas/:id/iniciar', async (request, reply) => {
@@ -304,6 +336,44 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // DELETE /api/pcp/etapas/:id/reverter-parte — Remove parte desmembrada e soma qtd na irmã
+  // =========================================================================
+  app.delete('/etapas/:id/reverter-parte', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idSchema.parse(request.params)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+    if (etapa.status !== 'PENDENTE') return reply.status(400).send({ message: 'Só é possível reverter etapas PENDENTES' })
+    if (Number(etapa.quantidadePrevista) <= 0) return reply.status(400).send({ message: 'Esta etapa não é resultado de desmembramento' })
+
+    // Buscar etapa "irmã" (mesma OP, quantidadePrevista > 0, diferente desta)
+    const irma = await prisma.etapaOrdemProducao.findFirst({
+      where: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        id: { not: id },
+        quantidadePrevista: { gt: 0 },
+        status: 'PENDENTE',
+      },
+    })
+
+    if (irma) {
+      // Soma a quantidade na irmã
+      await prisma.etapaOrdemProducao.update({
+        where: { id: irma.id },
+        data: { quantidadePrevista: Number(irma.quantidadePrevista) + Number(etapa.quantidadePrevista) },
+      })
+    }
+
+    // Remove a etapa
+    await prisma.etapaOrdemProducao.delete({ where: { id } })
+
+    return { message: 'Parte removida', quantidadeDevolvida: Number(etapa.quantidadePrevista), etapaIrmaId: irma?.id || null }
+  })
+
+  // =========================================================================
   // GET /api/pcp/etapas/:id/apontamentos — Histórico de apontamentos
   // =========================================================================
   app.get('/etapas/:id/apontamentos', async (request, reply) => {
@@ -326,8 +396,224 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // PATCH /api/pcp/etapas/:id/observacao — Atualiza observação do operador (inline)
+  // =========================================================================
+  app.patch('/etapas/:id/observacao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idSchema.parse(request.params)
+    const body = z.object({ observacaoOperador: z.string().max(500) }).parse(request.body)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: { observacaoOperador: body.observacaoOperador },
+    })
+
+    return { id: atualizada.id, observacaoOperador: atualizada.observacaoOperador }
+  })
+
+  // =========================================================================
+  // DELETE /api/pcp/etapas/:id — Exclui etapa manual
+  // =========================================================================
+  app.delete('/etapas/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idSchema.parse(request.params)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+    if (etapa.status !== 'PENDENTE') return reply.status(400).send({ message: 'Só é possível excluir etapas PENDENTES' })
+
+    // Só permite excluir manuais ou desmembradas
+    const isManual = etapa.descricao.includes('[MANUAL]') || etapa.descricao.startsWith('Lançamento manual')
+    const isDesmembramento = Number(etapa.quantidadePrevista) > 0
+    if (!isManual && !isDesmembramento) {
+      return reply.status(400).send({ message: 'Só é possível excluir etapas adicionadas manualmente ou desmembradas' })
+    }
+
+    await prisma.etapaOrdemProducao.delete({ where: { id } })
+    return { message: 'Etapa excluída' }
+  })
+
+  // =========================================================================
+  // DELETE /api/pcp/etapas/:id/reverter-desmembramento — Remove parte desmembrada e soma quantidade na irmã
+  // =========================================================================
+  app.delete('/etapas/:id/reverter-desmembramento', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idSchema.parse(request.params)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+    if (Number(etapa.quantidadePrevista) <= 0) {
+      return reply.status(400).send({ message: 'Esta etapa não é um desmembramento' })
+    }
+    if (etapa.status !== 'PENDENTE') {
+      return reply.status(400).send({ message: 'Só é possível reverter etapas PENDENTES' })
+    }
+
+    const quantidadeDevolvida = Number(etapa.quantidadePrevista)
+
+    // Buscar etapas irmãs (mesma OP, mesmo centro, com quantidadePrevista > 0, exceto esta)
+    const irmas = await prisma.etapaOrdemProducao.findMany({
+      where: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        id: { not: id },
+        quantidadePrevista: { gt: 0 },
+        status: 'PENDENTE',
+      },
+      orderBy: { sequencia: 'asc' },
+    })
+
+    if (irmas.length === 0) {
+      return reply.status(400).send({ message: 'Não há etapa irmã para receber a quantidade. Não é possível reverter.' })
+    }
+
+    // Soma a quantidade na primeira etapa irmã encontrada
+    const irmaDestino = irmas[0]
+    await prisma.etapaOrdemProducao.update({
+      where: { id: irmaDestino.id },
+      data: { quantidadePrevista: Number(irmaDestino.quantidadePrevista) + quantidadeDevolvida },
+    })
+
+    // Remove a etapa excluída
+    await prisma.etapaOrdemProducao.delete({ where: { id } })
+
+    return { success: true, quantidadeDevolvida, etapaDestinoId: irmaDestino.id }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/programacao/postergar-entrega — Posterga data de entrega da OP
+  // =========================================================================
+  app.patch('/programacao/postergar-entrega', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      opId: z.string().uuid(),
+      novaDataEntrega: z.string(),
+    }).parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: body.opId, empresaId: user.empresaId },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    // Se é a primeira postergação, salvar a data original
+    const dataOriginal = op.dataEntregaOriginal || op.dataEntregaPrevista
+
+    const atualizada = await prisma.ordemProducao.update({
+      where: { id: body.opId },
+      data: {
+        dataEntregaPrevista: new Date(body.novaDataEntrega),
+        dataEntregaOriginal: dataOriginal,
+        vezesPostergada: (op.vezesPostergada || 0) + 1,
+      },
+    })
+
+    return {
+      id: atualizada.id,
+      dataEntregaPrevista: atualizada.dataEntregaPrevista,
+      dataEntregaOriginal: atualizada.dataEntregaOriginal,
+      vezesPostergada: atualizada.vezesPostergada,
+    }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/mover — Move etapa para outro centro de produção
+  // =========================================================================
+  app.patch('/etapas/:id/mover', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idSchema.parse(request.params)
+    const body = z.object({ centroProducaoId: z.string().uuid() }).parse(request.body)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    // Verifica se o centro destino existe
+    const centro = await prisma.centroProducao.findFirst({
+      where: { id: body.centroProducaoId, empresaId: user.empresaId },
+    })
+    if (!centro) return reply.status(404).send({ message: 'Centro de destino não encontrado' })
+
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: { centroProducaoId: body.centroProducaoId },
+    })
+
+    return { id: atualizada.id, centroProducaoId: atualizada.centroProducaoId }
+  })
+
+  // =========================================================================
+  // POST /api/pcp/etapas/adicionar-manual — Adiciona OP manualmente à fila de um centro
+  // =========================================================================
+  app.post('/etapas/adicionar-manual', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      opNumero: z.number(),
+      centroProducaoId: z.string().uuid(),
+      descricao: z.string().max(200).optional(),
+    }).parse(request.body)
+
+    // Find the OP
+    const op = await prisma.ordemProducao.findFirst({
+      where: { empresaId: user.empresaId, numero: body.opNumero },
+      include: { itens: { where: { tipoMaterial: 'PAPEL' }, take: 1 } },
+    })
+    if (!op) return reply.status(404).send({ message: `OP #${body.opNumero} não encontrada` })
+
+    // Find max sequencia for this OP
+    const maxSeq = await prisma.etapaOrdemProducao.aggregate({
+      where: { ordemProducaoId: op.id },
+      _max: { sequencia: true },
+    })
+
+    // Get max posicaoFila for this centro
+    const maxPos = await prisma.etapaOrdemProducao.aggregate({
+      where: { centroProducaoId: body.centroProducaoId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+      _max: { posicaoFila: true },
+    })
+
+    const etapa = await prisma.etapaOrdemProducao.create({
+      data: {
+        ordemProducaoId: op.id,
+        sequencia: (maxSeq._max.sequencia || 0) + 1,
+        descricao: body.descricao ? `[MANUAL] ${body.descricao}` : `[MANUAL] Lançamento manual - OP #${body.opNumero}`,
+        centroProducaoId: body.centroProducaoId,
+        status: 'PENDENTE',
+        posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
+      },
+    })
+
+    return reply.status(201).send(etapa)
+  })
+
+  // =========================================================================
   // GET /api/pcp/programacao/painel — Painel operacional completo
   // =========================================================================
+
+  function extrairGramatura(desc: string): string | null {
+    // Padrão "222g", "222g/m²", "300 g"
+    const match = desc.match(/(\d{2,3})\s*g(?:\/m[²2])?/i)
+    if (match) return `${match[1]}g/m²`
+    // Padrão "Bobina 222" ou "Enzo 222" (número de 3 dígitos no contexto de papel)
+    const matchBobina = desc.match(/(?:bobina|enzo|stora|suzano|klabin)\s+.*?(\d{3})\b/i)
+    if (matchBobina) return `${matchBobina[1]}g/m²`
+    return null
+  }
+
+  function extrairFormato(desc: string): string | null {
+    // Padrão "66x96", "720 x 1000", "72,0 x 100,0"
+    const match = desc.match(/([\d.,]+)\s*x\s*([\d.,]+)\s*(?:cm|mm)?/i)
+    return match ? `${match[1]}x${match[2]}` : null
+  }
+
   app.get('/programacao/painel', async (request) => {
     const user = request.user as { id: string; empresaId: string }
 
@@ -342,11 +628,33 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
       },
       include: {
-        ordemProducao: { select: { numero: true, produtoId: true, quantidade: true, unidadeMedida: true, prioridade: true, dataEntregaPrevista: true, clienteId: true, observacoes: true } },
+        ordemProducao: {
+          select: {
+            numero: true, produtoId: true, quantidade: true, unidadeMedida: true,
+            prioridade: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true,
+            clienteId: true, observacoes: true, referenciaExterna: true,
+            itens: { where: { tipoMaterial: 'PAPEL' } },
+          },
+        },
         centroProducao: { select: { id: true, codigo: true, descricao: true } },
       },
-      orderBy: [{ ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
+      orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
+
+    // Buscar nomes de clientes e produtos para exibição
+    const clienteIds = [...new Set(etapasAtivas.map(e => e.ordemProducao.clienteId).filter(Boolean))] as string[]
+    const produtoIds = [...new Set(etapasAtivas.map(e => e.ordemProducao.produtoId).filter(Boolean))] as string[]
+    const clientes = clienteIds.length > 0 ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } }) : []
+    const produtos = produtoIds.length > 0 ? await prisma.produto.findMany({ where: { id: { in: produtoIds } }, select: { id: true, codigo: true, nome: true } }) : []
+    const clienteMap = new Map(clientes.map(c => [c.id, c.nomeFantasia || c.razaoSocial]))
+    const produtoMap = new Map(produtos.map(p => [p.id, `${p.codigo} - ${p.nome}`]))
+
+    // Detecta "encomendado" em: observações da OP, descrição dos itens PAPEL, ou descricaoExterna
+    function temMaterialEncomendado(e: typeof etapasAtivas[0]): boolean {
+      if (e.ordemProducao.observacoes && /encomendad/i.test(e.ordemProducao.observacoes)) return true
+      if (e.ordemProducao.itens?.some(item => /encomendad/i.test(item.descricaoProduto))) return true
+      return false
+    }
 
     // Agrupa por centro
     const painelPorCentro = centros.map(centro => {
@@ -364,26 +672,92 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           pendentes: pendentes.length,
           total: etapasDoCentro.length,
         },
-        etapas: etapasDoCentro.map(e => ({
-          id: e.id,
-          opNumero: e.ordemProducao.numero,
-          descricao: e.descricao,
-          status: e.status,
-          sequencia: e.sequencia,
-          quantidade: Number(e.ordemProducao.quantidade),
-          unidade: e.ordemProducao.unidadeMedida,
-          quantidadeProduzida: Number(e.quantidadeProduzida),
-          quantidadePerda: Number(e.quantidadePerda),
-          percentual: Number(e.ordemProducao.quantidade) > 0 ? Math.round((Number(e.quantidadeProduzida) / Number(e.ordemProducao.quantidade)) * 100) : 0,
-          prioridade: e.ordemProducao.prioridade,
-          dataEntrega: e.ordemProducao.dataEntregaPrevista,
-          funcionarioId: e.funcionarioId,
-          dataInicioReal: e.dataInicioReal,
-          observacoes: e.ordemProducao.observacoes,
-        })),
+        etapas: etapasDoCentro.map(e => {
+          const papel = e.ordemProducao.itens?.[0] || null
+          return {
+            id: e.id,
+            opId: e.ordemProducaoId,
+            opNumero: e.ordemProducao.numero,
+            clienteNome: (e.ordemProducao.clienteId && clienteMap.get(e.ordemProducao.clienteId)) || null,
+            produtoNome: (e.ordemProducao.produtoId && produtoMap.get(e.ordemProducao.produtoId)) || null,
+            descricao: e.descricao,
+            status: e.status,
+            sequencia: e.sequencia,
+            posicaoFila: e.posicaoFila,
+            isDesmembramento: Number(e.quantidadePrevista) > 0,
+            isManual: e.descricao.includes('[MANUAL]') || e.descricao.startsWith('Lançamento manual'),
+            quantidade: Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
+            unidade: e.ordemProducao.unidadeMedida,
+            quantidadeProduzida: Number(e.quantidadeProduzida),
+            quantidadePerda: Number(e.quantidadePerda),
+            percentual: (Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)) > 0
+              ? Math.round((Number(e.quantidadeProduzida) / (Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade))) * 100)
+              : 0,
+            prioridade: e.ordemProducao.prioridade,
+            dataEntrega: e.ordemProducao.dataEntregaPrevista,
+            dataEntregaOriginal: e.ordemProducao.dataEntregaOriginal || e.ordemProducao.dataEntregaPrevista,
+            vezesPostergada: e.ordemProducao.vezesPostergada || 0,
+            funcionarioId: e.funcionarioId,
+            dataInicioReal: e.dataInicioReal,
+            observacoes: e.ordemProducao.observacoes,
+            observacaoOperador: e.observacaoOperador || null,
+            // Campos de material (Requisito 3)
+            tiragem: Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
+            materialPrincipal: papel?.descricaoProduto || null,
+            gramatura: (papel ? extrairGramatura(papel.descricaoProduto) : null) || extrairGramatura(e.ordemProducao.observacoes || ''),
+            formato: (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
+            pesoKg: papel ? Number(papel.quantidade) : null,
+            materialEncomendado: temMaterialEncomendado(e),
+          }
+        }),
       }
     })
 
-    return { centros: painelPorCentro }
+    // OPs com material encomendado (aguardando cartão) — exibir na aba Cortadeira
+    const aguardandoCartao = etapasAtivas
+      .filter(e => temMaterialEncomendado(e))
+      .map(e => {
+        const papel = e.ordemProducao.itens?.[0] || null
+        // Extrair detalhes das bobinas (estoque vs encomendadas) das observações
+        const bobinas: Array<{ descricao: string; kg: number; status: 'ESTOQUE' | 'ENCOMENDADO' }> = []
+        if (e.ordemProducao.observacoes) {
+          const matches = e.ordemProducao.observacoes.matchAll(/\[Bobina\]\s*(.+?)\s*(?:em estoque|encomendad[oa])\s*\(([\d.,]+)\s*kg\)/gi)
+          for (const m of matches) {
+            const isEncomendado = /encomendad/i.test(m[0])
+            bobinas.push({
+              descricao: m[1].trim(),
+              kg: parseFloat(m[2].replace('.', '').replace(',', '.')),
+              status: isEncomendado ? 'ENCOMENDADO' : 'ESTOQUE',
+            })
+          }
+        }
+        const kgEstoque = bobinas.filter(b => b.status === 'ESTOQUE').reduce((a, b) => a + b.kg, 0)
+        const kgEncomendado = bobinas.filter(b => b.status === 'ENCOMENDADO').reduce((a, b) => a + b.kg, 0)
+
+        return {
+          id: e.id,
+          opId: e.ordemProducaoId,
+          opNumero: e.ordemProducao.numero,
+          descricao: e.descricao,
+          quantidade: Number(e.ordemProducao.quantidade),
+          unidade: e.ordemProducao.unidadeMedida,
+          prioridade: e.ordemProducao.prioridade,
+          dataEntrega: e.ordemProducao.dataEntregaPrevista,
+          materialPrincipal: papel?.descricaoProduto || null,
+          gramatura: papel ? extrairGramatura(papel.descricaoProduto) : null,
+          formato: papel ? extrairFormato(papel.descricaoProduto) : null,
+          pesoKg: papel ? Number(papel.quantidade) : null,
+          observacoes: e.ordemProducao.observacoes,
+          observacaoOperador: e.observacaoOperador || null,
+          centroDescricao: e.centroProducao?.descricao || null,
+          bobinas,
+          kgEstoque,
+          kgEncomendado,
+        }
+      })
+      // Deduplica por OP (pode ter múltiplas etapas da mesma OP)
+      .filter((item, index, self) => self.findIndex(i => i.opNumero === item.opNumero) === index)
+
+    return { centros: painelPorCentro, aguardandoCartao }
   })
 }

@@ -8,12 +8,12 @@ import { z } from 'zod'
 export const createSolicitacaoSchema = z.object({
   cdOrigemId: z.string().uuid(),
   cdDestinoId: z.string().uuid(),
-  motivo: z.string().min(1).max(200),
-  prioridade: z.enum(['NORMAL', 'URGENTE']),
-  dataPrevistaEnvio: z.string().datetime().optional(),
+  observacoes: z.string().max(500).optional(),
+  prioridade: z.enum(['URGENTE', 'ALTA', 'NORMAL', 'BAIXA']),
   itens: z.array(z.object({
     produtoId: z.string().uuid(),
-    quantidadeSolicitada: z.number().positive(),
+    quantidade: z.number().int().positive(),
+    lote: z.string().max(30).optional(),
   })).min(1),
 })
 
@@ -30,7 +30,7 @@ export const listSolicitacoesSchema = z.object({
   ]).optional(),
   cdOrigemId: z.string().uuid().optional(),
   cdDestinoId: z.string().uuid().optional(),
-  prioridade: z.enum(['NORMAL', 'URGENTE']).optional(),
+  prioridade: z.enum(['URGENTE', 'ALTA', 'NORMAL', 'BAIXA']).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 })
@@ -72,12 +72,9 @@ export const expedirSolicitacaoParamsSchema = z.object({
 })
 
 export const expedirSolicitacaoBodySchema = z.object({
-  veiculoPlaca: z.string().max(10).optional(),
-  motoristaId: z.string().uuid().optional(),
-  previsaoChegada: z.string().datetime().optional(),
   itens: z.array(z.object({
     produtoId: z.string().uuid(),
-    quantidadeExpedida: z.number().positive(),
+    quantidadeExpedida: z.number().int().positive(),
   })).min(1),
 })
 

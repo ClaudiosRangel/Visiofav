@@ -84,16 +84,16 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     ])
 
     // Calcula percentual concluído e busca nomes dos produtos
-    const produtoIds = [...new Set(data.map((op) => op.produtoId))]
-    const produtos = await prisma.produto.findMany({
+    const produtoIds = [...new Set(data.map((op) => op.produtoId).filter((id): id is string => id !== null))]
+    const produtos = produtoIds.length > 0 ? await prisma.produto.findMany({
       where: { id: { in: produtoIds } },
       select: { id: true, codigo: true, nome: true },
-    })
+    }) : []
     const produtoMap = new Map(produtos.map((p) => [p.id, `${p.codigo} - ${p.nome}`]))
 
     const dataComPercentual = data.map((op) => ({
       ...op,
-      produtoNome: produtoMap.get(op.produtoId) || op.produtoId,
+      produtoNome: (op.produtoId && produtoMap.get(op.produtoId)) || op.produtoId || 'Produto não vinculado',
       percentualConcluido: Number(op.quantidade) > 0
         ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
         : 0,
@@ -131,16 +131,22 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     }
 
     // Busca nome do produto
-    const produto = await prisma.produto.findFirst({
+    const produto = op.produtoId ? await prisma.produto.findFirst({
       where: { id: op.produtoId, empresaId: user.empresaId },
       select: { codigo: true, nome: true },
-    })
+    }) : null
+
+    // Busca nome do cliente
+    const cliente = op.clienteId ? await prisma.cliente.findFirst({
+      where: { id: op.clienteId, empresaId: user.empresaId },
+      select: { razaoSocial: true, nomeFantasia: true },
+    }) : null
 
     const percentualConcluido = Number(op.quantidade) > 0
       ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
       : 0
 
-    return { ...op, produtoNome: produto ? `${produto.codigo} - ${produto.nome}` : op.produtoId, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
+    return { ...op, produtoNome: produto ? `${produto.codigo} - ${produto.nome}` : (op.produtoId || 'Produto não vinculado'), clienteNome: cliente ? (cliente.nomeFantasia || cliente.razaoSocial) : null, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
   })
 
   // =========================================================================
@@ -595,5 +601,29 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     const atualizada = await prisma.ordemProducao.update({ where: { id }, data })
 
     return atualizada
+  })
+
+  // =========================================================================
+  // GET /api/ordens-producao/:id/pdf — Servir PDF importado
+  // =========================================================================
+  app.get('/:id/pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    const pdfPath = require('path').join(process.cwd(), 'uploads', 'ops', `${id}.pdf`)
+    const fs = require('fs')
+
+    if (!fs.existsSync(pdfPath)) {
+      return reply.status(404).send({ message: 'PDF não encontrado para esta OP' })
+    }
+
+    const stream = fs.createReadStream(pdfPath)
+    return reply.type('application/pdf').send(stream)
   })
 }

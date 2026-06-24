@@ -39,7 +39,22 @@ export async function produtoRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const produto = await prisma.produto.findUnique({ where: { id } })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
-    return produto
+
+    // Incluir ConfigConferenciaProduto se existir
+    const user = request.user as { id: string; empresaId?: string }
+    let modoResolucaoLote = 'BLOQUEAR'
+    let modoResolucaoValidade = 'BLOQUEAR'
+    if (user.empresaId) {
+      const config = await prisma.configConferenciaProduto.findUnique({
+        where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: id } },
+      })
+      if (config) {
+        modoResolucaoLote = config.modoResolucaoLote
+        modoResolucaoValidade = config.modoResolucaoValidade
+      }
+    }
+
+    return { ...produto, modoResolucaoLote, modoResolucaoValidade }
   })
 
   app.post('/', async (request, reply) => {
@@ -98,9 +113,36 @@ export async function produtoRoutes(app: FastifyInstance) {
       classificacaoPcp: z.enum(['MATERIA_PRIMA', 'INTERMEDIARIO', 'PRODUTO_ACABADO', 'EMBALAGEM', 'INSUMO']).nullable().optional(),
       tipoFisico: z.enum(['UNIDADE_PADRAO', 'FISICO_LINEAR', 'FISICO_SUPERFICIAL', 'LIQUIDO', 'PESO']).nullable().optional(),
       exigeLote: z.boolean().optional(),
+      modoResolucaoLote: z.string().optional(),
+      modoResolucaoValidade: z.string().optional(),
     }).parse(request.body)
 
-    return prisma.produto.update({ where: { id }, data })
+    // Separar campos de ConfigConferenciaProduto dos campos do Produto
+    const { modoResolucaoLote, modoResolucaoValidade, ...produtoData } = data
+
+    const produtoAtualizado = await prisma.produto.update({ where: { id }, data: produtoData })
+
+    // Salvar/atualizar ConfigConferenciaProduto se modos informados
+    if (modoResolucaoLote || modoResolucaoValidade) {
+      const user = request.user as { id: string; empresaId?: string }
+      if (user.empresaId) {
+        await prisma.configConferenciaProduto.upsert({
+          where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: id } },
+          create: {
+            empresaId: user.empresaId,
+            produtoId: id,
+            modoResolucaoLote: modoResolucaoLote || 'BLOQUEAR',
+            modoResolucaoValidade: modoResolucaoValidade || 'BLOQUEAR',
+          },
+          update: {
+            ...(modoResolucaoLote && { modoResolucaoLote }),
+            ...(modoResolucaoValidade && { modoResolucaoValidade }),
+          },
+        })
+      }
+    }
+
+    return produtoAtualizado
   })
 
   // POST /batch-shelf-life — atualização em lote do shelfLifeMinimo

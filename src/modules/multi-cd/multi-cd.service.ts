@@ -2,7 +2,8 @@ import { prisma } from '../../lib/prisma'
 
 interface ItemSolicitacaoInput {
   produtoId: string
-  quantidadeSolicitada: number
+  quantidade: number
+  lote?: string
 }
 
 interface ItemExpedicaoInput {
@@ -20,18 +21,14 @@ interface ReceberSolicitacaoInput {
 }
 
 interface ExpedirSolicitacaoInput {
-  veiculoPlaca?: string
-  motoristaId?: string
-  previsaoChegada?: string
   itens: ItemExpedicaoInput[]
 }
 
 interface CriarSolicitacaoInput {
   cdOrigemId: string
   cdDestinoId: string
-  motivo: string
-  prioridade: 'NORMAL' | 'URGENTE'
-  dataPrevistaEnvio?: string
+  observacoes?: string
+  prioridade: 'NORMAL' | 'URGENTE' | 'ALTA' | 'BAIXA'
   itens: ItemSolicitacaoInput[]
 }
 
@@ -54,7 +51,7 @@ export class MultiCdService {
     data: CriarSolicitacaoInput,
     usuarioId: string,
   ) {
-    const { cdOrigemId, cdDestinoId, motivo, prioridade, dataPrevistaEnvio, itens } = data
+    const { cdOrigemId, cdDestinoId, observacoes, prioridade, itens } = data
 
     // Validar que origem e destino são diferentes
     if (cdOrigemId === cdDestinoId) {
@@ -92,10 +89,10 @@ export class MultiCdService {
       }
 
       const disponivel = Number(estoque.quantidade) - Number(estoque.reservado)
-      if (disponivel < item.quantidadeSolicitada) {
+      if (disponivel < item.quantidade) {
         throw {
           statusCode: 422,
-          message: `Saldo insuficiente para o produto ${item.produtoId}. Disponível: ${disponivel}, Solicitado: ${item.quantidadeSolicitada}`,
+          message: `Saldo insuficiente para o produto ${item.produtoId}. Disponível: ${disponivel}, Solicitado: ${item.quantidade}`,
         }
       }
     }
@@ -130,9 +127,8 @@ export class MultiCdService {
           numero,
           cdOrigemId,
           cdDestinoId,
-          motivo,
+          observacoes: observacoes || null,
           prioridade,
-          dataPrevistaEnvio: dataPrevistaEnvio ? new Date(dataPrevistaEnvio) : null,
           status: 'PENDENTE',
           criadoPorId: usuarioId,
         },
@@ -141,9 +137,10 @@ export class MultiCdService {
       for (const item of itens) {
         await tx.itemSolicitacaoTransferencia.create({
           data: {
-            solicitacaoTransferenciaId: novaSolicitacao.id,
+            solicitacaoId: novaSolicitacao.id,
             produtoId: item.produtoId,
-            quantidadeSolicitada: item.quantidadeSolicitada,
+            quantidade: item.quantidade,
+            lote: item.lote || null,
           },
         })
       }
@@ -203,7 +200,7 @@ export class MultiCdService {
       where: { id, empresaId },
       include: {
         itens: true,
-        documentoSaida: true,
+        documentosSaida: true,
         cdOrigem: { select: { id: true, nome: true, codigo: true } },
         cdDestino: { select: { id: true, nome: true, codigo: true } },
       },
@@ -257,7 +254,7 @@ export class MultiCdService {
       where: { id },
       data: {
         status: 'APROVADA',
-        aprovadoPorId: usuarioId,
+        aprovadorId: usuarioId,
         aprovadoEm: new Date(),
       },
       include: { itens: true },
@@ -276,7 +273,7 @@ export class MultiCdService {
     data: ExpedirSolicitacaoInput,
     usuarioId: string,
   ) {
-    const { veiculoPlaca, motoristaId, previsaoChegada, itens } = data
+    const { itens } = data
 
     // Buscar solicitação com itens
     const solicitacao = await prisma.solicitacaoTransferencia.findFirst({
@@ -318,21 +315,17 @@ export class MultiCdService {
     const numeroDocumento = `${prefixoDoc}${String(proximoSequencial).padStart(6, '0')}`
 
     const agora = new Date()
-    const previsaoChegadaDate = previsaoChegada ? new Date(previsaoChegada) : null
 
     // Executar tudo em transação
     const resultado = await prisma.$transaction(async (tx) => {
       // 1. Criar DocumentoSaidaTransferencia
-      await tx.documentoSaidaTransferencia.create({
+      const documentoSaida = await tx.documentoSaidaTransferencia.create({
         data: {
           empresaId,
-          solicitacaoTransferenciaId: id,
+          solicitacaoId: id,
           numero: numeroDocumento,
-          veiculoPlaca: veiculoPlaca || null,
-          motoristaId: motoristaId || null,
-          dataSaida: agora,
-          previsaoChegada: previsaoChegadaDate,
-          criadoPorId: usuarioId,
+          dataEmissao: agora,
+          responsavelId: usuarioId,
         },
       })
 
@@ -390,13 +383,11 @@ export class MultiCdService {
         await tx.mercadoriaTransito.create({
           data: {
             empresaId,
-            solicitacaoTransferenciaId: id,
+            solicitacaoId: id,
+            documentoSaidaId: documentoSaida.id,
             produtoId: itemExpedicao.produtoId,
             quantidade: itemExpedicao.quantidadeExpedida,
-            cdOrigemId: solicitacao.cdOrigemId,
-            cdDestinoId: solicitacao.cdDestinoId,
-            dataSaida: agora,
-            previsaoChegada: previsaoChegadaDate,
+            dataExpedicao: agora,
             status: 'EM_TRANSITO',
           },
         })
@@ -408,7 +399,7 @@ export class MultiCdService {
         data: { status: 'EM_TRANSITO' },
         include: {
           itens: true,
-          documentoSaida: true,
+          documentosSaida: true,
         },
       })
 
@@ -445,8 +436,8 @@ export class MultiCdService {
 
     const updateData: any = { status: 'CANCELADA' }
     if (motivo) {
-      updateData.motivo = solicitacao.motivo
-        ? `${solicitacao.motivo} | CANCELAMENTO: ${motivo}`
+      updateData.observacoes = solicitacao.observacoes
+        ? `${solicitacao.observacoes} | CANCELAMENTO: ${motivo}`
         : `CANCELAMENTO: ${motivo}`
     }
 
@@ -539,17 +530,17 @@ export class MultiCdService {
           })
         }
 
-        // 3. Atualizar MercadoriaTransito: status = RECEBIDA, recebidoEm = now
+        // 3. Atualizar MercadoriaTransito: status = RECEBIDA, dataRecebimento = now
         await tx.mercadoriaTransito.updateMany({
           where: {
             empresaId,
-            solicitacaoTransferenciaId: id,
+            solicitacaoId: id,
             produtoId: itemRecebido.produtoId,
             status: 'EM_TRANSITO',
           },
           data: {
             status: 'RECEBIDA',
-            recebidoEm: agora,
+            dataRecebimento: agora,
           },
         })
 
@@ -567,8 +558,8 @@ export class MultiCdService {
 
       // Registrar divergências na observação se houver
       if (divergencias.length > 0) {
-        updateData.motivo =
-          solicitacao.motivo +
+        updateData.observacoes =
+          (solicitacao.observacoes || '') +
           ` | DIVERGÊNCIAS RECEBIMENTO: ${divergencias.join('; ')}`
       }
 
@@ -577,7 +568,7 @@ export class MultiCdService {
         data: updateData,
         include: {
           itens: true,
-          documentoSaida: true,
+          documentosSaida: true,
         },
       })
 
@@ -652,7 +643,7 @@ export class MultiCdService {
 
   /**
    * Retorna dados de transferências em formato flat (array) para exportação CSV.
-   * Campos: numero, cdOrigem, cdDestino, motivo, prioridade, status, dataCriacao, dataAprovacao
+   * Campos: numero, cdOrigem, cdDestino, observacoes, prioridade, status, dataCriacao, dataAprovacao
    */
   async exportarTransferencias(
     empresaId: string,
@@ -682,7 +673,7 @@ export class MultiCdService {
       numero: sol.numero,
       cdOrigem: sol.cdOrigem.nome,
       cdDestino: sol.cdDestino.nome,
-      motivo: sol.motivo,
+      observacoes: sol.observacoes || '',
       prioridade: sol.prioridade,
       status: sol.status,
       dataCriacao: sol.criadoEm.toISOString().split('T')[0],

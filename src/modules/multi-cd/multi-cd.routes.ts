@@ -196,7 +196,7 @@ export async function multiCdRoutes(app: FastifyInstance) {
       const { id } = expedirSolicitacaoParamsSchema.parse(request.params)
       const body = expedirSolicitacaoBodySchema.parse(request.body)
       const resultado = await multiCdService.expedirSolicitacao(user.empresaId, id, body, user.id)
-      audit(user.empresaId, 'SolicitacaoTransferencia', id, 'EXPEDIR_SOLICITACAO', 'Solicitação de transferência expedida', user.id, { veiculoPlaca: body.veiculoPlaca, itensCount: body.itens.length })
+      audit(user.empresaId, 'SolicitacaoTransferencia', id, 'EXPEDIR_SOLICITACAO', 'Solicitação de transferência expedida', user.id, { itensCount: body.itens.length })
       return resultado
     } catch (err: any) {
       const statusCode = err.statusCode || 500
@@ -293,9 +293,9 @@ export async function multiCdRoutes(app: FastifyInstance) {
       const filters = exportarTransferenciasSchema.parse(request.query)
       const dados = await multiCdService.exportarTransferencias(user.empresaId, filters)
 
-      const headers = 'numero;cdOrigem;cdDestino;motivo;prioridade;status;dataCriacao;dataAprovacao'
+      const headers = 'numero;cdOrigem;cdDestino;observacoes;prioridade;status;dataCriacao;dataAprovacao'
       const rows = dados.map((d) =>
-        `${d.numero};${d.cdOrigem};${d.cdDestino};${d.motivo};${d.prioridade};${d.status};${d.dataCriacao};${d.dataAprovacao}`
+        `${d.numero};${d.cdOrigem};${d.cdDestino};${d.observacoes};${d.prioridade};${d.status};${d.dataCriacao};${d.dataAprovacao}`
       )
       const csv = [headers, ...rows].join('\n')
 

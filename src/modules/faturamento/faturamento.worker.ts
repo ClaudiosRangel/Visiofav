@@ -3,8 +3,11 @@ import { Decimal } from '@prisma/client/runtime/library'
 
 let workerInterval: NodeJS.Timeout | null = null
 
+const INTERVALO_MINUTOS = 60
+
 /**
  * Worker de medição automática diária de ocupação.
+ * Executa a cada 60 minutos e verifica se já existe medição para o dia corrente.
  * Para cada ContratoArmazenagem ativo, calcula:
  * - quantidadePallets: posições distintas com saldo > 0 para produtos do cliente
  * - volumeM3: soma do volume dos SKUs em estoque (largura × altura × comprimento em metros)
@@ -13,7 +16,7 @@ let workerInterval: NodeJS.Timeout | null = null
  * Cria um registro MedicaoOcupacao por contrato/dia (idempotente).
  */
 export function startFaturamentoWorker() {
-  console.log('📦 Faturamento Worker iniciado — medição de ocupação a cada 24h')
+  console.log(`📦 Faturamento Worker iniciado — medição de ocupação a cada ${INTERVALO_MINUTOS} minutos`)
 
   // Run immediately on start (com delay de 15s para o server carregar)
   setTimeout(() => {
@@ -22,15 +25,20 @@ export function startFaturamentoWorker() {
     )
   }, 15_000)
 
-  // Then every 24 hours
+  // Then every 60 minutes (checks idempotency internally)
   workerInterval = setInterval(
     () => {
       executarMedicaoDiaria().catch((err) =>
         console.error('[Faturamento Worker] Erro na execução periódica:', err),
       )
     },
-    24 * 60 * 60 * 1000,
+    INTERVALO_MINUTOS * 60 * 1000,
   )
+
+  // Evitar que o interval impeça o shutdown do processo
+  if (workerInterval.unref) {
+    workerInterval.unref()
+  }
 }
 
 export function stopFaturamentoWorker() {
@@ -240,4 +248,95 @@ export async function calcularOcupacaoContrato(
       produtos: detalhePorProduto,
     },
   }
+}
+
+/**
+ * Reprocessa medição de ocupação para um contrato em um intervalo de datas.
+ * Deleta medições existentes no range e recalcula dia a dia.
+ * Usado pelo endpoint POST /api/faturamento/medicoes/reprocessar.
+ *
+ * Isola erros por dia — um dia falhando não impede os demais.
+ */
+export async function reprocessarMedicao(
+  empresaId: string,
+  contratoId: string,
+  dataInicio: Date,
+  dataFim: Date,
+): Promise<{ criadas: number; erros: number; dias: number }> {
+  console.log(
+    `[Faturamento Worker] Reprocessando medição do contrato ${contratoId} ` +
+      `de ${dataInicio.toISOString().slice(0, 10)} a ${dataFim.toISOString().slice(0, 10)}`,
+  )
+
+  // Buscar contrato para obter clienteId
+  const contrato = await prisma.contratoArmazenagem.findFirst({
+    where: { id: contratoId, empresaId },
+    select: { id: true, clienteId: true },
+  })
+
+  if (!contrato) {
+    throw { statusCode: 404, message: 'Contrato não encontrado' }
+  }
+
+  // Normalizar datas para meia-noite
+  const inicio = new Date(dataInicio)
+  inicio.setHours(0, 0, 0, 0)
+
+  const fim = new Date(dataFim)
+  fim.setHours(0, 0, 0, 0)
+
+  // Deletar medições existentes no range
+  await prisma.medicaoOcupacao.deleteMany({
+    where: {
+      empresaId,
+      contratoId,
+      dataMedicao: { gte: inicio, lte: fim },
+    },
+  })
+
+  // Iterar dia a dia e criar medições
+  let criadas = 0
+  let erros = 0
+  const current = new Date(inicio)
+
+  while (current <= fim) {
+    try {
+      const medicao = await calcularOcupacaoContrato(
+        empresaId,
+        contrato.clienteId,
+        contratoId,
+      )
+
+      await prisma.medicaoOcupacao.create({
+        data: {
+          empresaId,
+          contratoId,
+          clienteId: contrato.clienteId,
+          dataMedicao: new Date(current),
+          quantidadePallets: medicao.quantidadePallets,
+          volumeM3: medicao.volumeM3,
+          posicoesOcupadas: medicao.posicoesOcupadas,
+          detalhamento: medicao.detalhamento,
+        },
+      })
+
+      criadas++
+    } catch (err) {
+      console.error(
+        `[Faturamento Worker] Erro ao reprocessar dia ${current.toISOString().slice(0, 10)} ` +
+          `do contrato ${contratoId}:`,
+        err,
+      )
+      erros++
+    }
+
+    current.setDate(current.getDate() + 1)
+  }
+
+  const dias = Math.ceil((fim.getTime() - inicio.getTime()) / 86400000) + 1
+  console.log(
+    `[Faturamento Worker] Reprocessamento concluído: ${criadas} criadas, ${erros} erros, ${dias} dias.`,
+  )
+
+  return { criadas, erros, dias }
 }

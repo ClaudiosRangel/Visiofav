@@ -5,6 +5,8 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { analisarPendenciasLogisticas } from '../pendencia-logistica/pendencia-logistica.routes'
 import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
+import { filaService } from '../patio/fila.service'
+import { portariaService } from './portaria.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -19,6 +21,8 @@ function getHojeRange() {
 const conferirNaPortariaSchema = z.object({
   placa: z.string().min(1),
   motorista: z.string().min(1),
+  motoristaDocumento: z.string().optional(),
+  tipoOperacao: z.enum(['CARGA', 'DESCARGA', 'DEVOLUCAO', 'TRANSFERENCIA']).optional(),
   qtdCaixas: z.number().int().optional(),
   qtdPaletes: z.number().int().optional(),
   itensConferidos: z.array(z.object({
@@ -26,6 +30,7 @@ const conferirNaPortariaSchema = z.object({
     quantidadeConferida: z.number().min(0),
   })).optional(),
   observacao: z.string().optional(),
+  cdId: z.string().uuid().optional(),
 })
 
 const registroAvulsoSchema = z.object({
@@ -34,6 +39,110 @@ const registroAvulsoSchema = z.object({
   documento: z.string().optional(),
   motivo: z.enum(['CARGA', 'DESCARGA', 'COLETA', 'ENTREGA', 'AVULSO']).default('AVULSO'),
 })
+
+// ─── Walk-in (veículo sem agendamento) ──────────────────────────────────────
+const PLACA_ANTIGA_REGEX = /^[A-Z]{3}[0-9]{4}$/
+const PLACA_MERCOSUL_REGEX = /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/
+
+const walkInSchema = z.object({
+  placa: z.string().min(1),
+  motoristaNome: z.string().min(1),
+  motoristaDocumento: z.string().min(1),
+  tipoOperacao: z.enum(['CARGA', 'DESCARGA', 'DEVOLUCAO', 'TRANSFERENCIA']),
+  transportadoraId: z.string().uuid().optional(),
+  cdId: z.string().uuid(),
+})
+
+/**
+ * Cria NotaEntrada PENDENTE a partir dos dados do AgendaWms (pedido de compra + XML).
+ * Retorna o id da nota criada ou null se não houver itens.
+ */
+async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise<string | null> {
+  // Buscar dados do fornecedor
+  let fornecedorNome = ''
+  let fornecedorDoc = ''
+  if (ag.fornecedorId) {
+    const forn = await prisma.fornecedor.findUnique({ where: { id: ag.fornecedorId }, select: { razaoSocial: true, cnpj: true } })
+    if (forn) { fornecedorNome = forn.razaoSocial; fornecedorDoc = forn.cnpj }
+  }
+
+  // Buscar itens do pedido de compra OU da compra efetivada do fornecedor
+  let itensNota: any[] = []
+  let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
+
+  // Buscar XML da compra efetivada (por pedidoCompraId ou fallback por fornecedorId)
+  let compra: { xmlNfe: string | null; pedidoCompraId: string } | null = null
+  if (ag.pedidoCompraId) {
+    compra = await prisma.compraEfetivada.findFirst({
+      where: { pedidoCompraId: ag.pedidoCompraId },
+      select: { xmlNfe: true, pedidoCompraId: true },
+    })
+  }
+  if (!compra && ag.fornecedorId) {
+    compra = await prisma.compraEfetivada.findFirst({
+      where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
+      orderBy: { criadoEm: 'desc' },
+      select: { xmlNfe: true, pedidoCompraId: true },
+    })
+  }
+
+  // Extrair lote/validade do XML
+  if (compra?.xmlNfe) {
+    try {
+      const parsed = parseNfeXml(compra.xmlNfe)
+      xmlItens = parsed.itens.map(i => ({
+        codigoProduto: i.codigoProduto,
+        lote: i.lote || '',
+        validade: (i as any).validade || null,
+      }))
+    } catch { /* XML inválido, seguir sem lote/validade */ }
+  }
+
+  // Buscar itens do pedido de compra
+  const pedidoId = ag.pedidoCompraId || compra?.pedidoCompraId
+  if (pedidoId) {
+    const pedido = await prisma.pedidoCompra.findUnique({
+      where: { id: pedidoId },
+      include: { itens: { include: { produto: { select: { nome: true, codigo: true, unidade: true } } } } },
+    })
+    if (pedido) {
+      itensNota = pedido.itens.map((item, idx) => {
+        const xmlItem = xmlItens.find(x => x.codigoProduto === item.produto.codigo)
+        return {
+          item: idx + 1,
+          descricao: item.produto.nome,
+          codigoProduto: item.produto.codigo,
+          unidade: (item as any).unidade || item.produto.unidade,
+          quantidade: Number(item.quantidade),
+          lote: xmlItem?.lote || undefined,
+          validade: xmlItem?.validade ? new Date(xmlItem.validade) : undefined,
+        }
+      })
+    }
+  }
+
+  // Só cria se tem itens (pedido vinculado com produtos)
+  if (itensNota.length === 0) return null
+
+  // Gerar número sequencial para nota
+  const ultimaNota = await prisma.notaEntrada.findFirst({ orderBy: { numero: 'desc' }, select: { numero: true } })
+  const proximoNumero = (ultimaNota?.numero ?? 0) + 1
+
+  // Criar nota de entrada PENDENTE (aguardando conferência interna)
+  const nota = await prisma.notaEntrada.create({
+    data: {
+      numero: proximoNumero,
+      fornecedor: fornecedorNome,
+      fornecedorDoc,
+      tipo: 'COMPRA',
+      status: 'PENDENTE',
+      dataEntrada: new Date(),
+      itens: { create: itensNota },
+    },
+  })
+
+  return nota.id
+}
 
 export async function portariaRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -127,126 +236,55 @@ export async function portariaRoutes(app: FastifyInstance) {
   })
 
   // POST /conferir/:id — caminhão chegou, portaria confere nota (informa placa, motorista, quantidades)
-  // Muda status de AGENDADO → ESPERA + cria NotaEntrada PENDENTE
+  // Muda status de AGENDADO → ESPERA + cria VeiculoPatio + FilaEsperaPatio + NotaEntrada PENDENTE
   app.post('/conferir/:id', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
     const { id } = idParamsSchema.parse(request.params)
     const body = conferirNaPortariaSchema.parse(request.body)
 
-    const ag = await prisma.agendaWms.findFirst({ where: { id, empresaId: user.empresaId } })
-    if (!ag) return reply.status(404).send({ message: 'Agendamento não encontrado' })
-
-    if (ag.status !== 'AGENDADO') {
-      return reply.status(422).send({ message: `Agendamento não está AGENDADO. Status atual: ${ag.status}` })
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      // Atualizar agenda com placa, motorista e status ESPERA
-      const atualizado = await tx.agendaWms.update({
-        where: { id },
-        data: {
-          placa: body.placa.toUpperCase(),
+    // Usar o PortariaService para check-in integrado:
+    // valida AGENDADO, verifica duplicidade de placa (409), cria VeiculoPatio + FilaEsperaPatio em transação
+    let checkinResult: any
+    try {
+      checkinResult = await portariaService.conferirCheckin(
+        user.empresaId,
+        id,
+        {
+          placa: body.placa,
           motorista: body.motorista,
+          motoristaDocumento: body.motoristaDocumento,
+          tipoOperacao: body.tipoOperacao,
           qtdCaixas: body.qtdCaixas,
           qtdPaletes: body.qtdPaletes,
-          observacao: body.observacao || ag.observacao,
-          status: 'ESPERA',
+          observacao: body.observacao,
+          cdId: body.cdId,
         },
-      })
+        user.id,
+      )
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message })
+    }
 
-      // Buscar dados do fornecedor
-      let fornecedorNome = ''
-      let fornecedorDoc = ''
-      if (ag.fornecedorId) {
-        const forn = await tx.fornecedor.findUnique({ where: { id: ag.fornecedorId }, select: { razaoSocial: true, cnpj: true } })
-        if (forn) { fornecedorNome = forn.razaoSocial; fornecedorDoc = forn.cnpj }
-      }
+    const ag = checkinResult.agendamento
 
-      // Buscar itens do pedido de compra OU da compra efetivada do fornecedor
-      let itensNota: any[] = []
-      let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
-
-      // Buscar XML da compra efetivada (por pedidoCompraId ou fallback por fornecedorId)
-      let compra: { xmlNfe: string | null; pedidoCompraId: string } | null = null
-      if (ag.pedidoCompraId) {
-        compra = await tx.compraEfetivada.findFirst({
-          where: { pedidoCompraId: ag.pedidoCompraId },
-          select: { xmlNfe: true, pedidoCompraId: true },
-        })
-      }
-      if (!compra && ag.fornecedorId) {
-        compra = await tx.compraEfetivada.findFirst({
-          where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
-          orderBy: { criadoEm: 'desc' },
-          select: { xmlNfe: true, pedidoCompraId: true },
-        })
-      }
-
-      // Extrair lote/validade do XML
-      if (compra?.xmlNfe) {
-        try {
-          const parsed = parseNfeXml(compra.xmlNfe)
-          xmlItens = parsed.itens.map(i => ({
-            codigoProduto: i.codigoProduto,
-            lote: i.lote || '',
-            validade: (i as any).validade || null,
-          }))
-        } catch { /* XML inválido, seguir sem lote/validade */ }
-      }
-
-      // Buscar itens do pedido de compra
-      const pedidoId = ag.pedidoCompraId || compra?.pedidoCompraId
-      if (pedidoId) {
-        const pedido = await tx.pedidoCompra.findUnique({
-          where: { id: pedidoId },
-          include: { itens: { include: { produto: { select: { nome: true, codigo: true, unidade: true } } } } },
-        })
-        if (pedido) {
-          itensNota = pedido.itens.map((item, idx) => {
-            const xmlItem = xmlItens.find(x => x.codigoProduto === item.produto.codigo)
-            return {
-              item: idx + 1,
-              descricao: item.produto.nome,
-              codigoProduto: item.produto.codigo,
-              unidade: (item as any).unidade || item.produto.unidade,
-              quantidade: Number(item.quantidade),
-              lote: xmlItem?.lote || undefined,
-              validade: xmlItem?.validade ? new Date(xmlItem.validade) : undefined,
-            }
-          })
-        }
-      }
-
-      // Gerar número sequencial para nota
-      const ultimaNota = await tx.notaEntrada.findFirst({ orderBy: { numero: 'desc' }, select: { numero: true } })
-      const proximoNumero = (ultimaNota?.numero ?? 0) + 1
-
-      // Criar nota de entrada PENDENTE (aguardando conferência interna)
-      // Só cria se tem itens (pedido vinculado com produtos)
-      let nota = null
-      if (itensNota.length > 0) {
-        nota = await tx.notaEntrada.create({
-          data: {
-            numero: proximoNumero,
-            fornecedor: fornecedorNome,
-            fornecedorDoc,
-            tipo: 'COMPRA',
-            status: 'PENDENTE',
-            dataEntrada: new Date(),
-            itens: { create: itensNota },
-          },
-        })
-      }
-
-      return { atualizado, nota }
-    })
+    // Criar NotaEntrada PENDENTE (preservando lógica existente)
+    let notaEntradaId: string | null = null
+    try {
+      notaEntradaId = await criarNotaEntradaSeNecessario(ag, user.empresaId)
+    } catch { /* falha na criação da nota não impede o check-in */ }
 
     return reply.status(200).send({
-      message: result.nota
-        ? 'Conferência na portaria concluída. Aguardando confirmação na agenda de recebimento.'
-        : 'Conferência na portaria concluída. Nota de entrada não criada — agendamento sem pedido de compra vinculado.',
-      agendamento: result.atualizado,
-      notaEntradaId: result.nota?.id || null,
+      message: notaEntradaId
+        ? 'Conferência na portaria concluída. Veículo registrado no pátio. Aguardando chamada de doca.'
+        : 'Conferência na portaria concluída. Veículo registrado no pátio. Nota de entrada não criada — agendamento sem pedido de compra vinculado.',
+      agendamento: checkinResult.agendamento,
+      veiculo: checkinResult.veiculo,
+      filaPosicao: checkinResult.filaPosicao,
+      notaEntradaId,
     })
   })
 
@@ -417,6 +455,81 @@ export async function portariaRoutes(app: FastifyInstance) {
     })
 
     return reply.status(201).send({ message: 'Entrada avulsa registrada', agendamento: ag })
+  })
+
+  // POST /walk-in — registra veículo walk-in (sem agendamento) no pátio com fila de espera
+  app.post('/walk-in', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const body = walkInSchema.parse(request.body)
+
+    // 1. Validar formato da placa
+    const placaNormalizada = body.placa.toUpperCase()
+    if (!PLACA_ANTIGA_REGEX.test(placaNormalizada) && !PLACA_MERCOSUL_REGEX.test(placaNormalizada)) {
+      return reply.status(422).send({
+        message: 'Placa inválida. Use formato antigo (ABC1234) ou Mercosul (ABC1D23)',
+      })
+    }
+
+    // 2. Verificar duplicidade: veículo com mesma placa que não foi liberado
+    const veiculoExistente = await prisma.veiculoPatio.findFirst({
+      where: {
+        empresaId: user.empresaId,
+        placa: placaNormalizada,
+        status: { not: 'LIBERADO' },
+      },
+    })
+
+    if (veiculoExistente) {
+      return reply.status(409).send({
+        message: `Veículo com placa ${placaNormalizada} já está no pátio`,
+      })
+    }
+
+    // 3. Calcular prioridade via FilaService (walk-in: isAgendado = false)
+    const prioridade = await filaService.calcularPrioridade(
+      user.empresaId,
+      body.cdId,
+      body.tipoOperacao,
+      false,
+    )
+
+    // 4. Transação: criar VeiculoPatio + inserir na FilaEsperaPatio
+    const resultado = await prisma.$transaction(async (tx) => {
+      const veiculo = await tx.veiculoPatio.create({
+        data: {
+          empresaId: user.empresaId!,
+          cdId: body.cdId,
+          placa: placaNormalizada,
+          motoristaNome: body.motoristaNome,
+          motoristaDocumento: body.motoristaDocumento,
+          transportadoraId: body.transportadoraId || null,
+          tipoOperacao: body.tipoOperacao,
+          agendamentoId: null,
+          status: 'AGUARDANDO',
+          entradaEm: new Date(),
+          criadoPorId: user.id,
+        },
+      })
+
+      const fila = await filaService.inserirNaFila(
+        tx,
+        user.empresaId!,
+        body.cdId,
+        veiculo.id,
+        prioridade,
+      )
+
+      return {
+        ...veiculo,
+        filaPosicao: { posicao: fila.posicao, prioridade: fila.prioridade },
+      }
+    })
+
+    return reply.status(201).send(resultado)
   })
 
   // GET /veiculos-patio — lista veículos atualmente no pátio/doca (compat)

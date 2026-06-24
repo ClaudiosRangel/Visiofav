@@ -17,8 +17,9 @@ export interface EmitirCCeParams {
   notaEntradaId: string
   divergenciaId: string
   item: string
-  quantidadeOriginal: number
-  quantidadeCorrigida: number
+  quantidadeOriginal?: number
+  quantidadeCorrigida?: number
+  textoCorrecao?: string
 }
 
 export interface ResultadoCCe {
@@ -57,7 +58,7 @@ export class CceService {
    * 7. Registra resultado (autorização ou rejeição)
    */
   async emitirCCe(params: EmitirCCeParams): Promise<ResultadoCCe> {
-    const { empresaId, notaEntradaId, divergenciaId, item, quantidadeOriginal, quantidadeCorrigida } = params
+    const { empresaId, notaEntradaId, divergenciaId, item, quantidadeOriginal, quantidadeCorrigida, textoCorrecao: textoCustom } = params
 
     // 1. Verificar limite de 20 CC-e por NF
     const countExistentes = await prisma.cartaCorrecao.count({
@@ -109,7 +110,7 @@ export class CceService {
     const sequencia = countExistentes + 1
 
     // 4. Gerar texto de correção
-    const textoCorrecao = gerarTextoCCe({ item, quantidadeOriginal, quantidadeCorrigida })
+    const textoCorrecao = textoCustom || gerarTextoCCe({ item, quantidadeOriginal: quantidadeOriginal ?? 0, quantidadeCorrigida: quantidadeCorrigida ?? 0 })
 
     // 5. Determinar cOrgao (código IBGE da UF)
     const cOrgao = empresa.uf ? (UF_PARA_CODIGO_IBGE[empresa.uf] || '35') : '35'

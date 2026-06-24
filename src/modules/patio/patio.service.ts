@@ -1,5 +1,7 @@
 import { prisma } from '../../lib/prisma'
 import { VeiculoPatio, ChamadaDoca } from '@prisma/client'
+import { portariaService } from '../portaria/portaria.service'
+import { sseService } from './sse.service'
 
 // ─── Regex para placas brasileiras ─────────────────────────────────────────────
 const PLACA_ANTIGA_REGEX = /^[A-Z]{3}[0-9]{4}$/
@@ -263,6 +265,46 @@ export class PatioService {
       data: {
         prioridade: data.prioridade,
         justificativaPrioridade: data.justificativa,
+      },
+    })
+
+    return atualizado
+  }
+
+  /**
+   * Override manual de prioridade por veiculoId.
+   * Busca o registro de FilaEsperaPatio pelo veiculoId, atualiza prioridade e registra justificativa.
+   */
+  async overridePrioridade(
+    empresaId: string,
+    veiculoId: string,
+    data: { prioridade: number; justificativaPrioridade: string },
+  ) {
+    const registro = await prisma.filaEsperaPatio.findFirst({
+      where: { veiculoId, empresaId },
+    })
+
+    if (!registro) {
+      throw {
+        statusCode: 404,
+        message: 'Veículo não encontrado na fila de espera',
+      }
+    }
+
+    const atualizado = await prisma.filaEsperaPatio.update({
+      where: { id: registro.id },
+      data: {
+        prioridade: data.prioridade,
+        justificativaPrioridade: data.justificativaPrioridade,
+      },
+      include: {
+        veiculo: {
+          select: {
+            placa: true,
+            motoristaNome: true,
+            tipoOperacao: true,
+          },
+        },
       },
     })
 
@@ -915,6 +957,184 @@ export class PatioService {
     })
 
     return chamadaCancelada
+  }
+
+  // ─── Guards de Transição de Status (Task 8.3) ───────────────────────────────
+
+  /**
+   * Valida que o veículo está no status NA_DOCA antes de iniciar conferência.
+   * Lança HTTP 422 se o status não for NA_DOCA.
+   *
+   * Validates: Requirements 6.3
+   */
+  validarStatusParaConferencia(veiculo: VeiculoPatio): void {
+    if (veiculo.status !== 'NA_DOCA') {
+      throw {
+        statusCode: 422,
+        message: 'Veículo deve estar na doca para iniciar conferência',
+      }
+    }
+  }
+
+  /**
+   * Valida que o veículo está no status CONFERIDO antes da liberação.
+   * Lança HTTP 422 se o status não for CONFERIDO.
+   *
+   * Validates: Requirements 7.3
+   */
+  validarStatusParaLiberacao(veiculo: VeiculoPatio): void {
+    if (veiculo.status !== 'CONFERIDO') {
+      throw {
+        statusCode: 422,
+        message: 'Conferência deve ser concluída antes da liberação',
+      }
+    }
+  }
+
+  // ─── Conference Lifecycle (Task 9.1) ─────────────────────────────────────────
+
+  /**
+   * Inicia a conferência de um veículo na doca.
+   * Valida que o veículo está em status NA_DOCA, atualiza para CONFERINDO,
+   * e sincroniza o status do AgendaWms vinculado.
+   *
+   * Validates: Requirements 6.1, 6.3, 4.3
+   */
+  async iniciarConferencia(empresaId: string, veiculoId: string): Promise<VeiculoPatio> {
+    // 1. Buscar veículo pelo id + empresaId
+    const veiculo = await prisma.veiculoPatio.findFirst({
+      where: { id: veiculoId, empresaId },
+    })
+
+    if (!veiculo) {
+      throw {
+        statusCode: 404,
+        message: 'Veículo não encontrado',
+      }
+    }
+
+    // 2. Validar que está NA_DOCA
+    this.validarStatusParaConferencia(veiculo)
+
+    // 3. Transação: atualizar status + sincronizar AgendaWms
+    const veiculoAtualizado = await prisma.$transaction(async (tx) => {
+      const atualizado = await tx.veiculoPatio.update({
+        where: { id: veiculoId },
+        data: { status: 'CONFERINDO' },
+      })
+
+      await portariaService.sincronizarAgendaStatus(tx, veiculoId, 'CONFERINDO')
+
+      return atualizado
+    })
+
+    return veiculoAtualizado
+  }
+
+  /**
+   * Conclui a conferência de um veículo na doca.
+   * Valida que o veículo está em status CONFERINDO, atualiza para CONFERIDO,
+   * e sincroniza o status do AgendaWms vinculado.
+   *
+   * Validates: Requirements 6.2, 4.4
+   */
+  async concluirConferencia(empresaId: string, veiculoId: string): Promise<VeiculoPatio> {
+    // 1. Buscar veículo pelo id + empresaId
+    const veiculo = await prisma.veiculoPatio.findFirst({
+      where: { id: veiculoId, empresaId },
+    })
+
+    if (!veiculo) {
+      throw {
+        statusCode: 404,
+        message: 'Veículo não encontrado',
+      }
+    }
+
+    // 2. Validar que está CONFERINDO
+    if (veiculo.status !== 'CONFERINDO') {
+      throw {
+        statusCode: 422,
+        message: 'Veículo deve estar em conferência para concluir',
+      }
+    }
+
+    // 3. Transação: atualizar status + sincronizar AgendaWms
+    const veiculoAtualizado = await prisma.$transaction(async (tx) => {
+      const atualizado = await tx.veiculoPatio.update({
+        where: { id: veiculoId },
+        data: { status: 'CONFERIDO' },
+      })
+
+      await portariaService.sincronizarAgendaStatus(tx, veiculoId, 'CONFERIDO')
+
+      return atualizado
+    })
+
+    return veiculoAtualizado
+  }
+
+  // ─── Liberação de Veículo (Task 9.2) ────────────────────────────────────────
+
+  /**
+   * Libera um veículo do pátio após conferência concluída.
+   * Valida status CONFERIDO, calcula tempo de permanência na doca,
+   * atualiza VeiculoPatio (LIBERADO + saidaEm + tempoPermMinutos + limpa docaId),
+   * sincroniza AgendaWms (RECEBIDO + tempoPermDocaMin), e emite SSE "doca-liberada".
+   *
+   * Validates: Requirements 7.1, 7.2, 4.5, 12.4
+   */
+  async liberarVeiculo(empresaId: string, veiculoId: string): Promise<VeiculoPatio> {
+    // 1. Buscar veículo pelo id + empresaId
+    const veiculo = await prisma.veiculoPatio.findFirst({
+      where: { id: veiculoId, empresaId },
+    })
+
+    if (!veiculo) {
+      throw {
+        statusCode: 404,
+        message: 'Veículo não encontrado',
+      }
+    }
+
+    // 2. Validar que o veículo está CONFERIDO
+    this.validarStatusParaLiberacao(veiculo)
+
+    // 3. Calcular tempo de permanência na doca (minutos desde chegadaDocaEm)
+    const agora = new Date()
+    const tempoPermMinutos = veiculo.chegadaDocaEm
+      ? Math.round((agora.getTime() - new Date(veiculo.chegadaDocaEm).getTime()) / 60000)
+      : 0
+
+    // Guardar docaId antes de limpar (necessário para SSE)
+    const docaIdLiberada = veiculo.docaId
+
+    // 4. Transação: atualizar VeiculoPatio + sincronizar AgendaWms
+    const veiculoAtualizado = await prisma.$transaction(async (tx) => {
+      // 4.1 Atualizar VeiculoPatio: status → LIBERADO, saidaEm, tempoPermMinutos, docaId → null
+      const atualizado = await tx.veiculoPatio.update({
+        where: { id: veiculoId },
+        data: {
+          status: 'LIBERADO',
+          saidaEm: agora,
+          tempoPermMinutos,
+          docaId: null,
+        },
+      })
+
+      // 4.2 Sincronizar AgendaWms: status → RECEBIDO + tempoPermDocaMin
+      await portariaService.sincronizarAgendaStatus(tx, veiculoId, 'LIBERADO')
+
+      return atualizado
+    })
+
+    // 5. Emitir SSE "doca-liberada" após commit bem-sucedido
+    sseService.broadcast(empresaId, {
+      type: 'doca-liberada',
+      data: { docaId: docaIdLiberada, veiculoId },
+    })
+
+    return veiculoAtualizado
   }
 }
 
