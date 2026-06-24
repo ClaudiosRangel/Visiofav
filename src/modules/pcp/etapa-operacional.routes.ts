@@ -702,7 +702,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             observacoes: e.ordemProducao.observacoes,
             observacaoOperador: e.observacaoOperador || null,
             // Campos de material (Requisito 3)
-            tiragem: Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
+            // Tiragem = Quantidade / Montagem (aproveitamento por folha)
+            tiragem: (() => {
+              const qtd = Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)
+              // Buscar aproveitamento da tag [Montagem] nas observações
+              const matchMontagem = (e.ordemProducao.observacoes || '').match(/\[Montagem\]\s*(\d+)/)
+              if (matchMontagem) {
+                const aproveitamento = parseInt(matchMontagem[1])
+                if (aproveitamento > 0) return Math.ceil(qtd / aproveitamento)
+              }
+              return qtd
+            })(),
             materialPrincipal: papel?.descricaoProduto || null,
             gramatura: (papel ? extrairGramatura(papel.descricaoProduto) : null) || extrairGramatura(e.ordemProducao.observacoes || ''),
             formato: (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),

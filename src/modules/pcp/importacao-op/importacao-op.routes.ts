@@ -154,6 +154,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     const obsConsolidadas = [
       ...(dados.cabecalho.cliente ? [`[Cliente] ${dados.cabecalho.cliente}`] : []),
       ...(dados.cabecalho.descricao ? [`[Produto] ${dados.cabecalho.descricao}`] : []),
+      ...(dados.montagem ? [`[Montagem] ${dados.montagem.aproveitamento}`] : []),
       ...(dados.observacoes.gerais || []),
       ...(dados.observacoes.producao || []),
       ...(dados.observacoes.bobinas.map(b => `[Bobina] ${b}`) || []),
