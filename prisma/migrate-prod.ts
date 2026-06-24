@@ -435,6 +435,7 @@ async function main() {
   // WMS Fase 2 — Multi-CD com Transferências: tabelas de transferência
   // =========================================================================
 
+  try {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "solicitacao_transferencia" (
       "id" TEXT NOT NULL,
@@ -505,6 +506,9 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id_status" ON "mercadoria_transito"("empresa_id", "status")`)
 
   console.log('✅ Multi-CD com Transferências: tabelas criadas')
+  } catch (e: any) {
+    console.log('⚠️ Multi-CD Transferências skipped:', e.message?.substring(0, 100))
+  }
 
   // =========================================================================
   // PCP — Programação por Máquina: novos campos
