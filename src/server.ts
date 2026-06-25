@@ -139,6 +139,7 @@ import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
 import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
+import { adminPcpRoutes } from './modules/pcp/admin-pcp.routes'
 import { firebaseAuthAdapter } from './middleware/firebase-auth-adapter'
 import { ordemProducaoRoutes } from './modules/ordem-producao/ordem-producao.routes'
 import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entrega.routes'
@@ -267,6 +268,9 @@ async function bootstrap() {
   await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
+
+  // Admin — Operações destrutivas (limpar dados)
+  await app.register(adminPcpRoutes, { prefix: '/api/admin' })
 
   // Acompanhamento público (sem auth) — visão do cliente
   await app.register(acompanhamentoClienteRoutes, { prefix: '/api/acompanhamento' })
