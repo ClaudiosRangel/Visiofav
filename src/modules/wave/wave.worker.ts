@@ -97,9 +97,9 @@ export async function verificarOndasEmAtraso() {
         empresaId: true,
         status: true,
         prioridade: true,
-        totalPedidos: true,
-        totalItens: true,
+        numero: true,
         criadoEm: true,
+        _count: { select: { pedidos: true, ordens: true } },
       },
     })
 
@@ -140,7 +140,7 @@ export async function verificarOndasEmAtraso() {
       const mensagem =
         `Onda prioridade ${onda.prioridade} está em atraso há ` +
         `${minutosAtraso} minutos (limite: ${LIMITE_ATRASO_MINUTOS} min) — ` +
-        `Status: ${onda.status}, Pedidos: ${onda.totalPedidos}, Itens: ${onda.totalItens}`
+        `Status: ${onda.status}, Pedidos: ${onda._count.pedidos}, Itens: ${onda._count.ordens}`
 
       await prisma.alertaKpi.create({
         data: {

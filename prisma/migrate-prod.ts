@@ -505,6 +505,16 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id" ON "mercadoria_transito"("empresa_id")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id_status" ON "mercadoria_transito"("empresa_id", "status")`)
 
+  // Garantir colunas caso tabela já existisse sem elas (cenário de re-deploy)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "documento_saida_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "quantidade" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "lote" VARCHAR(30)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "data_expedicao" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "data_recebimento" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "status" VARCHAR(20) DEFAULT 'EM_TRANSITO'`)
+
   console.log('✅ Multi-CD com Transferências: tabelas criadas')
   } catch (e: any) {
     console.log('⚠️ Multi-CD Transferências skipped:', e.message?.substring(0, 100))

@@ -4,7 +4,7 @@
 
 | Recurso | Provedor | URL/Endpoint |
 |---------|----------|--------------|
-| **API Backend** | Render | https://visiofav.onrender.com |
+| **API Backend** | Render | https://api.vizorerp.com.br |
 | **Banco de Dados** | Neon (PostgreSQL serverless) | Configurado em env vars do Render |
 | **Migração** | Automática no start | `prisma/migrate-prod.ts` |
 
