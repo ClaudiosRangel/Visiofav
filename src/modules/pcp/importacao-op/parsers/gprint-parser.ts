@@ -310,13 +310,15 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
       let unid = m[3].toUpperCase()
 
       // Extrair detalhe de cor inline: "Escala (CMYK) (25%)" ou "Pantone 01 (CW030S- LARANJA) (70%)"
+      // Manter a descrição completa com a informação de cor
       let corPantone: string | undefined
       let percentual: number | undefined
       let tipoCor: string | undefined
+      let nomeParaTipo = nome // nome sem parenteses para classificar o tipo
 
       const matchCorInline = nome.match(/^(.+?)\s+\(([^)]+)\)\s*\((\d+)%\)$/)
       if (matchCorInline) {
-        nome = matchCorInline[1].trim()
+        nomeParaTipo = matchCorInline[1].trim()
         const corInfo = matchCorInline[2].trim()
         percentual = parseFloat(matchCorInline[3])
         if (/^CMYK$/i.test(corInfo)) {
@@ -325,18 +327,19 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
           tipoCor = 'PANTONE'
           corPantone = corInfo
         }
+        // nome continua com a info completa: "Escala (CMYK) (25%)"
       }
 
       // Ignorar linhas de header ou rodapé
-      if (/^(Obs|Emitido|Reemitido|Caixa Padr|Seguir)/i.test(nome)) continue
+      if (/^(Obs|Emitido|Reemitido|Caixa Padr|Seguir)/i.test(nomeParaTipo)) continue
 
       let tipo: MaterialOp['tipo'] = 'OUTRO'
-      if (/cola/i.test(nome)) tipo = 'COLA'
-      else if (/verniz|primer/i.test(nome)) tipo = 'VERNIZ'
-      else if (/escala|pantone|tinta|cmyk/i.test(nome)) tipo = 'TINTA'
-      else if (/faca|clich[eê]|destacador/i.test(nome)) tipo = 'FACA'
-      else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado/i.test(nome)) tipo = 'PAPEL'
-      else if (/^CD$/i.test(nome)) tipo = 'FACA'
+      if (/cola/i.test(nomeParaTipo)) tipo = 'COLA'
+      else if (/verniz|primer/i.test(nomeParaTipo)) tipo = 'VERNIZ'
+      else if (/escala|pantone|tinta|cmyk/i.test(nomeParaTipo)) tipo = 'TINTA'
+      else if (/faca|clich[eê]|destacador/i.test(nomeParaTipo)) tipo = 'FACA'
+      else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado/i.test(nomeParaTipo)) tipo = 'PAPEL'
+      else if (/^CD$/i.test(nomeParaTipo)) tipo = 'FACA'
 
       if (tipo === 'FACA') unid = 'UN'
 
@@ -414,6 +417,7 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
     let corPantone: string | undefined
     let percentual: number | undefined
     let tipoCor: string | undefined
+    let descricaoFinal = nome
 
     if (detalhe) {
       const matchCmyk = detalhe.match(/\(CMYK\)\s*\((\d+)%\)/i)
@@ -426,10 +430,12 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
         corPantone = matchPantone[1]
         percentual = parseFloat(matchPantone[2])
       }
+      // Incluir informação de cor na descrição
+      descricaoFinal = `${nome} ${detalhe}`
     }
 
     materiais.push({
-      descricao: nome,
+      descricao: descricaoFinal,
       quantidade: qtd,
       unidade: unid,
       tipo,
