@@ -244,12 +244,22 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     for (let i = 0; i < dados.materiais.length; i++) {
       const mat = dados.materiais[i]
       const vinculo = body.materiaisVinculados?.find(v => v.indice === i)
+      const produtoId = vinculo?.produtoId ?? null
+
+      // Validar que produtoId existe antes de vincular
+      let produtoIdValidado: string | null = null
+      if (produtoId) {
+        const produtoExiste = await prisma.produto.findUnique({ where: { id: produtoId }, select: { id: true } })
+        if (produtoExiste) {
+          produtoIdValidado = produtoId
+        }
+      }
 
       const item = await prisma.itemOrdemProducao.create({
         data: {
           ordemProducaoId: op.id,
           empresaId: user.empresaId,
-          ...(vinculo?.produtoId ? { produtoComponenteId: vinculo.produtoId } : {}),
+          produtoComponenteId: produtoIdValidado ?? undefined,
           descricaoProduto: mat.descricao,
           descricaoExterna: mat.descricao,
           quantidade: mat.quantidade,
@@ -266,14 +276,23 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     for (let i = 0; i < dados.etapas.length; i++) {
       const etapa = dados.etapas[i]
       const vinculoCentro = body.centrosVinculados?.find(v => v.indice === i)
-      const centroId = vinculoCentro?.centroProducaoId
+      const centroId = vinculoCentro?.centroProducaoId ?? null
+
+      // Validar que centroId existe no banco antes de usar
+      let centroIdValidado: string | null = null
+      if (centroId) {
+        const centroExiste = await prisma.centroProducao.findUnique({ where: { id: centroId }, select: { id: true } })
+        if (centroExiste) {
+          centroIdValidado = centroId
+        }
+      }
 
       const etapaCriada = await prisma.etapaOrdemProducao.create({
         data: {
           ordemProducaoId: op.id,
           sequencia: etapa.sequencia,
           descricao: etapa.descricao,
-          ...(centroId ? { centroProducaoId: centroId } : {}),
+          centroProducaoId: centroIdValidado ?? undefined,
           tempoSetupMinutos: etapa.tempoFixoMin,
           tempoOperacaoCalculado: etapa.tempoVariavelMin,
           tempoEsperaMinutos: 0,

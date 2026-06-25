@@ -536,6 +536,8 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_ordem_producao" ADD COLUMN IF NOT EXISTS "empresa_id" TEXT`)
   // Corrigir constraint de produto_componente_id para nullable
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_ordem_producao" ALTER COLUMN "produto_componente_id" DROP NOT NULL`)
+  // Corrigir constraint de centro_producao_id para nullable (importação OP sem vínculo de máquina)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ALTER COLUMN "centro_producao_id" DROP NOT NULL`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_prevista" DECIMAL(12,4) DEFAULT 0`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_produzida_etapa" DECIMAL(12,4) DEFAULT 0`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_perda_etapa" DECIMAL(12,4) DEFAULT 0`)
