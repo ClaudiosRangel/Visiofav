@@ -135,6 +135,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       centrosVinculados: z.array(z.object({
         indice: z.number().int().min(0),
         centroProducaoId: z.string().uuid().nullable(),
+        nomeEditado: z.string().optional(),
       })).optional(),
       // Se quer salvar De/Para para futuras importaÃ§Ãµes
       salvarDePara: z.boolean().optional().default(false),
@@ -437,22 +438,41 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
   // Buscar materiais
   for (let i = 0; i < dados.materiais.length; i++) {
     const mat = dados.materiais[i]
-    const produto = await prisma.produto.findFirst({
-      where: { empresaId, OR: [{ nome: { contains: mat.descricao.substring(0, 20), mode: 'insensitive' } }, { codigo: { contains: mat.descricao.substring(0, 10), mode: 'insensitive' } }] },
-      select: { id: true, codigo: true, nome: true },
+    // Primeiro: De/Para
+    const deParaMat = await prisma.deParaImportacao.findFirst({
+      where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'MATERIAL', codigoExterno: mat.descricao },
     })
-    sugestoes.materiais.push({ indice: i, sugestao: produto || null })
+    if (deParaMat) {
+      const produto = await prisma.produto.findFirst({ where: { id: deParaMat.entidadeInternaId }, select: { id: true, codigo: true, nome: true } })
+      sugestoes.materiais.push({ indice: i, sugestao: produto || null })
+    } else {
+      const produto = await prisma.produto.findFirst({
+        where: { empresaId, OR: [{ nome: { contains: mat.descricao.substring(0, 20), mode: 'insensitive' } }, { codigo: { contains: mat.descricao.substring(0, 10), mode: 'insensitive' } }] },
+        select: { id: true, codigo: true, nome: true },
+      })
+      sugestoes.materiais.push({ indice: i, sugestao: produto || null })
+    }
   }
 
-  // Buscar centros de produÃ§Ã£o para etapas
+  // Buscar centros de produção para etapas
   for (let i = 0; i < dados.etapas.length; i++) {
     const etapa = dados.etapas[i]
-    if (etapa.maquina) {
+    const nomeMaquina = etapa.maquina || etapa.descricao
+    // Primeiro: De/Para
+    const deParaCentro = await prisma.deParaImportacao.findFirst({
+      where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeMaquina },
+    })
+    if (deParaCentro) {
+      const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true } })
+      sugestoes.centros.push({ indice: i, sugestao: centro || null })
+    } else if (nomeMaquina) {
       const centro = await prisma.centroProducao.findFirst({
-        where: { empresaId, OR: [{ descricao: { contains: etapa.maquina.substring(0, 15), mode: 'insensitive' } }, { codigo: { contains: etapa.maquina.substring(0, 10), mode: 'insensitive' } }] },
+        where: { empresaId, OR: [{ descricao: { contains: nomeMaquina.substring(0, 15), mode: 'insensitive' } }, { codigo: { contains: nomeMaquina.substring(0, 10), mode: 'insensitive' } }] },
         select: { id: true, codigo: true, descricao: true },
       })
       sugestoes.centros.push({ indice: i, sugestao: centro || null })
+    } else {
+      sugestoes.centros.push({ indice: i, sugestao: null })
     }
   }
 
@@ -478,8 +498,39 @@ async function salvarDeParaImportacao(empresaId: string, dados: DadosOpGprint, b
         update: { entidadeInternaId: body.produtoId, nomeExterno: dados.cabecalho.descricao || '' },
       })
     }
+
+    // Salvar de-para de centros/máquinas
+    if (body.centrosVinculados?.length > 0) {
+      for (const vinculo of body.centrosVinculados) {
+        if (!vinculo.centroProducaoId) continue
+        const etapa = dados.etapas[vinculo.indice]
+        if (!etapa) continue
+        const nomeOriginal = etapa.maquina || etapa.descricao
+        const nomeEditado = vinculo.nomeEditado || nomeOriginal
+        // Salvar usando o nome original do PDF como código externo
+        await prisma.deParaImportacao.upsert({
+          where: { empresaId_sistemaOrigem_tipoEntidade_codigoExterno: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeOriginal } },
+          create: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeOriginal, nomeExterno: nomeEditado, entidadeInternaId: vinculo.centroProducaoId },
+          update: { entidadeInternaId: vinculo.centroProducaoId, nomeExterno: nomeEditado },
+        })
+      }
+    }
+
+    // Salvar de-para de materiais
+    if (body.materiaisVinculados?.length > 0) {
+      for (const vinculo of body.materiaisVinculados) {
+        if (!vinculo.produtoId) continue
+        const mat = dados.materiais[vinculo.indice]
+        if (!mat) continue
+        await prisma.deParaImportacao.upsert({
+          where: { empresaId_sistemaOrigem_tipoEntidade_codigoExterno: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'MATERIAL', codigoExterno: mat.descricao } },
+          create: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'MATERIAL', codigoExterno: mat.descricao, nomeExterno: mat.descricao, entidadeInternaId: vinculo.produtoId },
+          update: { entidadeInternaId: vinculo.produtoId, nomeExterno: mat.descricao },
+        })
+      }
+    }
   } catch {
-    // NÃ£o bloqueia a criaÃ§Ã£o da OP se De/Para falhar
+    // Não bloqueia a criação da OP se De/Para falhar
   }
 }
 
