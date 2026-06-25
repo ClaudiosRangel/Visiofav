@@ -1599,6 +1599,7 @@ model CentroProducao {
   codigo         String   @db.VarChar(20)
   descricao      String   @db.VarChar(200)
   tipo           String   @db.VarChar(20) // MAQUINA, SETOR, LINHA
+  tipoMaquina    String?  @map("tipo_maquina") @db.VarChar(20) // IMPRESSAO, ACABAMENTO, CORTADEIRA, COLAGEM, VERNIZ
   capacidadeHora Decimal? @map("capacidade_hora") @db.Decimal(12, 4)
   custoHora      Decimal? @map("custo_hora") @db.Decimal(12, 4)
   status         Boolean  @default(true)

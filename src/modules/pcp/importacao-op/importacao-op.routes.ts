@@ -136,6 +136,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         indice: z.number().int().min(0),
         centroProducaoId: z.string().uuid().nullable(),
         nomeEditado: z.string().optional(),
+        tipoMaquina: z.enum(['IMPRESSAO', 'ACABAMENTO', 'CORTADEIRA', 'COLAGEM', 'VERNIZ']).optional(),
       })).optional(),
       // Se quer salvar De/Para para futuras importaÃ§Ãµes
       salvarDePara: z.boolean().optional().default(false),
@@ -284,6 +285,33 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         const centroExiste = await prisma.centroProducao.findUnique({ where: { id: centroId }, select: { id: true } })
         if (centroExiste) {
           centroIdValidado = centroId
+        }
+      }
+
+      // Se não vinculou a centro existente mas tem nomeEditado, criar novo centro
+      if (!centroIdValidado && vinculoCentro?.nomeEditado) {
+        const nomeCentro = vinculoCentro.nomeEditado
+        const codigoCentro = nomeCentro.substring(0, 20).toUpperCase().replace(/\s+/g, '_')
+
+        // Verificar se já existe um centro com esse código para evitar duplicidade
+        const centroExistente = await prisma.centroProducao.findFirst({
+          where: { empresaId: user.empresaId, codigo: codigoCentro },
+          select: { id: true },
+        })
+
+        if (centroExistente) {
+          centroIdValidado = centroExistente.id
+        } else {
+          const novoCentro = await prisma.centroProducao.create({
+            data: {
+              empresaId: user.empresaId,
+              codigo: codigoCentro,
+              descricao: nomeCentro,
+              tipo: 'MAQUINA',
+              tipoMaquina: vinculoCentro.tipoMaquina ?? null,
+            },
+          })
+          centroIdValidado = novoCentro.id
         }
       }
 
@@ -483,12 +511,12 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
       where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeMaquina },
     })
     if (deParaCentro) {
-      const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true } })
+      const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
       sugestoes.centros.push({ indice: i, sugestao: centro || null })
     } else if (nomeMaquina) {
       const centro = await prisma.centroProducao.findFirst({
         where: { empresaId, OR: [{ descricao: { contains: nomeMaquina.substring(0, 15), mode: 'insensitive' } }, { codigo: { contains: nomeMaquina.substring(0, 10), mode: 'insensitive' } }] },
-        select: { id: true, codigo: true, descricao: true },
+        select: { id: true, codigo: true, descricao: true, tipoMaquina: true },
       })
       sugestoes.centros.push({ indice: i, sugestao: centro || null })
     } else {

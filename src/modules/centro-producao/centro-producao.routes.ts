@@ -8,10 +8,13 @@ const idParamsSchema = z.object({
   id: z.string().uuid(),
 })
 
+const tipoMaquinaSchema = z.enum(['IMPRESSAO', 'ACABAMENTO', 'CORTADEIRA', 'COLAGEM', 'VERNIZ'])
+
 const centroProducaoBodySchema = z.object({
   codigo: z.string().min(1, 'Código é obrigatório').max(20),
   descricao: z.string().min(1, 'Descrição é obrigatória').max(200),
   tipo: z.enum(['MAQUINA', 'SETOR', 'LINHA']),
+  tipoMaquina: tipoMaquinaSchema.nullable().optional(),
   capacidadeHora: z.number().min(0).optional().nullable(),
   custoHora: z.number().min(0).optional().nullable(),
 })
@@ -19,6 +22,7 @@ const centroProducaoBodySchema = z.object({
 const listQuerySchema = z.object({
   busca: z.string().optional(),
   tipo: z.enum(['MAQUINA', 'SETOR', 'LINHA']).optional(),
+  tipoMaquina: tipoMaquinaSchema.optional(),
   status: z.enum(['true', 'false']).optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
@@ -34,7 +38,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
    */
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const { busca, tipo, status, page, limit } = listQuerySchema.parse(request.query)
+    const { busca, tipo, tipoMaquina, status, page, limit } = listQuerySchema.parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
 
@@ -47,6 +51,10 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
 
     if (tipo) {
       where.tipo = tipo
+    }
+
+    if (tipoMaquina) {
+      where.tipoMaquina = tipoMaquina
     }
 
     if (status !== undefined) {
@@ -109,12 +117,15 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
       return reply.status(409).send({ message: `Código '${body.codigo}' já existe para esta empresa` })
     }
 
+    const tipoMaquina = body.tipo === 'MAQUINA' ? (body.tipoMaquina ?? null) : null
+
     const centro = await prisma.centroProducao.create({
       data: {
         empresaId: user.empresaId,
         codigo: body.codigo,
         descricao: body.descricao,
         tipo: body.tipo,
+        tipoMaquina,
         capacidadeHora: body.capacidadeHora ?? undefined,
         custoHora: body.custoHora ?? undefined,
       },
@@ -156,12 +167,15 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
       }
     }
 
+    const tipoMaquina = body.tipo === 'MAQUINA' ? (body.tipoMaquina ?? null) : null
+
     const atualizado = await prisma.centroProducao.update({
       where: { id },
       data: {
         codigo: body.codigo,
         descricao: body.descricao,
         tipo: body.tipo,
+        tipoMaquina,
         capacidadeHora: body.capacidadeHora ?? null,
         custoHora: body.custoHora ?? null,
       },

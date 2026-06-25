@@ -636,7 +636,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             itens: { where: { tipoMaterial: 'PAPEL' } },
           },
         },
-        centroProducao: { select: { id: true, codigo: true, descricao: true } },
+        centroProducao: { select: { id: true, codigo: true, descricao: true, tipoMaquina: true } },
       },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
@@ -665,7 +665,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       const pendentes = etapasDoCentro.filter(e => e.status === 'PENDENTE')
 
       return {
-        centro: { id: centro.id, codigo: centro.codigo, descricao: centro.descricao, tipo: centro.tipo },
+        centro: { id: centro.id, codigo: centro.codigo, descricao: centro.descricao, tipo: centro.tipo, tipoMaquina: centro.tipoMaquina },
         resumo: {
           emAndamento: emAndamento.length,
           pausadas: pausadas.length,
@@ -760,6 +760,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           observacoes: e.ordemProducao.observacoes,
           observacaoOperador: e.observacaoOperador || null,
           centroDescricao: e.centroProducao?.descricao || null,
+          tipoMaquina: e.centroProducao?.tipoMaquina || null,
           bobinas,
           kgEstoque,
           kgEncomendado,
