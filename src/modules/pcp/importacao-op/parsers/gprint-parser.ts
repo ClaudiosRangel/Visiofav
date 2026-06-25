@@ -285,10 +285,12 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
 function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
   const materiais: MaterialOp[] = []
 
-  // O PDF GPrint extrai materiais em formato tabular:
-  // Nomes em sequência, depois quantidades em sequência, depois unidades
-  // Padrão: "Materiais   Qtde." seguido de nomes, depois quantidades, depois unidades
-  const secaoMateriais = texto.match(/Materiais\s+Qtde\.([\s\S]*?)(?:CARTON WEGA|$)/i)
+  // O PDF GPrint pode ter diferentes cabeçalhos de materiais:
+  // "Materiais   Qtde." OU "Materiais   Quant.   Unid."
+  // Delimitador final: próxima seção conhecida ou nome da empresa repetida
+  const secaoMateriais = texto.match(
+    /Materiais\s+(?:Qtde\.|Quant\.?\s*Unid\.?)([\s\S]*?)(?=CARTON WEGA|Emitido\s*por|Reemitido|C[óo]d\.\s*do\s*cliente|Numero\s*do\s*pedido|O\.P\.:\s*[\d]|$)/i
+  )
   if (!secaoMateriais) {
     avisos.push('Seção de materiais não encontrada')
     return materiais
@@ -296,6 +298,64 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
 
   const conteudo = secaoMateriais[1]
 
+  // Estratégia 1: Formato tabular com nome + quantidade + unidade na mesma linha
+  // Ex: "Stora Enzo Bobina 191   1.921,47   KG"
+  const regexLinhaTabular = /^(.+?)\s{2,}([\d.,]+)\s{1,}(KG|PC|UN|LT|ML|M2?|CX|RSM|PÇ|PCS?)$/gim
+  const matchesTabular = [...conteudo.matchAll(regexLinhaTabular)]
+
+  if (matchesTabular.length > 0) {
+    for (const m of matchesTabular) {
+      let nome = m[1].trim()
+      const qtd = parseNumero(m[2])
+      let unid = m[3].toUpperCase()
+
+      // Extrair detalhe de cor inline: "Escala (CMYK) (25%)" ou "Pantone 01 (CW030S- LARANJA) (70%)"
+      let corPantone: string | undefined
+      let percentual: number | undefined
+      let tipoCor: string | undefined
+
+      const matchCorInline = nome.match(/^(.+?)\s+\(([^)]+)\)\s*\((\d+)%\)$/)
+      if (matchCorInline) {
+        nome = matchCorInline[1].trim()
+        const corInfo = matchCorInline[2].trim()
+        percentual = parseFloat(matchCorInline[3])
+        if (/^CMYK$/i.test(corInfo)) {
+          tipoCor = 'CMYK'
+        } else {
+          tipoCor = 'PANTONE'
+          corPantone = corInfo
+        }
+      }
+
+      // Ignorar linhas de header ou rodapé
+      if (/^(Obs|Emitido|Reemitido|Caixa Padr|Seguir)/i.test(nome)) continue
+
+      let tipo: MaterialOp['tipo'] = 'OUTRO'
+      if (/cola/i.test(nome)) tipo = 'COLA'
+      else if (/verniz|primer/i.test(nome)) tipo = 'VERNIZ'
+      else if (/escala|pantone|tinta|cmyk/i.test(nome)) tipo = 'TINTA'
+      else if (/faca|clich[eê]|destacador/i.test(nome)) tipo = 'FACA'
+      else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado/i.test(nome)) tipo = 'PAPEL'
+      else if (/^CD$/i.test(nome)) tipo = 'FACA'
+
+      if (tipo === 'FACA') unid = 'UN'
+
+      materiais.push({
+        descricao: nome,
+        quantidade: qtd,
+        unidade: unid,
+        tipo,
+        detalhes: (tipoCor || corPantone || percentual) ? { tipoCor, corPantone, percentual } : undefined,
+      })
+    }
+
+    if (materiais.length === 0) {
+      avisos.push('Nenhum material encontrado no PDF')
+    }
+    return materiais
+  }
+
+  // Estratégia 2 (fallback): Formato separado — nomes, quantidades e unidades em blocos distintos
   // Extrair nomes dos materiais (linhas que não são números nem unidades)
   // Extrair detalhes de cor (linhas que começam com "(")
   // Extrair quantidades (números decimais)
@@ -325,7 +385,7 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
       continue
     }
     // É nome de material (não é header, não é "Obs", não é data)
-    if (linha.length > 2 && !/^(Materiais|Qtde|Obs|Emitido|Reemitido|Caixa Padr)/i.test(linha)) {
+    if (linha.length > 2 && !/^(Materiais|Qtde|Quant|Unid|Obs|Emitido|Reemitido|Caixa Padr)/i.test(linha)) {
       nomes.push(linha)
     }
   }
@@ -344,7 +404,7 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
     else if (/verniz|primer/i.test(nome)) tipo = 'VERNIZ'
     else if (/escala|pantone|tinta|cmyk/i.test(nome)) tipo = 'TINTA'
     else if (/faca|clich[eê]|destacador/i.test(nome)) tipo = 'FACA'
-    else if (/bobina|stora|suzano|klabin|papel/i.test(nome)) tipo = 'PAPEL'
+    else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado/i.test(nome)) tipo = 'PAPEL'
 
     // Corrige unidade para FACA (sempre UN)
     if (tipo === 'FACA') unid = 'UN'
