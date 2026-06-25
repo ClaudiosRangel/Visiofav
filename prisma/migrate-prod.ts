@@ -519,6 +519,16 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "referencia_externa" VARCHAR(50)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "origem_importacao" VARCHAR(30)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "criado_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_excedente" DECIMAL(12,4) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "grupo_op_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_ordem_producao" ADD COLUMN IF NOT EXISTS "descricao_externa" VARCHAR(300)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_ordem_producao" ADD COLUMN IF NOT EXISTS "tipo_material" VARCHAR(30)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_ordem_producao" ADD COLUMN IF NOT EXISTS "empresa_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_prevista" DECIMAL(12,4) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_produzida_etapa" DECIMAL(12,4) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "quantidade_perda_etapa" DECIMAL(12,4) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "observacao_operador" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "funcionario_id" TEXT`)
 
   // Tabela de_para_importacao (mapeamento de importação PDF)
   await prisma.$executeRawUnsafe(`
