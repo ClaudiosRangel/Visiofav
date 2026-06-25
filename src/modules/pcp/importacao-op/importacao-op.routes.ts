@@ -249,7 +249,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         data: {
           ordemProducaoId: op.id,
           empresaId: user.empresaId,
-          produtoComponenteId: vinculo?.produtoId || undefined,
+          ...(vinculo?.produtoId ? { produtoComponenteId: vinculo.produtoId } : {}),
           descricaoProduto: mat.descricao,
           descricaoExterna: mat.descricao,
           quantidade: mat.quantidade,
@@ -266,13 +266,14 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     for (let i = 0; i < dados.etapas.length; i++) {
       const etapa = dados.etapas[i]
       const vinculoCentro = body.centrosVinculados?.find(v => v.indice === i)
+      const centroId = vinculoCentro?.centroProducaoId
 
       const etapaCriada = await prisma.etapaOrdemProducao.create({
         data: {
           ordemProducaoId: op.id,
           sequencia: etapa.sequencia,
           descricao: etapa.descricao,
-          centroProducaoId: vinculoCentro?.centroProducaoId || undefined,
+          ...(centroId ? { centroProducaoId: centroId } : {}),
           tempoSetupMinutos: etapa.tempoFixoMin,
           tempoOperacaoCalculado: etapa.tempoVariavelMin,
           tempoEsperaMinutos: 0,
