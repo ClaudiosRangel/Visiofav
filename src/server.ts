@@ -89,6 +89,10 @@ import { enderecamentoInteligenteRoutes } from './modules/enderecamento-intelige
 import { formatoEnderecoRoutes } from './modules/formato-endereco/formato-endereco.routes'
 import { geoRoutes } from './modules/geolocalizacao/geo.routes'
 import { cceRoutes } from './modules/cce/cce.routes'
+import { configEmailFiscalRoutes } from './modules/config-email-fiscal/config-email-fiscal.routes'
+import { configIntegracaoRoutes } from './modules/config-integracao/config-integracao.routes'
+import { pendenciaCceRoutes } from './modules/pendencia-cce/pendencia-cce.routes'
+import { pendenciaCceExternaRoutes } from './modules/pendencia-cce/pendencia-cce-externa.routes'
 
 // Fase 1 — Profissionalização WMS
 import { crossDockRoutes } from './modules/cross-dock/cross-dock.routes'
@@ -215,6 +219,8 @@ async function bootstrap() {
   await app.register(portariaRoutes, { prefix: '/api/portaria' })
   await app.register(manutencaoEstoqueRoutes, { prefix: '/api/manutencao-estoque' })
   await app.register(conferenciaEntradaRoutes, { prefix: '/api/conferencia-entrada' })
+  await app.register(configEmailFiscalRoutes, { prefix: '/api/config-email-fiscal' })
+  await app.register(pendenciaCceRoutes, { prefix: '/api/pendencias-cce' })
   await app.register(enderecamentoWmsRoutes, { prefix: '/api/enderecamento-wms' })
   await app.register(etiquetaRoutes, { prefix: '/api/etiquetas' })
   await app.register(ordemServicoWmsRoutes, { prefix: '/api/os-wms' })
@@ -283,9 +289,13 @@ async function bootstrap() {
   // Estoque — Visão de Saldo
   await app.register(stockViewRoutes, { prefix: '/api/estoque' })
 
+  // Configuração de Integração (Conferência)
+  await app.register(configIntegracaoRoutes, { prefix: '/api/config-integracao' })
+
   // Integração Externa
   await app.register(apiKeyRoutes, { prefix: '/api/api-keys' })
   await app.register(integracaoRoutes, { prefix: '/api/v1/integracao' })
+  await app.register(pendenciaCceExternaRoutes, { prefix: '/api/v1/integracao/pendencias-cce' })
   await app.register(webhookRoutes, { prefix: '/api/webhooks' })
 
   // Cadastros

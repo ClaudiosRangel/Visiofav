@@ -1,19 +1,23 @@
 /**
- * Divergência Lote/Validade Service — lógica pura para detecção de divergências,
+ * Divergência Lote/Validade Service — lógica para detecção de divergências,
  * resolução por modo e geração de texto CC-e.
- * Função pura — sem side-effects, sem I/O, sem Prisma.
+ *
+ * Adaptado para:
+ * - Remover ACEITAR_LIVRE (Requirements 3.5, 8.1)
+ * - Marcar item PENDENTE_SEGUNDA_CONFERENCIA na 1ª conferência (Requirement 8.1)
+ * - Impedir finalização de item em PENDENTE_SEGUNDA_CONFERENCIA (Requirement 8.1)
+ * - Usar booleanos aceitarSenha / aceitarCcePendente para resolução (Requirement 3.5)
  */
 
+import { prisma } from '../../lib/prisma'
+import {
+  obterConfigBloqueio,
+  determinarDecisaoResolucao,
+  type DecisaoResolucao,
+  type ConfigBloqueioConferencia,
+} from './config-conferencia-produto.service'
+
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
-
-export type ModoResolucao = 'ACEITAR_CCE' | 'ACEITAR_SENHA' | 'ACEITAR_LIVRE' | 'BLOQUEAR'
-
-export const MODOS_VALIDOS: ModoResolucao[] = [
-  'ACEITAR_CCE',
-  'ACEITAR_SENHA',
-  'ACEITAR_LIVRE',
-  'BLOQUEAR',
-]
 
 export interface DeteccaoDivergenciaInput {
   valorEsperado: string | null
@@ -30,8 +34,9 @@ export interface DeteccaoDivergenciaResult {
 
 export interface ResolucaoResult {
   permitido: boolean
-  novoStatus: 'ACEITA' | 'PENDENTE' | 'PENDENTE_CCE'
+  novoStatus: 'PENDENTE_SEGUNDA_CONFERENCIA' | 'PENDENTE' | 'PENDENTE_CCE'
   requerCCe: boolean
+  requerSenha: boolean
   mensagem: string
 }
 
@@ -43,13 +48,6 @@ export interface TextoCCeLoteValidadeInput {
 }
 
 // ─── Funções Puras ─────────────────────────────────────────────────────────────
-
-/**
- * Valida se um modo informado é válido.
- */
-export function isModoValido(modo: string): modo is ModoResolucao {
-  return MODOS_VALIDOS.includes(modo as ModoResolucao)
-}
 
 /**
  * Detecta divergência de lote entre NF-e e valor conferido.
@@ -134,41 +132,46 @@ export function detectarDivergenciaValidade(input: {
 }
 
 /**
- * Determina se a resolução é permitida e qual ação tomar conforme o modo.
- * Função pura — não faz I/O, não valida credenciais (isso é separado).
+ * Determina a resolução com base na decisão de configuração do produto.
+ *
+ * Na 1ª conferência, divergências de lote/validade SEMPRE marcam o item como
+ * PENDENTE_SEGUNDA_CONFERENCIA — a resolução real ocorre na 2ª conferência.
+ *
+ * - Se aceitarSenha=true → após 2ª conferência, permite liberação com senha de supervisor
+ * - Se aceitarCcePendente=true (e senha não aplicável) → após 2ª conferência, gera pendência/email
+ * - Se ambos false → bloqueio total (reconferência obrigatória)
+ *
+ * Requirements: 3.5, 8.1
  */
-export function resolverModo(modo: ModoResolucao): ResolucaoResult {
-  switch (modo) {
-    case 'ACEITAR_LIVRE':
-      return {
-        permitido: true,
-        novoStatus: 'ACEITA',
-        requerCCe: false,
-        mensagem: 'Divergência aceita livremente',
-      }
-
+export function resolverDivergenciaPrimeiraConferencia(decisao: DecisaoResolucao): ResolucaoResult {
+  // Na 1ª conferência, SEMPRE marca como PENDENTE_SEGUNDA_CONFERENCIA
+  // independentemente da configuração — a resolução real é na 2ª conferência.
+  switch (decisao) {
     case 'ACEITAR_SENHA':
       return {
-        permitido: true,
-        novoStatus: 'ACEITA',
+        permitido: false,
+        novoStatus: 'PENDENTE_SEGUNDA_CONFERENCIA',
         requerCCe: false,
-        mensagem: 'Divergência aceita mediante autorização de supervisor',
+        requerSenha: true,
+        mensagem: 'Divergência detectada — segunda conferência obrigatória (liberação por senha após 2ª conferência)',
       }
 
-    case 'ACEITAR_CCE':
+    case 'ACEITAR_CCE_PENDENTE':
       return {
-        permitido: true,
-        novoStatus: 'PENDENTE_CCE',
+        permitido: false,
+        novoStatus: 'PENDENTE_SEGUNDA_CONFERENCIA',
         requerCCe: true,
-        mensagem: 'Divergência aceita — CC-e será emitida automaticamente',
+        requerSenha: false,
+        mensagem: 'Divergência detectada — segunda conferência obrigatória (CC-e pendente após 2ª conferência)',
       }
 
     case 'BLOQUEAR':
       return {
         permitido: false,
-        novoStatus: 'PENDENTE',
+        novoStatus: 'PENDENTE_SEGUNDA_CONFERENCIA',
         requerCCe: false,
-        mensagem: 'Produto não permite aceitação de divergência de lote/validade',
+        requerSenha: false,
+        mensagem: 'Divergência detectada — segunda conferência obrigatória (bloqueio total)',
       }
   }
 }
@@ -187,4 +190,80 @@ export function gerarTextoCCeLoteValidade(input: TextoCCeLoteValidadeInput): str
     `valor original ${valorEsperado ?? '(vazio)'}, ` +
     `valor corrigido ${valorConferido ?? '(vazio)'}`
   )
+}
+
+// ─── Funções com I/O ───────────────────────────────────────────────────────────
+
+/**
+ * Marca um item como PENDENTE_SEGUNDA_CONFERENCIA no banco de dados.
+ * Deve ser chamado quando a 1ª conferência detecta divergência de lote/validade.
+ *
+ * Requirements: 8.1
+ */
+export async function marcarPendenteSegundaConferencia(itemNotaEntradaId: string): Promise<void> {
+  await prisma.itemNotaEntrada.update({
+    where: { id: itemNotaEntradaId },
+    data: { statusConferencia: 'PENDENTE_SEGUNDA_CONFERENCIA' },
+  })
+}
+
+/**
+ * Verifica se um item está em PENDENTE_SEGUNDA_CONFERENCIA e impede a
+ * finalização do recebimento.
+ *
+ * Retorna true se o item está bloqueado (pendente de 2ª conferência).
+ *
+ * Requirements: 8.1
+ */
+export async function itemPendenteSegundaConferencia(itemNotaEntradaId: string): Promise<boolean> {
+  const item = await prisma.itemNotaEntrada.findUnique({
+    where: { id: itemNotaEntradaId },
+    select: { statusConferencia: true },
+  })
+
+  return item?.statusConferencia === 'PENDENTE_SEGUNDA_CONFERENCIA'
+}
+
+/**
+ * Verifica se há itens pendentes de segunda conferência em uma nota.
+ * Retorna true se existem itens bloqueando a finalização.
+ *
+ * Requirements: 8.1
+ */
+export async function notaTemItensPendenteSegundaConferencia(notaEntradaId: string): Promise<boolean> {
+  const count = await prisma.itemNotaEntrada.count({
+    where: {
+      notaEntradaId: notaEntradaId,
+      statusConferencia: 'PENDENTE_SEGUNDA_CONFERENCIA',
+    },
+  })
+
+  return count > 0
+}
+
+/**
+ * Processa divergência de lote/validade na 1ª conferência:
+ * 1. Obtém configuração de bloqueio do produto
+ * 2. Determina a decisão de resolução
+ * 3. Marca item como PENDENTE_SEGUNDA_CONFERENCIA
+ * 4. Retorna informação sobre a decisão para uso no response
+ *
+ * Requirements: 8.1, 3.5
+ */
+export async function processarDivergenciaPrimeiraConferencia(
+  empresaId: string,
+  produtoId: string,
+  itemNotaEntradaId: string,
+): Promise<{
+  decisao: DecisaoResolucao
+  resolucao: ResolucaoResult
+}> {
+  const config = await obterConfigBloqueio(empresaId, produtoId)
+  const decisao = determinarDecisaoResolucao(config)
+  const resolucao = resolverDivergenciaPrimeiraConferencia(decisao)
+
+  // Marca item como pendente de segunda conferência
+  await marcarPendenteSegundaConferencia(itemNotaEntradaId)
+
+  return { decisao, resolucao }
 }

@@ -10,9 +10,9 @@ import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
 import { CceService } from '../cce/cce.service'
 import { validarCredenciaisSupervisor } from '../conferencia-entrada/validar-supervisor.service'
-import { obterModoResolucao } from '../conferencia-entrada/config-conferencia-produto.service'
-import { resolverModo, gerarTextoCCeLoteValidade } from '../conferencia-entrada/divergencia-lote-validade.service'
-import type { ModoResolucao } from '../conferencia-entrada/divergencia-lote-validade.service'
+import { obterConfigBloqueio, determinarDecisaoResolucao } from '../conferencia-entrada/config-conferencia-produto.service'
+import { gerarTextoCCeLoteValidade, notaTemItensPendenteSegundaConferencia } from '../conferencia-entrada/divergencia-lote-validade.service'
+import { verificarPendenciasAbertas } from '../pendencia-cce/pendencia-cce.service'
 import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
 
 /**
@@ -500,8 +500,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
         // Obter modo de resolução do produto
         const configResolucao = produtoLote
-          ? await obterModoResolucao(userConf2.empresaId, produtoLote.id)
-          : { modoResolucaoLote: 'BLOQUEAR' as const, modoResolucaoValidade: 'BLOQUEAR' as const }
+          ? await obterConfigBloqueio(userConf2.empresaId, produtoLote.id)
+          : { aceitarSenha: false, aceitarCcePendente: false }
 
         divergenciasLoteValidade.push({
           divergenciaId: divergenciaLote.id,
@@ -510,7 +510,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           tipo: 'LOTE_DIVERGENTE',
           valorEsperado: item.lote,
           valorConferido: conferido.lote,
-          modoResolucao: configResolucao.modoResolucaoLote,
+          modoResolucao: determinarDecisaoResolucao(configResolucao),
           status: 'PENDENTE',
         })
 
@@ -546,8 +546,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
           // Obter modo de resolução do produto
           const configResolucao = produtoVal
-            ? await obterModoResolucao(userConf2.empresaId, produtoVal.id)
-            : { modoResolucaoLote: 'BLOQUEAR' as const, modoResolucaoValidade: 'BLOQUEAR' as const }
+            ? await obterConfigBloqueio(userConf2.empresaId, produtoVal.id)
+            : { aceitarSenha: false, aceitarCcePendente: false }
 
           divergenciasLoteValidade.push({
             divergenciaId: divergenciaValidade.id,
@@ -556,7 +556,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             tipo: 'VALIDADE_DIVERGENTE',
             valorEsperado: validadeNfDate.toISOString(),
             valorConferido: validadeConferidaDate.toISOString(),
-            modoResolucao: configResolucao.modoResolucaoValidade,
+            modoResolucao: determinarDecisaoResolucao(configResolucao),
             status: 'PENDENTE',
           })
 
@@ -614,6 +614,28 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
+
+    // Bloqueio: verificar pendências CC-e abertas (Requirements 7.5, 7.6)
+    const temPendenciasAbertas = await verificarPendenciasAbertas(notaId)
+    if (temPendenciasAbertas) {
+      return reply.status(422).send({
+        error: {
+          code: 'PENDENCIAS_NAO_RESOLVIDAS',
+          message: 'Existem pendências CC-e não resolvidas para esta nota',
+        },
+      })
+    }
+
+    // Bloqueio: verificar itens pendentes de segunda conferência (Requirement 8.1)
+    const temItensPendentes = await notaTemItensPendenteSegundaConferencia(notaId)
+    if (temItensPendentes) {
+      return reply.status(422).send({
+        error: {
+          code: 'ITENS_PENDENTES_SEGUNDA_CONFERENCIA',
+          message: 'Existem itens pendentes de segunda conferência',
+        },
+      })
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.notaEntrada.update({
@@ -1020,7 +1042,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       return {
         divergenciaId: divergencia.id,
         status: 'REJEITADA' as const,
-        modo: 'BLOQUEAR' as ModoResolucao,
+        decisao: 'BLOQUEAR',
         mensagem: 'Divergência rejeitada pelo operador',
       }
     }
@@ -1042,41 +1064,23 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Divergência não encontrada' })
     }
 
-    // 4. Buscar ConfigConferenciaProduto (usar obterModoResolucao)
-    const config = await obterModoResolucao(user.empresaId, produto.id)
+    // 4. Buscar ConfigConferenciaProduto (usar obterConfigBloqueio)
+    const configBloqueio = await obterConfigBloqueio(user.empresaId, produto.id)
 
-    // 5. Determinar modo aplicável (lote→modoResolucaoLote, validade→modoResolucaoValidade)
-    const modo: ModoResolucao = divergencia.tipo === 'LOTE_DIVERGENTE'
-      ? config.modoResolucaoLote
-      : config.modoResolucaoValidade
+    // 5. Determinar decisão de resolução com base nos booleanos
+    const decisao = determinarDecisaoResolucao(configBloqueio)
 
-    // 6. Switch por modo
-    const resultado = resolverModo(modo)
-
+    // 6. Switch por decisão
     // BLOQUEAR → 422
-    if (modo === 'BLOQUEAR') {
+    if (decisao === 'BLOQUEAR') {
       return reply.status(422).send({
         message: 'Produto não permite aceitação de divergência de lote/validade',
         bloqueio: true,
       })
     }
 
-    // ACEITAR_LIVRE → atualizar status para ACEITA
-    if (modo === 'ACEITAR_LIVRE') {
-      await prisma.divergenciaConferencia.update({
-        where: { id: divergencia.id },
-        data: { status: 'ACEITA' },
-      })
-      return {
-        divergenciaId: divergencia.id,
-        status: 'ACEITA' as const,
-        modo,
-        mensagem: resultado.mensagem,
-      }
-    }
-
     // ACEITAR_SENHA → validar credenciais de supervisor
-    if (modo === 'ACEITAR_SENHA') {
+    if (decisao === 'ACEITAR_SENHA') {
       if (!body.credenciaisSupervisor) {
         return reply.status(401).send({ message: 'Credenciais inválidas' })
       }
@@ -1102,13 +1106,13 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       return {
         divergenciaId: divergencia.id,
         status: 'ACEITA' as const,
-        modo,
-        mensagem: resultado.mensagem,
+        decisao,
+        mensagem: 'Divergência aceita mediante autorização de supervisor',
       }
     }
 
-    // ACEITAR_CCE → emitir CC-e
-    if (modo === 'ACEITAR_CCE') {
+    // ACEITAR_CCE_PENDENTE → emitir CC-e
+    if (decisao === 'ACEITAR_CCE_PENDENTE') {
       // Gerar texto de correção para lote/validade
       const textoCorrecao = gerarTextoCCeLoteValidade({
         tipo: divergencia.tipo as 'LOTE_DIVERGENTE' | 'VALIDADE_DIVERGENTE',
@@ -1150,7 +1154,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       return {
         divergenciaId: divergencia.id,
         status: 'ACEITA' as const,
-        modo,
+        decisao,
         cce: {
           sucesso: resultadoCCe.sucesso,
           protocolo: resultadoCCe.protocolo,
@@ -1159,7 +1163,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       }
     }
 
-    // Fallback: modo inválido (não deveria chegar aqui)
+    // Fallback: decisão inválida (não deveria chegar aqui)
     return reply.status(400).send({ message: 'Modo de resolução inválido' })
   })
 }

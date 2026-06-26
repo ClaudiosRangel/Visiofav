@@ -14,6 +14,9 @@ import { compararValidade, verificarProdutoVencido } from './validade.service'
 import { CceService } from '../cce/cce.service'
 import { registrarSaldoPendente, receberSaldo, verificarNotaCompleta } from './recebimento-parcial.service'
 import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
+import { verificarPendenciasAbertas } from '../pendencia-cce/pendencia-cce.service'
+import { notaTemItensPendenteSegundaConferencia } from './divergencia-lote-validade.service'
+import { executarSegundaConferencia } from './segunda-conferencia.service'
 
 /**
  * Parseia data no formato DD/MM/AAAA (brasileiro) ou ISO (AAAA-MM-DD).
@@ -51,6 +54,17 @@ const receberSaldoSchema = z.object({
   quantidadeRecebida: z.number().positive(),
   lote: z.string().optional().nullable(),
   validade: z.string().optional().nullable(),
+})
+
+const notaIdParamsSchema = z.object({ notaId: z.string().uuid() })
+
+const segundaConferenciaSchema = z.object({
+  itens: z.array(z.object({
+    itemNotaEntradaId: z.string().uuid(),
+    quantidadeConferida: z.number().min(0),
+    lote: z.string().optional(),
+    validade: z.string().optional(),
+  })),
 })
 
 export async function conferenciaEntradaRoutes(app: FastifyInstance) {
@@ -583,6 +597,28 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const nota = await prisma.notaEntrada.findUnique({ where: { id }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
+    // Bloqueio: verificar pendências CC-e abertas (Requirements 7.5, 7.6)
+    const temPendenciasAbertas = await verificarPendenciasAbertas(id)
+    if (temPendenciasAbertas) {
+      return reply.status(422).send({
+        error: {
+          code: 'PENDENCIAS_NAO_RESOLVIDAS',
+          message: 'Existem pendências CC-e não resolvidas para esta nota',
+        },
+      })
+    }
+
+    // Bloqueio: verificar itens pendentes de segunda conferência (Requirement 8.1)
+    const temItensPendentes = await notaTemItensPendenteSegundaConferencia(id)
+    if (temItensPendentes) {
+      return reply.status(422).send({
+        error: {
+          code: 'ITENS_PENDENTES_SEGUNDA_CONFERENCIA',
+          message: 'Existem itens pendentes de segunda conferência',
+        },
+      })
+    }
+
     await prisma.notaEntrada.update({ where: { id }, data: { status: 'CONFERIDA' } })
 
     // Hook faturamento: registrar movimentações de entrada (non-blocking, pós-commit)
@@ -592,5 +628,34 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
 
     return { message: 'Conferência concluída', totalItens: nota.itens.length }
+  })
+
+  // POST /segunda-conferencia/:notaId — submete segunda conferência obrigatória
+  app.post('/segunda-conferencia/:notaId', async (request, reply) => {
+    const { notaId } = notaIdParamsSchema.parse(request.params)
+    const { itens } = segundaConferenciaSchema.parse(request.body)
+
+    const user = request.user as { id: string; empresaId?: string }
+    const empresaId = user.empresaId
+
+    if (!empresaId) {
+      return reply.status(400).send({ message: 'empresaId não identificado no usuário' })
+    }
+
+    const resultado = await executarSegundaConferencia(notaId, itens, empresaId, user.id)
+
+    // Mapear resultado para resposta com indicadores de ações tomadas
+    const divergenciaResolvida = resultado.itens.some((i) => i.resultado.status === 'resolvido')
+    const pendenciaCriada = resultado.itens.some((i) => i.resultado.status === 'pendenciaCriada')
+    const emailEnviado = resultado.itens.some((i) => i.resultado.status === 'emailEnviado')
+    const requerSenha = resultado.itens.some((i) => i.resultado.status === 'requerSenha')
+
+    return {
+      divergenciaResolvida,
+      pendenciaCriada,
+      emailEnviado,
+      requerSenha,
+      itens: resultado.itens,
+    }
   })
 }

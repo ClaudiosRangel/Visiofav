@@ -42,19 +42,19 @@ export async function produtoRoutes(app: FastifyInstance) {
 
     // Incluir ConfigConferenciaProduto se existir
     const user = request.user as { id: string; empresaId?: string }
-    let modoResolucaoLote = 'BLOQUEAR'
-    let modoResolucaoValidade = 'BLOQUEAR'
+    let aceitarSenha = false
+    let aceitarCcePendente = false
     if (user.empresaId) {
       const config = await prisma.configConferenciaProduto.findUnique({
         where: { empresaId_produtoId: { empresaId: user.empresaId, produtoId: id } },
       })
       if (config) {
-        modoResolucaoLote = config.modoResolucaoLote
-        modoResolucaoValidade = config.modoResolucaoValidade
+        aceitarSenha = config.aceitarSenha
+        aceitarCcePendente = config.aceitarCcePendente
       }
     }
 
-    return { ...produto, modoResolucaoLote, modoResolucaoValidade }
+    return { ...produto, aceitarSenha, aceitarCcePendente }
   })
 
   app.post('/', async (request, reply) => {
@@ -113,17 +113,17 @@ export async function produtoRoutes(app: FastifyInstance) {
       classificacaoPcp: z.enum(['MATERIA_PRIMA', 'INTERMEDIARIO', 'PRODUTO_ACABADO', 'EMBALAGEM', 'INSUMO']).nullable().optional(),
       tipoFisico: z.enum(['UNIDADE_PADRAO', 'FISICO_LINEAR', 'FISICO_SUPERFICIAL', 'LIQUIDO', 'PESO']).nullable().optional(),
       exigeLote: z.boolean().optional(),
-      modoResolucaoLote: z.string().optional(),
-      modoResolucaoValidade: z.string().optional(),
+      aceitarSenha: z.boolean().optional(),
+      aceitarCcePendente: z.boolean().optional(),
     }).parse(request.body)
 
     // Separar campos de ConfigConferenciaProduto dos campos do Produto
-    const { modoResolucaoLote, modoResolucaoValidade, ...produtoData } = data
+    const { aceitarSenha, aceitarCcePendente, ...produtoData } = data
 
     const produtoAtualizado = await prisma.produto.update({ where: { id }, data: produtoData })
 
-    // Salvar/atualizar ConfigConferenciaProduto se modos informados
-    if (modoResolucaoLote || modoResolucaoValidade) {
+    // Salvar/atualizar ConfigConferenciaProduto se campos de bloqueio informados
+    if (aceitarSenha !== undefined || aceitarCcePendente !== undefined) {
       const user = request.user as { id: string; empresaId?: string }
       if (user.empresaId) {
         await prisma.configConferenciaProduto.upsert({
@@ -131,12 +131,12 @@ export async function produtoRoutes(app: FastifyInstance) {
           create: {
             empresaId: user.empresaId,
             produtoId: id,
-            modoResolucaoLote: modoResolucaoLote || 'BLOQUEAR',
-            modoResolucaoValidade: modoResolucaoValidade || 'BLOQUEAR',
+            aceitarSenha: aceitarSenha ?? false,
+            aceitarCcePendente: aceitarCcePendente ?? false,
           },
           update: {
-            ...(modoResolucaoLote && { modoResolucaoLote }),
-            ...(modoResolucaoValidade && { modoResolucaoValidade }),
+            ...(aceitarSenha !== undefined && { aceitarSenha }),
+            ...(aceitarCcePendente !== undefined && { aceitarCcePendente }),
           },
         })
       }
