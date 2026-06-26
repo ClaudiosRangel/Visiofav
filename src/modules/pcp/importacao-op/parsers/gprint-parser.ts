@@ -583,28 +583,35 @@ function extrairCortadeira(texto: string): CortadeiraOp | null {
 
 function extrairTiragem(texto: string): number | null {
   // A tiragem está na tabela "Plano" do PDF, na coluna "Tiragem" após "Mont."
-  // No texto linearizado aparece como: "Mont.   Tiragem   Cores" (headers)
-  // seguido por dados: "PLANO   FORMATO   NxN   NÚMERO   CORESxCORES"
+  // O texto pode vir com múltiplos planos lado a lado:
+  //   "2x2  2x2  16.500  16.500  5x0 +V  0x0" (dois planos agrupados por coluna)
+  // Ou sequencial: "7x3   115.239   5x0 +V+V" (um plano por vez)
   
-  // Estratégia: buscar o bloco que vem após "Tiragem" nos headers do Plano
-  // e extrair o primeiro número grande (> 100) que aparece após um padrão NxN (montagem)
   const secaoPlano = texto.match(/Mont\.\s+Tiragem\s+Cores([\s\S]*?)(?:Impressão|Obs\.|$)/i)
   if (secaoPlano) {
     const conteudo = secaoPlano[1]
-    // Buscar padrão: NxN seguido de número (a tiragem)
-    const matches = conteudo.matchAll(/(\d+)x(\d+)\s+([\d.,]+)/gi)
-    for (const m of matches) {
-      const valor = parseNumero(m[3])
-      // A tiragem é sempre > 100 folhas (diferente de cores "5x0" que capturaria 0)
-      if (valor >= 100) return valor
+    
+    // Estratégia: encontrar todos os números no conteúdo e pegar o primeiro >= 100
+    // que NÃO seja parte de um formato (NNN x NNN) e NÃO seja um formato como "600"
+    // A tiragem é tipicamente > 1000 para gráfica industrial
+    const numeros = conteudo.matchAll(/([\d.,]+)/g)
+    for (const m of numeros) {
+      const raw = m[1]
+      // Ignorar se é parte de formato "NNN x NNN" (olhar contexto)
+      const posInicio = m.index!
+      const contextoAntes = conteudo.substring(Math.max(0, posInicio - 5), posInicio)
+      const contextoDepois = conteudo.substring(posInicio + raw.length, posInicio + raw.length + 5)
+      
+      // Pular se parece dimensão (precedido/seguido por "x" com espaço)
+      if (/x\s*$/.test(contextoAntes) || /^\s*x/.test(contextoDepois)) continue
+      
+      // Pular se é formato NxN (como 2x2, 5x0)
+      if (/^\d+x\d+$/.test(raw)) continue
+      
+      const valor = parseNumero(raw)
+      // Tiragem em gráfica é tipicamente > 1000 folhas
+      if (valor >= 1000) return valor
     }
-  }
-
-  // Fallback direto: qualquer "NxN  NÚMERO  NxN" no texto inteiro onde o número >= 100
-  const matchGlobal = texto.matchAll(/(\d+)x(\d+)\s+([\d.,]+)\s+\d+x\d+/gi)
-  for (const m of matchGlobal) {
-    const valor = parseNumero(m[3])
-    if (valor >= 100) return valor
   }
 
   return null
