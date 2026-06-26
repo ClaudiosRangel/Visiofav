@@ -104,6 +104,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         etapas: dadosExtraidos.etapas,
         cortadeira: dadosExtraidos.cortadeira,
         montagem: dadosExtraidos.montagem,
+        tiragem: dadosExtraidos.tiragem,
         observacoes: dadosExtraidos.observacoes,
         embalagem: dadosExtraidos.embalagem,
       },
