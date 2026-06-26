@@ -279,6 +279,11 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       const vinculoCentro = body.centrosVinculados?.find(v => v.indice === i)
       const centroId = vinculoCentro?.centroProducaoId ?? null
 
+      // Se o item foi desmarcado (centroId null e nomeEditado vazio), pular esta etapa
+      if (!centroId && vinculoCentro && !vinculoCentro.nomeEditado) {
+        continue
+      }
+
       // Validar que centroId existe no banco antes de usar
       let centroIdValidado: string | null = null
       if (centroId) {

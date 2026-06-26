@@ -723,7 +723,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     })
 
-    // OPs com material encomendado (aguardando cartão) — exibir na aba Cortadeira
+    // OPs com material encomendado (aguardando cartão) — sempre exibir na aba CORTADEIRA
+    // O cartão/bobina é sempre material da cortadeira, independente de qual etapa é a primeira
     const aguardandoCartao = etapasAtivas
       .filter(e => temMaterialEncomendado(e))
       .map(e => {
@@ -760,7 +761,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           observacoes: e.ordemProducao.observacoes,
           observacaoOperador: e.observacaoOperador || null,
           centroDescricao: e.centroProducao?.descricao || null,
-          tipoMaquina: e.centroProducao?.tipoMaquina || null,
+          tipoMaquina: 'CORTADEIRA' as string | null, // Aguardando Cartão sempre pertence à Cortadeira
           bobinas,
           kgEstoque,
           kgEncomendado,

@@ -499,6 +499,11 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
         continue
       }
       if (/^(Obs|Embalagem)/i.test(parte)) continue
+      // Fragmentos entre parênteses são continuação do nome anterior (ex: "(Cartão)", "(M))")
+      if (/^\([^)]*\)?\)?$/.test(parte) && nomes.length > 0) {
+        nomes[nomes.length - 1] += ' ' + parte
+        continue
+      }
       if (parte.length > 3 && !/^\d/.test(parte)) {
         nomes.push(parte)
       }
