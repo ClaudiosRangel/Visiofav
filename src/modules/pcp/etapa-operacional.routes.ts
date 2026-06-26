@@ -705,14 +705,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             // Tiragem: prioriza valor explícito do PDF, senão calcula Quantidade/Montagem
             tiragem: (() => {
               const obs = e.ordemProducao.observacoes || ''
-              // Prioridade 1: tiragem explícita do PDF (tag [Tiragem])
+              const qtd = Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)
+              // Prioridade 1: tiragem explícita do PDF (tag [Tiragem]) — ignorar se < 10 (erro de parse)
               const matchTiragem = obs.match(/\[Tiragem\]\s*([\d.,]+)/)
               if (matchTiragem) {
                 const val = parseFloat(matchTiragem[1].replace(/\./g, '').replace(',', '.'))
-                if (val > 0) return val
+                if (val >= 10) return val
               }
               // Prioridade 2: calcular Quantidade / Montagem
-              const qtd = Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)
               const matchMontagem = obs.match(/\[Montagem\]\s*(\d+)/)
               if (matchMontagem) {
                 const aproveitamento = parseInt(matchMontagem[1])
