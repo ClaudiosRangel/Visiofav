@@ -265,16 +265,29 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
     cabecalho.calculo = matchCalculo[1]
   }
 
-  // Programação de entrega: "4590 - 1.200.000 para 06/07/26, 1.000.000 para 02/08/26"
-  const matchProgEntrega = texto.match(/Programa[çc][ãa]o\s*de\s*Entrega:?\s*(.+?)(?:\n|Material|$)/i)
+  // Programação de entrega:
+  // Formato 1: "4590 - 1.200.000 para 06/07/26, 1.000.000 para 02/08/26"
+  // Formato 2: "4617 - 01/07/26" (código - data, sem quantidade)
+  const matchProgEntrega = texto.match(/Programa[çc][ãa]o\s*de\s*Entrega:?\s*(.+?)(?:\n|Material|Plano|$)/i)
   if (matchProgEntrega) {
     const progTexto = matchProgEntrega[1]
+    // Formato 1: quantidade + "para" + data
     const partes = progTexto.matchAll(/([\d.,]+)\s*(?:para|p\/)\s*(\d{2}\/\d{2}\/\d{2,4})/gi)
     for (const parte of partes) {
       cabecalho.programacaoEntrega.push({
         quantidade: parseNumero(parte[1]),
         data: parte[2],
       })
+    }
+    // Formato 2 (fallback): código - data (sem "para")
+    if (cabecalho.programacaoEntrega.length === 0) {
+      const matchSimples = progTexto.match(/(\d{2}\/\d{2}\/\d{2,4})/)
+      if (matchSimples) {
+        cabecalho.programacaoEntrega.push({
+          quantidade: cabecalho.quantidade || 0,
+          data: matchSimples[1],
+        })
+      }
     }
   }
 
