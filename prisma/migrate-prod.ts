@@ -565,6 +565,29 @@ async function main() {
 
   console.log('✅ PCP Programação: campos posicao_fila, data_entrega_original, vezes_postergada + tabela de_para_importacao')
 
+  // =========================================================================
+  // PCP — Classificação Tipo Máquina: campo tipo_maquina no centro_producao
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "tipo_maquina" VARCHAR(20)`)
+
+  // Migração de dados: classificar centros existentes por keyword matching (idempotente)
+  await prisma.$executeRawUnsafe(`
+    UPDATE centro_producao SET tipo_maquina = 'IMPRESSAO'
+    WHERE tipo = 'MAQUINA' AND tipo_maquina IS NULL
+    AND (descricao ILIKE '%impress%' OR descricao ILIKE '%heidelberg%' OR descricao ILIKE '%offset%')
+  `)
+  await prisma.$executeRawUnsafe(`
+    UPDATE centro_producao SET tipo_maquina = 'CORTADEIRA'
+    WHERE tipo = 'MAQUINA' AND tipo_maquina IS NULL
+    AND (descricao ILIKE '%corta%' OR descricao ILIKE '%cortadeira%' OR descricao ILIKE '%makpel%' OR descricao ILIKE '%guilhotina%')
+  `)
+  await prisma.$executeRawUnsafe(`
+    UPDATE centro_producao SET tipo_maquina = 'ACABAMENTO'
+    WHERE tipo = 'MAQUINA' AND tipo_maquina IS NULL
+    AND (descricao ILIKE '%bobst%' OR descricao ILIKE '%aft%' OR descricao ILIKE '%colagem%' OR descricao ILIKE '%verniz%' OR descricao ILIKE '%acabamento%' OR descricao ILIKE '%dobra%' OR descricao ILIKE '%cola%')
+  `)
+  console.log('✅ PCP Classificação Tipo Máquina: campo tipo_maquina + dados migrados')
+
   console.log('✅ All migrations applied successfully')
 }
 
