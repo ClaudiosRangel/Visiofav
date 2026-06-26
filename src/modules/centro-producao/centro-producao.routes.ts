@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { ordenarBodySchema } from './centro-producao.schemas'
+import { calcularNovaPosicao, validarEmpresaCentros } from './ordenacao.utils'
 
 const idParamsSchema = z.object({
   id: z.string().uuid(),
@@ -66,12 +68,47 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { codigo: 'asc' },
+        orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
       }),
       prisma.centroProducao.count({ where }),
     ])
 
     return { data, total, page, limit }
+  })
+
+  /**
+   * PATCH /api/centros-producao/ordenar
+   * Atualiza posições dos centros de produção em batch.
+   */
+  app.patch('/ordenar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { itens } = ordenarBodySchema.parse(request.body)
+
+    // Buscar IDs dos centros da empresa do usuário
+    const centrosEmpresa = await prisma.centroProducao.findMany({
+      where: { empresaId: user.empresaId },
+      select: { id: true },
+    })
+
+    const idsCentrosEmpresa = centrosEmpresa.map((c) => c.id)
+    const idsRequisicao = itens.map((item) => item.id)
+
+    // Validar que todos os IDs pertencem à empresa
+    if (!validarEmpresaCentros(idsRequisicao, idsCentrosEmpresa)) {
+      return reply.status(403).send({ message: 'Um ou mais centros não pertencem à sua empresa' })
+    }
+
+    // Atualizar posições em transação
+    await prisma.$transaction(
+      itens.map((item) =>
+        prisma.centroProducao.update({
+          where: { id: item.id },
+          data: { posicao: item.posicao },
+        })
+      )
+    )
+
+    return { message: 'Ordem atualizada com sucesso', count: itens.length }
   })
 
   /**
@@ -119,6 +156,13 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
 
     const tipoMaquina = body.tipo === 'MAQUINA' ? (body.tipoMaquina ?? null) : null
 
+    // Calcular próxima posição disponível
+    const centrosEmpresa = await prisma.centroProducao.findMany({
+      where: { empresaId: user.empresaId },
+      select: { posicao: true },
+    })
+    const posicao = calcularNovaPosicao(centrosEmpresa.map(c => c.posicao))
+
     const centro = await prisma.centroProducao.create({
       data: {
         empresaId: user.empresaId,
@@ -128,6 +172,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         tipoMaquina,
         capacidadeHora: body.capacidadeHora ?? undefined,
         custoHora: body.custoHora ?? undefined,
+        posicao,
       },
     })
 

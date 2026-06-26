@@ -1602,6 +1602,7 @@ model CentroProducao {
   tipoMaquina    String?  @map("tipo_maquina") @db.VarChar(20) // IMPRESSAO, ACABAMENTO, CORTADEIRA, COLAGEM, VERNIZ
   capacidadeHora Decimal? @map("capacidade_hora") @db.Decimal(12, 4)
   custoHora      Decimal? @map("custo_hora") @db.Decimal(12, 4)
+  posicao        Int      @default(0)
   status         Boolean  @default(true)
   criadoEm       DateTime @default(now()) @map("criado_em")
   atualizadoEm   DateTime @updatedAt @map("atualizado_em")
