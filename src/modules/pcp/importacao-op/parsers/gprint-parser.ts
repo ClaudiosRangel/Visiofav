@@ -188,8 +188,8 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
     programacaoEntrega: [],
   }
 
-  // Número da OP: "O.P.: 2.849 R" ou "O.P.: 2849"
-  const matchOp = texto.match(/O\.P\.?:?\s*([\d.,]+)\s*([A-Z])?/i)
+  // Número da OP: "O.P.: 2.849 R" ou "O.P.: 2849" ou "O.P.: 4/101"
+  const matchOp = texto.match(/O\.P\.?:?\s*([\d.,/\-]+)\s*([A-Z])?/i)
   if (matchOp) {
     cabecalho.numeroOp = matchOp[1].replace(/\./g, '')
     cabecalho.revisao = matchOp[2] || null
