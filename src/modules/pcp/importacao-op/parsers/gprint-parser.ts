@@ -580,7 +580,8 @@ function extrairCortadeira(texto: string): CortadeiraOp | null {
 
 function extrairMontagem(texto: string): MontagemOp | null {
   // Padrão: "Montagem: Cartucho Super Fresh 90G Menta - (21) - 2.200.000 un"
-  const match = texto.match(/Montagem:?\s*(.+?)\s*-\s*\((\d+)\)\s*-\s*([\d.,]+)\s*(?:un|pç)/i)
+  // Ou:     "Montagem: Cartucho Microondulado 30CM X 100CM (4) - 60.000 un"
+  const match = texto.match(/Montagem:?\s*(.+?)\s*-?\s*\((\d+)\)\s*-\s*([\d.,]+)\s*(?:un|pç)/i)
   if (match) {
     return {
       descricao: match[1].trim(),
