@@ -499,6 +499,12 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
         continue
       }
       if (/^(Obs|Embalagem)/i.test(parte)) continue
+      // Continuação de detalhe: gramatura/formato (ex: "E 245g - 59,0 x 90,0 cm", "245g - 59,0 x 90,0")
+      // Padrão: começa com letra(s)+gramatura, ou gramatura pura, ou dimensão (N x N)
+      if ((/^[A-Z]\s*\d+g\b/i.test(parte) || /^\d+g\s*[-–]/i.test(parte) || /^\d+[.,]\d+\s*x\s*\d+/i.test(parte)) && detalhesAcab.length > 0) {
+        detalhesAcab[detalhesAcab.length - 1] += ' ' + parte
+        continue
+      }
       // Fragmentos entre parênteses são continuação do nome anterior (ex: "(Cartão)", "(M))")
       if (/^\([^)]*\)?\)?$/.test(parte) && nomes.length > 0) {
         nomes[nomes.length - 1] += ' ' + parte
