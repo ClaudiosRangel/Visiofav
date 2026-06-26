@@ -588,6 +588,24 @@ async function main() {
   `)
   console.log('✅ PCP Classificação Tipo Máquina: campo tipo_maquina + dados migrados')
 
+  // =========================================================================
+  // PCP — Ordenação de Grupos: campo posicao no centro_producao
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "posicao" INTEGER NOT NULL DEFAULT 0`)
+
+  // Backfill: atribuir posições sequenciais para centros existentes (por empresa, ordenados por codigo)
+  await prisma.$executeRawUnsafe(`
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY empresa_id ORDER BY codigo ASC) - 1 AS nova_posicao
+      FROM centro_producao
+    )
+    UPDATE centro_producao
+    SET posicao = ranked.nova_posicao
+    FROM ranked
+    WHERE centro_producao.id = ranked.id AND centro_producao.posicao = 0
+  `)
+  console.log('✅ PCP Ordenação: campo posicao + backfill sequencial')
+
   console.log('✅ All migrations applied successfully')
 }
 
