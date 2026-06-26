@@ -94,6 +94,14 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
 
     console.log(`[ImportOP] OP ${dadosExtraidos.cabecalho.numeroOp} — tiragem: ${dadosExtraidos.tiragem}, montagem: ${dadosExtraidos.montagem?.aproveitamento}`)
 
+    // Debug: mostrar contexto de tiragem no texto
+    const idxTir = extracao.texto.indexOf('Tiragem')
+    if (idxTir > -1) {
+      console.log(`[ImportOP] Texto ao redor de 'Tiragem': ${JSON.stringify(extracao.texto.substring(idxTir - 20, idxTir + 200))}`)
+    } else {
+      console.log(`[ImportOP] 'Tiragem' NAO encontrado no texto do PDF`)
+    }
+
     return reply.status(200).send({
       importacaoId,
       sistemaOrigem: dadosExtraidos.sistemaOrigem,
@@ -110,6 +118,10 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         observacoes: dadosExtraidos.observacoes,
         embalagem: dadosExtraidos.embalagem,
       },
+      _debugTiragem: (() => {
+        const idx = extracao.texto.indexOf('Tiragem')
+        return idx > -1 ? extracao.texto.substring(idx - 30, idx + 200) : 'Tiragem NAO encontrado no texto'
+      })(),
       sugestoes,
     })
   })
