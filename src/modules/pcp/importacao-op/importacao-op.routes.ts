@@ -167,7 +167,11 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     // Verificar se já existe OP com mesmo número — se sim, ATUALIZAR em vez de criar nova
     let op: any
     let modoAtualizacao = false
-    const numeroOriginal = dados.cabecalho.numeroOp ? parseInt(dados.cabecalho.numeroOp) : NaN
+    // Número original do PDF — pode ser alfanumérico (ex: "4-101", "2.870")
+    const numeroOpOriginal = dados.cabecalho.numeroOp || null
+    // Tentar converter para inteiro puro (só se for 100% numérico após remover pontos de milhar)
+    const numeroLimpo = numeroOpOriginal ? numeroOpOriginal.replace(/\./g, '') : ''
+    const numeroOriginal = /^\d+$/.test(numeroLimpo) ? parseInt(numeroLimpo) : NaN
 
     if (!isNaN(numeroOriginal)) {
       const existe = await prisma.ordemProducao.findFirst({
@@ -191,7 +195,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
             clienteId: body.clienteId || existe.clienteId,
             prioridade: body.prioridade || existe.prioridade,
             observacoes: novasObs,
-            referenciaExterna: dados.cabecalho.numeroOp || existe.referenciaExterna,
+            referenciaExterna: numeroOpOriginal || existe.referenciaExterna,
           },
         })
 
@@ -228,7 +232,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           clienteId: body.clienteId || undefined,
           lote: undefined,
           observacoes: body.observacoes || obsConsolidadas || undefined,
-          referenciaExterna: dados.cabecalho.numeroOp || undefined,
+          referenciaExterna: numeroOpOriginal || undefined,
           origemImportacao: 'PDF_GPRINT',
           criadoPorId: user.id,
         },
