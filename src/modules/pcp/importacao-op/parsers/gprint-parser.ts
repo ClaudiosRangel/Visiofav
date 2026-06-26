@@ -23,6 +23,7 @@ export interface DadosOpGprint {
   etapas: EtapaOp[]
   cortadeira: CortadeiraOp | null
   montagem: MontagemOp | null
+  tiragem: number | null
   observacoes: ObservacoesOp
   embalagem: EmbalagemOp | null
   confianca: number // 0-100%
@@ -141,6 +142,7 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
 
   const cortadeira = extrairCortadeira(texto)
   const montagem = extrairMontagem(texto)
+  const tiragem = extrairTiragem(texto)
   const observacoes = extrairObservacoes(texto)
   const embalagem = extrairEmbalagem(texto)
 
@@ -155,6 +157,7 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
     etapas,
     cortadeira,
     montagem,
+    tiragem,
     observacoes,
     embalagem,
     confianca,
@@ -572,6 +575,25 @@ function extrairCortadeira(texto: string): CortadeiraOp | null {
   const totalFolhas = matchTotal ? parseNumero(matchTotal[1]) : linhas.reduce((s, l) => s + l.quantidade, 0)
 
   return linhas.length > 0 ? { linhas, totalFolhas } : null
+}
+
+// ============================================================================
+// EXTRAÇÃO TIRAGEM (do Plano)
+// ============================================================================
+
+function extrairTiragem(texto: string): number | null {
+  // Padrão na tabela Plano: "Mont. Tiragem" → "2x2 16.500" ou "4x2 16.500"
+  // Busca "NxN  NÚMERO" onde NxN é montagem e NÚMERO é tiragem
+  const matchPlano = texto.match(/(\d+)x(\d+)\s+([\d.,]+)\s+\d+x\d+/i)
+  if (matchPlano) {
+    return parseNumero(matchPlano[3])
+  }
+  // Fallback: buscar "Tiragem" como header seguido de valor
+  const matchTiragem = texto.match(/Tiragem\s+([\d.,]+)/i)
+  if (matchTiragem) {
+    return parseNumero(matchTiragem[1])
+  }
+  return null
 }
 
 // ============================================================================

@@ -157,6 +157,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       ...(dados.cabecalho.cliente ? [`[Cliente] ${dados.cabecalho.cliente}`] : []),
       ...(dados.cabecalho.descricao ? [`[Produto] ${dados.cabecalho.descricao}`] : []),
       ...(dados.montagem ? [`[Montagem] ${dados.montagem.aproveitamento}`] : []),
+      ...(dados.tiragem ? [`[Tiragem] ${dados.tiragem}`] : []),
       ...(dados.observacoes.gerais || []),
       ...(dados.observacoes.producao || []),
       ...(dados.observacoes.bobinas.map(b => `[Bobina] ${b}`) || []),
