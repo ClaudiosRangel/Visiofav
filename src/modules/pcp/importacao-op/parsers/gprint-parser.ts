@@ -289,10 +289,10 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
   const materiais: MaterialOp[] = []
 
   // O PDF GPrint pode ter diferentes cabeçalhos de materiais:
-  // "Materiais   Qtde." OU "Materiais   Quant.   Unid."
+  // "Materiais   Qtde." OU "Materiais   Quant.   Unid." OU "Materiais Diretos   Quant.   Unid."
   // Delimitador final: próxima seção conhecida ou nome da empresa repetida
   const secaoMateriais = texto.match(
-    /Materiais\s+(?:Qtde\.|Quant\.?\s*Unid\.?)([\s\S]*?)(?=CARTON WEGA|Emitido\s*por|Reemitido|C[óo]d\.\s*do\s*cliente|Numero\s*do\s*pedido|O\.P\.:\s*[\d]|$)/i
+    /Materiais(?:\s+Diretos)?\s+(?:Qtde\.|Quant\.?\s*Unid\.?)([\s\S]*?)(?=Obs\.\:|CARTON WEGA|Emitido\s*por|Reemitido|C[óo]d\.\s*do\s*cliente|Numero\s*do\s*pedido|O\.P\.:\s*[\d]|$)/i
   )
   if (!secaoMateriais) {
     avisos.push('Seção de materiais não encontrada')
