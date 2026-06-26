@@ -702,16 +702,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             observacoes: e.ordemProducao.observacoes,
             observacaoOperador: e.observacaoOperador || null,
             // Campos de material (Requisito 3)
-            // Tiragem = valor explícito [Tiragem] ou Quantidade / Montagem (aproveitamento por folha)
+            // Tiragem = Quantidade / Montagem (como na planilha Excel)
             tiragem: (() => {
               const obs = e.ordemProducao.observacoes || ''
-              // Prioridade 1: tiragem explícita do PDF
-              const matchTiragem = obs.match(/\[Tiragem\]\s*([\d.,]+)/)
-              if (matchTiragem) {
-                const val = parseFloat(matchTiragem[1].replace(/\./g, '').replace(',', '.'))
-                if (val > 0) return val
-              }
-              // Prioridade 2: calcular a partir da montagem
               const qtd = Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)
               // Buscar aproveitamento da tag [Montagem] nas observações
               const matchMontagem = obs.match(/\[Montagem\]\s*(\d+)/)
