@@ -582,16 +582,24 @@ function extrairCortadeira(texto: string): CortadeiraOp | null {
 // ============================================================================
 
 function extrairTiragem(texto: string): number | null {
-  // Padrão na tabela Plano: "Mont. Tiragem" → "2x2 16.500" ou "4x2 16.500"
-  // Busca "NxN  NÚMERO" onde NxN é montagem e NÚMERO é tiragem
+  // Padrão na tabela Plano: após "Mont. Tiragem" vem "NxN NÚMERO CORESxN"
+  // Busca "NxN  NÚMERO  NxN" onde o segundo grupo é a tiragem
   const matchPlano = texto.match(/(\d+)x(\d+)\s+([\d.,]+)\s+\d+x\d+/i)
   if (matchPlano) {
-    return parseNumero(matchPlano[3])
+    const valor = parseNumero(matchPlano[3])
+    if (valor > 0 && valor < 10000000) return valor
   }
-  // Fallback: buscar "Tiragem" como header seguido de valor
+  // Fallback: buscar "Tiragem" como header seguido de valor numérico
   const matchTiragem = texto.match(/Tiragem\s+([\d.,]+)/i)
   if (matchTiragem) {
-    return parseNumero(matchTiragem[1])
+    const valor = parseNumero(matchTiragem[1])
+    if (valor > 0) return valor
+  }
+  // Fallback 2: buscar padrão "Mont. Tiragem" e capturar o próximo NxN seguido de número
+  const matchHeader = texto.match(/Mont\.\s+Tiragem[\s\S]*?(\d+)x(\d+)\s+([\d.,]+)/i)
+  if (matchHeader) {
+    const valor = parseNumero(matchHeader[3])
+    if (valor > 0) return valor
   }
   return null
 }
