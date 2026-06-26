@@ -92,6 +92,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     limparCacheExpirado()
     cacheImportacao.set(importacaoId, { dados: dadosExtraidos, pdfBuffer: buffer, expira: Date.now() + 30 * 60 * 1000 })
 
+    console.log(`[ImportOP] OP ${dadosExtraidos.cabecalho.numeroOp} — tiragem: ${dadosExtraidos.tiragem}, montagem: ${dadosExtraidos.montagem?.aproveitamento}`)
+
     return reply.status(200).send({
       importacaoId,
       sistemaOrigem: dadosExtraidos.sistemaOrigem,
