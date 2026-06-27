@@ -115,6 +115,24 @@ model UsuarioEmpresa {
   @@map("usuario_empresa")
 }
 
+model PreferenciaUsuario {
+  id           String   @id @default(uuid())
+  usuarioId    String   @unique @map("usuario_id")
+  tema         String   @default("auto") @db.VarChar(10)
+  idioma       String   @default("pt-BR") @db.VarChar(10)
+  densidade    String   @default("normal") @db.VarChar(15)
+  formatoData  String   @default("DD/MM/YYYY") @map("formato_data") @db.VarChar(15)
+  notifSons    Boolean  @default(true) @map("notif_sons")
+  notifPush    Boolean  @default(true) @map("notif_push")
+  notifEmail   Boolean  @default(true) @map("notif_email")
+  moduloPadrao String?  @map("modulo_padrao") @db.VarChar(30)
+  tamanhoFonte String   @default("medio") @map("tamanho_fonte") @db.VarChar(10)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@map("preferencia_usuario")
+}
+
 // ============================================================================
 // CADASTROS BASE
 // ============================================================================

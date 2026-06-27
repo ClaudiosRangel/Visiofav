@@ -6,6 +6,7 @@ import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import { authRoutes } from './modules/auth/auth.routes'
 import { usuarioRoutes } from './modules/usuario/usuario.routes'
+import { preferenciasRoutes } from './modules/usuario/preferencias.routes'
 import { centroDistRoutes } from './modules/centro-distribuicao/centro-dist.routes'
 import { depositoRoutes } from './modules/deposito/deposito.routes'
 import { zonaRoutes } from './modules/zona/zona.routes'
@@ -168,6 +169,7 @@ async function bootstrap() {
   // Auth
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(usuarioRoutes, { prefix: '/api/usuarios' })
+  await app.register(preferenciasRoutes, { prefix: '/api/usuarios' })
 
   // Seleção de empresa (pré-módulo — sem moduloGuard)
   await app.register(empresaSelectorRoutes, { prefix: '/api/empresas' })
