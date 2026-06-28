@@ -8,11 +8,15 @@ import { prisma } from '../lib/prisma'
  * - Firebase tokens contêm "securetoken.google.com" no campo `iss`
  * - JWT próprio contém o campo `id` e `empresaId` no payload
  * 
+ * ⚠️ SEGURANÇA: Em produção, este adapter deve usar firebase-admin para
+ * verificar assinaturas criptográficas. A validação atual é apenas superficial.
+ * 
  * Ativado via variável de ambiente FIREBASE_AUTH_ENABLED=true
  * Quando desativado, apenas JWT próprio é aceito.
  */
 
 const FIREBASE_AUTH_ENABLED = process.env.FIREBASE_AUTH_ENABLED === 'true'
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || ''
 
 interface FirebaseTokenPayload {
   iss: string
@@ -33,6 +37,18 @@ function isFirebaseToken(payload: any): boolean {
   if (typeof payload.iss === 'string' && payload.iss.includes('securetoken.google.com')) return true
   if (typeof payload.aud === 'string' && payload.aud.includes('firebase')) return true
   return false
+}
+
+/**
+ * Valida claims básicos do token Firebase (sem verificar assinatura).
+ * ⚠️ Para segurança completa, usar firebase-admin SDK.
+ */
+function validateFirebaseClaims(payload: any): boolean {
+  if (!payload.iss || !payload.aud || !payload.sub) return false
+  // Verificar que o issuer corresponde ao project ID configurado
+  if (FIREBASE_PROJECT_ID && !payload.iss.includes(FIREBASE_PROJECT_ID)) return false
+  if (FIREBASE_PROJECT_ID && payload.aud !== FIREBASE_PROJECT_ID) return false
+  return true
 }
 
 /**
@@ -67,6 +83,11 @@ export async function firebaseAuthAdapter(request: FastifyRequest, reply: Fastif
   const payload = decodeTokenPayload(token)
 
   if (!payload || !isFirebaseToken(payload)) return // Não é Firebase — segue fluxo normal JWT
+
+  // ── Segurança: Validar claims mínimos do Firebase ──
+  if (!validateFirebaseClaims(payload)) {
+    return reply.status(401).send({ message: 'Token Firebase com claims inválidos' })
+  }
 
   // É um token Firebase — busca usuário pelo email
   const email = payload.email

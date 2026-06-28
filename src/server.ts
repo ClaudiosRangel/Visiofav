@@ -4,6 +4,9 @@ process.env.TZ = 'America/Sao_Paulo'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
+import helmet from '@fastify/helmet'
+import rateLimit from '@fastify/rate-limit'
+import cookie from '@fastify/cookie'
 import { authRoutes } from './modules/auth/auth.routes'
 import { usuarioRoutes } from './modules/usuario/usuario.routes'
 import { preferenciasRoutes } from './modules/usuario/preferencias.routes'
@@ -157,8 +160,50 @@ import multipart from '@fastify/multipart'
 const app = Fastify({ logger: true })
 
 async function bootstrap() {
-  await app.register(cors, { origin: true })
-  await app.register(jwt, { secret: process.env.JWT_SECRET || 'dev-secret' })
+  // ── Segurança: JWT_SECRET obrigatório em produção ──
+  const JWT_SECRET = process.env.JWT_SECRET
+  if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+    throw new Error('❌ JWT_SECRET é obrigatório em produção. Configure a variável de ambiente.')
+  }
+
+  // ── Segurança: CORS restrito a origens permitidas ──
+  const allowedOrigins = [
+    'https://visiofav-front-wofr.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ]
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        cb(null, true)
+      } else {
+        cb(new Error('CORS: Origem não permitida'), false)
+      }
+    },
+    credentials: true,
+  })
+
+  await app.register(jwt, { secret: JWT_SECRET || 'dev-secret-only-for-local' })
+
+  // ── Segurança: Cookies httpOnly para tokens de autenticação ──
+  await app.register(cookie, {
+    secret: JWT_SECRET || 'dev-cookie-secret',
+    parseOptions: {},
+  })
+
+  // ── Segurança: Headers de proteção (XSS, Clickjacking, Sniffing) ──
+  await app.register(helmet, {
+    contentSecurityPolicy: false, // Desabilitar CSP pois é API (não serve HTML)
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Permitir recursos cross-origin
+  })
+
+  // ── Segurança: Rate Limiting global (proteção contra brute-force e DDoS) ──
+  await app.register(rateLimit, {
+    max: 200,
+    timeWindow: '1 minute',
+    // Limites mais restritivos aplicados por rota abaixo
+  })
+
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } })
 
   registerTenantContext(app)
@@ -338,101 +383,11 @@ async function bootstrap() {
   const BUILD_DATE = new Date().toISOString()
   app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString(), buildDate: BUILD_DATE }))
 
-  // Fix database columns (one-time)
-  app.post('/api/admin/fix-columns', async (request, reply) => {
-    const { senha } = request.body as { senha?: string }
-    if (senha !== 'caio1420') return reply.status(403).send({ error: 'Senha inválida' })
-    const { prisma: db } = await import('./lib/prisma')
-    const results: string[] = []
-    try { await db.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_enviado" TYPE TEXT`); results.push('✓ xml_enviado → TEXT') } catch (e: any) { results.push(`⚠ xml_enviado: ${e.message?.substring(0, 80)}`) }
-    try { await db.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_retorno" TYPE TEXT`); results.push('✓ xml_retorno → TEXT') } catch (e: any) { results.push(`⚠ xml_retorno: ${e.message?.substring(0, 80)}`) }
-    return { done: true, results }
-  })
-
-  // Fix admin user (one-time, remove after use)
-  app.post('/api/admin/fix-admin', async (request, reply) => {
-    const { senha } = request.body as { senha?: string }
-    if (senha !== 'caio1420') {
-      return reply.status(403).send({ error: 'Senha inválida' })
-    }
-
-    const bcryptModule = await import('bcryptjs')
-    const bcrypt = bcryptModule.default || bcryptModule
-    const senhaHash = await bcrypt.hash('987123', 10)
-
-    // Use the global prisma instance (already connected)
-    const { prisma } = await import('./lib/prisma')
-
-    const admin = await prisma.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
-    if (admin) {
-      await prisma.usuario.update({
-        where: { id: admin.id },
-        data: { nome: 'Admin', perfil: 'SUPER_ADMIN', senha: senhaHash },
-      })
-
-      const empresa = await prisma.empresa.findFirst()
-      if (empresa) {
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "usuario_empresa" ("usuario_id", "empresa_id", "modulos") VALUES ('${admin.id}', '${empresa.id}', '*') ON CONFLICT ("usuario_id", "empresa_id") DO UPDATE SET modulos = '*'`
-        )
-      }
-    }
-
-    return { done: true, message: 'Admin atualizado: nome=Admin, perfil=SUPER_ADMIN, senha=987123, modulos=*' }
-  })
-
-  // Admin cleanup endpoint (password-protected)
-  app.post('/api/admin/cleanup', async (request, reply) => {
-    const { senha } = request.body as { senha?: string }
-    if (senha !== 'caio1420') {
-      return reply.status(403).send({ error: 'Senha inválida' })
-    }
-
-    const { prisma: db } = await import('./lib/prisma')
-    const results: string[] = []
-
-    const tables = [
-      'pendencia_logistica', 'mapa_carregamento_nf', 'mapa_carregamento',
-      'os_funcionario_wms', 'log_movimento_wms', 'log_movimentacao', 'ordem_servico_wms',
-      'item_conferencia_entrada', 'conferencia_entrada',
-      'item_volume', 'carregamento_volume', 'carregamento', 'volume',
-      'item_conferencia_saida', 'conferencia_saida',
-      'item_separacao', 'ordem_separacao', 'onda_pedido', 'onda_separacao',
-      'saldo_endereco', 'movimento', 'log_ordem_servico', 'os_funcionario', 'ordem_servico',
-      'estoque', 'item_nfe', 'nfe', 'item_nota_entrada', 'nota_entrada', 'agenda_wms',
-      'conta_receber', 'venda_efetivada', 'item_pedido_venda', 'pedido_venda',
-      'conta_pagar', 'item_devolucao_compra', 'devolucao_compra', 'compra_efetivada',
-      'item_pedido_compra', 'pedido_compra',
-      'funcionario', 'endereco', 'ficha_operacional',
-    ]
-
-    for (const table of tables) {
-      try {
-        await db.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`)
-        results.push(`✓ ${table}`)
-      } catch (e: any) {
-        if (e.message?.includes('42P01') || e.message?.includes('não existe') || e.message?.includes('does not exist')) {
-          results.push(`⏭ ${table} (não existe)`)
-        } else {
-          results.push(`✗ ${table}: ${e.message?.substring(0, 80)}`)
-        }
-      }
-    }
-
-    // Clean users except admin
-    try {
-      await db.$executeRawUnsafe(`DELETE FROM "usuario_empresa" WHERE "usuario_id" NOT IN (SELECT id FROM "usuario" WHERE email = 'admin@visiofab.com')`)
-      results.push('✓ usuario_empresa (non-admin)')
-    } catch (e: any) { results.push(`✗ usuario_empresa: ${e.message?.substring(0, 80)}`) }
-
-    try {
-      await db.$executeRawUnsafe(`DELETE FROM "usuario" WHERE email != 'admin@visiofab.com'`)
-      results.push('✓ usuarios non-admin')
-    } catch (e: any) { results.push(`✗ usuario: ${e.message?.substring(0, 80)}`) }
-
-    await db.$disconnect()
-    return { done: true, results }
-  })
+  // ── REMOVIDO: Endpoints admin com senha hardcoded (vulnerabilidade de segurança) ──
+  // Os endpoints /api/admin/fix-columns, /api/admin/fix-admin e /api/admin/cleanup
+  // foram removidos por expor senhas no código-fonte e permitir destruição de dados.
+  // Use migrations (prisma migrate) para alterações de schema.
+  // Use o módulo adminPcpRoutes para limpeza de dados (requer auth + perfil SUPER_ADMIN/ADMIN).
 
   // SSE (Server-Sent Events) para notificações em tempo real
   await app.register(websocketRoutes)

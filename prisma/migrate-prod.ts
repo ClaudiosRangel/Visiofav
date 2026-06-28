@@ -203,22 +203,8 @@ async function main() {
     console.log('⚠️ Resolução pendências skipped:', e.message)
   }
 
-  // Atualizar senha do admin para 987123
-  try {
-    const bcrypt = await import('bcryptjs')
-    const bcryptLib = bcrypt.default || bcrypt
-    const novaSenhaHash = await bcryptLib.hash('987123', 10)
-    const admin = await prisma.usuario.findUnique({ where: { email: 'admin@visiofab.com' } })
-    if (admin) {
-      await prisma.usuario.update({
-        where: { id: admin.id },
-        data: { senha: novaSenhaHash },
-      })
-      console.log('✅ Admin password updated')
-    }
-  } catch (e: any) {
-    console.log('⚠️ Admin password update skipped:', e.message)
-  }
+  // ⚠️ REMOVIDO: Reset de senha admin com valor hardcoded (vulnerabilidade de segurança)
+  // A senha do admin deve ser alterada manualmente via interface ou endpoint autenticado.
 
   // Produto - campo imagem_url
   await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "imagem_url" TEXT`)
@@ -605,6 +591,32 @@ async function main() {
     WHERE centro_producao.id = ranked.id AND centro_producao.posicao = 0
   `)
   console.log('✅ PCP Ordenação: campo posicao + backfill sequencial')
+
+  // =========================================================================
+  // Segurança — Refresh Tokens table
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "refresh_token" (
+      "id" TEXT NOT NULL,
+      "usuario_id" TEXT NOT NULL,
+      "token" VARCHAR(200) NOT NULL,
+      "expires_at" TIMESTAMP(3) NOT NULL,
+      "revoked" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "refresh_token_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "refresh_token_token_key" UNIQUE ("token"),
+      CONSTRAINT "refresh_token_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuario"("id") ON DELETE CASCADE
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_refresh_token_token" ON "refresh_token"("token")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_refresh_token_usuario_id" ON "refresh_token"("usuario_id")`)
+  console.log('✅ Segurança: tabela refresh_token criada')
+
+  // Limpar tokens expirados (manutenção automática)
+  try {
+    await prisma.$executeRawUnsafe(`DELETE FROM "refresh_token" WHERE "expires_at" < NOW() OR "revoked" = true`)
+    console.log('✅ Tokens expirados limpos')
+  } catch { /* tabela pode não existir ainda */ }
 
   console.log('✅ All migrations applied successfully')
 }

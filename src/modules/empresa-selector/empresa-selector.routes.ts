@@ -250,7 +250,7 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
         perfil: user.perfil,
         empresaId,
       },
-      { expiresIn: '8h' },
+      { expiresIn: '15m' },
     )
 
     return { token }
