@@ -11,6 +11,7 @@ import {
   clearAuthCookies,
   TokenPayload,
 } from '../../lib/auth-tokens'
+import { logSecurityEvent, extractSecurityContext } from '../../middleware/security-audit'
 
 export async function authRoutes(app: FastifyInstance) {
   // ── Segurança: Rate limit no login — 5 tentativas por minuto por IP ──
@@ -62,6 +63,16 @@ export async function authRoutes(app: FastifyInstance) {
 
     // Setar cookies httpOnly
     setAuthCookies(reply, accessToken, refreshToken)
+
+    // ── Auditoria: login bem-sucedido ──
+    const ctx = extractSecurityContext(request)
+    await logSecurityEvent({
+      tipo: 'LOGIN_SUCCESS',
+      usuarioId: usuario.id,
+      email,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    })
 
     // Retornar token no body para backward compatibility (mobile app, etc.)
     return {
@@ -214,6 +225,15 @@ export async function authRoutes(app: FastifyInstance) {
     await prisma.usuario.update({
       where: { id: user.id },
       data: { senha: senhaHash, senhaAlterada: true },
+    })
+
+    // ── Auditoria: alteração de senha ──
+    const ctx = extractSecurityContext(request)
+    await logSecurityEvent({
+      tipo: 'PASSWORD_CHANGE',
+      usuarioId: user.id,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
     })
 
     return { message: 'Senha alterada com sucesso' }

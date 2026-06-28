@@ -121,6 +121,24 @@ model RefreshToken {
   @@map("refresh_token")
 }
 
+/// Log de eventos de segurança (login, logout, acesso negado, ações admin).
+/// Mantido separado da auditoria operacional para análise de ameaças.
+model SecurityAuditLog {
+  id        String   @id @default(uuid())
+  tipo      String   @db.VarChar(50)
+  usuarioId String?  @map("usuario_id")
+  email     String?  @db.VarChar(200)
+  ip        String   @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.VarChar(300)
+  detalhes  String?  @db.Text
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@index([tipo, criadoEm])
+  @@index([usuarioId])
+  @@index([ip])
+  @@map("security_audit_log")
+}
+
 model UsuarioEmpresa {
   usuarioId String  @map("usuario_id")
   usuario   Usuario @relation(fields: [usuarioId], references: [id])

@@ -77,6 +77,7 @@ import { dashboardWmsRoutes } from './modules/dashboard-wms/dashboard-wms.routes
 import { inventarioRoutes } from './modules/inventario/inventario.routes'
 import { relatoriosWmsRoutes } from './modules/relatorios-wms/relatorios-wms.routes'
 import { auditoriaRoutes } from './modules/auditoria/auditoria.routes'
+import { securityDashboardRoutes } from './modules/auditoria/security-dashboard.routes'
 import { ressuprimentoRoutes } from './modules/ressuprimento/ressuprimento.routes'
 import { dadosLogisticosRoutes } from './modules/dados-logisticos/dados-logisticos.routes'
 import { websocketRoutes } from './modules/websocket/websocket.routes'
@@ -155,6 +156,7 @@ import { liberacaoMaterialRoutes } from './modules/liberacao-material/liberacao-
 import { apontamentoProducaoRoutes } from './modules/apontamento-producao/apontamento-producao.routes'
 
 import { registerTenantContext } from './middleware/tenant-context'
+import { registerSecurityAuditHook } from './middleware/security-audit'
 import multipart from '@fastify/multipart'
 
 const app = Fastify({ logger: true })
@@ -208,6 +210,9 @@ async function bootstrap() {
 
   registerTenantContext(app)
 
+  // ── Segurança: Auditoria automática de eventos de segurança ──
+  registerSecurityAuditHook(app)
+
   // Adapter Firebase Auth (período de migração)
   app.addHook('onRequest', firebaseAuthAdapter)
 
@@ -245,6 +250,7 @@ async function bootstrap() {
   await app.register(inventarioRoutes, { prefix: '/api/inventarios' })
   await app.register(relatoriosWmsRoutes, { prefix: '/api/relatorios-wms' })
   await app.register(auditoriaRoutes, { prefix: '/api/auditoria' })
+  await app.register(securityDashboardRoutes, { prefix: '/api/seguranca' })
   await app.register(ressuprimentoRoutes, { prefix: '/api/ressuprimento' })
   await app.register(dadosLogisticosRoutes, { prefix: '/api/dados-logisticos' })
   await app.register(agendaWmsRoutes, { prefix: '/api/agenda-wms' })

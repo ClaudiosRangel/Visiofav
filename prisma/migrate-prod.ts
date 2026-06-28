@@ -618,6 +618,30 @@ async function main() {
     console.log('✅ Tokens expirados limpos')
   } catch { /* tabela pode não existir ainda */ }
 
+  // SecurityAuditLog — tabela de eventos de segurança
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "security_audit_log" (
+      "id" TEXT NOT NULL,
+      "tipo" VARCHAR(50) NOT NULL,
+      "usuario_id" TEXT,
+      "email" VARCHAR(200),
+      "ip" VARCHAR(45) NOT NULL,
+      "user_agent" VARCHAR(300),
+      "detalhes" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "security_audit_log_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_security_audit_log_tipo_criado_em" ON "security_audit_log"("tipo", "criado_em")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_security_audit_log_usuario_id" ON "security_audit_log"("usuario_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_security_audit_log_ip" ON "security_audit_log"("ip")`)
+  console.log('✅ Segurança: tabela security_audit_log criada')
+
+  // Limpar logs de segurança com mais de 90 dias (manutenção)
+  try {
+    await prisma.$executeRawUnsafe(`DELETE FROM "security_audit_log" WHERE "criado_em" < NOW() - INTERVAL '90 days'`)
+  } catch { /* tabela pode não existir ainda */ }
+
   console.log('✅ All migrations applied successfully')
 }
 
