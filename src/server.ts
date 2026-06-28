@@ -171,6 +171,7 @@ async function bootstrap() {
   // ── Segurança: CORS restrito a origens permitidas ──
   const allowedOrigins = [
     'https://visiofav-front-wofr.vercel.app',
+    'https://app.vizorerp.com.br',
     'http://localhost:3000',
     'http://localhost:3001',
   ]
