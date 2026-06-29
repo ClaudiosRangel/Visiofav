@@ -461,6 +461,22 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // DELETE /api/pcp/de-para-importacao/limpar-centros — Limpa de/para de centros
+  // =========================================================================
+  app.delete('/de-para-importacao/limpar-centros', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+
+    const deletados = await prisma.deParaImportacao.deleteMany({
+      where: { empresaId: user.empresaId, tipoEntidade: 'CENTRO_PRODUCAO' },
+    })
+
+    return reply.status(200).send({
+      message: `${deletados.count} mapeamentos de centros removidos. Reimporte os PDFs para recriar os de/para.`,
+      count: deletados.count,
+    })
+  })
+
+  // =========================================================================
   // DELETE /api/pcp/de-para-importacao/:id â€” Remover mapeamento
   // =========================================================================
   app.delete('/de-para-importacao/:id', async (request, reply) => {
