@@ -549,6 +549,7 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
   // Buscar centros de produção para etapas
   // Usa a descrição COMPLETA da etapa como chave para diferenciar variações
   // Ex: "Impressão - Offset Plana Heidelberg CD 7cores" vs "Impressão - Offset Plana Heidelberg CD 5cores (Cartão)"
+  // IMPORTANTE: Só retorna sugestão se encontrar de/para EXATO. Não faz busca fuzzy.
   for (let i = 0; i < dados.etapas.length; i++) {
     const etapa = dados.etapas[i]
     const descricaoCompleta = etapa.descricao
@@ -561,7 +562,7 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
       const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
       sugestoes.centros.push({ indice: i, sugestao: centro || null })
     } else {
-      // Fallback: tentar pelo nome curto da máquina (compatibilidade com mapeamentos antigos)
+      // Fallback: tentar pelo nome curto da máquina no de/para (compatibilidade com mapeamentos antigos)
       const deParaFallback = nomeMaquina !== descricaoCompleta
         ? await prisma.deParaImportacao.findFirst({
             where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeMaquina },
@@ -570,13 +571,8 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
       if (deParaFallback) {
         const centro = await prisma.centroProducao.findFirst({ where: { id: deParaFallback.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
         sugestoes.centros.push({ indice: i, sugestao: centro || null })
-      } else if (nomeMaquina) {
-        const centro = await prisma.centroProducao.findFirst({
-          where: { empresaId, OR: [{ descricao: { contains: nomeMaquina.substring(0, 15), mode: 'insensitive' } }, { codigo: { contains: nomeMaquina.substring(0, 10), mode: 'insensitive' } }] },
-          select: { id: true, codigo: true, descricao: true, tipoMaquina: true },
-        })
-        sugestoes.centros.push({ indice: i, sugestao: centro || null })
       } else {
+        // Sem de/para: NÃO fazer busca fuzzy — retornar null para o usuário definir manualmente
         sugestoes.centros.push({ indice: i, sugestao: null })
       }
     }
