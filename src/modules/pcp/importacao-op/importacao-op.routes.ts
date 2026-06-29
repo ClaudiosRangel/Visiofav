@@ -514,24 +514,38 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
   }
 
   // Buscar centros de produção para etapas
+  // Usa a descrição COMPLETA da etapa como chave para diferenciar variações
+  // Ex: "Impressão - Offset Plana Heidelberg CD 7cores" vs "Impressão - Offset Plana Heidelberg CD 5cores (Cartão)"
   for (let i = 0; i < dados.etapas.length; i++) {
     const etapa = dados.etapas[i]
+    const descricaoCompleta = etapa.descricao
     const nomeMaquina = etapa.maquina || etapa.descricao
-    // Primeiro: De/Para
+    // Primeiro: De/Para pela descrição completa (chave precisa)
     const deParaCentro = await prisma.deParaImportacao.findFirst({
-      where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeMaquina },
+      where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: descricaoCompleta },
     })
     if (deParaCentro) {
       const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
       sugestoes.centros.push({ indice: i, sugestao: centro || null })
-    } else if (nomeMaquina) {
-      const centro = await prisma.centroProducao.findFirst({
-        where: { empresaId, OR: [{ descricao: { contains: nomeMaquina.substring(0, 15), mode: 'insensitive' } }, { codigo: { contains: nomeMaquina.substring(0, 10), mode: 'insensitive' } }] },
-        select: { id: true, codigo: true, descricao: true, tipoMaquina: true },
-      })
-      sugestoes.centros.push({ indice: i, sugestao: centro || null })
     } else {
-      sugestoes.centros.push({ indice: i, sugestao: null })
+      // Fallback: tentar pelo nome curto da máquina (compatibilidade com mapeamentos antigos)
+      const deParaFallback = nomeMaquina !== descricaoCompleta
+        ? await prisma.deParaImportacao.findFirst({
+            where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeMaquina },
+          })
+        : null
+      if (deParaFallback) {
+        const centro = await prisma.centroProducao.findFirst({ where: { id: deParaFallback.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
+        sugestoes.centros.push({ indice: i, sugestao: centro || null })
+      } else if (nomeMaquina) {
+        const centro = await prisma.centroProducao.findFirst({
+          where: { empresaId, OR: [{ descricao: { contains: nomeMaquina.substring(0, 15), mode: 'insensitive' } }, { codigo: { contains: nomeMaquina.substring(0, 10), mode: 'insensitive' } }] },
+          select: { id: true, codigo: true, descricao: true, tipoMaquina: true },
+        })
+        sugestoes.centros.push({ indice: i, sugestao: centro || null })
+      } else {
+        sugestoes.centros.push({ indice: i, sugestao: null })
+      }
     }
   }
 
@@ -559,17 +573,19 @@ async function salvarDeParaImportacao(empresaId: string, dados: DadosOpGprint, b
     }
 
     // Salvar de-para de centros/máquinas
+    // Usa a descrição COMPLETA da etapa como chave para diferenciar variações
     if (body.centrosVinculados?.length > 0) {
       for (const vinculo of body.centrosVinculados) {
         if (!vinculo.centroProducaoId) continue
         const etapa = dados.etapas[vinculo.indice]
         if (!etapa) continue
-        const nomeOriginal = etapa.maquina || etapa.descricao
-        const nomeEditado = vinculo.nomeEditado || nomeOriginal
-        // Salvar usando o nome original do PDF como código externo
+        const descricaoCompleta = etapa.descricao
+        const nomeEditado = vinculo.nomeEditado || descricaoCompleta
+        // Salvar usando a descrição COMPLETA do PDF como código externo
+        // Isso permite diferenciar "Heidelberg CD 7cores" de "Heidelberg CD 5cores (Cartão)"
         await prisma.deParaImportacao.upsert({
-          where: { empresaId_sistemaOrigem_tipoEntidade_codigoExterno: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeOriginal } },
-          create: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: nomeOriginal, nomeExterno: nomeEditado, entidadeInternaId: vinculo.centroProducaoId },
+          where: { empresaId_sistemaOrigem_tipoEntidade_codigoExterno: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: descricaoCompleta } },
+          create: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: descricaoCompleta, nomeExterno: nomeEditado, entidadeInternaId: vinculo.centroProducaoId },
           update: { entidadeInternaId: vinculo.centroProducaoId, nomeExterno: nomeEditado },
         })
       }
