@@ -412,6 +412,54 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/pcp/op-pdf/:opId — Serve o PDF original importado
+  // =========================================================================
+  app.get('/op-pdf/:opId', { preHandler: [] }, async (request, reply) => {
+    // Aceitar autenticação via query param (para abrir PDF em nova aba)
+    const query = request.query as any
+    const token = query.token as string | undefined
+    let user: { id: string; empresaId: string } | null = null
+
+    if (token) {
+      try {
+        const decoded = app.jwt.verify(token) as any
+        user = { id: decoded.sub || decoded.id, empresaId: decoded.empresaId }
+      } catch {
+        return reply.status(401).send({ message: 'Token inválido' })
+      }
+    } else {
+      // Fallback: header Authorization
+      user = request.user as { id: string; empresaId: string } | null
+    }
+
+    if (!user) {
+      return reply.status(401).send({ message: 'Não autenticado' })
+    }
+
+    const { opId } = z.object({ opId: z.string().uuid() }).parse(request.params)
+
+    // Validar que a OP pertence à empresa do usuário
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: opId, empresaId: user.empresaId },
+      select: { id: true, numero: true },
+    })
+    if (!op) {
+      return reply.status(404).send({ message: 'OP não encontrada' })
+    }
+
+    const filePath = path.join(process.cwd(), 'uploads', 'ops', `${opId}.pdf`)
+    if (!fs.existsSync(filePath)) {
+      return reply.status(404).send({ message: 'PDF não disponível para esta OP' })
+    }
+
+    const pdfBuffer = fs.readFileSync(filePath)
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `inline; filename="OP-${op.numero}.pdf"`)
+      .send(pdfBuffer)
+  })
+
+  // =========================================================================
   // GET /api/pcp/de-para-importacao â€” Lista mapeamentos
   // =========================================================================
   app.get('/de-para-importacao', async (request) => {
