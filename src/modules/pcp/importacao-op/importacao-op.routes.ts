@@ -302,7 +302,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       // Se não vinculou a centro existente mas tem nomeEditado, criar novo centro
       if (!centroIdValidado && vinculoCentro?.nomeEditado) {
         const nomeCentro = vinculoCentro.nomeEditado
-        const codigoCentro = nomeCentro.substring(0, 20).toUpperCase().replace(/\s+/g, '_')
+        let codigoCentro = nomeCentro.substring(0, 20).toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '')
 
         // Verificar se já existe um centro com esse código para evitar duplicidade
         const centroExistente = await prisma.centroProducao.findFirst({
@@ -313,10 +313,27 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         if (centroExistente) {
           centroIdValidado = centroExistente.id
         } else {
+          // Se código ficou vazio após sanitização, gerar um baseado na sequência
+          if (!codigoCentro) {
+            codigoCentro = `CENTRO_${etapa.sequencia}`
+          }
+          // Garantir unicidade adicionando sufixo numérico se necessário
+          let codigoFinal = codigoCentro
+          let tentativa = 0
+          while (tentativa < 10) {
+            const jaExiste = await prisma.centroProducao.findFirst({
+              where: { empresaId: user.empresaId, codigo: codigoFinal },
+              select: { id: true },
+            })
+            if (!jaExiste) break
+            tentativa++
+            codigoFinal = `${codigoCentro.substring(0, 17)}_${tentativa}`
+          }
+
           const novoCentro = await prisma.centroProducao.create({
             data: {
               empresaId: user.empresaId,
-              codigo: codigoCentro,
+              codigo: codigoFinal,
               descricao: nomeCentro,
               tipo: 'MAQUINA',
               tipoMaquina: vinculoCentro.tipoMaquina ?? null,
