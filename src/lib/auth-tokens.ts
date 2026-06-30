@@ -13,7 +13,7 @@ import crypto from 'crypto'
  */
 
 export const TOKEN_CONFIG = {
-  accessTokenExpiry: '15m',
+  accessTokenExpiry: '60m',
   refreshTokenExpiry: '7d',
   // Em produção, use secure: true (HTTPS only)
   cookieSecure: process.env.NODE_ENV === 'production',
@@ -55,7 +55,7 @@ export function setAuthCookies(reply: FastifyReply, accessToken: string, refresh
     secure: TOKEN_CONFIG.cookieSecure,
     sameSite: TOKEN_CONFIG.cookieSameSite,
     path: '/',
-    maxAge: 15 * 60, // 15 minutos em segundos
+    maxAge: 60 * 60, // 60 minutos em segundos
     domain: TOKEN_CONFIG.cookieDomain,
   })
 
