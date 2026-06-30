@@ -757,6 +757,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           opId: e.ordemProducaoId,
           opNumero: e.ordemProducao.referenciaExterna || String(e.ordemProducao.numero),
           descricao: e.descricao,
+          cliente: e.ordemProducao.clienteId ? clienteMap.get(e.ordemProducao.clienteId) || null : null,
+          produto: e.ordemProducao.produtoId ? produtoMap.get(e.ordemProducao.produtoId) || null : null,
           quantidade: Number(e.ordemProducao.quantidade),
           unidade: e.ordemProducao.unidadeMedida,
           prioridade: e.ordemProducao.prioridade,
