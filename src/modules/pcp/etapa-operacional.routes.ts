@@ -656,6 +656,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return false
     }
 
+    // Extrai nome do cliente/produto das observações da OP (vem do PDF importado)
+    function extrairClienteObs(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Cliente\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+    function extrairProdutoObs(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Produto\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+
     // Agrupa por centro
     const painelPorCentro = centros.map(centro => {
       const etapasDoCentro = etapasAtivas.filter(e => e.centroProducaoId === centro.id)
@@ -678,8 +690,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             id: e.id,
             opId: e.ordemProducaoId,
             opNumero: e.ordemProducao.referenciaExterna || String(e.ordemProducao.numero),
-            clienteNome: (e.ordemProducao.clienteId && clienteMap.get(e.ordemProducao.clienteId)) || null,
-            produtoNome: (e.ordemProducao.produtoId && produtoMap.get(e.ordemProducao.produtoId)) || null,
+            clienteNome: extrairClienteObs(e.ordemProducao.observacoes) || (e.ordemProducao.clienteId && clienteMap.get(e.ordemProducao.clienteId)) || null,
+            produtoNome: extrairProdutoObs(e.ordemProducao.observacoes) || (e.ordemProducao.produtoId && produtoMap.get(e.ordemProducao.produtoId)) || null,
             descricao: e.descricao,
             status: e.status,
             sequencia: e.sequencia,
@@ -757,8 +769,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           opId: e.ordemProducaoId,
           opNumero: e.ordemProducao.referenciaExterna || String(e.ordemProducao.numero),
           descricao: e.descricao,
-          cliente: e.ordemProducao.clienteId ? clienteMap.get(e.ordemProducao.clienteId) || null : null,
-          produto: e.ordemProducao.produtoId ? produtoMap.get(e.ordemProducao.produtoId) || null : null,
+          cliente: extrairClienteObs(e.ordemProducao.observacoes) || (e.ordemProducao.clienteId ? clienteMap.get(e.ordemProducao.clienteId) || null : null),
+          produto: extrairProdutoObs(e.ordemProducao.observacoes) || (e.ordemProducao.produtoId ? produtoMap.get(e.ordemProducao.produtoId) || null : null),
           quantidade: Number(e.ordemProducao.quantidade),
           unidade: e.ordemProducao.unidadeMedida,
           prioridade: e.ordemProducao.prioridade,
