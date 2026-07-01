@@ -14,6 +14,7 @@ const efetivarBodySchema = z.object({
     formaPagamento: z.string().min(1),
     parcelas: z.number().int().positive(),
   }),
+  xmlNfe: z.string().nullish(),
 })
 
 const devolverItemSchema = z.object({
@@ -103,6 +104,37 @@ export async function compraRoutes(app: FastifyInstance) {
       return reply.status(422).send({ message: 'Apenas pedidos CONFIRMADO podem ser efetivados' })
     }
 
+    // Validar XML antes de iniciar transação, se fornecido (Requirement 3.5)
+    const xmlNfe = body.xmlNfe || null
+    if (xmlNfe) {
+      try {
+        const parsedFiscal = compraFiscalService.parseNFeXml(xmlNfe)
+
+        // Verificar duplicidade por CNPJ + nNF + série (Requirement 3.7)
+        const duplicidade = await prisma.documentoFiscal.findFirst({
+          where: {
+            empresaId: user.empresaId,
+            emitenteCnpj: parsedFiscal.emitente.cnpj,
+            numero: parsedFiscal.numero,
+            serie: parsedFiscal.serie,
+            tipoOperacao: 0,
+          },
+          select: { id: true },
+        })
+
+        if (duplicidade) {
+          return reply.status(422).send({
+            message: `Nota fiscal ${parsedFiscal.numero}/${parsedFiscal.serie} do fornecedor ${parsedFiscal.emitente.cnpj} já foi importada`,
+          })
+        }
+      } catch (err) {
+        if (err instanceof ErroFiscal) {
+          return reply.status(422).send(err.toJSON())
+        }
+        return reply.status(422).send({ message: 'XML inválido: não foi possível interpretar o conteúdo' })
+      }
+    }
+
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId },
       select: { usaWms: true },
@@ -120,6 +152,7 @@ export async function compraRoutes(app: FastifyInstance) {
           pedidoCompraId: pedido.id,
           valorTotal,
           dataEntrega: empresa?.usaWms ? undefined : new Date(),
+          xmlNfe: xmlNfe || undefined,
         },
       })
 
@@ -160,7 +193,20 @@ export async function compraRoutes(app: FastifyInstance) {
         data: { status: 'RECEBIDO' },
       })
 
-      return compra
+      // Integração fiscal: quando xmlNfe preenchido, criar DocumentoFiscal (Requirement 3.1, 3.4)
+      // Quando xmlNfe vazio/null: CompraEfetivada sem DocumentoFiscal (Requirement 3.7)
+      let documentoFiscalId: string | null = null
+      if (xmlNfe) {
+        const documentoFiscal = await compraFiscalService.criarDocFiscalEntrada({
+          empresaId: user.empresaId,
+          xmlNfe,
+          compraEfetivadaId: compra.id,
+          tx,
+        })
+        documentoFiscalId = documentoFiscal.id
+      }
+
+      return { ...compra, documentoFiscalId }
     })
 
     return reply.status(201).send(result)
@@ -503,37 +549,46 @@ export async function compraRoutes(app: FastifyInstance) {
 
     if (!xmlContent) return reply.status(400).send({ message: 'Arquivo XML é obrigatório' })
 
+    // Validar XML usando o parser fiscal (retorna 422 se inválido)
+    let parsedFiscal
+    try {
+      parsedFiscal = compraFiscalService.parseNFeXml(xmlContent)
+    } catch (err) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send(err.toJSON())
+      }
+      return reply.status(422).send({ message: 'XML inválido: não foi possível interpretar o conteúdo' })
+    }
+
+    // Também extrair dados com o parser local para criação de fornecedor/produtos
     let parsed
     try {
       parsed = parseNFeXml(xmlContent)
     } catch (err: any) {
-      return reply.status(400).send({ message: err.message })
+      return reply.status(422).send({ message: err.message })
     }
 
     const { emitente, nota: notaParsed, itens: itensXml, valorTotal: vNF } = parsed
 
-    // Verificar duplicidade: NF já importada para este fornecedor
-    const compraExistente = await prisma.compraEfetivada.findFirst({
+    // Verificar duplicidade: CNPJ + nNF + série (Requirement 3.7)
+    const duplicidadeDocFiscal = await prisma.documentoFiscal.findFirst({
       where: {
         empresaId: user.empresaId,
-        xmlNfe: { not: null },
-        pedidoCompra: {
-          fornecedor: { cnpj: emitente.cnpj },
-        },
+        emitenteCnpj: parsedFiscal.emitente.cnpj,
+        numero: parsedFiscal.numero,
+        serie: parsedFiscal.serie,
+        tipoOperacao: 0, // Entrada
       },
-      select: { xmlNfe: true },
+      select: { id: true },
     })
 
-    if (compraExistente?.xmlNfe) {
-      const nNFExistente = compraExistente.xmlNfe.match(/<nNF>(\d+)<\/nNF>/)?.[1]
-      if (nNFExistente && nNFExistente === notaParsed.numero) {
-        return reply.status(422).send({
-          message: `Nota fiscal ${notaParsed.numero}/${notaParsed.serie} do fornecedor ${emitente.cnpj} já foi importada`,
-        })
-      }
+    if (duplicidadeDocFiscal) {
+      return reply.status(422).send({
+        message: `Nota fiscal ${parsedFiscal.numero}/${parsedFiscal.serie} do fornecedor ${parsedFiscal.emitente.cnpj} já foi importada`,
+      })
     }
 
-    // Busca mais abrangente: verificar todas as compras do fornecedor
+    // Verificar duplicidade legada no xmlNfe das compras efetivadas
     const comprasDoFornecedor = await prisma.compraEfetivada.findMany({
       where: {
         empresaId: user.empresaId,
@@ -548,7 +603,8 @@ export async function compraRoutes(app: FastifyInstance) {
     for (const compra of comprasDoFornecedor) {
       if (!compra.xmlNfe) continue
       const nNF = compra.xmlNfe.match(/<nNF>(\d+)<\/nNF>/)?.[1]
-      if (nNF === notaParsed.numero) {
+      const serieExistente = compra.xmlNfe.match(/<serie>(\d+)<\/serie>/)?.[1]
+      if (nNF === notaParsed.numero && serieExistente === notaParsed.serie) {
         return reply.status(422).send({
           message: `Nota fiscal ${notaParsed.numero}/${notaParsed.serie} do fornecedor ${emitente.cnpj} já foi importada`,
         })
@@ -634,10 +690,32 @@ export async function compraRoutes(app: FastifyInstance) {
         },
       })
 
-      // Agendamento agora é feito pelo modal visual de agendamento de doca no frontend
-      // Não criar automaticamente aqui para evitar duplicidade
+      // Integração fiscal: criar DocumentoFiscal de entrada dentro da mesma transação
+      // Requirements: 3.1, 3.4
+      let documentoFiscal = null
+      try {
+        documentoFiscal = await compraFiscalService.criarDocFiscalEntrada({
+          empresaId: user.empresaId,
+          xmlNfe: xmlContent,
+          compraEfetivadaId: compra.id,
+          tx,
+        })
+      } catch (err) {
+        // Se o XML já foi validado acima, este erro não deveria ocorrer
+        // mas tratamos para segurança — propagar para rollback da transação
+        if (err instanceof ErroFiscal) {
+          throw err
+        }
+        throw new Error(`Falha ao criar documento fiscal: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+      }
 
-      return { pedido, compra, fornecedorCriado: !fornecedor, produtosCriados: produtoIds.length }
+      return {
+        pedido,
+        compra,
+        fornecedorCriado: !fornecedor,
+        produtosCriados: produtoIds.length,
+        documentoFiscalId: documentoFiscal?.id || null,
+      }
     })
 
     return reply.status(201).send(result)

@@ -17,7 +17,7 @@ import { buildMDFeXml, type DadosMDFe } from './mdfe-xml-builder'
 import { validarXML } from '../xml/xml-validator'
 import { assinarXML } from '../xml/xml-signer'
 import { criarSefazClient, type SefazUrlResolver } from '../sefaz/sefaz-client'
-import { obterUrlWebservice, obterUrlWebserviceMDFe } from '../sefaz/sefaz-urls'
+import { obterUrlWebserviceMDFe } from '../sefaz/sefaz-urls'
 import {
   AmbienteSefaz,
   ServicoSefaz,

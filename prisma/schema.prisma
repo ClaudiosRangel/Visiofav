@@ -556,6 +556,7 @@ model VendaEfetivada {
 
   contasReceber ContaReceber[]
   nfe           Nfe?
+  documentosFiscais DocumentoFiscal[]
 
   @@map("venda_efetivada")
 }
@@ -3386,6 +3387,8 @@ model DocumentoFiscal {
   atualizadoEm    DateTime @updatedAt @map("atualizado_em")
 
   // Vínculos
+  vendaEfetivadaId  String?          @map("venda_efetivada_id")
+  vendaEfetivada    VendaEfetivada?  @relation(fields: [vendaEfetivadaId], references: [id])
   compraEfetivadaId String?          @map("compra_efetivada_id")
   compraEfetivada   CompraEfetivada? @relation(fields: [compraEfetivadaId], references: [id])
 

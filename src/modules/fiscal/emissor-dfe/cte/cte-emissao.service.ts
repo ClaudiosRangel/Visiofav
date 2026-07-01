@@ -14,7 +14,7 @@ import { buildCTeXml, type DadosCTe } from './cte-xml-builder'
 import { validarXML } from '../xml/xml-validator'
 import { assinarXML } from '../xml/xml-signer'
 import { criarSefazClient, type SefazUrlResolver } from '../sefaz/sefaz-client'
-import { obterUrlWebservice } from '../sefaz/sefaz-urls'
+import { obterUrlWebserviceCTe } from '../sefaz/sefaz-urls'
 import {
   AmbienteSefaz,
   ServicoSefaz,
@@ -161,12 +161,27 @@ export class CTeEmissaoService {
       }
     }
 
-    // 5. Transmitir à SEFAZ
+    // 5. Transmitir à SEFAZ via CTeAutorizacao
     try {
-      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado)
+      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado, ServicoSefaz.CTE_AUTORIZACAO)
+
+      // Resetar falhas ao sucesso na comunicação
       falhasConsecutivas.set(empresaId, 0)
 
-      // 6. Processar resposta
+      // Se o lote foi recebido (cStat=103) mas precisa consultar resultado
+      if (resposta.codigoStatus === 103 && resposta.protocolo) {
+        // Consultar resultado via CTeRetAutorizacao
+        const respostaConsulta = await this.consultarResultadoLote(
+          resposta.protocolo,
+          ufEmitente,
+          certificado,
+        )
+        return await this.processarRespostaSefaz(
+          respostaConsulta, documentoFiscal.id, chaveAcesso, xmlAssinado
+        )
+      }
+
+      // 6. Processar resposta direta
       return await this.processarRespostaSefaz(
         resposta, documentoFiscal.id, chaveAcesso, xmlAssinado
       )
@@ -278,7 +293,7 @@ export class CTeEmissaoService {
 
     // Transmitir à SEFAZ
     const resposta = await this.transmitirSefaz(
-      xmlAssinado, documento.emitenteUf, certificado
+      xmlAssinado, documento.emitenteUf, certificado, ServicoSefaz.CTE_RECEPCAO_EVENTO
     )
 
     const resultado = this.parsearRespostaEvento(resposta)
@@ -390,7 +405,7 @@ export class CTeEmissaoService {
 
     // Transmitir à SEFAZ
     const resposta = await this.transmitirSefaz(
-      xmlAssinado, documento.emitenteUf, certificado
+      xmlAssinado, documento.emitenteUf, certificado, ServicoSefaz.CTE_RECEPCAO_EVENTO
     )
 
     const resultado = this.parsearRespostaEvento(resposta)
@@ -450,12 +465,13 @@ export class CTeEmissaoService {
   // === Métodos internos ===
 
   /**
-   * Transmite XML assinado à SEFAZ.
+   * Transmite XML assinado à SEFAZ via CTeAutorizacao.
    */
   private async transmitirSefaz(
     xmlAssinado: string,
     ufEmitente: string,
     certificado: CertificadoParaUso,
+    servico: ServicoSefaz = ServicoSefaz.CTE_AUTORIZACAO,
   ): Promise<RespostaSefaz> {
     const ambiente = this.obterAmbiente()
 
@@ -470,13 +486,69 @@ export class CTeEmissaoService {
     }
 
     const urlResolver: SefazUrlResolver = {
-      resolverUrl: (uf: string, servico: ServicoSefaz, amb: number) => {
-        return obterUrlWebservice(uf, servico, amb as AmbienteSefaz)
+      resolverUrl: (_uf: string, svc: ServicoSefaz, _amb: number) => {
+        return obterUrlWebserviceCTe(svc, ambiente)
       },
     }
 
     const client = criarSefazClient(sefazConfig, urlResolver)
-    return client.transmitir(xmlAssinado, ServicoSefaz.AUTORIZACAO)
+    return client.transmitir(xmlAssinado, servico)
+  }
+
+  /**
+   * Consulta o resultado do lote via CTeRetAutorizacao (processamento assíncrono).
+   * Aguarda até 3 tentativas com intervalo de 2s entre elas.
+   */
+  private async consultarResultadoLote(
+    recibo: string,
+    ufEmitente: string,
+    certificado: CertificadoParaUso,
+  ): Promise<RespostaSefaz> {
+    const ambiente = this.obterAmbiente()
+    const MAX_TENTATIVAS_CONSULTA = 3
+    const INTERVALO_CONSULTA_MS = 2000
+
+    const sefazConfig: SefazConfig = {
+      ambiente,
+      uf: ufEmitente,
+      timeoutMs: Number(process.env.SEFAZ_TIMEOUT_MS) || 30000,
+      maxRetentativas: 3,
+      intervaloRetentativaMs: 5000,
+      certificadoPfx: certificado.pfxBuffer,
+      certificadoSenha: certificado.senha,
+    }
+
+    const urlResolver: SefazUrlResolver = {
+      resolverUrl: (_uf: string, svc: ServicoSefaz, _amb: number) => {
+        return obterUrlWebserviceCTe(svc, ambiente)
+      },
+    }
+
+    const client = criarSefazClient(sefazConfig, urlResolver)
+
+    const xmlConsulta = `<?xml version="1.0" encoding="UTF-8"?>
+<consReciCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
+<tpAmb>${ambiente}</tpAmb>
+<nRec>${recibo}</nRec>
+</consReciCTe>`
+
+    for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_CONSULTA; tentativa++) {
+      await new Promise(resolve => setTimeout(resolve, INTERVALO_CONSULTA_MS))
+      const resposta = await client.transmitir(xmlConsulta, ServicoSefaz.CTE_RET_AUTORIZACAO)
+
+      // cStat 105 = Lote em processamento; continuar tentando
+      if (resposta.codigoStatus !== 105) {
+        return resposta
+      }
+    }
+
+    // Retornar último resultado (lote ainda em processamento)
+    return {
+      sucesso: false,
+      codigoStatus: 105,
+      motivoStatus: 'Lote em processamento. Tente novamente.',
+      xmlRetorno: '',
+    }
   }
 
   /**

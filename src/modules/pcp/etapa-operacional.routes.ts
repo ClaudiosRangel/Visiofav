@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { extrairTextoPdf } from './importacao-op/pdf-extractor.service'
+import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-parser'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -520,6 +522,64 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       dataEntregaPrevista: atualizada.dataEntregaPrevista,
       dataEntregaOriginal: atualizada.dataEntregaOriginal,
       vezesPostergada: atualizada.vezesPostergada,
+    }
+  })
+
+  // =========================================================================
+  // POST /api/pcp/programacao/reextrair-pdf — Re-extrai Matriz e Formato do PDF salvo
+  // =========================================================================
+  app.post('/programacao/reextrair-pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({ opId: z.string().uuid() }).parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: body.opId, empresaId: user.empresaId },
+      select: { id: true, numero: true, observacoes: true, referenciaExterna: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    // Importar o parser
+    const fs = require('fs')
+    const path = require('path')
+    const pdfPath = path.join(process.cwd(), 'uploads', 'ops', `${op.id}.pdf`)
+
+    if (!fs.existsSync(pdfPath)) {
+      return reply.status(404).send({ message: 'PDF não encontrado para esta OP. Reimporte o PDF.' })
+    }
+
+    const buffer = fs.readFileSync(pdfPath)
+    const extracao = await extrairTextoPdf(buffer)
+
+    if (!extracao.temTexto || !isGprintPdf(extracao.texto)) {
+      return reply.status(422).send({ message: 'PDF não contém texto válido ou não é do sistema GPrint.' })
+    }
+
+    const dados = parseGprintPdf(extracao.texto)
+
+    // Atualizar observações: remover tags antigas e adicionar novas
+    let obsAtual = op.observacoes || ''
+    obsAtual = obsAtual.replace(/\[Matriz\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').trim()
+
+    const novasTags: string[] = []
+    if (dados.observacoes.tipoOp) novasTags.push(`[TipoOp] ${dados.observacoes.tipoOp}`)
+    if (dados.observacoes.matriz) novasTags.push(`[Matriz] ${dados.observacoes.matriz}`)
+    if (dados.observacoes.formatoPlano) novasTags.push(`[Formato] ${dados.observacoes.formatoPlano}`)
+
+    const obsAtualizada = novasTags.length > 0
+      ? obsAtual + '\n' + novasTags.join('\n')
+      : obsAtual
+
+    await prisma.ordemProducao.update({
+      where: { id: op.id },
+      data: { observacoes: obsAtualizada.trim() },
+    })
+
+    return {
+      opNumero: op.referenciaExterna || op.numero,
+      tipoOp: dados.observacoes.tipoOp || null,
+      matriz: dados.observacoes.matriz || null,
+      formato: dados.observacoes.formatoPlano || null,
+      atualizado: novasTags.length > 0,
     }
   })
 

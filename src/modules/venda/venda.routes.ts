@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { vendaFiscalService } from '../fiscal/integracao/venda-fiscal.service'
+import { CodigoErroFiscal, ErroFiscal } from '../fiscal/erros'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -60,7 +62,13 @@ export async function vendaRoutes(app: FastifyInstance) {
     const pedido = await prisma.pedidoVenda.findFirst({
       where: { id: body.pedidoVendaId, empresaId: user.empresaId },
       include: {
-        itens: true,
+        itens: {
+          include: {
+            produto: {
+              select: { codigo: true, nome: true, unidade: true, ncm: true, cfopEstadual: true, cfopInterest: true },
+            },
+          },
+        },
         vendedor: { select: { comissao: true } },
         tabelaPreco: { include: { condicoes: true } },
       },
@@ -73,8 +81,27 @@ export async function vendaRoutes(app: FastifyInstance) {
 
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId },
-      select: { usaWms: true },
+      select: { usaWms: true, cnpj: true },
     })
+
+    if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
+
+    // Verificar certificado antes de iniciar (Requirement 2.7)
+    const certificadoExiste = await prisma.certificadoDigital.findFirst({
+      where: {
+        empresaId: user.empresaId,
+        cnpj: empresa.cnpj,
+        ativo: true,
+        validoAte: { gt: new Date() },
+      },
+      select: { id: true },
+    })
+
+    if (!certificadoExiste) {
+      return reply.status(422).send({
+        message: 'Emissão fiscal requer certificado digital configurado. Cadastre um certificado A1 válido para a empresa.',
+      })
+    }
 
     const valorTotal = Number(pedido.valorTotal)
 
@@ -91,6 +118,58 @@ export async function vendaRoutes(app: FastifyInstance) {
     const formaPagamento = condicao?.formaPagamento ?? 'BOLETO'
     const valorParcela = Number((valorTotal / parcelas).toFixed(2))
 
+    // Montar pedido de venda com itens para o serviço fiscal
+    const pedidoParaFiscal = {
+      id: pedido.id,
+      numero: pedido.numero,
+      clienteId: pedido.clienteId,
+      valorTotal: pedido.valorTotal,
+      itens: pedido.itens.map((item) => ({
+        produtoId: item.produtoId,
+        quantidade: item.quantidade,
+        precoFinal: item.precoFinal,
+        valorTotal: item.valorTotal,
+        unidade: item.unidade,
+        produto: {
+          codigo: item.produto.codigo,
+          nome: item.produto.nome,
+          ncm: item.produto.ncm,
+          cfopEstadual: item.produto.cfopEstadual,
+          cfopInterest: item.produto.cfopInterest,
+          unidade: item.produto.unidade,
+        },
+      })),
+    }
+
+    // Emitir NF-e via serviço fiscal (Requirement 2.1)
+    let emissaoResult
+    try {
+      emissaoResult = await vendaFiscalService.emitirParaVenda({
+        empresaId: user.empresaId,
+        pedidoVenda: pedidoParaFiscal,
+      })
+    } catch (err) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send({
+          message: err.message,
+          codigo: err.codigo,
+        })
+      }
+      throw err
+    }
+
+    // Se rejeitado pela SEFAZ → rollback (não efetivar) e retornar 422 (Requirement 2.4)
+    if (emissaoResult.status === 'REJEITADO') {
+      return reply.status(422).send({
+        message: 'NF-e rejeitada pela SEFAZ',
+        cStat: emissaoResult.codigoRejeicao,
+        xMotivo: emissaoResult.motivoRejeicao,
+      })
+    }
+
+    // Se autorizado ou contingência, efetivar a venda (Requirement 2.3, 2.5)
+    const isContingencia = emissaoResult.contingencia === true || emissaoResult.status === 'CONTINGENCIA'
+
     const result = await prisma.$transaction(async (tx) => {
       // Criar venda efetivada
       const venda = await tx.vendaEfetivada.create({
@@ -99,8 +178,14 @@ export async function vendaRoutes(app: FastifyInstance) {
           pedidoVendaId: pedido.id,
           valorTotal,
           comissaoValor: comissaoValor > 0 ? comissaoValor : undefined,
-          statusEntrega: empresa?.usaWms ? 'PENDENTE' : 'PENDENTE',
+          statusEntrega: empresa.usaWms ? 'PENDENTE' : 'PENDENTE',
         },
+      })
+
+      // Vincular DocumentoFiscal à VendaEfetivada
+      await tx.documentoFiscal.update({
+        where: { id: emissaoResult.documentoFiscalId },
+        data: { vendaEfetivadaId: venda.id },
       })
 
       // Gerar contas a receber
@@ -125,57 +210,16 @@ export async function vendaRoutes(app: FastifyInstance) {
       // Atualizar status do pedido
       await tx.pedidoVenda.update({
         where: { id: pedido.id },
-        data: { status: empresa?.usaWms ? 'EM_SEPARACAO' : 'FATURADO' },
+        data: { status: empresa.usaWms ? 'EM_SEPARACAO' : 'FATURADO' },
       })
 
-      // Criar NF-e (apenas registro, sem enviar para SEFAZ)
-      const ultimaNfe = await tx.nfe.findFirst({
-        where: { empresaId: user.empresaId },
-        orderBy: { numero: 'desc' },
-        select: { numero: true },
-      })
-      const proximoNumeroNfe = (ultimaNfe?.numero ?? 0) + 1
-
-      // Buscar dados dos produtos para a NF-e
-      const produtoIds = pedido.itens.map(i => i.produtoId)
-      const produtos = await tx.produto.findMany({
-        where: { id: { in: produtoIds } },
-        select: { id: true, codigo: true, nome: true, unidade: true, ncm: true, cfopEstadual: true, cst: true },
-      })
-      const produtoMap = new Map(produtos.map(p => [p.id, p]))
-
-      const nfe = await tx.nfe.create({
-        data: {
-          empresaId: user.empresaId,
-          vendaEfetivadaId: venda.id,
-          numero: proximoNumeroNfe,
-          serie: 1,
-          status: 'PENDENTE',
-          tipoNfe: 'SAIDA',
-          tpNF: 1,
-          finNFe: 1,
-          ambiente: 2,
-          itens: {
-            create: pedido.itens.map((item, idx) => {
-              const prod = produtoMap.get(item.produtoId)
-              return {
-                nItem: idx + 1,
-                produtoId: item.produtoId,
-                cProd: prod?.codigo || item.produtoId.substring(0, 60),
-                xProd: prod?.nome || `Produto ${idx + 1}`,
-                ncm: prod?.ncm || '48025610',
-                cfop: prod?.cfopEstadual || '5102',
-                uCom: prod?.unidade || 'UN',
-                qCom: Number(item.quantidade),
-                vUnCom: Number(item.precoFinal),
-                vProd: Number(item.valorTotal),
-              }
-            }),
-          },
-        },
-      })
-
-      return { ...venda, nfeId: nfe.id, nfeNumero: nfe.numero }
+      return {
+        ...venda,
+        documentoFiscalId: emissaoResult.documentoFiscalId,
+        chaveAcesso: emissaoResult.chaveAcesso,
+        protocolo: emissaoResult.protocolo,
+        contingencia: isContingencia,
+      }
     })
 
     return reply.status(201).send(result)

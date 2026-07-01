@@ -9,15 +9,20 @@
  */
 
 import { XMLParser } from 'fast-xml-parser'
+import type { PrismaClient } from '@prisma/client'
 import { prisma } from '../../../lib/prisma'
 import { CodigoErroFiscal, ErroFiscal } from '../erros'
 
 // === Tipos ===
 
+type PrismaTransaction = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
+
 export interface CriarDocFiscalEntradaParams {
   empresaId: string
   xmlNfe: string
   compraEfetivadaId: string
+  /** Prisma transaction client opcional — se fornecido, opera dentro da transação existente */
+  tx?: PrismaTransaction
 }
 
 interface DadosNFeEntrada {
@@ -143,13 +148,13 @@ export class CompraFiscalService {
    * Requirements: 3.1, 3.2, 3.3, 3.4, 3.6
    */
   async criarDocFiscalEntrada(params: CriarDocFiscalEntradaParams) {
-    const { empresaId, xmlNfe, compraEfetivadaId } = params
+    const { empresaId, xmlNfe, compraEfetivadaId, tx: externalTx } = params
 
     // 1. Parsear e validar o XML
     const dadosNFe = this.parseNFeXml(xmlNfe)
 
-    // 2. Criar DocumentoFiscal + itens dentro de uma transação
-    const documentoFiscal = await prisma.$transaction(async (tx) => {
+    // 2. Criar DocumentoFiscal + itens (usa tx externo ou cria nova transação)
+    const criarDoc = async (tx: PrismaTransaction) => {
       const doc = await tx.documentoFiscal.create({
         data: {
           empresaId,
@@ -234,7 +239,12 @@ export class CompraFiscalService {
       })
 
       return doc
-    })
+    }
+
+    // Se tx externo fornecido, usa diretamente; senão cria nova transação
+    const documentoFiscal = externalTx
+      ? await criarDoc(externalTx)
+      : await prisma.$transaction(async (tx) => criarDoc(tx))
 
     return documentoFiscal
   }

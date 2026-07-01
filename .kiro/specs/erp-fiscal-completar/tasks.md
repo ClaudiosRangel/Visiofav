@@ -167,7 +167,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Validar: ao menos um documento vinculado em infDoc
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.8, 7.10, 7.11_
 
-  - [-] 8.2 Implementar mdfe-emissao.service.ts
+  - [x] 8.2 Implementar mdfe-emissao.service.ts
     - Completar stub em `src/modules/fiscal/emissor-dfe/mdfe/mdfe-emissao.service.ts`
     - Implementar `emitir(params)`: construir XML, assinar, transmitir via MDFeRecepcao, consultar MDFeRetRecepcao
     - Implementar `encerrar(params)`: enviar evento de encerramento do MDF-e

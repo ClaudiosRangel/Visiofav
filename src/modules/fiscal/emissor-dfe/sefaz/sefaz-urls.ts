@@ -506,3 +506,50 @@ export function obterUrlWebserviceMDFe(
 
   return url
 }
+
+// === URLs CT-e (SVRS é autorizador nacional do CT-e) ===
+
+const URLS_CTE: UrlsPorAmbiente = {
+  producao: {
+    [ServicoSefaz.AUTORIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoSinc/CTeRecepcaoSinc.asmx',
+    [ServicoSefaz.RETORNO_AUTORIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRetRecepcao/CTeRetRecepcao.asmx',
+    [ServicoSefaz.CONSULTA_PROTOCOLO]: 'https://cte.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
+    [ServicoSefaz.STATUS_SERVICO]: 'https://cte.svrs.rs.gov.br/ws/CTeStatusServicoV4/CTeStatusServicoV4.asmx',
+    [ServicoSefaz.RECEPCAO_EVENTO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoEventoV4/CTeRecepcaoEventoV4.asmx',
+    [ServicoSefaz.INUTILIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoSinc/CTeRecepcaoSinc.asmx',
+    [ServicoSefaz.CTE_AUTORIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoSinc/CTeRecepcaoSinc.asmx',
+    [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRetRecepcao/CTeRetRecepcao.asmx',
+    [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoEventoV4/CTeRecepcaoEventoV4.asmx',
+  },
+  homologacao: {
+    [ServicoSefaz.AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoSinc/CTeRecepcaoSinc.asmx',
+    [ServicoSefaz.RETORNO_AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRetRecepcao/CTeRetRecepcao.asmx',
+    [ServicoSefaz.CONSULTA_PROTOCOLO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
+    [ServicoSefaz.STATUS_SERVICO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeStatusServicoV4/CTeStatusServicoV4.asmx',
+    [ServicoSefaz.RECEPCAO_EVENTO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoEventoV4/CTeRecepcaoEventoV4.asmx',
+    [ServicoSefaz.INUTILIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoSinc/CTeRecepcaoSinc.asmx',
+    [ServicoSefaz.CTE_AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoSinc/CTeRecepcaoSinc.asmx',
+    [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRetRecepcao/CTeRetRecepcao.asmx',
+    [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoEventoV4/CTeRecepcaoEventoV4.asmx',
+  },
+}
+
+/**
+ * Resolve URL de webservice CT-e.
+ * O CT-e utiliza o SVRS como autorizador nacional para todas as UFs.
+ */
+export function obterUrlWebserviceCTe(
+  servico: ServicoSefaz,
+  ambiente: AmbienteSefaz,
+): string {
+  const chaveAmbiente = ambienteToKey(ambiente)
+  const url = URLS_CTE[chaveAmbiente][servico]
+
+  if (!url) {
+    throw new Error(
+      `Serviço '${servico}' não disponível para CT-e no ambiente '${chaveAmbiente}'.`,
+    )
+  }
+
+  return url
+}
