@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { getOpPdfPath, getOpsPdfDir } from '../../lib/storage'
 import {
   validarTransicaoStatus,
   getTransicoesPermitidas,
@@ -616,7 +617,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     })
     if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
 
-    const pdfPath = require('path').join(process.cwd(), 'uploads', 'ops', `${id}.pdf`)
+    const pdfPath = getOpPdfPath(id)
     const fs = require('fs')
 
     if (!fs.existsSync(pdfPath)) {
@@ -625,6 +626,54 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     const stream = fs.createReadStream(pdfPath)
     return reply.type('application/pdf').send(stream)
+  })
+
+  // =========================================================================
+  // POST /api/ordens-producao/pdf-status — Verifica quais OPs possuem PDF salvo (em lote)
+  // =========================================================================
+  app.post('/pdf-status', async (request, reply) => {
+    const body = z.object({ ids: z.array(z.string().uuid()).max(100) }).parse(request.body)
+    const fs = require('fs')
+
+    const result: Record<string, boolean> = {}
+    for (const id of body.ids) {
+      result[id] = fs.existsSync(getOpPdfPath(id))
+    }
+    return result
+  })
+
+  // =========================================================================
+  // PUT /api/ordens-producao/:id/pdf — Upload/substituição de PDF para uma OP existente
+  // =========================================================================
+  app.put('/:id/pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, numero: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    const file = await request.file()
+    if (!file) {
+      return reply.status(400).send({ message: 'Nenhum arquivo enviado. Envie um PDF via multipart/form-data.' })
+    }
+    if (!file.mimetype.includes('pdf')) {
+      return reply.status(400).send({ message: 'Formato inválido. Envie um arquivo PDF.' })
+    }
+
+    const buffer = await file.toBuffer()
+    if (buffer.length > 10 * 1024 * 1024) {
+      return reply.status(400).send({ message: 'Arquivo excede o limite de 10MB.' })
+    }
+
+    const fs = require('fs')
+    const path = require('path')
+    const uploadsDir = getOpsPdfDir()
+    fs.writeFileSync(path.join(uploadsDir, `${id}.pdf`), buffer)
+
+    return { message: `PDF salvo para OP #${op.numero}`, temPdf: true }
   })
 
   // =========================================================================
@@ -682,7 +731,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     ])
 
     // Remover PDF do disco se existir
-    const pdfPath = require('path').join(process.cwd(), 'uploads', 'ops', `${id}.pdf`)
+    const pdfPath = getOpPdfPath(id)
     const fs = require('fs')
     if (fs.existsSync(pdfPath)) {
       fs.unlinkSync(pdfPath)

@@ -5,6 +5,7 @@ import { authenticate } from '../../../middleware/authenticate'
 import { moduloGuard } from '../../../middleware/modulo-guard'
 import { extrairTextoPdf } from './pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf, DadosOpGprint } from './parsers/gprint-parser'
+import { getOpPdfPath, getOpsPdfDir } from '../../../lib/storage'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -244,8 +245,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
 
     // Salvar PDF em disco para visualização posterior
     if (cached.pdfBuffer) {
-      const uploadsDir = path.join(process.cwd(), 'uploads', 'ops')
-      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
+      const uploadsDir = getOpsPdfDir()
       fs.writeFileSync(path.join(uploadsDir, `${op.id}.pdf`), cached.pdfBuffer)
     }
 
@@ -450,7 +450,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'OP não encontrada' })
     }
 
-    const filePath = path.join(process.cwd(), 'uploads', 'ops', `${opId}.pdf`)
+    const filePath = getOpPdfPath(opId)
     if (!fs.existsSync(filePath)) {
       return reply.status(404).send({ message: 'PDF não disponível para esta OP' })
     }

@@ -6,6 +6,10 @@ services:
     name: visiofab-wms-api
     runtime: docker
     plan: free
+    disk:
+      name: visiofab-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: DATABASE_URL
         sync: false  # Set manually in Render dashboard with Neon URL
@@ -15,6 +19,8 @@ services:
         value: 3333
       - key: NODE_ENV
         value: production
+      - key: PERSISTENT_STORAGE_PATH
+        value: /var/data
     healthCheckPath: /api/health
     buildCommand: ""
     startCommand: ""
