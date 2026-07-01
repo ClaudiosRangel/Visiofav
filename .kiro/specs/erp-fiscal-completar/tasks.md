@@ -39,14 +39,14 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar erro 404 para ID inexistente
     - _Requirements: 1.1, 1.8, 1.10_
 
-- [ ] 3. Integração Vendas → Fiscal
+- [x] 3. Integração Vendas → Fiscal
   - [x] 3.1 Implementar venda-fiscal.service.ts
     - Criar `src/modules/fiscal/integracao/venda-fiscal.service.ts`
     - Implementar `montarDadosNFe({ pedidoVenda, empresa, cliente })` que: mapeia cliente→destinatário (CPF/CNPJ, IE, endereço), itens→DadosNFe items (NCM, CFOP do produto, quantidade, preço), define tipoOperacao=1
     - Implementar `emitirParaVenda({ empresaId, pedidoVenda })` que: busca empresa e cliente, chama montarDadosNFe, chama nfeEmissaoService.emitir()
     - _Requirements: 2.1, 2.2_
 
-  - [-] 3.2 Refatorar POST /vendas/efetivar para usar venda-fiscal.service
+  - [x] 3.2 Refatorar POST /vendas/efetivar para usar venda-fiscal.service
     - Modificar `src/modules/vendas/venda.routes.ts` (ou equivalente)
     - Substituir criação direta na tabela `nfe` por chamada a `vendaFiscalService.emitirParaVenda()`
     - Na transação Prisma: se autorizado → criar VendaEfetivada + ContaReceber; se rejeitado → rollback + retornar 422 {cStat, xMotivo}; se contingência → criar VendaEfetivada com flag contingência
@@ -63,7 +63,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar emitirParaVenda com mock SEFAZ rejeitado → rollback
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 4. Integração Compras → Fiscal
+- [x] 4. Integração Compras → Fiscal
   - [x] 4.1 Implementar compra-fiscal.service.ts
     - Criar `src/modules/fiscal/integracao/compra-fiscal.service.ts`
     - Implementar `criarDocFiscalEntrada({ empresaId, xmlNfe, compraEfetivadaId })` que: parseia XML (usando parseNFeXml existente ou novo), extrai chave de acesso, número, série, emitente, itens com tributos, valor total, protocolo
@@ -72,7 +72,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Vincular à CompraEfetivada via compraEfetivadaId
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6_
 
-  - [-] 4.2 Integrar compra-fiscal.service na rota de compras
+  - [x] 4.2 Integrar compra-fiscal.service na rota de compras
     - Modificar `src/modules/compras/compra.routes.ts` (ou equivalente)
     - Quando xmlNfe preenchido: chamar `compraFiscalService.criarDocFiscalEntrada()` dentro da transação
     - Quando xmlNfe vazio/null: criar CompraEfetivada sem DocumentoFiscal
@@ -91,10 +91,10 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar compra sem XML → sem DocumentoFiscal
     - _Requirements: 3.1, 3.5, 3.7_
 
-- [~] 5. Checkpoint — Validar integrações core
+- [x] 5. Checkpoint — Validar integrações core
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. NFC-e XML Builder (Modelo 65)
+- [x] 6. NFC-e XML Builder (Modelo 65)
   - [x] 6.1 Implementar nfce-xml-builder.ts
     - Criar `src/modules/fiscal/emissor-dfe/nfce/nfce-xml-builder.ts`
     - Implementar `buildNFCeXml(dados: DadosNFCe): string` — layout 4.00, modelo 65
@@ -105,13 +105,13 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Validar: valor >= 200 exige CPF/CNPJ do destinatário; CSC obrigatório
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.9, 5.10_
 
-  - [-] 6.2 Implementar nfce-emissao.service.ts
+  - [x] 6.2 Implementar nfce-emissao.service.ts
     - Completar stub em `src/modules/fiscal/emissor-dfe/nfce/nfce-emissao.service.ts`
     - Implementar `emitir(params)`: calcular tributos via motorTributario, chamar buildNFCeXml, assinar, transmitir SEFAZ, retornar resultado
     - Suportar contingência offline (tpEmis=9) com timeout de 5s
     - _Requirements: 5.8, 5.10_
 
-  - [~] 6.3 Criar rota POST /nfce/emitir
+  - [x] 6.3 Criar rota POST /nfce/emitir
     - Registrar endpoint com validação Zod dos dados de entrada
     - Chamar nfceEmissaoService.emitir() e retornar resultado
     - _Requirements: 5.8_
@@ -129,7 +129,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar erro quando CSC não cadastrado
     - _Requirements: 5.8, 5.10_
 
-- [ ] 7. CT-e XML Builder (Modelo 57)
+- [x] 7. CT-e XML Builder (Modelo 57)
   - [x] 7.1 Implementar cte-xml-builder.ts (atualizar existente)
     - Atualizar `src/modules/fiscal/emissor-dfe/cte/cte-xml-builder.ts`
     - Implementar `buildCTeXml(dados: DadosCTe): string` — layout 4.00, modelo 57
@@ -138,12 +138,12 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - ICMS: mapear CST → tag correta (ICMS00, ICMS20, ICMS45, ICMS60, ICMS90, ICMSOutraUF, ICMSSN)
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.9_
 
-  - [-] 7.2 Implementar cte-emissao.service.ts
+  - [x] 7.2 Implementar cte-emissao.service.ts
     - Completar stub em `src/modules/fiscal/emissor-dfe/cte/cte-emissao.service.ts`
     - Implementar `emitir(params)`: construir XML, assinar, transmitir via CTeAutorizacao, consultar CTeRetAutorizacao
     - _Requirements: 6.8, 6.10_
 
-  - [~] 7.3 Criar rota POST /cte/emitir
+  - [x] 7.3 Criar rota POST /cte/emitir
     - Registrar endpoint com validação Zod
     - Chamar cteEmissaoService.emitir() e retornar resultado
     - _Requirements: 6.8_
@@ -159,7 +159,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar CST inválido → erro
     - _Requirements: 6.2, 6.6, 6.7_
 
-- [ ] 8. MDF-e XML Builder (Modelo 58)
+- [x] 8. MDF-e XML Builder (Modelo 58)
   - [x] 8.1 Implementar mdfe-xml-builder.ts (atualizar existente)
     - Atualizar `src/modules/fiscal/emissor-dfe/mdfe/mdfe-xml-builder.ts`
     - Implementar `buildMDFeXml(dados: DadosMDFe): string` — layout 3.00, modelo 58
@@ -173,7 +173,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Implementar `encerrar(params)`: enviar evento de encerramento do MDF-e
     - _Requirements: 7.7, 7.9_
 
-  - [~] 8.3 Criar rotas POST /mdfe/emitir e POST /mdfe/:id/encerrar
+  - [x] 8.3 Criar rotas POST /mdfe/emitir e POST /mdfe/:id/encerrar
     - Registrar endpoints com validação Zod
     - Chamar mdfeEmissaoService.emitir() / encerrar() e retornar resultado
     - _Requirements: 7.7_
@@ -196,11 +196,11 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar com modelos 55, 65, 57, 58 — validar 44 dígitos e DV módulo 11
     - **Validates: Requirements 5.9, 6.9, 7.8**
 
-- [~] 10. Checkpoint — Validar XML builders e emissão
+- [-] 10. Checkpoint — Validar XML builders e emissão
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. Migração do Modelo Legado Nfe
-  - [~] 11.1 Implementar script de migração migrar-nfe-legado.ts
+  - [x] 11.1 Implementar script de migração migrar-nfe-legado.ts
     - Criar `src/modules/fiscal/integracao/migrar-nfe-legado.ts`
     - Implementar `migrarNfeLegado(empresaId?)` que: lê todos registros Nfe (com NfeItem), mapeia para DocumentoFiscal (tipo=NFE, modelo=55, status mapeado, tipoOperacao derivado), cria ItemDocumentoFiscal preservando todos campos tributários
     - Implementar `mapearNfeParaDocFiscal(nfe)` conforme tabela de mapeamento do design
@@ -209,7 +209,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Preservar vínculo vendaEfetivadaId
     - _Requirements: 4.1, 4.2, 4.3, 4.6, 4.7_
 
-  - [~] 11.2 Refatorar rotas e serviços para remover uso do modelo Nfe
+  - [-] 11.2 Refatorar rotas e serviços para remover uso do modelo Nfe
     - Atualizar `src/modules/vendas/venda.routes.ts` — remover import/uso de Nfe (já refatorado na task 3.2, validar que não há referências remanescentes)
     - Buscar e atualizar quaisquer queries ou serviços que referenciem `prisma.nfe` ou `prisma.nfeItem`
     - _Requirements: 4.5, 4.6_

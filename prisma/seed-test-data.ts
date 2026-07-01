@@ -368,24 +368,29 @@ async function main() {
   // ============================================================================
   // 10. WMS - MAPAS DE CARREGAMENTO
   // ============================================================================
-  // Precisamos de NFes para vincular
-  const nfes = await prisma.nfe.findMany({ where: { empresaId: empresa.id }, take: 10 })
+  // Precisamos de DocumentoFiscal para vincular
+  const nfes = await prisma.documentoFiscal.findMany({ where: { empresaId: empresa.id, tipo: 'NFE' }, take: 10 })
 
-  // Se não existem NFes, vamos criar algumas simuladas
+  // Se não existem NFs, vamos criar algumas simuladas
   let nfeIds: string[] = nfes.map(n => n.id)
   if (nfeIds.length < 10) {
     for (let i = nfeIds.length + 1; i <= 10; i++) {
-      const nfe = await prisma.nfe.create({
+      const nfe = await prisma.documentoFiscal.create({
         data: {
           empresaId: empresa.id,
+          tipo: 'NFE',
+          modelo: 55,
           numero: 5000 + i,
           serie: 1,
-          status: 'AUTORIZADA',
-          tipoNfe: 'SAIDA',
-          tpNF: 1,
-          finNFe: 1,
+          status: 'AUTORIZADO',
+          tipoOperacao: 1,
+          finalidade: 1,
           ambiente: 2,
           mapaOk: false,
+          dataEmissao: new Date(),
+          emitenteCnpj: empresa.cnpj,
+          emitenteRazao: empresa.razaoSocial,
+          emitenteUf: empresa.uf || 'SP',
         },
       })
       nfeIds.push(nfe.id)

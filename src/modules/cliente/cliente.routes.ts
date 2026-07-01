@@ -123,8 +123,8 @@ export async function clienteRoutes(app: FastifyInstance) {
 
     // Invalidar sequências de entrega quando coordenadas são alteradas
     if (data.latitude !== undefined || data.longitude !== undefined) {
-      // Buscar nfeIds vinculadas a este cliente (via Nfe → vendaEfetivada → pedidoVenda → clienteId)
-      const nfesDoCliente = await prisma.nfe.findMany({
+      // Buscar documentoFiscalIds vinculadas a este cliente (via DocumentoFiscal → vendaEfetivada → pedidoVenda → clienteId)
+      const nfesDoCliente = await prisma.documentoFiscal.findMany({
         where: {
           empresaId: updated.empresaId,
           vendaEfetivada: {

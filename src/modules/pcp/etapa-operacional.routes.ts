@@ -558,12 +558,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     // Atualizar observações: remover tags antigas e adicionar novas
     let obsAtual = op.observacoes || ''
-    obsAtual = obsAtual.replace(/\[Matriz\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').trim()
+    obsAtual = obsAtual.replace(/\[Matriz\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').replace(/\[Cores\].*\n?/g, '').trim()
 
     const novasTags: string[] = []
     if (dados.observacoes.tipoOp) novasTags.push(`[TipoOp] ${dados.observacoes.tipoOp}`)
     if (dados.observacoes.matriz) novasTags.push(`[Matriz] ${dados.observacoes.matriz}`)
     if (dados.observacoes.formatoPlano) novasTags.push(`[Formato] ${dados.observacoes.formatoPlano}`)
+    if (dados.observacoes.coresPlano) novasTags.push(`[Cores] ${dados.observacoes.coresPlano}`)
 
     const obsAtualizada = novasTags.length > 0
       ? obsAtual + '\n' + novasTags.join('\n')
@@ -579,6 +580,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       tipoOp: dados.observacoes.tipoOp || null,
       matriz: dados.observacoes.matriz || null,
       formato: dados.observacoes.formatoPlano || null,
+      cores: dados.observacoes.coresPlano || null,
       atualizado: novasTags.length > 0,
     }
   })
@@ -693,7 +695,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             numero: true, produtoId: true, quantidade: true, unidadeMedida: true,
             prioridade: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true,
             clienteId: true, observacoes: true, referenciaExterna: true,
-            itens: { where: { tipoMaterial: 'PAPEL' } },
+            itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA'] } } },
           },
         },
         centroProducao: { select: { id: true, codigo: true, descricao: true, tipoMaquina: true } },
@@ -743,6 +745,43 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return m ? m[1].trim() : null
     }
 
+    // Extrai informações de Pantone dos itens de tinta
+    function extrairCores(itens: Array<{ descricaoProduto: string; tipoMaterial: string | null }>, observacoes: string | null) {
+      const tintas = itens.filter(i => i.tipoMaterial === 'TINTA')
+      const pantones: string[] = []
+
+      for (const tinta of tintas) {
+        const desc = tinta.descricaoProduto
+        // Extrair nome da cor do formato: "Pantone 01 (VERDE 7476C) (6%)" ou "Escala (CMYK) (60%)"
+        const matchPantone = desc.match(/\(([^)]+)\)\s*\(\d+%\)/)
+        if (matchPantone) {
+          const corInfo = matchPantone[1].trim()
+          if (!/^CMYK$/i.test(corInfo)) {
+            pantones.push(corInfo)
+          }
+        }
+      }
+
+      // Qtd Cores: prioriza tag [Cores] das observações (ex: "6x0"), senão conta itens TINTA
+      let qtdCores: string | null = null
+      if (observacoes) {
+        const matchCoresObs = observacoes.match(/\[Cores\]\s*(.+?)(?:\n|$)/)
+        if (matchCoresObs) {
+          qtdCores = matchCoresObs[1].trim().toUpperCase()
+        }
+      }
+      if (!qtdCores && tintas.length > 0) {
+        qtdCores = `${tintas.length}X0`
+      }
+
+      return {
+        pantone01: pantones[0] || null,
+        pantone02: pantones[1] || null,
+        pantone03: pantones[2] || null,
+        qtdCores,
+      }
+    }
+
     // Agrupa por centro
     const painelPorCentro = centros.map(centro => {
       const etapasDoCentro = etapasAtivas.filter(e => e.centroProducaoId === centro.id)
@@ -760,7 +799,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           total: etapasDoCentro.length,
         },
         etapas: etapasDoCentro.map(e => {
-          const papel = e.ordemProducao.itens?.[0] || null
+          const papel = e.ordemProducao.itens?.find(i => i.tipoMaterial === 'PAPEL') || null
+          const cores = extrairCores(e.ordemProducao.itens || [], e.ordemProducao.observacoes)
           return {
             id: e.id,
             opId: e.ordemProducaoId,
@@ -814,6 +854,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             materialEncomendado: temMaterialEncomendado(e),
             tipoOp: extrairTipoOpObs(e.ordemProducao.observacoes),
             matriz: extrairMatrizObs(e.ordemProducao.observacoes),
+            ...cores,
           }
         }),
       }

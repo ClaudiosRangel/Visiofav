@@ -122,6 +122,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
 
     const nfeWhere: any = {
       empresaId: user.empresaId,
+      tipo: 'NFE',
       id: { notIn: nfeIdsEmMapa },
       vendaEfetivada: {
         pedidoVenda: pedidoWhere,
@@ -135,16 +136,16 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     }
 
     const [nfs, total] = await Promise.all([
-      prisma.nfe.findMany({
+      prisma.documentoFiscal.findMany({
         where: nfeWhere,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { numero: 'asc' },
         include: {
-          itens: { select: { qCom: true, vProd: true } },
+          itens: { select: { quantidade: true, valorTotal: true } },
         },
       }),
-      prisma.nfe.count({ where: nfeWhere }),
+      prisma.documentoFiscal.count({ where: nfeWhere }),
     ])
 
     // Buscar vendaEfetivada → pedidoVenda separadamente
@@ -198,8 +199,8 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
         rotaId: pedido?.rotaId || null,
         rotaCodigo: rota?.codigo || null,
         rotaDescricao: rota?.descricao || null,
-        valorTotal: nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0),
-        pesoTotal: nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0),
+        valorTotal: nf.itens.reduce((sum, item) => sum + Number(item.valorTotal), 0),
+        pesoTotal: nf.itens.reduce((sum, item) => sum + Number(item.quantidade), 0),
         mapaOk: nf.mapaOk,
       }
     })
@@ -214,7 +215,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { nfeIds } = marcarNfsSchema.parse(request.body)
 
-    await prisma.nfe.updateMany({
+    await prisma.documentoFiscal.updateMany({
       where: {
         id: { in: nfeIds },
         empresaId: user.empresaId,
@@ -232,7 +233,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { nfeIds } = marcarNfsSchema.parse(request.body)
 
-    await prisma.nfe.updateMany({
+    await prisma.documentoFiscal.updateMany({
       where: {
         id: { in: nfeIds },
         empresaId: user.empresaId,
@@ -263,9 +264,10 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const nfeIdsEmMapa = nfsEmMapaAtivo.map((n) => n.nfeId)
 
     // Find all NFs linked to PedidoVenda with this rotaId
-    const nfs = await prisma.nfe.findMany({
+    const nfs = await prisma.documentoFiscal.findMany({
       where: {
         empresaId: user.empresaId,
+        tipo: 'NFE',
         id: { notIn: nfeIdsEmMapa },
         vendaEfetivada: {
           pedidoVenda: {
@@ -278,7 +280,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     })
 
     if (nfs.length > 0) {
-      await prisma.nfe.updateMany({
+      await prisma.documentoFiscal.updateMany({
         where: { id: { in: nfs.map((n) => n.id) } },
         data: { mapaOk: true },
       })
@@ -295,9 +297,10 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const { rotaId } = marcarRotaSchema.parse(request.body)
 
     // Find all NFs linked to PedidoVenda with this rotaId that are marked
-    const nfs = await prisma.nfe.findMany({
+    const nfs = await prisma.documentoFiscal.findMany({
       where: {
         empresaId: user.empresaId,
+        tipo: 'NFE',
         mapaOk: true,
         vendaEfetivada: {
           pedidoVenda: {
@@ -310,7 +313,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     })
 
     if (nfs.length > 0) {
-      await prisma.nfe.updateMany({
+      await prisma.documentoFiscal.updateMany({
         where: { id: { in: nfs.map((n) => n.id) } },
         data: { mapaOk: false },
       })
@@ -326,13 +329,14 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
 
     // Get all marked NFs with their route info, items, and client geocoding info
-    const nfsMarcadas = await prisma.nfe.findMany({
+    const nfsMarcadas = await prisma.documentoFiscal.findMany({
       where: {
         empresaId: user.empresaId,
+        tipo: 'NFE',
         mapaOk: true,
       },
       include: {
-        itens: { select: { qCom: true, vProd: true } },
+        itens: { select: { quantidade: true, valorTotal: true } },
         vendaEfetivada: {
           include: {
             pedidoVenda: {
@@ -377,8 +381,8 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
 
       const grupo = porRotaMap.get(key)!
       grupo.quantidadeNfs += 1
-      grupo.valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0)
-      grupo.pesoTotalKg += nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0)
+      grupo.valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.valorTotal), 0)
+      grupo.pesoTotalKg += nf.itens.reduce((sum, item) => sum + Number(item.quantidade), 0)
       grupo.totalVolumes += nf.itens.length
 
       // Track geocoding status per distinct client (Task 15.2)
@@ -438,9 +442,10 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     const body = gerarMapaSchema.parse(request.body)
 
     // Find all marked NFs for this empresa
-    const nfsMarcadas = await prisma.nfe.findMany({
+    const nfsMarcadas = await prisma.documentoFiscal.findMany({
       where: {
         empresaId: user.empresaId,
+        tipo: 'NFE',
         mapaOk: true,
       },
       select: { id: true },
@@ -483,7 +488,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
       })
 
       // Clear mapaOk flag
-      await tx.nfe.updateMany({
+      await tx.documentoFiscal.updateMany({
         where: { id: { in: nfsMarcadas.map((n) => n.id) } },
         data: { mapaOk: false },
       })
@@ -493,7 +498,7 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
 
     // Check if any NFs' clients have geocoded coordinates (Task 15.1)
     const nfeIdsNoMapa = nfsMarcadas.map((n) => n.id)
-    const clientesGeocodificados = await prisma.nfe.findMany({
+    const clientesGeocodificados = await prisma.documentoFiscal.findMany({
       where: {
         id: { in: nfeIdsNoMapa },
         vendaEfetivada: {
@@ -575,10 +580,10 @@ export async function mapaCarregamentoRoutes(app: FastifyInstance) {
     // Fetch NF details for all associated NFs
     const nfeIds = mapa.nfs.map((n) => n.nfeId)
     const nfes = nfeIds.length > 0
-      ? await prisma.nfe.findMany({
+      ? await prisma.documentoFiscal.findMany({
           where: { id: { in: nfeIds } },
           include: {
-            itens: { select: { qCom: true, vProd: true, xProd: true } },
+            itens: { select: { quantidade: true, valorTotal: true, descricao: true } },
             vendaEfetivada: {
               include: {
                 pedidoVenda: {

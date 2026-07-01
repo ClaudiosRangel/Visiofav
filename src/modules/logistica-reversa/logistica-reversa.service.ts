@@ -42,8 +42,8 @@ export class LogisticaReversaService {
    */
   async criarRA(input: CriarRaInput, empresaId: string, userId: string): Promise<AutorizacaoRetorno> {
     // 1. Validar NF-e de origem
-    const nfe = await prisma.nfe.findFirst({
-      where: { id: input.nfeOrigemId, empresaId, tipoNfe: 'SAIDA' },
+    const nfe = await prisma.documentoFiscal.findFirst({
+      where: { id: input.nfeOrigemId, empresaId, tipoOperacao: 1 },
       include: { itens: true },
     })
     if (!nfe) throw { statusCode: 404, message: 'NF-e de origem não encontrada ou não é uma NF-e de saída' }
@@ -67,7 +67,7 @@ export class LogisticaReversaService {
         _sum: { quantidade: true },
       })
       const totalAutorizado = Number(jaAutorizado._sum.quantidade || 0)
-      const limiteNfe = Number(itemNfe.qCom)
+      const limiteNfe = Number(itemNfe.quantidade)
       if (totalAutorizado + itemRa.quantidade > limiteNfe) {
         throw {
           statusCode: 422,

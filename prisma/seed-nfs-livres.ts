@@ -25,7 +25,7 @@ async function main() {
   }
 
   const maxNumPV = (await prisma.pedidoVenda.findFirst({ where: { empresaId: empresa.id }, orderBy: { numero: 'desc' } }))?.numero || 0
-  const maxNumNfe = (await prisma.nfe.findFirst({ where: { empresaId: empresa.id }, orderBy: { numero: 'desc' } }))?.numero || 0
+  const maxNumNfe = (await prisma.documentoFiscal.findFirst({ where: { empresaId: empresa.id, tipo: 'NFE' }, orderBy: { numero: 'desc' } }))?.numero || 0
 
   console.log(`Base: ${clientes.length} clientes, ${produtos.length} produtos, ${rotas.length} rotas`)
   console.log(`Último PV: ${maxNumPV}, Última NF: ${maxNumNfe}`)
@@ -81,30 +81,37 @@ async function main() {
       include: { produto: true },
     })
 
-    await prisma.nfe.create({
+    await prisma.documentoFiscal.create({
       data: {
         empresaId: empresa.id,
         vendaEfetivadaId: ve.id,
+        tipo: 'NFE',
+        modelo: 55,
         numero: maxNumNfe + 3000 + i + 1,
         serie: 1,
-        status: 'AUTORIZADA',
-        tipoNfe: 'SAIDA',
-        tpNF: 1,
-        finNFe: 1,
+        status: 'AUTORIZADO',
+        tipoOperacao: 1,
+        finalidade: 1,
         ambiente: 2,
         mapaOk: false,
+        dataEmissao: new Date(),
+        emitenteCnpj: empresa.cnpj,
+        emitenteRazao: empresa.razaoSocial,
+        emitenteUf: empresa.uf || 'SP',
+        valorTotal: valorTotal,
+        valorProdutos: valorTotal,
         itens: {
           create: itensPV.map((item, idx) => ({
             nItem: idx + 1,
             produtoId: item.produtoId,
-            cProd: item.produto.codigo,
-            xProd: item.produto.nome,
+            codigoProd: item.produto.codigo,
+            descricao: item.produto.nome,
             ncm: item.produto.ncm || '00000000',
             cfop: item.produto.cfopEstadual || '5102',
-            uCom: item.produto?.unidade || 'UN',
-            qCom: item.quantidade,
-            vUnCom: item.precoFinal,
-            vProd: item.valorTotal,
+            unidade: item.produto?.unidade || 'UN',
+            quantidade: item.quantidade,
+            valorUnitario: item.precoFinal,
+            valorTotal: item.valorTotal,
           })),
         },
       },

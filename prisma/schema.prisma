@@ -1624,6 +1624,7 @@ model MapaCarregamentoNf {
   mapaCarregamentoId String           @map("mapa_carregamento_id")
   mapaCarregamento   MapaCarregamento @relation(fields: [mapaCarregamentoId], references: [id], onDelete: Cascade)
   nfeId              String           @map("nfe_id")
+  documentoFiscal    DocumentoFiscal  @relation(fields: [nfeId], references: [id])
   statusEntrega      String?          @map("status_entrega") @db.VarChar(20)
   motivoDevolucao    String?          @map("motivo_devolucao") @db.Text
 
@@ -3383,6 +3384,9 @@ model DocumentoFiscal {
   // Ambiente
   ambiente        Int      @default(2) // 1=Produção, 2=Homologação
 
+  // WMS — Mapa de Carregamento
+  mapaOk          Boolean  @default(false) @map("mapa_ok")
+
   criadoEm        DateTime @default(now()) @map("criado_em")
   atualizadoEm    DateTime @updatedAt @map("atualizado_em")
 
@@ -3397,6 +3401,7 @@ model DocumentoFiscal {
   eventos         EventoDocumentoFiscal[]
   gnres           Gnre[]
   filasContingencia FilaContingencia[]
+  mapasCarregamento MapaCarregamentoNf[]
 
   @@unique([empresaId, tipo, serie, numero])
   @@index([empresaId, status])

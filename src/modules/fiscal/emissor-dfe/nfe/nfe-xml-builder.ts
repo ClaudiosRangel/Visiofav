@@ -43,6 +43,10 @@ export interface DadosNFe extends DadosDocumentoFiscal {
   valorSeguro?: number
   valorOutras?: number
   valorDesconto?: number
+  /** Modalidade do frete (0..9) */
+  modalidadeFrete?: number
+  /** Informações adicionais de interesse do Fisco */
+  infAdicionais?: string
 }
 
 export interface DadosEmitenteNFe extends DadosEmitente {

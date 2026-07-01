@@ -68,10 +68,10 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
     }
 
     // Fetch NFs with items and route info
-    const nfes = await prisma.nfe.findMany({
+    const nfes = await prisma.documentoFiscal.findMany({
       where: { id: { in: nfeIds } },
       include: {
-        itens: { select: { qCom: true, vProd: true } },
+        itens: { select: { quantidade: true, valorTotal: true } },
         vendaEfetivada: {
           include: {
             pedidoVenda: {
@@ -99,8 +99,8 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
 
       const grupo = porRotaMap.get(rotaId)!
       grupo.quantidadeNfs += 1
-      grupo.valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0)
-      grupo.pesoTotalKg += nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0)
+      grupo.valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.valorTotal), 0)
+      grupo.pesoTotalKg += nf.itens.reduce((sum, item) => sum + Number(item.quantidade), 0)
       grupo.totalVolumes += nf.itens.length
     }
 
@@ -175,17 +175,17 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
     let pesoTotal = 0
 
     if (nfeIds.length > 0) {
-      const nfes = await prisma.nfe.findMany({
+      const nfes = await prisma.documentoFiscal.findMany({
         where: { id: { in: nfeIds } },
         include: {
-          itens: { select: { qCom: true, vProd: true } },
+          itens: { select: { quantidade: true, valorTotal: true } },
         },
       })
 
       nfsExpedidas = nfes.length
       for (const nf of nfes) {
-        valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.vProd), 0)
-        pesoTotal += nf.itens.reduce((sum, item) => sum + Number(item.qCom), 0)
+        valorTotal += nf.itens.reduce((sum, item) => sum + Number(item.valorTotal), 0)
+        pesoTotal += nf.itens.reduce((sum, item) => sum + Number(item.quantidade), 0)
       }
     }
 
@@ -234,9 +234,9 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
     // Fetch NF values for each map
     const allNfeIds = mapas.flatMap((m) => m.nfs.map((n) => n.nfeId))
     const nfes = allNfeIds.length > 0
-      ? await prisma.nfe.findMany({
+      ? await prisma.documentoFiscal.findMany({
           where: { id: { in: allNfeIds } },
-          include: { itens: { select: { vProd: true } } },
+          include: { itens: { select: { valorTotal: true } } },
         })
       : []
 
@@ -248,7 +248,7 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
       for (const nfeId of nfeIdsDoMapa) {
         const nfe = nfeLookup.get(nfeId)
         if (nfe) {
-          valorTotal += nfe.itens.reduce((sum, item) => sum + Number(item.vProd), 0)
+          valorTotal += nfe.itens.reduce((sum, item) => sum + Number(item.valorTotal), 0)
         }
       }
 
@@ -288,10 +288,10 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
     // Fetch NF details with client and route info
     const nfeIds = mapa.nfs.map((n) => n.nfeId)
     const nfes = nfeIds.length > 0
-      ? await prisma.nfe.findMany({
+      ? await prisma.documentoFiscal.findMany({
           where: { id: { in: nfeIds } },
           include: {
-            itens: { select: { qCom: true, vProd: true, xProd: true, nItem: true } },
+            itens: { select: { quantidade: true, valorTotal: true, descricao: true, nItem: true } },
             vendaEfetivada: {
               include: {
                 pedidoVenda: {
@@ -332,8 +332,8 @@ export async function relatorioExpedicaoRoutes(app: FastifyInstance) {
 
     const nfsDetalhadas = nfsOrdenadas.map((mapaNf) => {
       const nfe = nfeLookup.get(mapaNf.nfeId)
-      const valorTotal = nfe?.itens.reduce((sum, item) => sum + Number(item.vProd), 0) || 0
-      const pesoTotal = nfe?.itens.reduce((sum, item) => sum + Number(item.qCom), 0) || 0
+      const valorTotal = nfe?.itens.reduce((sum, item) => sum + Number(item.valorTotal), 0) || 0
+      const pesoTotal = nfe?.itens.reduce((sum, item) => sum + Number(item.quantidade), 0) || 0
 
       const nfItem: any = {
         nfeId: mapaNf.nfeId,

@@ -221,7 +221,7 @@ export async function geoRoutes(app: FastifyInstance) {
     // Buscar NFs com dados do Cliente (via VendaEfetivada → PedidoVenda → Cliente)
     const nfeIds = mapa.nfs.map((n) => n.nfeId)
     const nfes = nfeIds.length > 0
-      ? await prisma.nfe.findMany({
+      ? await prisma.documentoFiscal.findMany({
           where: { id: { in: nfeIds } },
           include: {
             vendaEfetivada: {

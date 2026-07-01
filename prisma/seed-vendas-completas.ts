@@ -162,8 +162,8 @@ async function main() {
   // ============================================================================
   // 5. NF-e PARA CADA VENDA (10 notas de saída)
   // ============================================================================
-  const maxNumNfe = (await prisma.nfe.findFirst({
-    where: { empresaId: empresa.id },
+  const maxNumNfe = (await prisma.documentoFiscal.findFirst({
+    where: { empresaId: empresa.id, tipo: 'NFE' },
     orderBy: { numero: 'desc' },
   }))?.numero || 0
 
@@ -178,37 +178,46 @@ async function main() {
       include: { produto: true },
     })
 
-    const nfe = await prisma.nfe.create({
+    const valorTotal = itensPV.reduce((s, item) => s + Number(item.valorTotal), 0)
+
+    const nfe = await prisma.documentoFiscal.create({
       data: {
         empresaId: empresa.id,
         vendaEfetivadaId: ve.id,
+        tipo: 'NFE',
+        modelo: 55,
         numero: maxNumNfe + 2000 + i + 1,
         serie: 1,
-        status: 'AUTORIZADA',
-        tipoNfe: 'SAIDA',
-        tpNF: 1,
-        finNFe: 1,
+        status: 'AUTORIZADO',
+        tipoOperacao: 1,
+        finalidade: 1,
         ambiente: 2,
         mapaOk: false,
+        dataEmissao: new Date(),
+        emitenteCnpj: empresa.cnpj,
+        emitenteRazao: empresa.razaoSocial,
+        emitenteUf: empresa.uf || 'SP',
+        valorTotal,
+        valorProdutos: valorTotal,
         itens: {
           create: itensPV.map((item, idx) => ({
             nItem: idx + 1,
             produtoId: item.produtoId,
-            cProd: item.produto.codigo,
-            xProd: item.produto.nome,
+            codigoProd: item.produto.codigo,
+            descricao: item.produto.nome,
             ncm: item.produto.ncm || '00000000',
             cfop: item.produto.cfopEstadual || '5102',
-            uCom: item.unidade || 'UN',
-            qCom: item.quantidade,
-            vUnCom: item.precoFinal,
-            vProd: item.valorTotal,
+            unidade: item.unidade || 'UN',
+            quantidade: item.quantidade,
+            valorUnitario: item.precoFinal,
+            valorTotal: item.valorTotal,
           })),
         },
       },
     })
     nfes.push(nfe)
   }
-  console.log('✅ 10 NF-e de saída criadas (AUTORIZADA, vinculadas a VendaEfetivada)')
+  console.log('✅ 10 NF-e de saída criadas (AUTORIZADO, vinculadas a VendaEfetivada)')
 
   // ============================================================================
   // 6. CONTAS A RECEBER (1 por venda)

@@ -123,7 +123,7 @@ export async function gerarDamdfePdf(documento: DocumentoMDFe): Promise<Buffer> 
 
       // Header
       doc.fontSize(14).font('Helvetica-Bold')
-        .text('DAMDFE - Documento Auxiliar do MDF-e', { align: 'center' })
+        .text('DAMDFE - Documento Auxiliar do MDF-e', undefined, undefined, { align: 'center' })
       doc.moveDown(0.5)
 
       // Linha separadora

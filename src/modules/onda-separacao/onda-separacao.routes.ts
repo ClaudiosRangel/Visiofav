@@ -63,7 +63,7 @@ export async function ondaSeparacaoRoutes(app: FastifyInstance) {
 
       // Buscar NF-e vinculada
       const nfes = pedidoIds.length > 0
-        ? await prisma.nfe.findMany({
+        ? await prisma.documentoFiscal.findMany({
             where: { vendaEfetivada: { pedidoVendaId: { in: pedidoIds } } },
             select: { numero: true, serie: true },
           })

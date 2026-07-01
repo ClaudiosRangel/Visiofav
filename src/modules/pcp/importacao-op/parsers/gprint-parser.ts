@@ -104,6 +104,7 @@ export interface ObservacoesOp {
   tipoOp: string | null   // NOVO, REPETIÇÃO, ALTERAÇÃO, PILOTO, etc. (extraído de "Obs.: Serviço ...")
   matriz: string | null   // Ex: "1376B", "2529B - COM BRAILLE" (extraído da seção Acabamentos)
   formatoPlano: string | null // Ex: "600 x 910" (extraído de Form.Corte do Plano)
+  coresPlano: string | null // Ex: "6x0", "5x0 +V" (extraído da coluna Cores do Plano)
 }
 
 export interface EmbalagemOp {
@@ -656,7 +657,7 @@ function extrairMontagem(texto: string): MontagemOp | null {
 // ============================================================================
 
 function extrairObservacoes(texto: string): ObservacoesOp {
-  const obs: ObservacoesOp = { gerais: [], producao: [], bobinas: [], expedicao: [], tipoOp: null, matriz: null, formatoPlano: null }
+  const obs: ObservacoesOp = { gerais: [], producao: [], bobinas: [], expedicao: [], tipoOp: null, matriz: null, formatoPlano: null, coresPlano: null }
 
   // Tipo OP: "Obs.: Serviço Novo" / "Serviço Repetição" / "Serviço Alteração" / "Serviço Piloto" etc.
   const matchTipoOp = texto.match(/Servi[çc]o\s+(Novo|Repeti[çc][ãa]o|Altera[çc][ãa]o|Piloto|Piloto\s*\/\s*Em\s*branco|[Vv]enda\s*de\s*cart[ãa]o)(?:\s*\/\s*(Novo|Repeti[çc][ãa]o|Altera[çc][ãa]o|Piloto))?/i)
@@ -699,6 +700,23 @@ function extrairObservacoes(texto: string): ObservacoesOp {
       if (matchFormGenerico) {
         obs.formatoPlano = `${matchFormGenerico[1]} x ${matchFormGenerico[2]}`
       }
+    }
+  }
+
+  // Cores do Plano: "Cores" na tabela — ex: "6x0", "5x0 +V", "5x0+V+V"
+  // Buscar padrão NxN (dígito x dígito) com possíveis sufixos (+V, +V+V)
+  const secaoCores = texto.match(/Mont\.\s+Tiragem\s+Cores([\s\S]*?)(?:Impressão|Obs\.|$)/i)
+  if (secaoCores) {
+    const matchCores = secaoCores[1].match(/(\d+)\s*x\s*(\d+)\s*(\+V[^a-z]*)?/i)
+    if (matchCores) {
+      obs.coresPlano = `${matchCores[1]}x${matchCores[2]}${matchCores[3] ? ' ' + matchCores[3].trim() : ''}`
+    }
+  }
+  // Fallback: buscar na seção "Plano" após "Cores"
+  if (!obs.coresPlano) {
+    const matchCoresFallback = texto.match(/Cores\s+(\d+)\s*x\s*(\d+)\s*(\+V[^a-z]*)?/i)
+    if (matchCoresFallback) {
+      obs.coresPlano = `${matchCoresFallback[1]}x${matchCoresFallback[2]}${matchCoresFallback[3] ? ' ' + matchCoresFallback[3].trim() : ''}`
     }
   }
 

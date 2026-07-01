@@ -1,5 +1,5 @@
 /**
- * Rotas do Emissor de DFe — NF-e
+ * Rotas do Emissor de DFe — NF-e, NFC-e, CT-e, MDF-e
  *
  * Endpoints:
  * - POST /nfe/emitir          — Emitir NF-e
@@ -8,15 +8,19 @@
  * - POST /nfe/inutilizar      — Inutilizar faixa de numeração
  * - GET  /nfe/:id/danfe       — Gerar/baixar DANFE em PDF
  * - GET  /nfe                  — Listar NF-e com filtros
+ * - POST /nfce/emitir         — Emitir NFC-e (modelo 65)
+ * - POST /cte/emitir          — Emitir CT-e (modelo 57)
  *
- * Requirements: 1.1, 1.5, 1.7, 1.8, 1.9
+ * Requirements: 1.1, 1.5, 1.7, 1.8, 1.9, 5.8, 6.8
  */
 
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
 import { nfeEmissaoService } from './nfe/nfe-emissao.service'
+import { nfceEmissaoService } from './nfce/nfce-emissao.service'
 import { danfePdfService } from './nfe/danfe-pdf.service'
+import { cteRoutes } from './cte/cte.routes'
 import {
   cancelar,
   cartaCorrecao,
@@ -31,12 +35,14 @@ import { AmbienteSefaz, ServicoSefaz, type SefazConfig } from './sefaz/tipos'
 import { certificadoService } from '../certificado/certificado.service'
 import {
   emissaoNFeInputSchema,
+  emissaoNFCeInputSchema,
   cancelamentoInputSchema,
   cceInputSchema,
   inutilizacaoInputSchema,
 } from '../schemas'
 import { ErroFiscal, CodigoErroFiscal } from '../erros'
 import type { DadosNFe } from './nfe/nfe-xml-builder'
+import { mdfeRoutes } from './mdfe/mdfe.routes'
 
 // === Schemas de parâmetros e query ===
 
@@ -59,6 +65,12 @@ const listNFeQuerySchema = z.object({
 // === Plugin de rotas ===
 
 export async function emissorDfeRoutes(app: FastifyInstance) {
+  // Registrar rotas do CT-e (modelo 57)
+  app.register(cteRoutes)
+
+  // Registrar rotas do MDF-e (modelo 58)
+  app.register(mdfeRoutes)
+
   // ==========================================================================
   // POST /nfe/emitir — Emitir NF-e
   // Requirements: 1.1
@@ -82,7 +94,7 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
       }
 
       // Montar dados de emissão para o serviço
-      const dadosNFe: DadosNFe = {
+      const dadosNFe = {
         serie: body.serie,
         nNF: await proximoNumeroNFe(user.empresaId, body.serie),
         naturezaOp: body.naturezaOp,
@@ -93,7 +105,7 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
         ambiente: body.ambiente,
         emitente: {
           cnpj: (empresa as any).cnpj || '',
-          razaoSocial: (empresa as any).razaoSocial || empresa.nome || '',
+          razaoSocial: (empresa as any).razaoSocial || (empresa as any).nome || '',
           uf: (empresa as any).uf || '',
           ie: (empresa as any).ie || '',
           crt: (empresa as any).regimeTributario || 3,
@@ -147,7 +159,7 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
 
       const resultado = await nfeEmissaoService.emitir({
         empresaId: user.empresaId,
-        dadosNFe,
+        dadosNFe: dadosNFe as unknown as DadosNFe,
       })
 
       const statusCode = resultado.sucesso ? 200 : 422
@@ -405,7 +417,7 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
               dataEmissao: new Date(),
               tipoOperacao: 1,
               emitenteCnpj: cnpjEmitente,
-              emitenteRazao: (empresa as any).razaoSocial || empresa.nome || '',
+              emitenteRazao: (empresa as any).razaoSocial || (empresa as any).nome || '',
               emitenteUf: ufEmitente,
               ambiente: body.ambiente,
             },
@@ -555,6 +567,105 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
       return reply.status(500).send({ message: err.message || 'Erro interno' })
     }
   })
+
+  // ==========================================================================
+  // POST /nfce/emitir — Emitir NFC-e (modelo 65)
+  // Requirements: 5.8
+  // ==========================================================================
+  app.post('/nfce/emitir', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = emissaoNFCeInputSchema.parse(request.body)
+
+      // Buscar dados da empresa emitente
+      const empresa = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+      })
+
+      if (!empresa) {
+        return reply.status(404).send({ message: 'Empresa não encontrada' })
+      }
+
+      // Montar dados de emissão para o serviço NFC-e
+      const ufEmitente = (empresa as any).uf || ''
+
+      const dadosNFCe = {
+        modelo: 65,
+        serie: body.serie,
+        nNF: await proximoNumeroNFCe(user.empresaId, body.serie),
+        cUF: obterCodigoUF(ufEmitente),
+        cNF: String(Math.floor(Math.random() * 99999999)).padStart(8, '0'),
+        tpEmis: 1,
+        cMunFG: (empresa as any).codigoMunicipio || '',
+        naturezaOp: 'VENDA',
+        tipoOperacao: 1 as const,
+        finalidade: 1 as const,
+        dataEmissao: new Date(),
+        ambiente: body.ambiente,
+        emitente: {
+          cnpj: (empresa as any).cnpj || '',
+          razaoSocial: (empresa as any).razaoSocial || (empresa as any).nome || '',
+          uf: ufEmitente,
+          ie: (empresa as any).ie || '',
+          crt: (empresa as any).regimeTributario || 3,
+          endereco: {
+            logradouro: (empresa as any).logradouro || '',
+            numero: (empresa as any).numero || '',
+            bairro: (empresa as any).bairro || '',
+            codigoMunicipio: (empresa as any).codigoMunicipio || '',
+            municipio: (empresa as any).municipio || '',
+            uf: ufEmitente,
+            cep: (empresa as any).cep || '',
+          },
+        },
+        destinatario: body.destCpf
+          ? {
+              cpfCnpj: body.destCpf,
+              razaoSocial: body.destNome || '',
+            }
+          : undefined,
+        itens: body.itens.map((item, index) => ({
+          nItem: index + 1,
+          produtoId: item.produtoId,
+          codigoProd: item.codigoProd,
+          descricao: item.descricao,
+          ncm: item.ncm,
+          cest: item.cest,
+          cfop: item.cfop,
+          unidade: item.unidade,
+          quantidade: item.quantidade,
+          valorUnitario: item.valorUnitario,
+          valorTotal: item.quantidade * item.valorUnitario,
+          valorDesconto: item.valorDesconto || 0,
+        })),
+        pagamento: {
+          forma: body.formaPagamento,
+          valor: body.valorPago,
+          troco: body.valorTroco,
+        },
+      }
+
+      const resultado = await nfceEmissaoService.emitir({
+        empresaId: user.empresaId,
+        dadosNFCe: dadosNFCe as any,
+      })
+
+      const statusCode = resultado.sucesso ? 200 : 422
+      return reply.status(statusCode).send(resultado)
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send(err.toJSON())
+      }
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
 }
 
 // === Helpers ===
@@ -570,6 +681,32 @@ async function proximoNumeroNFe(empresaId: string, serie: number): Promise<numbe
   })
 
   return (ultimo?.numero || 0) + 1
+}
+
+/**
+ * Obtém o próximo número de NFC-e para uma série.
+ */
+async function proximoNumeroNFCe(empresaId: string, serie: number): Promise<number> {
+  const ultimo = await prisma.documentoFiscal.findFirst({
+    where: { empresaId, tipo: 'NFCE', serie },
+    orderBy: { numero: 'desc' },
+    select: { numero: true },
+  })
+
+  return (ultimo?.numero || 0) + 1
+}
+
+/**
+ * Obtém código UF IBGE a partir da sigla.
+ */
+function obterCodigoUF(uf: string): number {
+  const codes: Record<string, number> = {
+    RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
+    MA: 21, PI: 22, CE: 23, RN: 24, PB: 25, PE: 26, AL: 27,
+    SE: 28, BA: 29, MG: 31, ES: 32, RJ: 33, SP: 35,
+    PR: 41, SC: 42, RS: 43, MS: 50, MT: 51, GO: 52, DF: 53,
+  }
+  return codes[uf.toUpperCase()] || 35 // Default SP
 }
 
 /**
