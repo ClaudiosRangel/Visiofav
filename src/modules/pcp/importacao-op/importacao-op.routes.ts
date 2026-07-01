@@ -5,7 +5,7 @@ import { authenticate } from '../../../middleware/authenticate'
 import { moduloGuard } from '../../../middleware/modulo-guard'
 import { extrairTextoPdf } from './pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf, DadosOpGprint } from './parsers/gprint-parser'
-import { getOpPdfPath, getOpsPdfDir } from '../../../lib/storage'
+import { getOpPdfPath, getOpsPdfDir, salvarOpPdf } from '../../../lib/storage'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -246,8 +246,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
 
     // Salvar PDF em disco para visualização posterior
     if (cached.pdfBuffer) {
-      const uploadsDir = getOpsPdfDir()
-      fs.writeFileSync(path.join(uploadsDir, `${op.id}.pdf`), cached.pdfBuffer)
+      await salvarOpPdf(op.id, cached.pdfBuffer)
     }
 
     // Criar itens de material
@@ -452,11 +451,19 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     }
 
     const filePath = getOpPdfPath(opId)
-    if (!fs.existsSync(filePath)) {
+    let pdfBuffer: Buffer | null = null
+    if (fs.existsSync(filePath)) {
+      pdfBuffer = fs.readFileSync(filePath)
+    } else {
+      // Fallback: buscar no banco
+      const { carregarOpPdf } = require('../../../lib/storage')
+      pdfBuffer = await carregarOpPdf(opId)
+    }
+
+    if (!pdfBuffer) {
       return reply.status(404).send({ message: 'PDF não disponível para esta OP' })
     }
 
-    const pdfBuffer = fs.readFileSync(filePath)
     return reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `inline; filename="OP-${op.numero}.pdf"`)

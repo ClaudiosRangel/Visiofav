@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
-import { getOpPdfPath, getOpsPdfDir } from '../../lib/storage'
+import { getOpPdfPath, getOpsPdfDir, salvarOpPdf, carregarOpPdf, opTemPdf, removerOpPdf } from '../../lib/storage'
 import {
   validarTransicaoStatus,
   getTransicoesPermitidas,
@@ -617,15 +617,12 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     })
     if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
 
-    const pdfPath = getOpPdfPath(id)
-    const fs = require('fs')
-
-    if (!fs.existsSync(pdfPath)) {
+    const pdfBuffer = await carregarOpPdf(id)
+    if (!pdfBuffer) {
       return reply.status(404).send({ message: 'PDF não encontrado para esta OP' })
     }
 
-    const stream = fs.createReadStream(pdfPath)
-    return reply.type('application/pdf').send(stream)
+    return reply.type('application/pdf').send(pdfBuffer)
   })
 
   // =========================================================================
@@ -633,11 +630,19 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // =========================================================================
   app.post('/pdf-status', async (request, reply) => {
     const body = z.object({ ids: z.array(z.string().uuid()).max(100) }).parse(request.body)
-    const fs = require('fs')
 
+    // Verificar no banco quais OPs têm pdfData preenchido
+    const opsComPdf = await prisma.ordemProducao.findMany({
+      where: { id: { in: body.ids }, pdfData: { not: null } },
+      select: { id: true },
+    })
+    const idsComPdf = new Set(opsComPdf.map(op => op.id))
+
+    // Também verificar disco local (para OPs migradas que ainda não estão no banco)
+    const fs = require('fs')
     const result: Record<string, boolean> = {}
     for (const id of body.ids) {
-      result[id] = fs.existsSync(getOpPdfPath(id))
+      result[id] = idsComPdf.has(id) || fs.existsSync(getOpPdfPath(id))
     }
     return result
   })
@@ -668,10 +673,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Arquivo excede o limite de 10MB.' })
     }
 
-    const fs = require('fs')
-    const path = require('path')
-    const uploadsDir = getOpsPdfDir()
-    fs.writeFileSync(path.join(uploadsDir, `${id}.pdf`), buffer)
+    await salvarOpPdf(id, buffer)
 
     return { message: `PDF salvo para OP #${op.numero}`, temPdf: true }
   })
@@ -731,11 +733,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     ])
 
     // Remover PDF do disco se existir
-    const pdfPath = getOpPdfPath(id)
-    const fs = require('fs')
-    if (fs.existsSync(pdfPath)) {
-      fs.unlinkSync(pdfPath)
-    }
+    await removerOpPdf(id)
 
     return { message: `OP #${op.numero} excluída com sucesso` }
   })

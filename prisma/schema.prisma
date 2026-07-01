@@ -1834,6 +1834,7 @@ model OrdemProducao {
   observacoes         String?           @db.Text
   referenciaExterna   String?           @map("referencia_externa") @db.VarChar(50) // Número da OP no sistema externo
   origemImportacao    String?           @map("origem_importacao") @db.VarChar(30) // PDF_GPRINT, MANUAL, etc.
+  pdfData             Bytes?            @map("pdf_data") // PDF binário armazenado no banco
   criadoPorId         String?           @map("criado_por_id")
   criadoEm            DateTime          @default(now()) @map("criado_em")
   atualizadoEm        DateTime          @updatedAt @map("atualizado_em")

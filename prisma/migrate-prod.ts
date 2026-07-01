@@ -642,6 +642,12 @@ async function main() {
     await prisma.$executeRawUnsafe(`DELETE FROM "security_audit_log" WHERE "criado_em" < NOW() - INTERVAL '90 days'`)
   } catch { /* tabela pode não existir ainda */ }
 
+  // =========================================================================
+  // PDF de OPs — armazenar no banco para persistência entre deploys
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "pdf_data" BYTEA`)
+  console.log('✅ OrdemProducao: campo pdf_data (BYTEA) adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 

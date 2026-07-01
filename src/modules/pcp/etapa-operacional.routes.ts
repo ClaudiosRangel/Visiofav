@@ -5,7 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { extrairTextoPdf } from './importacao-op/pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-parser'
-import { getOpPdfPath } from '../../lib/storage'
+import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -540,14 +540,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
 
     // Importar o parser
-    const fs = require('fs')
-    const pdfPath = getOpPdfPath(op.id)
+    const buffer = await carregarOpPdf(op.id)
 
-    if (!fs.existsSync(pdfPath)) {
+    if (!buffer) {
       return reply.status(404).send({ message: 'PDF não encontrado para esta OP. Reimporte o PDF.' })
     }
 
-    const buffer = fs.readFileSync(pdfPath)
     const extracao = await extrairTextoPdf(buffer)
 
     if (!extracao.temTexto || !isGprintPdf(extracao.texto)) {
