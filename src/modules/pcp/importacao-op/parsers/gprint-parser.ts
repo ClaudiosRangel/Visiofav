@@ -101,6 +101,9 @@ export interface ObservacoesOp {
   producao: string[]
   bobinas: string[]
   expedicao: string[]
+  tipoOp: string | null   // NOVO, REPETIÇÃO, ALTERAÇÃO, PILOTO, etc. (extraído de "Obs.: Serviço ...")
+  matriz: string | null   // Ex: "1376B", "2529B - COM BRAILLE" (extraído da seção Acabamentos)
+  formatoPlano: string | null // Ex: "600 x 910" (extraído de Form.Corte do Plano)
 }
 
 export interface EmbalagemOp {
@@ -653,7 +656,51 @@ function extrairMontagem(texto: string): MontagemOp | null {
 // ============================================================================
 
 function extrairObservacoes(texto: string): ObservacoesOp {
-  const obs: ObservacoesOp = { gerais: [], producao: [], bobinas: [], expedicao: [] }
+  const obs: ObservacoesOp = { gerais: [], producao: [], bobinas: [], expedicao: [], tipoOp: null, matriz: null, formatoPlano: null }
+
+  // Tipo OP: "Obs.: Serviço Novo" / "Serviço Repetição" / "Serviço Alteração" / "Serviço Piloto" etc.
+  const matchTipoOp = texto.match(/Servi[çc]o\s+(Novo|Repeti[çc][ãa]o|Altera[çc][ãa]o|Piloto|Piloto\s*\/\s*Em\s*branco|[Vv]enda\s*de\s*cart[ãa]o)(?:\s*\/\s*(Novo|Repeti[çc][ãa]o|Altera[çc][ãa]o|Piloto))?/i)
+  if (matchTipoOp) {
+    let tipo = matchTipoOp[1].trim()
+    if (matchTipoOp[2]) tipo += ' / ' + matchTipoOp[2].trim()
+    obs.tipoOp = tipo.toUpperCase()
+      .replace('REPETIÇÃO', 'REPETIÇÃO')
+      .replace('REPETICAO', 'REPETIÇÃO')
+      .replace('ALTERAÇÃO', 'ALTERAÇÃO')
+      .replace('ALTERACAO', 'ALTERAÇÃO')
+  }
+
+  // Matriz: extrair do texto da seção de Acabamentos
+  // Padrões: "/ Matriz: M2508", "/ Matriz 1376B", "/ Matriz 2529B - COM BRAILLE", "/ Matriz: M1376B - FACA NOVA"
+  const matchMatriz = texto.match(/Matriz:?\s*(M?\d[\dA-Z]*(?:\s*[-–]\s*[A-Za-z\s]+)?)/i)
+  if (matchMatriz) {
+    obs.matriz = matchMatriz[1].trim().toUpperCase()
+  } else {
+    // Fallback: Buscar FACA no material como referência de matriz (ex: "2529B - COM BRAILLE")
+    const matchFaca = texto.match(/(\d{3,5}[A-Z]?)\s*[-–]\s*(FACA NOVA|COM BRAILLE|SEM BRAILLE|NOVA)/i)
+    if (matchFaca) {
+      obs.matriz = `${matchFaca[1]} - ${matchFaca[2]}`.toUpperCase()
+    }
+  }
+
+  // Formato do Plano: "Form.Corte" ou "Formato" na tabela do Plano — ex: "600 x 910", "500 x 970"
+  // Prioridade 1: Form.Corte (formato da folha cortada) — números inteiros de 3+ dígitos
+  const matchFormCorte = texto.match(/Form\.?\s*Corte:?\s*(\d{3,4})\s*x\s*(\d{3,4})/i)
+  if (matchFormCorte) {
+    obs.formatoPlano = `${matchFormCorte[1]} x ${matchFormCorte[2]}`
+  } else {
+    // Prioridade 2: Formato na tabela do Plano (próximo a "Material")
+    const matchFormatoTab = texto.match(/Formato\s+([\d.]+)\s*x\s*([\d.]+)\s+(?:Quant|N|S)/i)
+    if (matchFormatoTab) {
+      obs.formatoPlano = `${matchFormatoTab[1]} x ${matchFormatoTab[2]}`
+    } else {
+      // Prioridade 3: qualquer "NNN x NNN" com dígitos >= 3 (formato de folha)
+      const matchFormGenerico = texto.match(/(\d{3,4})\s*x\s*(\d{3,4})(?:\s|$)/i)
+      if (matchFormGenerico) {
+        obs.formatoPlano = `${matchFormGenerico[1]} x ${matchFormGenerico[2]}`
+      }
+    }
+  }
 
   // Obs gerais: "Obs.:   Serviço Novo" — captura só até próximo campo conhecido
   const matchObsGerais = texto.matchAll(/Obs\.?:?\s{1,5}([A-Z][^O][^\n]{2,40})(?=\s{2,}|Bobina|LXL|Montagem|Cortadeira|$)/gi)

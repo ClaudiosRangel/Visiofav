@@ -45,6 +45,9 @@ model Empresa {
   proximoNumeroNFe Int     @default(1) @map("proximo_numero_nfe")
   serieCTe         Int     @default(1) @map("serie_cte")
   proximoNumeroCTe Int     @default(1) @map("proximo_numero_cte")
+  // NFC-e: CSC (Código de Segurança do Contribuinte) para geração do QRCode
+  cscIdNfce        String? @map("csc_id_nfce") @db.VarChar(6)
+  cscTokenNfce     String? @map("csc_token_nfce") @db.VarChar(36)
 
   usuarios                  UsuarioEmpresa[]
   produtos                  Produto[]
@@ -78,6 +81,18 @@ model Empresa {
   configIntegracao          ConfigIntegracao?
   configEmailFiscal         ConfigEmailFiscal?
   pendenciasCce             PendenciaCce[]
+
+  // Módulo Fiscal
+  regrasTributarias         RegraTributaria[]
+  documentosFiscais         DocumentoFiscal[]
+  certificadosDigitais      CertificadoDigital[]
+  filasContingencia         FilaContingencia[]
+  logsContingencia          LogContingencia[]
+  apuracoesFiscais          ApuracaoFiscal[]
+  naturezasOperacao         NaturezaOperacao[]
+  gnres                     Gnre[]
+  xmlsImportados            XmlImportado[]
+  auditoriasFiscais         AuditoriaFiscal[]
 
   // Configurações de Conferência
   conferenciaQuantidadeCega Boolean @default(false) @map("conferencia_quantidade_cega")
@@ -317,6 +332,7 @@ model Produto {
   itensSubOnda                  ItemSubOnda[]
   itensSolicitacaoTransferencia ItemSolicitacaoTransferencia[]
   mercadoriasTransito           MercadoriaTransito[]
+  itensDocumentoFiscal          ItemDocumentoFiscal[]
 
   @@unique([empresaId, codigo])
   @@map("produto")
@@ -393,8 +409,9 @@ model CompraEfetivada {
   valorTotal     Decimal      @map("valor_total") @db.Decimal(12, 2)
   criadoEm       DateTime     @default(now()) @map("criado_em")
 
-  devolucoes  DevolucaoCompra[]
-  contasPagar ContaPagar[]
+  devolucoes        DevolucaoCompra[]
+  contasPagar       ContaPagar[]
+  documentosFiscais DocumentoFiscal[]
 
   @@map("compra_efetivada")
 }
@@ -3241,4 +3258,502 @@ model PendenciaCce {
 
   @@index([empresaId, status])
   @@map("pendencia_cce")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - MOTOR TRIBUTÁRIO
+// ============================================================================
+
+model RegraTributaria {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  ncm              String   @db.VarChar(8)
+  cfop             String   @db.VarChar(4)
+  ufOrigem         String   @map("uf_origem") @db.VarChar(2)
+  ufDestino        String   @map("uf_destino") @db.VarChar(2)
+  regimeTributario Int      @map("regime_tributario") // 1=SN, 2=SN Excesso, 3=Normal
+
+  // ICMS
+  icmsAliquota     Decimal  @default(0) @map("icms_aliquota") @db.Decimal(5,2)
+  icmsCst          String?  @map("icms_cst") @db.VarChar(3)
+  icmsCsosn        String?  @map("icms_csosn") @db.VarChar(4)
+  icmsBaseCalculo  Decimal  @default(100) @map("icms_base_calculo") @db.Decimal(5,2)
+  icmsReducao      Decimal  @default(0) @map("icms_reducao") @db.Decimal(5,2)
+
+  // ICMS-ST
+  icmsStMva        Decimal? @map("icms_st_mva") @db.Decimal(5,2)
+  icmsStMvaAjust   Decimal? @map("icms_st_mva_ajust") @db.Decimal(5,2)
+  icmsStAliqInterna Decimal? @map("icms_st_aliq_interna") @db.Decimal(5,2)
+
+  // FCP
+  fcpAliquota      Decimal? @map("fcp_aliquota") @db.Decimal(5,2)
+
+  // PIS
+  pisAliquota      Decimal  @default(0) @map("pis_aliquota") @db.Decimal(5,2)
+  pisCst           String?  @map("pis_cst") @db.VarChar(2)
+
+  // COFINS
+  cofinsAliquota   Decimal  @default(0) @map("cofins_aliquota") @db.Decimal(5,2)
+  cofinsCst        String?  @map("cofins_cst") @db.VarChar(2)
+
+  // IPI
+  ipiAliquota      Decimal  @default(0) @map("ipi_aliquota") @db.Decimal(5,2)
+  ipiCst           String?  @map("ipi_cst") @db.VarChar(2)
+
+  // ISS
+  issAliquota      Decimal? @map("iss_aliquota") @db.Decimal(5,2)
+
+  ativo            Boolean  @default(true)
+  criadoEm         DateTime @default(now()) @map("criado_em")
+  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
+
+  empresa          Empresa  @relation(fields: [empresaId], references: [id])
+  itensDocumentoFiscal ItemDocumentoFiscal[]
+
+  @@unique([empresaId, ncm, cfop, ufOrigem, ufDestino, regimeTributario])
+  @@index([empresaId, ncm, cfop])
+  @@map("regra_tributaria")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - DOCUMENTOS FISCAIS ELETRÔNICOS
+// ============================================================================
+
+model DocumentoFiscal {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  tipo            String   @db.VarChar(10) // NFE, NFCE, CTE, MDFE, NFSE
+  modelo          Int      // 55, 65, 57, 58
+  serie           Int
+  numero          Int
+  chaveAcesso     String?  @map("chave_acesso") @db.VarChar(44)
+
+  // Status
+  status          String   @default("RASCUNHO") @db.VarChar(30)
+
+  // Dados gerais
+  naturezaOp      String?  @map("natureza_op") @db.VarChar(100)
+  dataEmissao     DateTime @map("data_emissao")
+  dataSaida       DateTime? @map("data_saida")
+  tipoOperacao    Int      @map("tipo_operacao") // 0=Entrada, 1=Saída
+  finalidade      Int      @default(1) // 1=Normal, 2=Complementar, 3=Ajuste, 4=Devolução
+
+  // Emitente
+  emitenteCnpj    String   @map("emitente_cnpj") @db.VarChar(14)
+  emitenteRazao   String   @map("emitente_razao") @db.VarChar(200)
+  emitenteUf      String   @map("emitente_uf") @db.VarChar(2)
+
+  // Destinatário
+  destCpfCnpj     String?  @map("dest_cpf_cnpj") @db.VarChar(14)
+  destRazao       String?  @map("dest_razao") @db.VarChar(200)
+  destUf          String?  @map("dest_uf") @db.VarChar(2)
+  destIe          String?  @map("dest_ie") @db.VarChar(20)
+
+  // Totais
+  valorProdutos   Decimal  @default(0) @map("valor_produtos") @db.Decimal(15,2)
+  valorFrete      Decimal  @default(0) @map("valor_frete") @db.Decimal(15,2)
+  valorSeguro     Decimal  @default(0) @map("valor_seguro") @db.Decimal(15,2)
+  valorDesconto   Decimal  @default(0) @map("valor_desconto") @db.Decimal(15,2)
+  valorOutras     Decimal  @default(0) @map("valor_outras") @db.Decimal(15,2)
+  valorTotal      Decimal  @default(0) @map("valor_total") @db.Decimal(15,2)
+  valorIcms       Decimal  @default(0) @map("valor_icms") @db.Decimal(15,2)
+  valorIcmsSt     Decimal  @default(0) @map("valor_icms_st") @db.Decimal(15,2)
+  valorIpi        Decimal  @default(0) @map("valor_ipi") @db.Decimal(15,2)
+  valorPis        Decimal  @default(0) @map("valor_pis") @db.Decimal(15,2)
+  valorCofins     Decimal  @default(0) @map("valor_cofins") @db.Decimal(15,2)
+  valorFcp        Decimal  @default(0) @map("valor_fcp") @db.Decimal(15,2)
+  valorIss        Decimal  @default(0) @map("valor_iss") @db.Decimal(15,2)
+
+  // XML e protocolo
+  xmlEnviado      String?  @map("xml_enviado") @db.Text
+  xmlAutorizado   String?  @map("xml_autorizado") @db.Text
+  xmlRetorno      String?  @map("xml_retorno") @db.Text
+  protocolo       String?  @db.VarChar(20)
+  dataAutorizacao DateTime? @map("data_autorizacao")
+
+  // Rejeição
+  codigoRejeicao  Int?     @map("codigo_rejeicao")
+  motivoRejeicao  String?  @map("motivo_rejeicao") @db.VarChar(500)
+
+  // Contingência
+  contingencia    Boolean  @default(false)
+  tipoContingencia String? @map("tipo_contingencia") @db.VarChar(10)
+
+  // Ambiente
+  ambiente        Int      @default(2) // 1=Produção, 2=Homologação
+
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  // Vínculos
+  compraEfetivadaId String?          @map("compra_efetivada_id")
+  compraEfetivada   CompraEfetivada? @relation(fields: [compraEfetivadaId], references: [id])
+
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  itens           ItemDocumentoFiscal[]
+  eventos         EventoDocumentoFiscal[]
+  gnres           Gnre[]
+  filasContingencia FilaContingencia[]
+
+  @@unique([empresaId, tipo, serie, numero])
+  @@index([empresaId, status])
+  @@index([empresaId, dataEmissao])
+  @@index([chaveAcesso])
+  @@map("documento_fiscal")
+}
+
+model ItemDocumentoFiscal {
+  id                String   @id @default(uuid())
+  documentoFiscalId String   @map("documento_fiscal_id")
+  nItem             Int      @map("n_item")
+
+  // Produto
+  produtoId         String?  @map("produto_id")
+  codigoProd        String   @map("codigo_prod") @db.VarChar(60)
+  descricao         String   @db.VarChar(120)
+  ncm               String   @db.VarChar(8)
+  cest              String?  @db.VarChar(7)
+  cfop              String   @db.VarChar(4)
+  unidade           String   @db.VarChar(6)
+  quantidade        Decimal  @db.Decimal(15,4)
+  valorUnitario     Decimal  @map("valor_unitario") @db.Decimal(15,4)
+  valorTotal        Decimal  @map("valor_total") @db.Decimal(15,2)
+  valorDesconto     Decimal  @default(0) @map("valor_desconto") @db.Decimal(15,2)
+
+  // ICMS
+  icmsOrigem        Int      @default(0) @map("icms_origem")
+  icmsCst           String?  @map("icms_cst") @db.VarChar(3)
+  icmsCsosn         String?  @map("icms_csosn") @db.VarChar(4)
+  icmsBase          Decimal  @default(0) @map("icms_base") @db.Decimal(15,2)
+  icmsAliquota      Decimal  @default(0) @map("icms_aliquota") @db.Decimal(5,2)
+  icmsValor         Decimal  @default(0) @map("icms_valor") @db.Decimal(15,2)
+  icmsReducao       Decimal  @default(0) @map("icms_reducao") @db.Decimal(5,2)
+
+  // ICMS-ST
+  icmsStBase        Decimal  @default(0) @map("icms_st_base") @db.Decimal(15,2)
+  icmsStAliquota    Decimal  @default(0) @map("icms_st_aliquota") @db.Decimal(5,2)
+  icmsStValor       Decimal  @default(0) @map("icms_st_valor") @db.Decimal(15,2)
+  icmsStMva         Decimal  @default(0) @map("icms_st_mva") @db.Decimal(5,2)
+
+  // DIFAL
+  icmsDifalBase     Decimal  @default(0) @map("icms_difal_base") @db.Decimal(15,2)
+  icmsDifalDestino  Decimal  @default(0) @map("icms_difal_destino") @db.Decimal(15,2)
+
+  // FCP
+  fcpBase           Decimal  @default(0) @map("fcp_base") @db.Decimal(15,2)
+  fcpAliquota       Decimal  @default(0) @map("fcp_aliquota") @db.Decimal(5,2)
+  fcpValor          Decimal  @default(0) @map("fcp_valor") @db.Decimal(15,2)
+
+  // IPI
+  ipiCst            String?  @map("ipi_cst") @db.VarChar(2)
+  ipiBase           Decimal  @default(0) @map("ipi_base") @db.Decimal(15,2)
+  ipiAliquota       Decimal  @default(0) @map("ipi_aliquota") @db.Decimal(5,2)
+  ipiValor          Decimal  @default(0) @map("ipi_valor") @db.Decimal(15,2)
+
+  // PIS
+  pisCst            String?  @map("pis_cst") @db.VarChar(2)
+  pisBase           Decimal  @default(0) @map("pis_base") @db.Decimal(15,2)
+  pisAliquota       Decimal  @default(0) @map("pis_aliquota") @db.Decimal(5,2)
+  pisValor          Decimal  @default(0) @map("pis_valor") @db.Decimal(15,2)
+
+  // COFINS
+  cofinsCst         String?  @map("cofins_cst") @db.VarChar(2)
+  cofinsBase        Decimal  @default(0) @map("cofins_base") @db.Decimal(15,2)
+  cofinsAliquota    Decimal  @default(0) @map("cofins_aliquota") @db.Decimal(5,2)
+  cofinsValor       Decimal  @default(0) @map("cofins_valor") @db.Decimal(15,2)
+
+  // ISS
+  issBase           Decimal  @default(0) @map("iss_base") @db.Decimal(15,2)
+  issAliquota       Decimal  @default(0) @map("iss_aliquota") @db.Decimal(5,2)
+  issValor          Decimal  @default(0) @map("iss_valor") @db.Decimal(15,2)
+  issRetido         Boolean  @default(false) @map("iss_retido")
+
+  // Rastreabilidade
+  regraTributariaId String?  @map("regra_tributaria_id")
+  nivelFallback     String?  @map("nivel_fallback") @db.VarChar(20)
+
+  documentoFiscal   DocumentoFiscal  @relation(fields: [documentoFiscalId], references: [id])
+  produto           Produto?         @relation(fields: [produtoId], references: [id])
+  regraTributaria   RegraTributaria? @relation(fields: [regraTributariaId], references: [id])
+
+  @@index([documentoFiscalId])
+  @@map("item_documento_fiscal")
+}
+
+model EventoDocumentoFiscal {
+  id                String   @id @default(uuid())
+  documentoFiscalId String   @map("documento_fiscal_id")
+  tipoEvento        String   @map("tipo_evento") @db.VarChar(10)
+  sequencia         Int
+  dataEvento        DateTime @map("data_evento")
+  protocolo         String?  @db.VarChar(20)
+  justificativa     String?  @db.VarChar(1000)
+  textoCorrecao     String?  @map("texto_correcao") @db.Text
+  xmlEvento         String?  @map("xml_evento") @db.Text
+  xmlRetorno        String?  @map("xml_retorno") @db.Text
+  status            String   @db.VarChar(20) // REGISTRADO, REJEITADO
+
+  documentoFiscal   DocumentoFiscal @relation(fields: [documentoFiscalId], references: [id])
+
+  @@index([documentoFiscalId])
+  @@map("evento_documento_fiscal")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - CERTIFICADOS DIGITAIS
+// ============================================================================
+
+model CertificadoDigital {
+  id             String   @id @default(uuid())
+  empresaId      String   @map("empresa_id")
+  cnpj           String   @db.VarChar(14)
+  tipo           String   @db.VarChar(2) // A1, A3
+  titular        String   @db.VarChar(200)
+  validoDe       DateTime @map("valido_de")
+  validoAte      DateTime @map("valido_ate")
+  pfxEncrypted   String?  @map("pfx_encrypted") @db.Text
+  senhaEncrypted String?  @map("senha_encrypted") @db.VarChar(500)
+  ativo          Boolean  @default(true)
+  criadoEm       DateTime @default(now()) @map("criado_em")
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@index([empresaId, cnpj, ativo])
+  @@map("certificado_digital")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - CONTINGÊNCIA
+// ============================================================================
+
+model FilaContingencia {
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  documentoFiscalId String   @map("documento_fiscal_id")
+  xmlAssinado       String   @map("xml_assinado") @db.Text
+  tipoContingencia  String   @map("tipo_contingencia") @db.VarChar(10) // SVC_AN, SVC_RS, FS_DA
+  tentativas        Int      @default(0)
+  status            String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, TRANSMITIDO, FALHA
+  erro              String?  @db.VarChar(500)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+  transmitidoEm     DateTime? @map("transmitido_em")
+
+  empresa           Empresa         @relation(fields: [empresaId], references: [id])
+  documentoFiscal   DocumentoFiscal @relation(fields: [documentoFiscalId], references: [id])
+
+  @@index([empresaId, status, criadoEm])
+  @@map("fila_contingencia")
+}
+
+model LogContingencia {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  acao                String   @db.VarChar(20) // ENTRADA, SAIDA
+  motivo              String   @db.VarChar(200)
+  modalidade          String   @db.VarChar(10)
+  documentosPendentes Int      @map("documentos_pendentes")
+  timestamp           DateTime @default(now())
+
+  empresa             Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@index([empresaId, timestamp])
+  @@map("log_contingencia")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - APURAÇÃO
+// ============================================================================
+
+model ApuracaoFiscal {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  tipo            String   @db.VarChar(20) // ICMS, ICMS_ST, PIS, COFINS, IPI
+  periodo         String   @db.VarChar(7) // YYYY-MM
+
+  totalDebitos    Decimal  @default(0) @map("total_debitos") @db.Decimal(15,2)
+  totalCreditos   Decimal  @default(0) @map("total_creditos") @db.Decimal(15,2)
+  estornoDebitos  Decimal  @default(0) @map("estorno_debitos") @db.Decimal(15,2)
+  estornoCreditos Decimal  @default(0) @map("estorno_creditos") @db.Decimal(15,2)
+  ajustes         Decimal  @default(0) @db.Decimal(15,2)
+  saldoAnterior   Decimal  @default(0) @map("saldo_anterior") @db.Decimal(15,2)
+  saldoFinal      Decimal  @default(0) @map("saldo_final") @db.Decimal(15,2)
+  valorRecolher   Decimal  @default(0) @map("valor_recolher") @db.Decimal(15,2)
+
+  fechado         Boolean  @default(false)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  detalhes        DetalheApuracao[]
+
+  @@unique([empresaId, tipo, periodo])
+  @@map("apuracao_fiscal")
+}
+
+model DetalheApuracao {
+  id                String   @id @default(uuid())
+  apuracaoId        String   @map("apuracao_id")
+  documentoFiscalId String?  @map("documento_fiscal_id")
+  tipo              String   @db.VarChar(20) // DEBITO, CREDITO, ESTORNO_DEB, ESTORNO_CRED, AJUSTE
+  valor             Decimal  @db.Decimal(15,2)
+  descricao         String?  @db.VarChar(200)
+
+  apuracao          ApuracaoFiscal @relation(fields: [apuracaoId], references: [id])
+
+  @@index([apuracaoId])
+  @@map("detalhe_apuracao")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - CADASTROS AUXILIARES
+// ============================================================================
+
+model Ncm {
+  id           String   @id @default(uuid())
+  codigo       String   @unique @db.VarChar(8)
+  descricao    String   @db.VarChar(500)
+  unidadeEstat String?  @map("unidade_estat") @db.VarChar(10)
+  aliqII       Decimal? @map("aliq_ii") @db.Decimal(5,2)
+  aliqIPI      Decimal? @map("aliq_ipi") @db.Decimal(5,2)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  cests        CestNcm[]
+
+  @@map("ncm")
+}
+
+model Cfop {
+  id                 String   @id @default(uuid())
+  codigo             String   @unique @db.VarChar(4)
+  descricao          String   @db.VarChar(500)
+  tipo               String   @db.VarChar(10) // ENTRADA, SAIDA
+  ambito             String   @db.VarChar(15) // ESTADUAL, INTERESTADUAL, EXTERIOR
+  geraCredIcms       Boolean  @default(false) @map("gera_cred_icms")
+  geraCredPisCofins  Boolean  @default(false) @map("gera_cred_pis_cofins")
+  incideIpi          Boolean  @default(false) @map("incide_ipi")
+  ativo              Boolean  @default(true)
+  criadoEm           DateTime @default(now()) @map("criado_em")
+
+  @@map("cfop")
+}
+
+model Cest {
+  id        String   @id @default(uuid())
+  codigo    String   @unique @db.VarChar(7)
+  descricao String   @db.VarChar(500)
+  segmento  String?  @db.VarChar(200)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  ncms      CestNcm[]
+
+  @@map("cest")
+}
+
+model CestNcm {
+  id     String @id @default(uuid())
+  cestId String @map("cest_id")
+  ncmId  String @map("ncm_id")
+
+  cest   Cest   @relation(fields: [cestId], references: [id])
+  ncm    Ncm    @relation(fields: [ncmId], references: [id])
+
+  @@unique([cestId, ncmId])
+  @@map("cest_ncm")
+}
+
+model NaturezaOperacao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  descricao    String   @db.VarChar(100)
+  cfopEntrada  String?  @map("cfop_entrada") @db.VarChar(4)
+  cfopSaida    String?  @map("cfop_saida") @db.VarChar(4)
+  tipoOperacao String   @map("tipo_operacao") @db.VarChar(30)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@map("natureza_operacao")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - GNRE
+// ============================================================================
+
+model Gnre {
+  id                String    @id @default(uuid())
+  empresaId         String    @map("empresa_id")
+  documentoFiscalId String    @map("documento_fiscal_id")
+  ufDestino         String    @map("uf_destino") @db.VarChar(2)
+  valor             Decimal   @db.Decimal(15,2)
+  codigoReceita     String    @map("codigo_receita") @db.VarChar(10)
+  referencia        String    @db.VarChar(7) // YYYY-MM
+  status            String    @default("PENDENTE") @db.VarChar(20) // PENDENTE, PAGO, VENCIDO
+  dataPagamento     DateTime? @map("data_pagamento")
+  nossoNumero       String?   @map("nosso_numero") @db.VarChar(30)
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+
+  empresa           Empresa         @relation(fields: [empresaId], references: [id])
+  documentoFiscal   DocumentoFiscal @relation(fields: [documentoFiscalId], references: [id])
+
+  @@index([empresaId, status])
+  @@map("gnre")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - IMPORTAÇÃO XML
+// ============================================================================
+
+model XmlImportado {
+  id                 String    @id @default(uuid())
+  empresaId          String    @map("empresa_id")
+  chaveAcesso        String    @map("chave_acesso") @db.VarChar(44)
+  tipo               String    @db.VarChar(10) // NFE, CTE
+  emitenteCnpj       String    @map("emitente_cnpj") @db.VarChar(14)
+  emitenteRazao      String    @map("emitente_razao") @db.VarChar(200)
+  valorTotal         Decimal   @map("valor_total") @db.Decimal(15,2)
+  dataEmissao        DateTime  @map("data_emissao")
+  xmlCompleto        String    @map("xml_completo") @db.Text
+  origem             String    @db.VarChar(20) // UPLOAD, DISTRIBUICAO_DFE, EMAIL
+
+  // Manifestação
+  manifestacao       String?   @db.VarChar(30) // CIENCIA, CONFIRMACAO, DESCONHECIMENTO, NAO_REALIZADA
+  dataManifestacao   DateTime? @map("data_manifestacao")
+
+  // Vinculação com entrada
+  documentoEntradaId String?   @map("documento_entrada_id")
+
+  criadoEm           DateTime  @default(now()) @map("criado_em")
+
+  empresa            Empresa   @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, chaveAcesso])
+  @@index([empresaId, manifestacao])
+  @@map("xml_importado")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - AUDITORIA
+// ============================================================================
+
+model AuditoriaFiscal {
+  id         String   @id @default(uuid())
+  empresaId  String   @map("empresa_id")
+  usuarioId  String   @map("usuario_id")
+  operacao   String   @db.VarChar(50)
+  entidade   String   @db.VarChar(50) // DocumentoFiscal, RegraTributaria, etc.
+  entidadeId String   @map("entidade_id")
+  dadosAntes String?  @map("dados_antes") @db.Text // JSON
+  dadosDepois String? @map("dados_depois") @db.Text // JSON
+  ip         String?  @db.VarChar(45)
+  timestamp  DateTime @default(now())
+
+  empresa    Empresa  @relation(fields: [empresaId], references: [id])
+
+  @@index([empresaId, timestamp])
+  @@index([entidade, entidadeId])
+  @@map("auditoria_fiscal")
 }

@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { coordenadasOptionalSchema } from '../geolocalizacao/coord-validation'
 
-const ALL_MODULOS = ['COMPRAS', 'VENDAS', 'FINANCEIRO', 'WMS', 'CTE', 'PCP'] as const
+const ALL_MODULOS = ['COMPRAS', 'VENDAS', 'FINANCEIRO', 'WMS', 'CTE', 'PCP', 'FISCAL'] as const
 
 const paramsSchema = z.object({
   id: z.string().uuid(),

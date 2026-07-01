@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { compraFiscalService } from '../fiscal/integracao/compra-fiscal.service'
+import { ErroFiscal } from '../fiscal/erros'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 

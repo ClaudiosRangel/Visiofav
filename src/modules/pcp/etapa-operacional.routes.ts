@@ -619,7 +619,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const centros = await prisma.centroProducao.findMany({
       where: { empresaId: user.empresaId, status: true },
-      orderBy: { codigo: 'asc' },
+      orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
     })
 
     const etapasAtivas = await prisma.etapaOrdemProducao.findMany({
@@ -665,6 +665,21 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     function extrairProdutoObs(obs: string | null): string | null {
       if (!obs) return null
       const m = obs.match(/\[Produto\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+    function extrairTipoOpObs(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[TipoOp\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+    function extrairMatrizObs(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Matriz\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+    function extrairFormatoObs(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Formato\]\s*(.+?)(?:\n|$)/)
       return m ? m[1].trim() : null
     }
 
@@ -734,9 +749,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             })(),
             materialPrincipal: papel?.descricaoProduto || null,
             gramatura: (papel ? extrairGramatura(papel.descricaoProduto) : null) || extrairGramatura(e.ordemProducao.observacoes || ''),
-            formato: (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
+            formato: extrairFormatoObs(e.ordemProducao.observacoes) || (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
             pesoKg: papel ? Number(papel.quantidade) : null,
             materialEncomendado: temMaterialEncomendado(e),
+            tipoOp: extrairTipoOpObs(e.ordemProducao.observacoes),
+            matriz: extrairMatrizObs(e.ordemProducao.observacoes),
           }
         }),
       }

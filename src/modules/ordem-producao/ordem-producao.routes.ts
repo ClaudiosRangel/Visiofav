@@ -626,4 +626,68 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     const stream = fs.createReadStream(pdfPath)
     return reply.type('application/pdf').send(stream)
   })
+
+  // =========================================================================
+  // DELETE /api/ordens-producao/:id — Exclui OP que não tem apontamento/não iniciada
+  // =========================================================================
+  app.delete('/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      include: {
+        etapas: { select: { id: true, status: true } },
+        apontamentos: { select: { id: true }, take: 1 },
+      },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    // Não permitir exclusão se OP já foi concluída
+    if (op.status === 'CONCLUIDA') {
+      return reply.status(400).send({ message: 'Não é possível excluir uma OP já concluída.' })
+    }
+
+    // Não permitir se há apontamentos de produção registrados
+    if (op.apontamentos.length > 0) {
+      return reply.status(400).send({ message: 'Não é possível excluir OP que já possui apontamentos de produção.' })
+    }
+
+    // Não permitir se alguma etapa já foi iniciada (EM_ANDAMENTO ou CONCLUIDA)
+    const etapaIniciada = op.etapas.find(e => ['EM_ANDAMENTO', 'CONCLUIDA'].includes(e.status))
+    if (etapaIniciada) {
+      return reply.status(400).send({ message: 'Não é possível excluir OP que já possui etapas em andamento ou concluídas.' })
+    }
+
+    // Verificar apontamentos por etapa também
+    const apontamentosEtapa = await prisma.apontamentoEtapa.findFirst({
+      where: { etapaOrdemProducao: { ordemProducaoId: id } },
+    })
+    if (apontamentosEtapa) {
+      return reply.status(400).send({ message: 'Não é possível excluir OP que já possui apontamentos registrados nas etapas.' })
+    }
+
+    // Pode excluir — remover dependências em cascata
+    await prisma.$transaction([
+      prisma.apontamentoEtapa.deleteMany({ where: { etapaOrdemProducao: { ordemProducaoId: id } } }),
+      prisma.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId: id } }),
+      prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: id } }),
+      prisma.logOrdemProducao.deleteMany({ where: { ordemProducaoId: id } }),
+      prisma.programacaoEntrega.deleteMany({ where: { ordemProducaoId: id } }),
+      prisma.variacaoOrdemProducao.deleteMany({ where: { ordemProducaoId: id } }),
+      prisma.ordemProducao.delete({ where: { id } }),
+    ])
+
+    // Remover PDF do disco se existir
+    const pdfPath = require('path').join(process.cwd(), 'uploads', 'ops', `${id}.pdf`)
+    const fs = require('fs')
+    if (fs.existsSync(pdfPath)) {
+      fs.unlinkSync(pdfPath)
+    }
+
+    return { message: `OP #${op.numero} excluída com sucesso` }
+  })
 }

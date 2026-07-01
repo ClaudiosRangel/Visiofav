@@ -98,6 +98,7 @@ import { configEmailFiscalRoutes } from './modules/config-email-fiscal/config-em
 import { configIntegracaoRoutes } from './modules/config-integracao/config-integracao.routes'
 import { pendenciaCceRoutes } from './modules/pendencia-cce/pendencia-cce.routes'
 import { pendenciaCceExternaRoutes } from './modules/pendencia-cce/pendencia-cce-externa.routes'
+import { fiscalRoutes } from './modules/fiscal/fiscal.routes'
 
 // Fase 1 — Profissionalização WMS
 import { crossDockRoutes } from './modules/cross-dock/cross-dock.routes'
@@ -245,6 +246,9 @@ async function bootstrap() {
   await app.register(nfeRoutes, { prefix: '/api/nfe' })
   await app.register(cteRoutes, { prefix: '/api/cte' })
   await app.register(cceRoutes, { prefix: '/api/cce' })
+
+  // Módulo Fiscal — Plugin completo (motor tributário, emissor, SPED, apuração, cadastros, etc.)
+  await app.register(fiscalRoutes, { prefix: '/api/fiscal' })
 
   // Integração WMS
   await app.register(dashboardWmsRoutes, { prefix: '/api/dashboard-wms' })
