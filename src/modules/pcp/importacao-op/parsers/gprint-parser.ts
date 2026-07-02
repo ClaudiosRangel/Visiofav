@@ -705,12 +705,22 @@ function extrairObservacoes(texto: string): ObservacoesOp {
   }
 
   // Cores do Plano: "Cores" na tabela — ex: "6x0", "5x0 +V", "5x0+V+V"
-  // Buscar padrão NxN (dígito x dígito) com possíveis sufixos (+V, +V+V)
+  // Na seção entre Mont./Tiragem/Cores e Impressão, os dados vêm na ordem:
+  //   Mont.(2x1)  Tiragem(40.000)  Cores(5x0 +V+V)  Máq.Impr.(Heidelberg...)
+  // Cores é sempre NxN onde N é 1-9 e N2 é tipicamente 0 (impressão só frente)
+  // Diferencia de Montagem (que tem padrões como 2x1, 4x2, 7x3 — N2 >= 1)
   const secaoCores = texto.match(/Mont\.\s+Tiragem\s+Cores([\s\S]*?)(?:Impressão|Obs\.|$)/i)
   if (secaoCores) {
-    const matchCores = secaoCores[1].match(/(\d+)\s*x\s*(\d+)\s*(\+V[^a-z]*)?/i)
-    if (matchCores) {
-      obs.coresPlano = `${matchCores[1]}x${matchCores[2]}${matchCores[3] ? ' ' + matchCores[3].trim() : ''}`
+    // Buscar padrão NxN com N2=0 seguido opcionalmente de +V (mais específico para cores)
+    const matchCoresZero = secaoCores[1].match(/(\d)\s*x\s*0\s*(\+V[^a-z]*)?/i)
+    if (matchCoresZero) {
+      obs.coresPlano = `${matchCoresZero[1]}x0${matchCoresZero[2] ? ' ' + matchCoresZero[2].trim() : ''}`
+    } else {
+      // Fallback: buscar NxN com +V (se imprime frente e verso com verniz)
+      const matchCoresComV = secaoCores[1].match(/(\d)\s*x\s*(\d)\s*(\+V[^a-z]+)/i)
+      if (matchCoresComV) {
+        obs.coresPlano = `${matchCoresComV[1]}x${matchCoresComV[2]} ${matchCoresComV[3].trim()}`
+      }
     }
   }
   // Fallback: buscar na seção "Plano" após "Cores"
