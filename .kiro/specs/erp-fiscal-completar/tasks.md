@@ -196,10 +196,10 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar com modelos 55, 65, 57, 58 — validar 44 dígitos e DV módulo 11
     - **Validates: Requirements 5.9, 6.9, 7.8**
 
-- [-] 10. Checkpoint — Validar XML builders e emissão
+- [x] 10. Checkpoint — Validar XML builders e emissão
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Migração do Modelo Legado Nfe
+- [x] 11. Migração do Modelo Legado Nfe
   - [x] 11.1 Implementar script de migração migrar-nfe-legado.ts
     - Criar `src/modules/fiscal/integracao/migrar-nfe-legado.ts`
     - Implementar `migrarNfeLegado(empresaId?)` que: lê todos registros Nfe (com NfeItem), mapeia para DocumentoFiscal (tipo=NFE, modelo=55, status mapeado, tipoOperacao derivado), cria ItemDocumentoFiscal preservando todos campos tributários
@@ -209,12 +209,12 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Preservar vínculo vendaEfetivadaId
     - _Requirements: 4.1, 4.2, 4.3, 4.6, 4.7_
 
-  - [-] 11.2 Refatorar rotas e serviços para remover uso do modelo Nfe
+  - [x] 11.2 Refatorar rotas e serviços para remover uso do modelo Nfe
     - Atualizar `src/modules/vendas/venda.routes.ts` — remover import/uso de Nfe (já refatorado na task 3.2, validar que não há referências remanescentes)
     - Buscar e atualizar quaisquer queries ou serviços que referenciem `prisma.nfe` ou `prisma.nfeItem`
     - _Requirements: 4.5, 4.6_
 
-  - [~] 11.3 Remover modelo Nfe e NfeItem do schema Prisma
+  - [x] 11.3 Remover modelo Nfe e NfeItem do schema Prisma
     - Deletar `model Nfe` e `model NfeItem` de `prisma/schema.prisma`
     - Gerar migration com `npx prisma migrate dev --name remove-nfe-legado`
     - A migration deve fazer DROP TABLE das tabelas nfe e nfe_item
@@ -230,7 +230,7 @@ Implementação completa do módulo fiscal do VisioFab ERP incluindo: geração 
     - Testar mapeamento de status (PENDENTE, AUTORIZADA→AUTORIZADO, REJEITADA→REJEITADO)
     - _Requirements: 4.1, 4.2, 4.7_
 
-- [~] 12. Final checkpoint — Validação completa
+- [x] 12. Final checkpoint — Validação completa
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

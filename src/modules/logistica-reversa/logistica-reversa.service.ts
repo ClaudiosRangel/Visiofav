@@ -461,7 +461,7 @@ export class LogisticaReversaService {
     if (itensCredito.length === 0) return
 
     // Buscar preços dos produtos na NF-e original para calcular valor do crédito
-    const nfe = await tx.nfe.findUnique({
+    const nfe = await tx.documentoFiscal.findUnique({
       where: { id: ra.nfeOrigemId },
       include: { itens: true },
     })
@@ -471,7 +471,7 @@ export class LogisticaReversaService {
     for (const item of itensCredito) {
       const itemNfe = nfe.itens.find((i: any) => i.produtoId === item.produtoId)
       if (itemNfe) {
-        const precoUnitario = Number(itemNfe.vProd) / Number(itemNfe.qCom)
+        const precoUnitario = Number(itemNfe.valorTotal) / Number(itemNfe.quantidade)
         valorCredito += precoUnitario * item.quantidade
       }
     }

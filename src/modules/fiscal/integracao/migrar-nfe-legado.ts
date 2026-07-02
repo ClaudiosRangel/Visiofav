@@ -9,13 +9,16 @@
  * - Preserva vendaEfetivadaId
  * - tipoOperacao derivado de tpNF (0=Entrada, 1=Saída)
  *
+ * NOTA: Este script usa $queryRaw para ler da tabela `nfe` porque o modelo Prisma
+ * foi removido do schema. É um script one-time de migração histórica.
+ *
  * Requirements: 4.1, 4.2, 4.3, 4.6, 4.7
  */
 
 import { prisma } from '../../../lib/prisma'
-import type { Nfe, ItemNfe, Empresa } from '@prisma/client'
+import { Decimal } from '@prisma/client/runtime/library'
 
-// === Tipos ===
+// === Tipos (raw SQL - modelos removidos do schema Prisma) ===
 
 export interface MigracaoResult {
   totalMigrados: number
@@ -24,7 +27,55 @@ export interface MigracaoResult {
   duplicados: number
 }
 
-type NfeComItens = Nfe & { itens: ItemNfe[]; empresa: Pick<Empresa, 'cnpj' | 'razaoSocial' | 'uf'> }
+interface NfeRaw {
+  id: string
+  empresa_id: string
+  venda_efetivada_id: string | null
+  numero: number
+  serie: number
+  chave_acesso: string | null
+  xml_enviado: string | null
+  xml_retorno: string | null
+  protocolo: string | null
+  status: string
+  tipo_nfe: string
+  tp_nf: number
+  fin_nfe: number
+  ambiente: number
+  criado_em: Date
+  mapa_ok: boolean
+}
+
+interface ItemNfeRaw {
+  id: string
+  nfe_id: string
+  n_item: number
+  produto_id: string | null
+  c_prod: string
+  x_prod: string
+  ncm: string
+  cfop: string
+  u_com: string
+  q_com: Decimal
+  v_un_com: Decimal
+  v_prod: Decimal
+  v_icms: Decimal
+  v_ipi: Decimal
+  v_pis: Decimal
+  v_cofins: Decimal
+}
+
+interface EmpresaRaw {
+  cnpj: string | null
+  razao_social: string | null
+  uf: string | null
+}
+
+interface NfeComItens {
+  nfe: NfeRaw
+  empresa: EmpresaRaw
+  itens: ItemNfeRaw[]
+}
 
 // === Defaults documentados para registros inconsistentes ===
 
@@ -83,12 +134,12 @@ function mapearStatus(statusLegado: string): string {
  *
  * Requirements: 4.2, 4.3
  */
-export function mapearNfeParaDocFiscal(nfe: NfeComItens) {
-  const empresa = nfe.empresa
+export function mapearNfeParaDocFiscal(data: NfeComItens) {
+  const { nfe, empresa, itens } = data
 
   // Validar e aplicar defaults para campos obrigatórios inconsistentes
   const emitenteCnpj = empresa?.cnpj || DEFAULTS.cnpj
-  const emitenteRazao = empresa?.razaoSocial || DEFAULTS.razaoSocial
+  const emitenteRazao = empresa?.razao_social || DEFAULTS.razaoSocial
   const emitenteUf = empresa?.uf || DEFAULTS.uf
 
   if (!empresa?.cnpj) {
@@ -98,10 +149,10 @@ export function mapearNfeParaDocFiscal(nfe: NfeComItens) {
   }
 
   // tipoOperacao derivado de tpNF (0=Entrada, 1=Saída)
-  const tipoOperacao = nfe.tpNF ?? 1
+  const tipoOperacao = nfe.tp_nf ?? 1
 
   // Finalidade (finNFe: 1=Normal, 2=Complementar, 3=Ajuste, 4=Devolução)
-  const finalidade = nfe.finNFe ?? 1
+  const finalidade = nfe.fin_nfe ?? 1
 
   // Ambiente (1=Produção, 2=Homologação)
   const ambiente = nfe.ambiente ?? 2
@@ -110,38 +161,38 @@ export function mapearNfeParaDocFiscal(nfe: NfeComItens) {
   const status = mapearStatus(nfe.status)
 
   // Data de emissão: usar criadoEm como fallback
-  const dataEmissao = nfe.criadoEm || DEFAULTS.dataEmissao()
+  const dataEmissao = nfe.criado_em || DEFAULTS.dataEmissao()
 
   // Calcular totais a partir dos itens
-  const valorProdutos = nfe.itens.reduce(
-    (acc, item) => acc + Number(item.vProd || 0),
+  const valorProdutos = itens.reduce(
+    (acc, item) => acc + Number(item.v_prod || 0),
     0,
   )
-  const valorIcms = nfe.itens.reduce(
-    (acc, item) => acc + Number(item.vICMS || 0),
+  const valorIcms = itens.reduce(
+    (acc, item) => acc + Number(item.v_icms || 0),
     0,
   )
-  const valorIpi = nfe.itens.reduce(
-    (acc, item) => acc + Number(item.vIPI || 0),
+  const valorIpi = itens.reduce(
+    (acc, item) => acc + Number(item.v_ipi || 0),
     0,
   )
-  const valorPis = nfe.itens.reduce(
-    (acc, item) => acc + Number(item.vPIS || 0),
+  const valorPis = itens.reduce(
+    (acc, item) => acc + Number(item.v_pis || 0),
     0,
   )
-  const valorCofins = nfe.itens.reduce(
-    (acc, item) => acc + Number(item.vCOFINS || 0),
+  const valorCofins = itens.reduce(
+    (acc, item) => acc + Number(item.v_cofins || 0),
     0,
   )
   const valorTotal = valorProdutos
 
   return {
-    empresaId: nfe.empresaId,
+    empresaId: nfe.empresa_id,
     tipo: 'NFE' as const,
     modelo: 55,
     serie: nfe.serie ?? DEFAULTS.serie,
     numero: nfe.numero ?? DEFAULTS.numero,
-    chaveAcesso: nfe.chaveAcesso || null,
+    chaveAcesso: nfe.chave_acesso || null,
     status,
     naturezaOp: DEFAULTS.naturezaOp,
     dataEmissao,
@@ -156,12 +207,12 @@ export function mapearNfeParaDocFiscal(nfe: NfeComItens) {
     valorIpi,
     valorPis,
     valorCofins,
-    xmlEnviado: nfe.xmlEnviado || null,
-    xmlRetorno: nfe.xmlRetorno || null,
+    xmlEnviado: nfe.xml_enviado || null,
+    xmlRetorno: nfe.xml_retorno || null,
     protocolo: nfe.protocolo || null,
     dataAutorizacao: status === 'AUTORIZADO' ? dataEmissao : null,
     ambiente,
-    vendaEfetivadaId: nfe.vendaEfetivadaId || null,
+    vendaEfetivadaId: nfe.venda_efetivada_id || null,
   }
 }
 
@@ -175,23 +226,23 @@ export function mapearNfeParaDocFiscal(nfe: NfeComItens) {
  *
  * Requirements: 4.3
  */
-function mapearItemNfeParaItemDocFiscal(item: ItemNfe) {
+function mapearItemNfeParaItemDocFiscal(item: ItemNfeRaw) {
   return {
-    nItem: item.nItem,
-    produtoId: item.produtoId || null,
-    codigoProd: item.cProd || 'SEM_CODIGO',
-    descricao: item.xProd || 'SEM DESCRICAO',
+    nItem: item.n_item,
+    produtoId: item.produto_id || null,
+    codigoProd: item.c_prod || 'SEM_CODIGO',
+    descricao: item.x_prod || 'SEM DESCRICAO',
     ncm: item.ncm || '00000000',
     cfop: item.cfop || '5102',
-    unidade: item.uCom || 'UN',
-    quantidade: Number(item.qCom || 0),
-    valorUnitario: Number(item.vUnCom || 0),
-    valorTotal: Number(item.vProd || 0),
+    unidade: item.u_com || 'UN',
+    quantidade: Number(item.q_com || 0),
+    valorUnitario: Number(item.v_un_com || 0),
+    valorTotal: Number(item.v_prod || 0),
     // Tributos preservados
-    icmsValor: Number(item.vICMS || 0),
-    ipiValor: Number(item.vIPI || 0),
-    pisValor: Number(item.vPIS || 0),
-    cofinsValor: Number(item.vCOFINS || 0),
+    icmsValor: Number(item.v_icms || 0),
+    ipiValor: Number(item.v_ipi || 0),
+    pisValor: Number(item.v_pis || 0),
+    cofinsValor: Number(item.v_cofins || 0),
   }
 }
 
@@ -204,6 +255,7 @@ function mapearItemNfeParaItemDocFiscal(item: ItemNfe) {
  * - Preserva vendaEfetivadaId
  * - Log warn para registros inconsistentes + defaults documentados
  * - Opcional: filtra por empresaId se fornecido
+ * - Usa $queryRaw porque o modelo Nfe foi removido do schema Prisma
  *
  * Requirements: 4.1, 4.2, 4.3, 4.6, 4.7
  */
@@ -215,22 +267,10 @@ export async function migrarNfeLegado(empresaId?: string): Promise<MigracaoResul
     duplicados: 0,
   }
 
-  // Buscar todos os registros Nfe com itens e dados da empresa
-  const where = empresaId ? { empresaId } : {}
-  const nfes = await prisma.nfe.findMany({
-    where,
-    include: {
-      itens: true,
-      empresa: {
-        select: {
-          cnpj: true,
-          razaoSocial: true,
-          uf: true,
-        },
-      },
-    },
-    orderBy: { criadoEm: 'asc' },
-  })
+  // Buscar todos os registros Nfe via raw SQL (modelo removido do schema)
+  const nfes: NfeRaw[] = empresaId
+    ? await prisma.$queryRaw`SELECT * FROM nfe WHERE empresa_id = ${empresaId} ORDER BY criado_em ASC`
+    : await prisma.$queryRaw`SELECT * FROM nfe ORDER BY criado_em ASC`
 
   console.log(
     `[migrar-nfe-legado] Encontrados ${nfes.length} registros Nfe para migrar${empresaId ? ` (empresa: ${empresaId})` : ''}`,
@@ -238,10 +278,21 @@ export async function migrarNfeLegado(empresaId?: string): Promise<MigracaoResul
 
   for (const nfe of nfes) {
     try {
+      // Buscar empresa dados via raw SQL
+      const empresas: EmpresaRaw[] = await prisma.$queryRaw`
+        SELECT cnpj, razao_social, uf FROM empresa WHERE id = ${nfe.empresa_id} LIMIT 1
+      `
+      const empresa = empresas[0] || { cnpj: null, razao_social: null, uf: null }
+
+      // Buscar itens da Nfe via raw SQL
+      const itens: ItemNfeRaw[] = await prisma.$queryRaw`
+        SELECT * FROM item_nfe WHERE nfe_id = ${nfe.id}
+      `
+
       // Verificar duplicidade por chaveAcesso (idempotência)
-      if (nfe.chaveAcesso) {
+      if (nfe.chave_acesso) {
         const existente = await prisma.documentoFiscal.findFirst({
-          where: { chaveAcesso: nfe.chaveAcesso },
+          where: { chaveAcesso: nfe.chave_acesso },
           select: { id: true },
         })
         if (existente) {
@@ -252,7 +303,7 @@ export async function migrarNfeLegado(empresaId?: string): Promise<MigracaoResul
         // Sem chaveAcesso: verificar por (empresaId, tipo, serie, numero)
         const existente = await prisma.documentoFiscal.findFirst({
           where: {
-            empresaId: nfe.empresaId,
+            empresaId: nfe.empresa_id,
             tipo: 'NFE',
             serie: nfe.serie ?? DEFAULTS.serie,
             numero: nfe.numero ?? DEFAULTS.numero,
@@ -266,8 +317,8 @@ export async function migrarNfeLegado(empresaId?: string): Promise<MigracaoResul
       }
 
       // Mapear dados
-      const docData = mapearNfeParaDocFiscal(nfe as NfeComItens)
-      const itensData = nfe.itens.map(mapearItemNfeParaItemDocFiscal)
+      const docData = mapearNfeParaDocFiscal({ nfe, empresa, itens })
+      const itensData = itens.map(mapearItemNfeParaItemDocFiscal)
 
       // Criar DocumentoFiscal + ItemDocumentoFiscal em transação
       await prisma.$transaction(async (tx) => {
@@ -282,7 +333,7 @@ export async function migrarNfeLegado(empresaId?: string): Promise<MigracaoResul
       })
 
       result.totalMigrados++
-      result.totalItens += nfe.itens.length
+      result.totalItens += itens.length
     } catch (error) {
       const motivo = error instanceof Error ? error.message : 'Erro desconhecido'
       console.warn(

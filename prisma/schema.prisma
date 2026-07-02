@@ -63,7 +63,6 @@ model Empresa {
   estoques                  Estoque[]
   contasPagar               ContaPagar[]
   contasReceber             ContaReceber[]
-  nfes                      Nfe[]
   ctes                      Cte[]
   devolucoes                DevolucaoCompra[]
   transferenciasOrigem      TransferenciaEstoque[]     @relation("TransferenciaOrigem")
@@ -321,7 +320,6 @@ model Produto {
 
   itensPedidoCompra             ItemPedidoCompra[]
   itensPedidoVenda              ItemPedidoVenda[]
-  itensNfe                      ItemNfe[]
   itensDevolucao                ItemDevolucaoCompra[]
   itensTransferencia            ItemTransferencia[]
   estoques                      Estoque[]
@@ -555,7 +553,6 @@ model VendaEfetivada {
   criadoEm       DateTime    @default(now()) @map("criado_em")
 
   contasReceber ContaReceber[]
-  nfe           Nfe?
   documentosFiscais DocumentoFiscal[]
 
   @@map("venda_efetivada")
@@ -610,57 +607,8 @@ model ContaReceber {
 }
 
 // ============================================================================
-// FISCAL - NF-e e CT-e
+// FISCAL - CT-e
 // ============================================================================
-
-model Nfe {
-  id               String          @id @default(uuid())
-  empresaId        String          @map("empresa_id")
-  empresa          Empresa         @relation(fields: [empresaId], references: [id])
-  vendaEfetivadaId String?         @unique @map("venda_efetivada_id")
-  vendaEfetivada   VendaEfetivada? @relation(fields: [vendaEfetivadaId], references: [id])
-  numero           Int
-  serie            Int
-  chaveAcesso      String?         @map("chave_acesso") @db.VarChar(44)
-  xmlEnviado       String?         @map("xml_enviado") @db.Text
-  xmlRetorno       String?         @map("xml_retorno") @db.Text
-  protocolo        String?         @db.VarChar(20)
-  status           String          @default("PENDENTE") @db.VarChar(20)
-  tipoNfe          String          @default("SAIDA") @map("tipo_nfe") @db.VarChar(20)
-  tpNF             Int             @default(1) @map("tp_nf")
-  finNFe           Int             @default(1) @map("fin_nfe")
-  ambiente         Int             @default(2)
-  criadoEm         DateTime        @default(now()) @map("criado_em")
-  mapaOk           Boolean         @default(false) @map("mapa_ok")
-
-  itens ItemNfe[]
-
-  @@unique([empresaId, numero, serie])
-  @@map("nfe")
-}
-
-model ItemNfe {
-  id        String   @id @default(uuid())
-  nfeId     String   @map("nfe_id")
-  nfe       Nfe      @relation(fields: [nfeId], references: [id], onDelete: Cascade)
-  nItem     Int      @map("n_item")
-  produtoId String?  @map("produto_id")
-  produto   Produto? @relation(fields: [produtoId], references: [id])
-  cProd     String   @map("c_prod") @db.VarChar(60)
-  xProd     String   @map("x_prod") @db.VarChar(120)
-  ncm       String   @db.VarChar(8)
-  cfop      String   @db.VarChar(4)
-  uCom      String   @map("u_com") @db.VarChar(6)
-  qCom      Decimal  @map("q_com") @db.Decimal(12, 4)
-  vUnCom    Decimal  @map("v_un_com") @db.Decimal(12, 4)
-  vProd     Decimal  @map("v_prod") @db.Decimal(12, 2)
-  vICMS     Decimal  @default(0) @map("v_icms") @db.Decimal(12, 2)
-  vIPI      Decimal  @default(0) @map("v_ipi") @db.Decimal(12, 2)
-  vPIS      Decimal  @default(0) @map("v_pis") @db.Decimal(12, 2)
-  vCOFINS   Decimal  @default(0) @map("v_cofins") @db.Decimal(12, 2)
-
-  @@map("item_nfe")
-}
 
 model Cte {
   id               String   @id @default(uuid())

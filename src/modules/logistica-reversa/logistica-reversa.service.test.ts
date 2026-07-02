@@ -16,7 +16,7 @@ describe('LogisticaReversaService - gerarNotaCredito', () => {
 
   beforeEach(() => {
     mockTx = {
-      nfe: {
+      documentoFiscal: {
         findUnique: vi.fn(),
       },
       contaReceber: {
@@ -33,12 +33,12 @@ describe('LogisticaReversaService - gerarNotaCredito', () => {
       mockTx,
     )
 
-    expect(mockTx.nfe.findUnique).not.toHaveBeenCalled()
+    expect(mockTx.documentoFiscal.findUnique).not.toHaveBeenCalled()
     expect(mockTx.contaReceber.create).not.toHaveBeenCalled()
   })
 
   it('should do nothing when NF-e is not found', async () => {
-    mockTx.nfe.findUnique.mockResolvedValue(null)
+    mockTx.documentoFiscal.findUnique.mockResolvedValue(null)
 
     await gerarNotaCredito(
       { id: 'ra-1', numero: 'RA-2025-000001', clienteId: 'cli-1', nfeOrigemId: 'nfe-1' },
@@ -51,11 +51,11 @@ describe('LogisticaReversaService - gerarNotaCredito', () => {
   })
 
   it('should calculate credit based on NF-e unit price and create ContaReceber with negative value', async () => {
-    mockTx.nfe.findUnique.mockResolvedValue({
+    mockTx.documentoFiscal.findUnique.mockResolvedValue({
       id: 'nfe-1',
       itens: [
-        { produtoId: 'prod-1', vProd: '100.00', qCom: '10' }, // unit price = 10.00
-        { produtoId: 'prod-2', vProd: '50.00', qCom: '5' },   // unit price = 10.00
+        { produtoId: 'prod-1', valorTotal: '100.00', quantidade: '10' }, // unit price = 10.00
+        { produtoId: 'prod-2', valorTotal: '50.00', quantidade: '5' },   // unit price = 10.00
       ],
     })
 
@@ -83,10 +83,10 @@ describe('LogisticaReversaService - gerarNotaCredito', () => {
   })
 
   it('should skip products not found in NF-e items', async () => {
-    mockTx.nfe.findUnique.mockResolvedValue({
+    mockTx.documentoFiscal.findUnique.mockResolvedValue({
       id: 'nfe-1',
       itens: [
-        { produtoId: 'prod-1', vProd: '200.00', qCom: '10' }, // unit price = 20.00
+        { produtoId: 'prod-1', valorTotal: '200.00', quantidade: '10' }, // unit price = 20.00
       ],
     })
 
@@ -108,10 +108,10 @@ describe('LogisticaReversaService - gerarNotaCredito', () => {
   })
 
   it('should not create credit note when calculated value is zero', async () => {
-    mockTx.nfe.findUnique.mockResolvedValue({
+    mockTx.documentoFiscal.findUnique.mockResolvedValue({
       id: 'nfe-1',
       itens: [
-        { produtoId: 'prod-1', vProd: '0', qCom: '10' }, // unit price = 0
+        { produtoId: 'prod-1', valorTotal: '0', quantidade: '10' }, // unit price = 0
       ],
     })
 
@@ -126,10 +126,10 @@ describe('LogisticaReversaService - gerarNotaCredito', () => {
   })
 
   it('should round credit value to 2 decimal places', async () => {
-    mockTx.nfe.findUnique.mockResolvedValue({
+    mockTx.documentoFiscal.findUnique.mockResolvedValue({
       id: 'nfe-1',
       itens: [
-        { produtoId: 'prod-1', vProd: '10.00', qCom: '3' }, // unit price = 3.333...
+        { produtoId: 'prod-1', valorTotal: '10.00', quantidade: '3' }, // unit price = 3.333...
       ],
     })
 
