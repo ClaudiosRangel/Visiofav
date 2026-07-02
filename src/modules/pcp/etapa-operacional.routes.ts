@@ -693,7 +693,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             numero: true, produtoId: true, quantidade: true, unidadeMedida: true,
             prioridade: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true,
             clienteId: true, observacoes: true, referenciaExterna: true,
-            itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA'] } } },
+            itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ'] } } },
           },
         },
         centroProducao: { select: { id: true, codigo: true, descricao: true, tipoMaquina: true } },
@@ -746,6 +746,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // Extrai informações de Pantone dos itens de tinta
     function extrairCores(itens: Array<{ descricaoProduto: string; tipoMaterial: string | null }>, observacoes: string | null) {
       const tintas = itens.filter(i => i.tipoMaterial === 'TINTA')
+      const vernizes = itens.filter(i => i.tipoMaterial === 'VERNIZ')
       const pantones: string[] = []
       let escala: string | null = null
 
@@ -780,7 +781,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       if (!qtdCores && tintas.length > 0) {
         // Conta: escala (4 cores CMYK) + pantones = total
         const totalCores = (escala ? 4 : 0) + pantones.length
-        qtdCores = `${totalCores}X0`
+        // Detectar verniz: cada item de verniz adiciona "+V"
+        const sufixoVerniz = vernizes.length > 0 ? ' ' + Array(vernizes.length).fill('+V').join('') : ''
+        qtdCores = `${totalCores}X0${sufixoVerniz}`
+      }
+      // Fallback extra: extrair padrão NxN (+V...) das observações gerais (OPs importadas antes da tag [Cores])
+      // Padrão de cores é sempre dígito pequeno x dígito (ex: "5x0", "6x0 +V+V") — diferente de formato (690 x 660)
+      if (!qtdCores && observacoes) {
+        const matchCoresTexto = observacoes.match(/\b(\d)\s*x\s*(\d)\s*(\+V[^\n]*)?/i)
+        if (matchCoresTexto) {
+          const coresStr = `${matchCoresTexto[1]}X${matchCoresTexto[2]}${matchCoresTexto[3] ? ' ' + matchCoresTexto[3].trim().toUpperCase() : ''}`
+          qtdCores = coresStr
+        }
       }
 
       return {
