@@ -341,7 +341,8 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
         nomeParaTipo = matchCorInline[1].trim()
         const corInfo = matchCorInline[2].trim()
         percentual = parseFloat(matchCorInline[3])
-        if (/^CMYK$/i.test(corInfo)) {
+        // Detectar CMYK/CYMK (variações comuns) ou nome "Escala"
+        if (/^C[YM][YM]K$/i.test(corInfo) || /^escala$/i.test(nomeParaTipo)) {
           tipoCor = 'CMYK'
         } else {
           tipoCor = 'PANTONE'
@@ -440,7 +441,7 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
     let descricaoFinal = nome
 
     if (detalhe) {
-      const matchCmyk = detalhe.match(/\(CMYK\)\s*\((\d+)%\)/i)
+      const matchCmyk = detalhe.match(/\(C[YM][YM]K\)\s*\((\d+)%\)/i)
       const matchPantone = detalhe.match(/\(([^)]+)\)\s*\((\d+)%\)/i)
       if (matchCmyk) {
         tipoCor = 'CMYK'

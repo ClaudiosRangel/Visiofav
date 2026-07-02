@@ -747,20 +747,29 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     function extrairCores(itens: Array<{ descricaoProduto: string; tipoMaterial: string | null }>, observacoes: string | null) {
       const tintas = itens.filter(i => i.tipoMaterial === 'TINTA')
       const pantones: string[] = []
+      let escala: string | null = null
 
       for (const tinta of tintas) {
         const desc = tinta.descricaoProduto
-        // Extrair nome da cor do formato: "Pantone 01 (VERDE 7476C) (6%)" ou "Escala (CMYK) (60%)"
-        const matchPantone = desc.match(/\(([^)]+)\)\s*\(\d+%\)/)
-        if (matchPantone) {
-          const corInfo = matchPantone[1].trim()
-          if (!/^CMYK$/i.test(corInfo)) {
+        // Detectar se é item de Escala pelo nome (começa com "Escala" ou contém "Escala")
+        const isEscala = /^escala\b/i.test(desc.trim())
+        // Extrair nome da cor do formato: "Pantone 01 (CW0122 - ROSA) (35%)" ou "Escala (CYMK) (65%)"
+        const matchCor = desc.match(/\(([^)]+)\)\s*\(\d+%\)/)
+        if (matchCor) {
+          const corInfo = matchCor[1].trim()
+          // Filtrar Escala/CMYK/CYMK — variações comuns de "CMYK" (CYMK, CMYK, C+M+Y+K, etc.)
+          if (isEscala || /^C[YM][YM]K$/i.test(corInfo) || /^CMYK$/i.test(corInfo)) {
+            escala = corInfo
+          } else {
             pantones.push(corInfo)
           }
+        } else if (isEscala) {
+          // Escala sem formato de cor entre parênteses — ignorar
+          escala = 'CMYK'
         }
       }
 
-      // Qtd Cores: prioriza tag [Cores] das observações (ex: "6x0"), senão conta itens TINTA
+      // Qtd Cores: prioriza tag [Cores] das observações (ex: "5x0 +V+V"), senão calcula
       let qtdCores: string | null = null
       if (observacoes) {
         const matchCoresObs = observacoes.match(/\[Cores\]\s*(.+?)(?:\n|$)/)
@@ -769,7 +778,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         }
       }
       if (!qtdCores && tintas.length > 0) {
-        qtdCores = `${tintas.length}X0`
+        // Conta: escala (4 cores CMYK) + pantones = total
+        const totalCores = (escala ? 4 : 0) + pantones.length
+        qtdCores = `${totalCores}X0`
       }
 
       return {
