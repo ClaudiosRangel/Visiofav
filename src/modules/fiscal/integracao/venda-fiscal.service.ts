@@ -2,12 +2,13 @@
  * Serviço de Integração Vendas → Fiscal
  * Responsável por montar DadosNFe a partir de um pedido de venda e emitir via nfeEmissaoService.
  *
- * Requirements: 2.1, 2.2
+ * Requirements: 2.1, 2.2, 7.1, 7.2, 7.3, 7.4, 7.5, 2.3, 2.7
  */
 
 import { prisma } from '../../../lib/prisma'
 import { nfeEmissaoService, type EmissaoNFeResult } from '../emissor-dfe/nfe/nfe-emissao.service'
 import { UF_CODES, type DadosNFe, type DadosItemNFe, type DadosEmitenteNFe, type DadosDestinatarioNFe } from '../emissor-dfe/nfe/nfe-xml-builder'
+import type { DadosTransporte } from '../emissor-dfe/tipos'
 
 // === Tipos ===
 
@@ -16,6 +17,20 @@ export interface PedidoVendaComItens {
   numero: number
   clienteId: string
   valorTotal: number | { toNumber(): number }
+  modalidadeFrete?: string | null
+  observacaoNota?: string | null
+  numeroPedidoCliente?: string | null
+  enderecoEntrega?: any | null
+  transportadora?: {
+    cnpj: string | null
+    razaoSocial: string | null
+    inscEstadual?: string | null
+    logradouro?: string | null
+    numero?: string | null
+    bairro?: string | null
+    cidade?: string | null
+    uf?: string | null
+  } | null
   itens: ItemPedidoVendaComProduto[]
 }
 
@@ -86,7 +101,7 @@ function gerarCNF(): string {
  * Monta DadosNFe a partir de um pedido de venda para emissão de NF-e.
  * Função pura — não faz I/O.
  *
- * Requirements: 2.2
+ * Requirements: 2.2, 7.1, 7.2, 7.3, 7.4, 2.3
  */
 export function montarDadosNFe(params: {
   pedidoVenda: PedidoVendaComItens
@@ -119,26 +134,47 @@ export function montarDadosNFe(params: {
     },
   }
 
+  // Determinar endereço do destinatário: usar enderecoEntrega se fornecido, senão endereço cadastral
+  const enderecoEntrega = pedidoVenda.enderecoEntrega
+  const destUf = enderecoEntrega?.uf || ufDestinatario
+  const isInterestadualDest = ufEmitente !== destUf
+
   const destinatario: DadosDestinatarioNFe = {
     cpfCnpj: cliente.cpfCnpj,
     razaoSocial: cliente.razaoSocial,
-    uf: ufDestinatario,
+    uf: destUf,
     ie: cliente.inscEstadual || undefined,
     indIEDest: cliente.inscEstadual ? 1 : 9,
-    endereco: {
-      logradouro: cliente.logradouro || '',
-      numero: cliente.numero || '',
-      complemento: cliente.complemento || undefined,
-      bairro: cliente.bairro || '',
-      codigoMunicipio: '',
-      municipio: cliente.cidade || '',
-      uf: ufDestinatario,
-      cep: cliente.cep || '',
-    },
+    endereco: enderecoEntrega
+      ? {
+          logradouro: enderecoEntrega.logradouro || '',
+          numero: enderecoEntrega.numero || '',
+          complemento: enderecoEntrega.complemento || undefined,
+          bairro: enderecoEntrega.bairro || '',
+          codigoMunicipio: enderecoEntrega.codigoIbge || '',
+          municipio: enderecoEntrega.cidade || '',
+          uf: enderecoEntrega.uf || '',
+          cep: enderecoEntrega.cep || '',
+        }
+      : {
+          logradouro: cliente.logradouro || '',
+          numero: cliente.numero || '',
+          complemento: cliente.complemento || undefined,
+          bairro: cliente.bairro || '',
+          codigoMunicipio: '',
+          municipio: cliente.cidade || '',
+          uf: ufDestinatario,
+          cep: cliente.cep || '',
+        },
   }
 
+  // xPed: truncar numeroPedidoCliente em 15 chars
+  const xPed = pedidoVenda.numeroPedidoCliente
+    ? pedidoVenda.numeroPedidoCliente.substring(0, 15)
+    : undefined
+
   const itens: DadosItemNFe[] = pedidoVenda.itens.map((item, index) => {
-    const cfop = isInterestadual
+    const cfop = (isInterestadualDest || isInterestadual)
       ? (item.produto.cfopInterest || '6102')
       : (item.produto.cfopEstadual || '5102')
 
@@ -152,10 +188,40 @@ export function montarDadosNFe(params: {
       quantidade: toNumber(item.quantidade),
       valorUnitario: toNumber(item.precoFinal),
       valorTotal: toNumber(item.valorTotal),
+      xPed,
     }
   })
 
   const cUF = UF_CODES[ufEmitente] || 35
+
+  // Montar grupo transporte com dados da transportadora
+  const modalidadeFreteNum = pedidoVenda.modalidadeFrete
+    ? parseInt(pedidoVenda.modalidadeFrete, 10)
+    : 9
+
+  const transporte: DadosTransporte = {
+    modalidadeFrete: isNaN(modalidadeFreteNum) ? 9 : modalidadeFreteNum,
+  }
+
+  if (pedidoVenda.transportadora?.cnpj) {
+    transporte.transportadoraCnpj = pedidoVenda.transportadora.cnpj
+    transporte.transportadoraRazao = pedidoVenda.transportadora.razaoSocial || undefined
+    transporte.transportadoraIE = pedidoVenda.transportadora.inscEstadual || undefined
+
+    // Montar endereço completo da transportadora
+    const transp = pedidoVenda.transportadora
+    const endPartes = [transp.logradouro, transp.numero].filter(Boolean)
+    if (endPartes.length > 0) {
+      transporte.transportadoraEndereco = endPartes.join(', ')
+    }
+    transporte.transportadoraMunicipio = transp.cidade || undefined
+    transporte.transportadoraUF = transp.uf || undefined
+  }
+
+  // infCpl: observacaoNota truncada em 5000 chars
+  const informacoesAdicionais = pedidoVenda.observacaoNota
+    ? pedidoVenda.observacaoNota.substring(0, 5000)
+    : undefined
 
   const dadosNFe: DadosNFe = {
     modelo: 55,
@@ -174,6 +240,8 @@ export function montarDadosNFe(params: {
     emitente,
     destinatario,
     itens,
+    transporte,
+    informacoesAdicionais,
   }
 
   return dadosNFe
@@ -183,13 +251,30 @@ export function montarDadosNFe(params: {
  * Emite NF-e para uma venda, buscando empresa e cliente do banco
  * e delegando para nfeEmissaoService.emitir().
  *
- * Requirements: 2.1
+ * Requirements: 2.1, 7.5, 2.7
  */
 export async function emitirParaVenda(params: {
   empresaId: string
   pedidoVenda: PedidoVendaComItens
 }): Promise<EmissaoNFeResult> {
   const { empresaId, pedidoVenda } = params
+
+  // Validar transportadora: deve ter CNPJ e razão social se informada
+  if (pedidoVenda.transportadora) {
+    const camposIncompletos: string[] = []
+    if (!pedidoVenda.transportadora.cnpj) {
+      camposIncompletos.push('cnpj')
+    }
+    if (!pedidoVenda.transportadora.razaoSocial) {
+      camposIncompletos.push('razaoSocial')
+    }
+    if (camposIncompletos.length > 0) {
+      throw Object.assign(
+        new Error('Transportadora com dados incompletos para emissão da NF-e'),
+        { statusCode: 422, camposIncompletos }
+      )
+    }
+  }
 
   // Buscar empresa com dados de endereço
   const empresa = await prisma.empresa.findUniqueOrThrow({
@@ -231,6 +316,17 @@ export async function emitirParaVenda(params: {
       cep: true,
     },
   })
+
+  // Validar que cliente possui endereço cadastral quando enderecoEntrega não informado
+  if (!pedidoVenda.enderecoEntrega) {
+    const temEndereco = cliente.logradouro && cliente.cidade && cliente.uf && cliente.cep
+    if (!temEndereco) {
+      throw Object.assign(
+        new Error('Cliente não possui endereço cadastrado para emissão da NF-e'),
+        { statusCode: 422 }
+      )
+    }
+  }
 
   // Montar dados da NF-e
   const dadosNFe = montarDadosNFe({ pedidoVenda, empresa, cliente })

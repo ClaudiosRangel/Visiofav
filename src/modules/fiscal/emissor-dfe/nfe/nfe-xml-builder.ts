@@ -310,7 +310,7 @@ ${item.cest ? `<CEST>${item.cest}</CEST>\n` : ''}<CFOP>${item.cfop}</CFOP>
 <qTrib>${fmtDec(item.quantidade, 4)}</qTrib>
 <vUnTrib>${fmtDec(item.valorUnitario, 4)}</vUnTrib>
 ${item.valorDesconto ? `<vDesc>${fmtDec(item.valorDesconto)}</vDesc>\n` : ''}<indTot>1</indTot>
-</prod>
+${item.xPed ? `<xPed>${escXml(item.xPed)}</xPed>\n` : ''}</prod>
 ${buildImposto(item)}
 </det>`
   }).join('\n')
@@ -460,6 +460,18 @@ function buildTransp(transp: DadosTransporte | undefined): string {
     xml += `<CNPJ>${transp.transportadoraCnpj}</CNPJ>\n`
     if (transp.transportadoraRazao) {
       xml += `<xNome>${escXml(transp.transportadoraRazao)}</xNome>\n`
+    }
+    if (transp.transportadoraIE) {
+      xml += `<IE>${transp.transportadoraIE}</IE>\n`
+    }
+    if (transp.transportadoraEndereco) {
+      xml += `<xEnder>${escXml(transp.transportadoraEndereco)}</xEnder>\n`
+    }
+    if (transp.transportadoraMunicipio) {
+      xml += `<xMun>${escXml(transp.transportadoraMunicipio)}</xMun>\n`
+    }
+    if (transp.transportadoraUF) {
+      xml += `<UF>${transp.transportadoraUF}</UF>\n`
     }
     xml += `</transporta>\n`
   }

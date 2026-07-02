@@ -280,6 +280,8 @@ model Transportadora {
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
+  pedidosVenda PedidoVenda[]
+
   @@unique([empresaId, cnpj])
   @@map("transportadora")
 }
@@ -516,8 +518,27 @@ model PedidoVenda {
   criadoEm           DateTime    @default(now()) @map("criado_em")
   atualizadoEm       DateTime    @updatedAt @map("atualizado_em")
 
-  itens          ItemPedidoVenda[]
-  vendaEfetivada VendaEfetivada?
+  // --- Novos campos de cabeçalho ---
+  dataEntrega           DateTime?  @map("data_entrega")
+  observacao            String?    @db.Text
+  observacaoNota        String?    @map("observacao_nota") @db.Text
+  transportadoraId      String?    @map("transportadora_id")
+  transportadora        Transportadora? @relation(fields: [transportadoraId], references: [id])
+  modalidadeFrete       String?    @map("modalidade_frete") @db.VarChar(1)
+  origemPedido          String     @default("MANUAL") @map("origem_pedido") @db.VarChar(20)
+  prioridade            String     @default("NORMAL") @db.VarChar(10)
+  dataValidade          DateTime?  @map("data_validade")
+  numeroPedidoCliente   String?    @map("numero_pedido_cliente") @db.VarChar(60)
+  tipoDesconto          String?    @map("tipo_desconto") @db.VarChar(15)
+  descontoGeral         Decimal    @default(0) @map("desconto_geral") @db.Decimal(12, 2)
+  acrescimoGeral        Decimal    @default(0) @map("acrescimo_geral") @db.Decimal(12, 2)
+  tipoAcrescimo         String?    @map("tipo_acrescimo") @db.VarChar(20)
+  enderecoEntrega       Json?      @map("endereco_entrega")
+  orcamentoOrigemId     String?    @map("orcamento_origem_id")
+  dataLimiteAtendimento DateTime?  @map("data_limite_atendimento")
+
+  itens            ItemPedidoVenda[]
+  vendasEfetivadas VendaEfetivada[]
 
   @@unique([empresaId, numero])
   @@map("pedido_venda")
@@ -536,13 +557,23 @@ model ItemPedidoVenda {
   precoFinal    Decimal     @map("preco_final") @db.Decimal(12, 4)
   valorTotal    Decimal     @map("valor_total") @db.Decimal(12, 2)
 
+  // --- Novos campos ---
+  descontoValor      Decimal   @default(0) @map("desconto_valor") @db.Decimal(12, 4)
+  frete              Decimal   @default(0) @db.Decimal(12, 2)
+  seguro             Decimal   @default(0) @db.Decimal(12, 2)
+  outrasDespesas     Decimal   @default(0) @map("outras_despesas") @db.Decimal(12, 2)
+  observacaoItem     String?   @map("observacao_item") @db.Text
+  dataEntregaItem    DateTime? @map("data_entrega_item")
+  comissaoPercItem   Decimal   @default(0) @map("comissao_perc_item") @db.Decimal(5, 2)
+  quantidadeFaturada Decimal   @default(0) @map("quantidade_faturada") @db.Decimal(12, 4)
+
   @@map("item_pedido_venda")
 }
 
 model VendaEfetivada {
   id             String      @id @default(uuid())
   empresaId      String      @map("empresa_id")
-  pedidoVendaId  String      @unique @map("pedido_venda_id")
+  pedidoVendaId  String      @map("pedido_venda_id")
   pedidoVenda    PedidoVenda @relation(fields: [pedidoVendaId], references: [id])
   dataEfetivacao DateTime    @default(now()) @map("data_efetivacao")
   valorTotal     Decimal     @map("valor_total") @db.Decimal(12, 2)

@@ -78,12 +78,18 @@ export interface DadosItemDocumento {
   valorUnitario: number
   valorTotal: number
   valorDesconto?: number
+  /** Número do pedido do cliente (xPed) - truncado em 15 chars */
+  xPed?: string
 }
 
 export interface DadosTransporte {
   modalidadeFrete: number
   transportadoraCnpj?: string
   transportadoraRazao?: string
+  transportadoraIE?: string
+  transportadoraEndereco?: string
+  transportadoraMunicipio?: string
+  transportadoraUF?: string
   volumes?: Array<{
     quantidade: number
     especie?: string
