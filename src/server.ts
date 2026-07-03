@@ -63,6 +63,7 @@ import { bonificacaoRoutes } from './modules/bonificacao/bonificacao.routes'
 import { vendaEncomendaRoutes } from './modules/venda-encomenda/venda-encomenda.routes'
 import { vendaConsignadaRoutes } from './modules/venda-consignada/venda-consignada.routes'
 import { integracaoEcommerceRoutes } from './modules/integracao-ecommerce/integracao-ecommerce.routes'
+import { pdvRoutes } from './modules/pdv/pdv.routes'
 
 // Módulo Agenda unificado (coexiste com agenda-wms e agenda-doca)
 import { agendaRoutes } from './modules/agenda/agenda.routes'
@@ -263,6 +264,9 @@ async function bootstrap() {
   await app.register(vendaEncomendaRoutes, { prefix: '/api/vendas-encomenda' })
   await app.register(vendaConsignadaRoutes, { prefix: '/api/vendas-consignadas' })
   await app.register(integracaoEcommerceRoutes, { prefix: '/api/integracao-ecommerce' })
+
+  // Módulo PDV — Ponto de Venda
+  await app.register(pdvRoutes, { prefix: '/api/pdv' })
 
   // Módulo Financeiro
   await app.register(contaPagarRoutes, { prefix: '/api/contas-pagar' })

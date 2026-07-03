@@ -112,6 +112,10 @@ model Empresa {
   integracoesEcommerce       IntegracaoEcommerce[]
   pedidosEcommerce           PedidoEcommerce[]
 
+  // Módulo PDV
+  caixasPdv                  CaixaPdv[]
+  vendasPdv                  VendaPdv[]
+
   @@map("empresa")
 }
 
@@ -350,6 +354,7 @@ model Produto {
   itensSolicitacaoTransferencia ItemSolicitacaoTransferencia[]
   mercadoriasTransito           MercadoriaTransito[]
   itensDocumentoFiscal          ItemDocumentoFiscal[]
+  itensVendaPdv                 ItemVendaPdv[]
 
   @@unique([empresaId, codigo])
   @@map("produto")
@@ -4028,4 +4033,98 @@ model AuditoriaFiscal {
   @@index([empresaId, timestamp])
   @@index([entidade, entidadeId])
   @@map("auditoria_fiscal")
+}
+
+
+// ============================================================================
+// PDV — PONTO DE VENDA
+// ============================================================================
+
+model CaixaPdv {
+  id              String    @id @default(uuid())
+  empresaId       String    @map("empresa_id")
+  empresa         Empresa   @relation(fields: [empresaId], references: [id])
+  numero          Int       // Número do caixa (1, 2, 3...)
+  operadorId      String    @map("operador_id")
+  status          String    @default("ABERTO") @db.VarChar(20) // ABERTO, FECHADO
+  valorAbertura   Decimal   @map("valor_abertura") @db.Decimal(12, 2)
+  valorFechamento Decimal?  @map("valor_fechamento") @db.Decimal(12, 2)
+  valorSistema    Decimal   @default(0) @map("valor_sistema") @db.Decimal(12, 2) // calculado
+  diferenca       Decimal?  @db.Decimal(12, 2) // fechamento - sistema
+  abertoEm        DateTime  @default(now()) @map("aberto_em")
+  fechadoEm       DateTime? @map("fechado_em")
+  observacao      String?   @db.Text
+
+  movimentacoes MovimentacaoCaixa[]
+  vendasPdv     VendaPdv[]
+
+  @@map("caixa_pdv")
+}
+
+model MovimentacaoCaixa {
+  id          String   @id @default(uuid())
+  caixaId     String   @map("caixa_id")
+  caixa       CaixaPdv @relation(fields: [caixaId], references: [id])
+  tipo        String   @db.VarChar(20) // SANGRIA, SUPRIMENTO
+  valor       Decimal  @db.Decimal(12, 2)
+  motivo      String   @db.VarChar(200)
+  operadorId  String   @map("operador_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  @@map("movimentacao_caixa")
+}
+
+model VendaPdv {
+  id                String    @id @default(uuid())
+  empresaId         String    @map("empresa_id")
+  empresa           Empresa   @relation(fields: [empresaId], references: [id])
+  caixaId           String    @map("caixa_id")
+  caixa             CaixaPdv  @relation(fields: [caixaId], references: [id])
+  numero            Int
+  clienteId         String?   @map("cliente_id")
+  cpfCnpjConsumidor String?   @map("cpf_cnpj_consumidor") @db.VarChar(14)
+  subtotal          Decimal   @default(0) @db.Decimal(12, 2)
+  desconto          Decimal   @default(0) @db.Decimal(12, 2)
+  acrescimo         Decimal   @default(0) @db.Decimal(12, 2)
+  valorTotal        Decimal   @default(0) @map("valor_total") @db.Decimal(12, 2)
+  status            String    @default("EM_ANDAMENTO") @db.VarChar(20) // EM_ANDAMENTO, FINALIZADA, CANCELADA
+  nfceChave         String?   @map("nfce_chave") @db.VarChar(44)
+  nfceNumero        Int?      @map("nfce_numero")
+  troco             Decimal   @default(0) @db.Decimal(12, 2)
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  finalizadaEm      DateTime? @map("finalizada_em")
+
+  itens       ItemVendaPdv[]
+  pagamentos  PagamentoPdv[]
+
+  @@unique([empresaId, numero])
+  @@map("venda_pdv")
+}
+
+model ItemVendaPdv {
+  id            String   @id @default(uuid())
+  vendaPdvId    String   @map("venda_pdv_id")
+  vendaPdv      VendaPdv @relation(fields: [vendaPdvId], references: [id], onDelete: Cascade)
+  produtoId     String   @map("produto_id")
+  produto       Produto  @relation(fields: [produtoId], references: [id])
+  quantidade    Decimal  @db.Decimal(12, 4)
+  precoUnitario Decimal  @map("preco_unitario") @db.Decimal(12, 4)
+  desconto      Decimal  @default(0) @db.Decimal(12, 2)
+  valorTotal    Decimal  @map("valor_total") @db.Decimal(12, 2)
+  cancelado     Boolean  @default(false)
+
+  @@map("item_venda_pdv")
+}
+
+model PagamentoPdv {
+  id          String   @id @default(uuid())
+  vendaPdvId  String   @map("venda_pdv_id")
+  vendaPdv    VendaPdv @relation(fields: [vendaPdvId], references: [id], onDelete: Cascade)
+  forma       String   @db.VarChar(20) // DINHEIRO, CARTAO_DEBITO, CARTAO_CREDITO, PIX, VALE
+  valor       Decimal  @db.Decimal(12, 2)
+  bandeira    String?  @db.VarChar(30) // VISA, MASTER, ELO, etc.
+  nsu         String?  @db.VarChar(20) // Número sequencial único da operação
+  autorizacao String?  @db.VarChar(20)
+
+  @@map("pagamento_pdv")
 }
