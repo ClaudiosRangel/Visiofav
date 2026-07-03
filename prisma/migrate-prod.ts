@@ -648,6 +648,342 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "pdf_data" BYTEA`)
   console.log('✅ OrdemProducao: campo pdf_data (BYTEA) adicionado')
 
+  // =========================================================================
+  // PDV — Ponto de Venda
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "caixa_pdv" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "operador_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ABERTO',
+      "valor_abertura" DECIMAL(12,2) NOT NULL,
+      "valor_fechamento" DECIMAL(12,2),
+      "valor_sistema" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "diferenca" DECIMAL(12,2),
+      "aberto_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "fechado_em" TIMESTAMP(3),
+      "observacao" TEXT,
+      CONSTRAINT "caixa_pdv_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "caixa_pdv_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "movimentacao_caixa" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "caixa_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "valor" DECIMAL(12,2) NOT NULL,
+      "motivo" VARCHAR(200) NOT NULL,
+      "operador_id" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "movimentacao_caixa_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "movimentacao_caixa_caixa_id_fkey" FOREIGN KEY ("caixa_id") REFERENCES "caixa_pdv"("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "venda_pdv" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "caixa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "cliente_id" TEXT,
+      "cpf_cnpj_consumidor" VARCHAR(14),
+      "subtotal" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "desconto" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "acrescimo" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "valor_total" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'EM_ANDAMENTO',
+      "nfce_chave" VARCHAR(44),
+      "nfce_numero" INTEGER,
+      "troco" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "finalizada_em" TIMESTAMP(3),
+      CONSTRAINT "venda_pdv_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "venda_pdv_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id"),
+      CONSTRAINT "venda_pdv_caixa_id_fkey" FOREIGN KEY ("caixa_id") REFERENCES "caixa_pdv"("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "venda_pdv_empresa_id_numero_key" ON "venda_pdv"("empresa_id", "numero")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_venda_pdv" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "venda_pdv_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" DECIMAL(12,4) NOT NULL,
+      "preco_unitario" DECIMAL(12,4) NOT NULL,
+      "desconto" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "valor_total" DECIMAL(12,2) NOT NULL,
+      "cancelado" BOOLEAN NOT NULL DEFAULT false,
+      CONSTRAINT "item_venda_pdv_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "item_venda_pdv_venda_pdv_id_fkey" FOREIGN KEY ("venda_pdv_id") REFERENCES "venda_pdv"("id") ON DELETE CASCADE,
+      CONSTRAINT "item_venda_pdv_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pagamento_pdv" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "venda_pdv_id" TEXT NOT NULL,
+      "forma" VARCHAR(20) NOT NULL,
+      "valor" DECIMAL(12,2) NOT NULL,
+      "bandeira" VARCHAR(30),
+      "nsu" VARCHAR(20),
+      "autorizacao" VARCHAR(20),
+      CONSTRAINT "pagamento_pdv_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "pagamento_pdv_venda_pdv_id_fkey" FOREIGN KEY ("venda_pdv_id") REFERENCES "venda_pdv"("id") ON DELETE CASCADE
+    )
+  `)
+  console.log('✅ PDV: tabelas caixa_pdv, movimentacao_caixa, venda_pdv, item_venda_pdv, pagamento_pdv criadas')
+
+  // =========================================================================
+  // Vendas Avançadas — Campanhas, Comissão, Workflow, Metas, Bonificação, Encomenda, Consignação, E-commerce, Orçamento, Devolução
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "orcamento" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "cliente_id" TEXT NOT NULL,
+      "vendedor_id" TEXT,
+      "tabela_preco_id" TEXT,
+      "condicao_pag_id" TEXT,
+      "valor_total" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ABERTO',
+      "validade_ate" TIMESTAMP(3) NOT NULL,
+      "observacao" TEXT,
+      "observacao_interna" TEXT,
+      "contato_nome" VARCHAR(100),
+      "contato_email" VARCHAR(200),
+      "contato_telefone" VARCHAR(20),
+      "motivo_reprovacao" TEXT,
+      "pedido_venda_gerado_id" TEXT,
+      "tipo_desconto" VARCHAR(15),
+      "desconto_geral" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "orcamento_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "orcamento_empresa_id_numero_key" ON "orcamento"("empresa_id", "numero")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_orcamento" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "orcamento_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" DECIMAL(12,4) NOT NULL,
+      "unidade" VARCHAR(6) NOT NULL DEFAULT 'UN',
+      "preco_unitario" DECIMAL(12,4) NOT NULL,
+      "desconto" DECIMAL(5,2) NOT NULL DEFAULT 0,
+      "valor_total" DECIMAL(12,2) NOT NULL,
+      "observacao" TEXT,
+      CONSTRAINT "item_orcamento_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "item_orcamento_orcamento_id_fkey" FOREIGN KEY ("orcamento_id") REFERENCES "orcamento"("id") ON DELETE CASCADE
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "devolucao_venda" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "venda_efetivada_id" TEXT NOT NULL,
+      "motivo" TEXT NOT NULL,
+      "valor_total" DECIMAL(12,2) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PROCESSADA',
+      "nfe_entrada_chave" VARCHAR(44),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "devolucao_venda_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_devolucao_venda" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "devolucao_venda_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" DECIMAL(12,4) NOT NULL,
+      "preco_unitario" DECIMAL(12,4) NOT NULL,
+      "valor_total" DECIMAL(12,2) NOT NULL,
+      "motivo_item" VARCHAR(200),
+      CONSTRAINT "item_devolucao_venda_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "item_devolucao_venda_devolucao_venda_id_fkey" FOREIGN KEY ("devolucao_venda_id") REFERENCES "devolucao_venda"("id") ON DELETE CASCADE
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "campanha_desconto" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(100) NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "valor" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "codigo_cupom" VARCHAR(30),
+      "data_inicio" TIMESTAMP(3) NOT NULL,
+      "data_fim" TIMESTAMP(3) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "quantidade_minima" DECIMAL(12,4),
+      "valor_minimo_pedido" DECIMAL(12,2),
+      "usos_maximos" INTEGER,
+      "usos_atuais" INTEGER NOT NULL DEFAULT 0,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "campanha_desconto_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "campanha_desconto_empresa_id_codigo_cupom_key" ON "campanha_desconto"("empresa_id", "codigo_cupom")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "regra_comissao" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "vendedor_id" TEXT,
+      "produto_id" TEXT,
+      "categoria_id" VARCHAR(50),
+      "regiao_uf" VARCHAR(2),
+      "faixa_inicio" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "faixa_fim" DECIMAL(12,2),
+      "percentual" DECIMAL(5,2) NOT NULL,
+      "sobre_recebimento" BOOLEAN NOT NULL DEFAULT false,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "regra_comissao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "regra_aprovacao" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "tipo" VARCHAR(30) NOT NULL,
+      "condicao" VARCHAR(20) NOT NULL,
+      "valor" DECIMAL(12,2) NOT NULL,
+      "aprovador_id" VARCHAR(100) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "regra_aprovacao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "solicitacao_aprovacao" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "regra_id" TEXT NOT NULL,
+      "pedido_venda_id" TEXT,
+      "solicitante_id" TEXT NOT NULL,
+      "aprovador_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "motivo" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "resolvido_em" TIMESTAMP(3),
+      CONSTRAINT "solicitacao_aprovacao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "meta_vendedor" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "vendedor_id" TEXT NOT NULL,
+      "periodo" VARCHAR(7) NOT NULL,
+      "meta_valor" DECIMAL(12,2) NOT NULL,
+      "realizado_valor" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "meta_quantidade" INTEGER,
+      "realizado_quantidade" INTEGER NOT NULL DEFAULT 0,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "meta_vendedor_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "meta_vendedor_empresa_id_vendedor_id_periodo_key" ON "meta_vendedor"("empresa_id", "vendedor_id", "periodo")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "regra_bonificacao" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(100) NOT NULL,
+      "produto_gatilho_id" TEXT NOT NULL,
+      "quantidade_minima" DECIMAL(12,4) NOT NULL,
+      "produto_bonus_id" TEXT NOT NULL,
+      "quantidade_bonus" DECIMAL(12,4) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "data_inicio" TIMESTAMP(3),
+      "data_fim" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "regra_bonificacao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "venda_encomenda" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "pedido_venda_id" TEXT NOT NULL,
+      "ordem_producao_id" TEXT,
+      "status" VARCHAR(30) NOT NULL DEFAULT 'AGUARDANDO_PRODUCAO',
+      "previsao_entrega" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "venda_encomenda_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "remessa_consignacao" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "cliente_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'REMESSA',
+      "data_remessa" TIMESTAMP(3) NOT NULL,
+      "data_retorno_previsto" TIMESTAMP(3),
+      "valor_total" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "remessa_consignacao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "remessa_consignacao_empresa_id_numero_key" ON "remessa_consignacao"("empresa_id", "numero")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_consignacao" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "remessa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" DECIMAL(12,4) NOT NULL,
+      "preco_unitario" DECIMAL(12,4) NOT NULL,
+      "quantidade_vendida" DECIMAL(12,4) NOT NULL DEFAULT 0,
+      "quantidade_retornada" DECIMAL(12,4) NOT NULL DEFAULT 0,
+      CONSTRAINT "item_consignacao_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "item_consignacao_remessa_id_fkey" FOREIGN KEY ("remessa_id") REFERENCES "remessa_consignacao"("id") ON DELETE CASCADE
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "integracao_ecommerce" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "plataforma" VARCHAR(30) NOT NULL,
+      "api_key" VARCHAR(200),
+      "api_secret" VARCHAR(200),
+      "store_id" VARCHAR(100),
+      "webhook_url" TEXT,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "ultima_sync" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "integracao_ecommerce_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pedido_ecommerce" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "integracao_id" TEXT NOT NULL,
+      "pedido_externo" VARCHAR(100) NOT NULL,
+      "plataforma" VARCHAR(30) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'RECEBIDO',
+      "pedido_venda_id" TEXT,
+      "dados_json" JSONB,
+      "erro_msg" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "pedido_ecommerce_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "pedido_ecommerce_empresa_id_pedido_externo_plataforma_key" ON "pedido_ecommerce"("empresa_id", "pedido_externo", "plataforma")`)
+
+  // TabelaPreco — campos de vigência
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_preco" ADD COLUMN IF NOT EXISTS "data_inicio" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_preco" ADD COLUMN IF NOT EXISTS "data_fim" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_preco" ADD COLUMN IF NOT EXISTS "cliente_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_preco" ADD COLUMN IF NOT EXISTS "grupo_cliente" VARCHAR(50)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_preco" ADD COLUMN IF NOT EXISTS "prioridade" INTEGER DEFAULT 0`)
+
+  console.log('✅ Vendas Avançadas: todas as tabelas criadas (orçamento, devolução, campanhas, comissão, aprovação, metas, bonificação, encomenda, consignação, e-commerce)')
+
   console.log('✅ All migrations applied successfully')
 }
 
