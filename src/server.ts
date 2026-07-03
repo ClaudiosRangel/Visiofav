@@ -63,6 +63,7 @@ import { bonificacaoRoutes } from './modules/bonificacao/bonificacao.routes'
 import { vendaEncomendaRoutes } from './modules/venda-encomenda/venda-encomenda.routes'
 import { vendaConsignadaRoutes } from './modules/venda-consignada/venda-consignada.routes'
 import { integracaoEcommerceRoutes } from './modules/integracao-ecommerce/integracao-ecommerce.routes'
+import { aiRoutes } from './modules/ai/ai.routes'
 import { pdvRoutes } from './modules/pdv/pdv.routes'
 
 // Módulo Agenda unificado (coexiste com agenda-wms e agenda-doca)
@@ -267,6 +268,9 @@ async function bootstrap() {
 
   // Módulo PDV — Ponto de Venda
   await app.register(pdvRoutes, { prefix: '/api/pdv' })
+
+  // Vizor AI — Assistente Inteligente
+  await app.register(aiRoutes, { prefix: '/api/ai' })
 
   // Módulo Financeiro
   await app.register(contaPagarRoutes, { prefix: '/api/contas-pagar' })

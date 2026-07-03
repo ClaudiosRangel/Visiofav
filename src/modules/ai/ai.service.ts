@@ -1,0 +1,132 @@
+/**
+ * Vizor AI — Service Principal
+ * Orquestra o fluxo: recebe mensagem → envia ao LLM → executa tools → retorna resposta.
+ */
+
+import Anthropic from '@anthropic-ai/sdk'
+import { AI_TOOLS } from './ai-tools'
+import { VIZOR_AI_SYSTEM_PROMPT } from './ai-system-prompt'
+import { executarTool, type ToolResult } from './ai-executor'
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || '',
+})
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AIResponse {
+  resposta: string
+  acao?: {
+    tipo: 'NAVEGAR' | 'EXECUTAR' | 'MOSTRAR_DADOS'
+    rota?: string
+    params?: Record<string, any>
+    resultado?: any
+  }
+  sugestoes?: string[]
+}
+
+export const aiService = {
+  async processar(mensagem: string, empresaId: string, historico?: ChatMessage[]): Promise<AIResponse> {
+    // Se não tem API key, retorna resposta básica
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return this.respostaFallback(mensagem)
+    }
+
+    try {
+      // Montar mensagens para o LLM
+      const messages: Anthropic.MessageParam[] = []
+
+      // Adicionar histórico (últimas 10 mensagens)
+      if (historico && historico.length > 0) {
+        for (const msg of historico.slice(-10)) {
+          messages.push({ role: msg.role, content: msg.content })
+        }
+      }
+
+      // Adicionar mensagem atual
+      messages.push({ role: 'user', content: mensagem })
+
+      // Chamar Claude com tools
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: VIZOR_AI_SYSTEM_PROMPT,
+        messages,
+        tools: AI_TOOLS.map(t => ({
+          name: t.name,
+          description: t.description,
+          input_schema: t.input_schema as any,
+        })),
+      })
+
+      // Processar resposta
+      let resposta = ''
+      let acao: AIResponse['acao'] = undefined
+
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          resposta = block.text
+        } else if (block.type === 'tool_use') {
+          // Executar a tool
+          const toolResult = await executarTool(block.name, block.input, empresaId)
+          resposta = toolResult.resposta
+          acao = toolResult.acao
+        }
+      }
+
+      // Gerar sugestões baseadas no contexto
+      const sugestoes = this.gerarSugestoes(mensagem)
+
+      return { resposta, acao, sugestoes }
+    } catch (error: any) {
+      console.error('Vizor AI error:', error.message)
+      return {
+        resposta: 'Desculpe, tive um problema ao processar sua solicitação. Tente novamente.',
+        sugestoes: ['Consultar vendas', 'Ver estoque', 'Abrir relatórios'],
+      }
+    }
+  },
+
+  // Resposta sem API key (modo offline)
+  respostaFallback(mensagem: string): AIResponse {
+    const msg = mensagem.toLowerCase()
+
+    if (msg.includes('vend') || msg.includes('pedido')) {
+      return { resposta: 'Para acessar vendas, vou abrir a tela de pedidos para você.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pedidos' } }
+    }
+    if (msg.includes('relat')) {
+      return { resposta: 'Abrindo a tela de relatórios de vendas.', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios' } }
+    }
+    if (msg.includes('estoque') || msg.includes('saldo')) {
+      return { resposta: 'Abrindo consulta de estoque.', acao: { tipo: 'NAVEGAR', rota: '/estoque' } }
+    }
+    if (msg.includes('compra')) {
+      return { resposta: 'Abrindo pedidos de compra.', acao: { tipo: 'NAVEGAR', rota: '/compras/pedidos' } }
+    }
+    if (msg.includes('fiscal') || msg.includes('nfe') || msg.includes('nota')) {
+      return { resposta: 'Abrindo módulo fiscal.', acao: { tipo: 'NAVEGAR', rota: '/fiscal/nfe' } }
+    }
+    if (msg.includes('financ') || msg.includes('pagar') || msg.includes('receber')) {
+      return { resposta: 'Abrindo módulo financeiro.', acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-receber' } }
+    }
+    if (msg.includes('pdv') || msg.includes('caixa')) {
+      return { resposta: 'Abrindo o PDV.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pdv' } }
+    }
+
+    return {
+      resposta: 'Olá! Sou o Vizor AI. Posso te ajudar a navegar pelo sistema, criar pedidos, consultar estoque, ver relatórios e muito mais. O que precisa?',
+      sugestoes: ['Quanto vendemos esse mês?', 'Abrir relatórios', 'Consultar estoque', 'Criar pedido'],
+    }
+  },
+
+  gerarSugestoes(mensagemAnterior: string): string[] {
+    const msg = mensagemAnterior.toLowerCase()
+    if (msg.includes('vend')) return ['Ver curva ABC', 'Top clientes', 'Criar novo pedido']
+    if (msg.includes('estoque')) return ['Ver produtos sem estoque', 'Fazer inventário', 'Ver movimentações']
+    if (msg.includes('financ')) return ['Contas vencidas', 'Fluxo de caixa', 'Contas a pagar']
+    return ['Quanto vendemos esse mês?', 'Consultar estoque', 'Abrir relatórios', 'Criar pedido']
+  },
+}
