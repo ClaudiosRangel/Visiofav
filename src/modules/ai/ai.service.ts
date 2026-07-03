@@ -163,8 +163,8 @@ export const aiService = {
     }
 
     // Importação
-    if (msg.includes('importar no módulo de compras') || msg.includes('importar no modulo de compras')) {
-      return { resposta: '📥 Abrindo a tela de **importação de XML**.', acao: { tipo: 'NAVEGAR', rota: '/compras/importar-xml' }, sugestoes: ['Importar outro XML', 'Ver compras'] }
+    if (msg.includes('importar no módulo de compras') || msg.includes('importar no modulo de compras') || msg.includes('quero que importe') || msg.includes('importe pra mim') || msg.includes('importar pra mim') || msg.includes('pode importar') || msg.includes('importa esse xml') || msg.includes('importar xml')) {
+      return { resposta: '📥 Abrindo a tela de **importação de XML** para concluir a importação.', acao: { tipo: 'NAVEGAR', rota: '/compras/importar-xml' }, sugestoes: ['Importar outro XML', 'Ver compras'] }
     }
     if (msg.includes('importar outro xml')) {
       return { resposta: '📎 Clique no ícone de **clips** (📎) para enviar outro XML.', sugestoes: ['Consultar compras', 'Ver estoque'] }
@@ -277,7 +277,6 @@ export const aiService = {
 
     return {
       resposta,
-      acao: { tipo: 'NAVEGAR', rota: '/compras/importar-xml' },
       sugestoes,
     }
   },
