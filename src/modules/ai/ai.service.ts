@@ -4,6 +4,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { prisma } from '../../lib/prisma'
 import { AI_TOOLS } from './ai-tools'
 import { VIZOR_AI_SYSTEM_PROMPT } from './ai-system-prompt'
 import { executarTool, type ToolResult } from './ai-executor'
@@ -128,5 +129,109 @@ export const aiService = {
     if (msg.includes('estoque')) return ['Ver produtos sem estoque', 'Fazer inventário', 'Ver movimentações']
     if (msg.includes('financ')) return ['Contas vencidas', 'Fluxo de caixa', 'Contas a pagar']
     return ['Quanto vendemos esse mês?', 'Consultar estoque', 'Abrir relatórios', 'Criar pedido']
+  },
+
+  async processarXml(xmlContent: string, empresaId: string, mensagemUsuario?: string): Promise<AIResponse> {
+    // 1. Parse XML to extract NF-e data
+    const dadosNfe = this.extrairDadosXml(xmlContent)
+    if (!dadosNfe) {
+      return { resposta: '❌ Não consegui interpretar o XML. Verifique se é um XML de NF-e válido.' }
+    }
+
+    // 2. Check if company uses WMS
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: empresaId },
+      select: { usaWms: true, razaoSocial: true },
+    })
+    const usaWms = empresa?.usaWms || false
+
+    // 3. Try to find matching purchase order (conciliation)
+    const fornecedor = await prisma.fornecedor.findFirst({
+      where: { empresaId, cnpj: dadosNfe.cnpjEmitente },
+      select: { id: true, razaoSocial: true },
+    })
+
+    let pedidoConciliado: { id: string; numero: number; valorTotal: any } | null = null
+    if (fornecedor) {
+      pedidoConciliado = await prisma.pedidoCompra.findFirst({
+        where: {
+          empresaId,
+          fornecedorId: fornecedor.id,
+          status: 'CONFIRMADO',
+        },
+        select: { id: true, numero: true, valorTotal: true },
+        orderBy: { criadoEm: 'desc' },
+      })
+    }
+
+    // 4. Import the XML via existing compras endpoint logic
+    let importResult: { sucesso: boolean; erro?: string } = { sucesso: true }
+    try {
+      const { compraFiscalService } = require('../fiscal/integracao/compra-fiscal.service')
+      // Validate XML first
+      compraFiscalService.parseNFeXml(xmlContent)
+    } catch (e: any) {
+      // XML parsing failed or module not available — mark as navigation fallback
+      importResult = { sucesso: false, erro: e.message }
+    }
+
+    // 5. Build response with context
+    let resposta = `📄 **XML processado!**\n`
+    resposta += `• Fornecedor: **${dadosNfe.emitenteRazao}** (${dadosNfe.cnpjEmitente})\n`
+    resposta += `• NF-e: **${dadosNfe.numero}** | Série: ${dadosNfe.serie}\n`
+    resposta += `• Valor: **R$ ${dadosNfe.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}**\n`
+    resposta += `• Itens: ${dadosNfe.quantidadeItens}\n`
+
+    if (importResult.sucesso) {
+      resposta += `\n✅ **XML válido — pronto para importar no módulo de Compras!**\n`
+    } else {
+      resposta += `\n⚠️ Não foi possível validar automaticamente: ${importResult.erro || 'erro desconhecido'}.\n`
+    }
+
+    if (pedidoConciliado) {
+      resposta += `\n🔗 **Conciliação:** Encontrei o pedido de compra **#${pedidoConciliado.numero}** (R$ ${Number(pedidoConciliado.valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) do mesmo fornecedor. Pode ser vinculado automaticamente na importação.\n`
+    }
+
+    let sugestoes: string[] = []
+
+    if (usaWms) {
+      resposta += `\n📦 **WMS ativo** — Deseja agendar o recebimento na doca?`
+      sugestoes = ['Sim, agendar recebimento', 'Importar no módulo de compras', 'Ver horários disponíveis']
+    } else {
+      sugestoes = ['Importar no módulo de compras', 'Ver detalhes', 'Importar outro XML']
+    }
+
+    return {
+      resposta,
+      acao: { tipo: 'NAVEGAR', rota: '/compras/importar-xml' },
+      sugestoes,
+    }
+  },
+
+  extrairDadosXml(xml: string): { cnpjEmitente: string; emitenteRazao: string; numero: number; serie: number; valorTotal: number; quantidadeItens: number; chaveAcesso?: string } | null {
+    try {
+      // Simple regex-based extraction (no XML parser needed for basic fields)
+      const cnpj = xml.match(/<emit>[\s\S]*?<CNPJ>(\d+)<\/CNPJ>/)?.[1] || ''
+      const razao = xml.match(/<emit>[\s\S]*?<xNome>([^<]+)<\/xNome>/)?.[1] || ''
+      const nNF = xml.match(/<nNF>(\d+)<\/nNF>/)?.[1] || '0'
+      const serie = xml.match(/<serie>(\d+)<\/serie>/)?.[1] || '1'
+      const vNF = xml.match(/<vNF>([\d.]+)<\/vNF>/)?.[1] || xml.match(/<vProd>([\d.]+)<\/vProd>/)?.[1] || '0'
+      const itens = (xml.match(/<det /g) || []).length
+      const chave = xml.match(/<chNFe>(\d{44})<\/chNFe>/)?.[1] || xml.match(/Id="NFe(\d{44})"/)?.[1]
+
+      if (!cnpj) return null
+
+      return {
+        cnpjEmitente: cnpj,
+        emitenteRazao: razao,
+        numero: parseInt(nNF),
+        serie: parseInt(serie),
+        valorTotal: parseFloat(vNF),
+        quantidadeItens: itens || 1,
+        chaveAcesso: chave,
+      }
+    } catch {
+      return null
+    }
   },
 }

@@ -32,6 +32,38 @@ export async function aiRoutes(app: FastifyInstance) {
     return resultado
   })
 
+  // POST /upload — Processar arquivo (XML) com contexto AI
+  app.post('/upload', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const parts = request.parts()
+
+    let fileContent = ''
+    let fileName = ''
+    let mensagem = ''
+
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        const buffer = await part.toBuffer()
+        fileContent = buffer.toString('utf-8')
+        fileName = part.filename || ''
+      } else if (part.type === 'field' && part.fieldname === 'mensagem') {
+        mensagem = part.value as string
+      }
+    }
+
+    if (!fileContent) {
+      return reply.status(400).send({ message: 'Nenhum arquivo enviado' })
+    }
+
+    // Detect file type and process
+    if (fileName.endsWith('.xml') || fileContent.includes('<nfeProc') || fileContent.includes('<NFe')) {
+      const resultado = await aiService.processarXml(fileContent, user.empresaId, mensagem)
+      return resultado
+    }
+
+    return { resposta: 'Formato de arquivo não suportado. Envie um XML de NF-e.' }
+  })
+
   // GET /sugestoes — Sugestões contextuais
   app.get('/sugestoes', async (request) => {
     const { pagina } = sugestoesQuerySchema.parse(request.query)
