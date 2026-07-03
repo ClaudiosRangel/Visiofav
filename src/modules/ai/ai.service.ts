@@ -30,7 +30,7 @@ export interface AIResponse {
 }
 
 export const aiService = {
-  async processar(mensagem: string, empresaId: string, historico?: ChatMessage[]): Promise<AIResponse> {
+  async processar(mensagem: string, empresaId: string, historico?: ChatMessage[], usuarioId?: string): Promise<AIResponse> {
     // Se não tem API key, retorna resposta básica
     if (!process.env.ANTHROPIC_API_KEY) {
       return this.respostaFallback(mensagem)
@@ -80,6 +80,18 @@ export const aiService = {
 
       // Gerar sugestões baseadas no contexto
       const sugestoes = this.gerarSugestoes(mensagem)
+
+      // Persistir conversa no histórico
+      if (usuarioId && resposta) {
+        try {
+          await prisma.conversaAI.create({
+            data: { empresaId, usuarioId, mensagem, resposta },
+          })
+        } catch (e) {
+          // Não bloquear resposta se falhar ao salvar histórico
+          console.error('[AI] Erro ao salvar histórico:', (e as Error).message)
+        }
+      }
 
       return { resposta, acao, sugestoes }
     } catch (error: any) {

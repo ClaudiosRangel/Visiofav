@@ -984,6 +984,23 @@ async function main() {
 
   console.log('✅ Vendas Avançadas: todas as tabelas criadas (orçamento, devolução, campanhas, comissão, aprovação, metas, bonificação, encomenda, consignação, e-commerce)')
 
+  // =========================================================================
+  // Conversa AI — Histórico persistente
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "conversa_ai" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "usuario_id" TEXT NOT NULL,
+      "mensagem" TEXT NOT NULL,
+      "resposta" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "conversa_ai_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "conversa_ai_empresa_id_usuario_id_criado_em_idx" ON "conversa_ai"("empresa_id", "usuario_id", "criado_em")`)
+  console.log('✅ Tabela conversa_ai criada')
+
   console.log('✅ All migrations applied successfully')
 }
 

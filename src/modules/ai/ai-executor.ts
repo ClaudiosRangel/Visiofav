@@ -56,6 +56,8 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'pdv_sangria': return executarPdvSangria(input)
       case 'pdv_suprimento': return executarPdvSuprimento(input)
       case 'configurar_empresa': return await executarConfigurarEmpresa(input, empresaId)
+      case 'diagnosticar_prerequisitos': return await executarDiagnostico(input, empresaId)
+      case 'verificar_configuracao_empresa': return await executarVerificarConfiguracao(empresaId)
       default:
         return { resposta: `⚠️ Ação **"${toolName}"** não reconhecida.` }
     }
@@ -983,5 +985,196 @@ async function executarConfigurarEmpresa(input: any, empresaId: string): Promise
 
   return {
     resposta: `✅ Empresa configurada!\n${regimeLabel ? `• Regime: **${regimeLabel}**` : ''}${input.segmento ? `\n• Segmento: **${input.segmento}**` : ''}`,
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DIAGNÓSTICO E PRÉ-REQUISITOS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function executarDiagnostico(input: { operacao: string }, empresaId: string): Promise<ToolResult> {
+  const checks: { item: string; ok: boolean; detalhe: string }[] = []
+
+  switch (input.operacao) {
+    case 'criar_pedido_venda': {
+      const clientes = await prisma.cliente.count({ where: { empresaId } })
+      checks.push({ item: 'Clientes cadastrados', ok: clientes > 0, detalhe: clientes > 0 ? `${clientes} encontrado(s)` : 'Nenhum cliente. Cadastre ao menos 1.' })
+
+      const tabelas = await prisma.tabelaPreco.count({ where: { empresaId, status: true } })
+      checks.push({ item: 'Tabela de preço ativa', ok: tabelas > 0, detalhe: tabelas > 0 ? `${tabelas} ativa(s)` : 'Nenhuma tabela ativa. Crie uma tabela de preço.' })
+
+      const produtos = await prisma.produto.count({ where: { empresaId, status: true, precoBase: { gt: 0 } } })
+      checks.push({ item: 'Produtos com preço > 0', ok: produtos > 0, detalhe: produtos > 0 ? `${produtos} produto(s)` : 'Nenhum produto com preço. Cadastre produtos com precoBase.' })
+
+      const vendedores = await prisma.vendedor.count({ where: { empresaId } })
+      checks.push({ item: 'Vendedor (opcional, para comissão)', ok: vendedores > 0, detalhe: vendedores > 0 ? `${vendedores} vendedor(es)` : 'Nenhum vendedor. Comissão não será calculada.' })
+      break
+    }
+
+    case 'efetivar_venda': {
+      const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { certificadoPfx: true, senhaCertificado: true, ambienteNFe: true, inscEstadual: true, cnpj: true, uf: true } })
+      checks.push({ item: 'Certificado digital', ok: !!empresa?.certificadoPfx, detalhe: empresa?.certificadoPfx ? 'Configurado' : 'Falta certificadoPfx na empresa.' })
+      checks.push({ item: 'Senha do certificado', ok: !!empresa?.senhaCertificado, detalhe: empresa?.senhaCertificado ? 'Configurada' : 'Falta senhaCertificado.' })
+      checks.push({ item: 'Inscrição Estadual', ok: !!empresa?.inscEstadual, detalhe: empresa?.inscEstadual ? empresa.inscEstadual : 'Falta inscEstadual.' })
+      checks.push({ item: 'UF da empresa', ok: !!empresa?.uf, detalhe: empresa?.uf || 'Falta UF.' })
+
+      const produtosSemFiscal = await prisma.produto.count({ where: { empresaId, status: true, OR: [{ ncm: null }, { ncm: '' }] } })
+      checks.push({ item: 'Produtos com NCM configurado', ok: produtosSemFiscal === 0, detalhe: produtosSemFiscal === 0 ? 'Todos configurados' : `${produtosSemFiscal} produto(s) sem NCM.` })
+      break
+    }
+
+    case 'emitir_nfe': {
+      const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { certificadoPfx: true, senhaCertificado: true, ambienteNFe: true, serieNFe: true, regimeTributario: true, inscEstadual: true, cnpj: true, uf: true } })
+      checks.push({ item: 'Certificado digital (PFX)', ok: !!empresa?.certificadoPfx, detalhe: empresa?.certificadoPfx ? 'OK' : 'Falta. Faça upload do certificado A1.' })
+      checks.push({ item: 'Senha do certificado', ok: !!empresa?.senhaCertificado, detalhe: empresa?.senhaCertificado ? 'OK' : 'Falta.' })
+      checks.push({ item: 'Ambiente NF-e', ok: !!empresa?.ambienteNFe, detalhe: empresa?.ambienteNFe === 1 ? 'Produção' : 'Homologação' })
+      checks.push({ item: 'Série NF-e', ok: (empresa?.serieNFe || 0) > 0, detalhe: `Série ${empresa?.serieNFe || 0}` })
+      checks.push({ item: 'Regime Tributário', ok: !!empresa?.regimeTributario, detalhe: ({ 1: 'Simples Nacional', 2: 'Lucro Presumido', 3: 'Lucro Real' } as Record<number, string>)[empresa?.regimeTributario || 0] || 'Não definido' })
+      checks.push({ item: 'Inscrição Estadual', ok: !!empresa?.inscEstadual, detalhe: empresa?.inscEstadual || 'Falta.' })
+      checks.push({ item: 'CNPJ', ok: !!empresa?.cnpj, detalhe: empresa?.cnpj || 'Falta.' })
+      checks.push({ item: 'UF', ok: !!empresa?.uf, detalhe: empresa?.uf || 'Falta.' })
+      break
+    }
+
+    case 'importar_xml': {
+      const fornecedores = await prisma.fornecedor.count({ where: { empresaId } })
+      checks.push({ item: 'Fornecedores cadastrados', ok: true, detalhe: fornecedores > 0 ? `${fornecedores} fornecedor(es)` : 'Nenhum, mas o sistema pode criar a partir do XML.' })
+
+      const produtos = await prisma.produto.count({ where: { empresaId } })
+      checks.push({ item: 'Produtos cadastrados', ok: true, detalhe: produtos > 0 ? `${produtos} produto(s)` : 'Nenhum, mas sistema pode criar de-para.' })
+      break
+    }
+
+    case 'usar_pdv': {
+      const produtos = await prisma.produto.count({ where: { empresaId, status: true, precoBase: { gt: 0 } } })
+      checks.push({ item: 'Produtos ativos com preço', ok: produtos > 0, detalhe: produtos > 0 ? `${produtos} produto(s)` : 'Nenhum produto com preço > 0.' })
+      break
+    }
+
+    case 'usar_wms': {
+      const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { usaWms: true } })
+      checks.push({ item: 'WMS habilitado (usaWms)', ok: !!empresa?.usaWms, detalhe: empresa?.usaWms ? 'Ativo' : 'Inativo. Ative nas configurações da empresa.' })
+
+      const cds = await prisma.centroDistribuicao.count({ where: { empresaId } })
+      checks.push({ item: 'Centro de Distribuição', ok: cds > 0, detalhe: cds > 0 ? `${cds} CD(s)` : 'Nenhum CD cadastrado.' })
+
+      const depositos = await prisma.deposito.count({ where: { empresaId } })
+      checks.push({ item: 'Depósitos', ok: depositos > 0, detalhe: depositos > 0 ? `${depositos} depósito(s)` : 'Nenhum depósito.' })
+
+      const zonas = await prisma.zona.count({ where: { empresaId } })
+      checks.push({ item: 'Zonas', ok: zonas > 0, detalhe: zonas > 0 ? `${zonas} zona(s)` : 'Nenhuma zona.' })
+
+      const enderecos = await prisma.endereco.count({ where: { empresaId } })
+      checks.push({ item: 'Endereços de armazém', ok: enderecos > 0, detalhe: enderecos > 0 ? `${enderecos} endereço(s)` : 'Nenhum endereço.' })
+      break
+    }
+
+    case 'criar_ordem_producao': {
+      const centros = await prisma.centroProducao.count({ where: { empresaId } })
+      checks.push({ item: 'Centros de produção', ok: centros > 0, detalhe: centros > 0 ? `${centros} centro(s)` : 'Nenhum. Cadastre centros de produção.' })
+
+      const estruturas = await prisma.estruturaProduto.count({ where: { empresaId } })
+      checks.push({ item: 'Estruturas de produto (BOM)', ok: estruturas > 0, detalhe: estruturas > 0 ? `${estruturas} estrutura(s)` : 'Nenhuma BOM cadastrada.' })
+
+      const roteiros = await prisma.roteiroProducao.count({ where: { empresaId } })
+      checks.push({ item: 'Roteiros de produção', ok: roteiros > 0, detalhe: roteiros > 0 ? `${roteiros} roteiro(s)` : 'Nenhum roteiro.' })
+      break
+    }
+
+    case 'onboarding': {
+      const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { razaoSocial: true, cnpj: true, regimeTributario: true, usaWms: true, certificadoPfx: true, ambienteNFe: true } })
+      const produtos = await prisma.produto.count({ where: { empresaId } })
+      const clientes = await prisma.cliente.count({ where: { empresaId } })
+      const fornecedores = await prisma.fornecedor.count({ where: { empresaId } })
+
+      checks.push({ item: 'Empresa configurada', ok: !!empresa?.cnpj, detalhe: empresa?.razaoSocial || 'Sem razão social' })
+      checks.push({ item: 'Produtos cadastrados', ok: produtos > 0, detalhe: `${produtos} produto(s)` })
+      checks.push({ item: 'Clientes cadastrados', ok: clientes > 0, detalhe: `${clientes} cliente(s)` })
+      checks.push({ item: 'Fornecedores cadastrados', ok: fornecedores > 0, detalhe: `${fornecedores} fornecedor(es)` })
+      checks.push({ item: 'Certificado digital', ok: !!empresa?.certificadoPfx, detalhe: empresa?.certificadoPfx ? 'Configurado' : 'Não configurado' })
+      checks.push({ item: 'WMS', ok: !!empresa?.usaWms, detalhe: empresa?.usaWms ? 'Ativo' : 'Inativo' })
+      break
+    }
+
+    default:
+      return { resposta: `⚠️ Operação "${input.operacao}" não reconhecida para diagnóstico.` }
+  }
+
+  const okItems = checks.filter(c => c.ok)
+  const failItems = checks.filter(c => !c.ok)
+
+  let resposta = `🔍 **Diagnóstico: ${input.operacao}**\n\n`
+  for (const c of checks) {
+    resposta += `${c.ok ? '✅' : '❌'} ${c.item}: ${c.detalhe}\n`
+  }
+
+  if (failItems.length === 0) {
+    resposta += `\n✅ **Todos os pré-requisitos atendidos!** Pode prosseguir.`
+  } else {
+    resposta += `\n⚠️ **${failItems.length} item(ns) pendente(s).** Resolva antes de prosseguir.`
+  }
+
+  return { resposta, acao: { tipo: 'MOSTRAR_DADOS', resultado: { checks, todosOk: failItems.length === 0 } } }
+}
+
+async function executarVerificarConfiguracao(empresaId: string): Promise<ToolResult> {
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: empresaId },
+    select: {
+      razaoSocial: true, cnpj: true, uf: true, cidade: true,
+      usaWms: true, regimeTributario: true, certificadoPfx: true,
+      ambienteNFe: true, serieNFe: true, inscEstadual: true,
+      conferenciaQuantidadeCega: true, conferenciaLoteCega: true,
+      permiteRecebimentoParcial: true,
+    },
+  })
+
+  if (!empresa) {
+    return { resposta: '❌ Empresa não encontrada.' }
+  }
+
+  const [produtos, clientes, fornecedores, vendedores, tabelas] = await Promise.all([
+    prisma.produto.count({ where: { empresaId } }),
+    prisma.cliente.count({ where: { empresaId } }),
+    prisma.fornecedor.count({ where: { empresaId } }),
+    prisma.vendedor.count({ where: { empresaId } }),
+    prisma.tabelaPreco.count({ where: { empresaId, status: true } }),
+  ])
+
+  let wmsInfo = ''
+  if (empresa.usaWms) {
+    const [cds, depositos, zonas, enderecos, docas] = await Promise.all([
+      prisma.centroDistribuicao.count({ where: { empresaId } }),
+      prisma.deposito.count({ where: { empresaId } }),
+      prisma.zona.count({ where: { empresaId } }),
+      prisma.endereco.count({ where: { empresaId } }),
+      prisma.doca.count({ where: { empresaId } }),
+    ])
+    wmsInfo = `\n\n📦 **WMS:**\n• CDs: ${cds} | Depósitos: ${depositos} | Zonas: ${zonas}\n• Endereços: ${enderecos} | Docas: ${docas}`
+  }
+
+  const regimeLabel = ({ 1: 'Simples Nacional', 2: 'Lucro Presumido', 3: 'Lucro Real' } as Record<number, string>)[empresa.regimeTributario] || 'Não definido'
+  const ambienteLabel = empresa.ambienteNFe === 1 ? 'Produção' : 'Homologação'
+
+  let resposta = `🏢 **${empresa.razaoSocial}** (${empresa.cnpj})\n`
+  resposta += `• UF: ${empresa.uf || 'N/C'} | Cidade: ${empresa.cidade || 'N/C'}\n`
+  resposta += `• Regime: **${regimeLabel}** | Ambiente NF-e: **${ambienteLabel}** | Série: ${empresa.serieNFe}\n`
+  resposta += `• Certificado: ${empresa.certificadoPfx ? '✅ Configurado' : '❌ Não configurado'}\n`
+  resposta += `• IE: ${empresa.inscEstadual || '❌ Não informada'}\n`
+  resposta += `• WMS: ${empresa.usaWms ? '✅ Ativo' : '❌ Inativo'}\n`
+  resposta += `\n📊 **Cadastros:**\n`
+  resposta += `• Produtos: ${produtos} | Clientes: ${clientes} | Fornecedores: ${fornecedores}\n`
+  resposta += `• Vendedores: ${vendedores} | Tabelas de preço ativas: ${tabelas}`
+  resposta += wmsInfo
+
+  const isEmpty = produtos === 0 && clientes === 0 && fornecedores === 0
+  if (isEmpty) {
+    resposta += `\n\n🆕 **Sistema vazio detectado!** Sugiro iniciar o onboarding para configurar tudo.`
+  }
+
+  return {
+    resposta,
+    acao: { tipo: 'MOSTRAR_DADOS', resultado: { empresa, contadores: { produtos, clientes, fornecedores, vendedores, tabelas }, isEmpty } },
   }
 }

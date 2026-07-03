@@ -28,7 +28,7 @@ export async function aiRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { mensagem, historico } = chatBodySchema.parse(request.body)
 
-    const resultado = await aiService.processar(mensagem, user.empresaId, historico)
+    const resultado = await aiService.processar(mensagem, user.empresaId, historico, user.id)
     return resultado
   })
 

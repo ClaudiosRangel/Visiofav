@@ -111,6 +111,7 @@ model Empresa {
   remessasConsignacao        RemessaConsignacao[]
   integracoesEcommerce       IntegracaoEcommerce[]
   pedidosEcommerce           PedidoEcommerce[]
+  conversasAi                ConversaAI[]
 
   // Módulo PDV
   caixasPdv                  CaixaPdv[]
@@ -876,6 +877,18 @@ model PedidoEcommerce {
   criadoEm     DateTime @default(now()) @map("criado_em")
   @@unique([empresaId, pedidoExterno, plataforma])
   @@map("pedido_ecommerce")
+}
+
+model ConversaAI {
+  id         String   @id @default(uuid())
+  empresaId  String   @map("empresa_id")
+  empresa    Empresa  @relation(fields: [empresaId], references: [id])
+  usuarioId  String   @map("usuario_id")
+  mensagem   String   @db.Text
+  resposta   String   @db.Text
+  criadoEm   DateTime @default(now()) @map("criado_em")
+  @@index([empresaId, usuarioId, criadoEm])
+  @@map("conversa_ai")
 }
 
 // ============================================================================
