@@ -54,6 +54,16 @@ import { nfeRoutes } from './modules/nfe/nfe.routes'
 import { cteRoutes } from './modules/cte/cte.routes'
 import { agendaWmsRoutes } from './modules/agenda-wms/agenda-wms.routes'
 
+// Módulo Vendas — Avançado
+import { campanhaDescontoRoutes } from './modules/campanha-desconto/campanha-desconto.routes'
+import { comissaoAvancadaRoutes } from './modules/comissao-avancada/comissao-avancada.routes'
+import { workflowAprovacaoRoutes } from './modules/workflow-aprovacao/workflow-aprovacao.routes'
+import { forcaVendasRoutes } from './modules/forca-vendas/forca-vendas.routes'
+import { bonificacaoRoutes } from './modules/bonificacao/bonificacao.routes'
+import { vendaEncomendaRoutes } from './modules/venda-encomenda/venda-encomenda.routes'
+import { vendaConsignadaRoutes } from './modules/venda-consignada/venda-consignada.routes'
+import { integracaoEcommerceRoutes } from './modules/integracao-ecommerce/integracao-ecommerce.routes'
+
 // Módulo Agenda unificado (coexiste com agenda-wms e agenda-doca)
 import { agendaRoutes } from './modules/agenda/agenda.routes'
 import { agendaTimelineRoutes } from './modules/agenda/agenda-timeline.routes'
@@ -243,6 +253,16 @@ async function bootstrap() {
   await app.register(orcamentoRoutes, { prefix: '/api/orcamentos' })
   await app.register(devolucaoVendaRoutes, { prefix: '/api/devolucoes-venda' })
   await app.register(relatoriosVendasRoutes, { prefix: '/api/relatorios/vendas' })
+
+  // Módulo Vendas — Avançado
+  await app.register(campanhaDescontoRoutes, { prefix: '/api/campanhas-desconto' })
+  await app.register(comissaoAvancadaRoutes, { prefix: '/api/comissoes-avancadas' })
+  await app.register(workflowAprovacaoRoutes, { prefix: '/api/workflow-aprovacao' })
+  await app.register(forcaVendasRoutes, { prefix: '/api/forca-vendas' })
+  await app.register(bonificacaoRoutes, { prefix: '/api/bonificacoes' })
+  await app.register(vendaEncomendaRoutes, { prefix: '/api/vendas-encomenda' })
+  await app.register(vendaConsignadaRoutes, { prefix: '/api/vendas-consignadas' })
+  await app.register(integracaoEcommerceRoutes, { prefix: '/api/integracao-ecommerce' })
 
   // Módulo Financeiro
   await app.register(contaPagarRoutes, { prefix: '/api/contas-pagar' })

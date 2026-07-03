@@ -100,6 +100,18 @@ model Empresa {
   conferenciaLoteCega       Boolean @default(false) @map("conferencia_lote_cega")
   permiteRecebimentoParcial Boolean @default(false) @map("permite_recebimento_parcial")
 
+  // Módulo Vendas — Avançado
+  campanhasDesconto          CampanhaDesconto[]
+  regrasComissao             RegraComissao[]
+  regrasAprovacao            RegraAprovacao[]
+  solicitacoesAprovacao      SolicitacaoAprovacao[]
+  metasVendedor              MetaVendedor[]
+  regrasBonificacao          RegraBonificacao[]
+  vendasEncomenda            VendaEncomenda[]
+  remessasConsignacao        RemessaConsignacao[]
+  integracoesEcommerce       IntegracaoEcommerce[]
+  pedidosEcommerce           PedidoEcommerce[]
+
   @@map("empresa")
 }
 
@@ -485,6 +497,11 @@ model TabelaPreco {
   empresa      Empresa  @relation(fields: [empresaId], references: [id])
   nome         String   @db.VarChar(100)
   status       Boolean  @default(true)
+  dataInicio   DateTime? @map("data_inicio")
+  dataFim      DateTime? @map("data_fim")
+  clienteId    String?   @map("cliente_id")
+  grupoCliente String?   @map("grupo_cliente") @db.VarChar(50)
+  prioridade   Int       @default(0)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
@@ -683,6 +700,177 @@ model ItemDevolucaoVenda {
   motivoItem      String?        @map("motivo_item") @db.VarChar(200)
 
   @@map("item_devolucao_venda")
+}
+
+// ============================================================================
+// VENDAS — MÓDULOS AVANÇADOS
+// ============================================================================
+
+model CampanhaDesconto {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  nome         String   @db.VarChar(100)
+  tipo         String   @db.VarChar(20) // PERCENTUAL, VALOR_FIXO, ESCALONADO
+  valor        Decimal  @default(0) @db.Decimal(12, 2)
+  codigoCupom  String?  @map("codigo_cupom") @db.VarChar(30)
+  dataInicio   DateTime @map("data_inicio")
+  dataFim      DateTime @map("data_fim")
+  ativo        Boolean  @default(true)
+  quantidadeMinima Decimal? @map("quantidade_minima") @db.Decimal(12, 4)
+  valorMinimoPedido Decimal? @map("valor_minimo_pedido") @db.Decimal(12, 2)
+  usosMaximos  Int?     @map("usos_maximos")
+  usosAtuais   Int      @default(0) @map("usos_atuais")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@unique([empresaId, codigoCupom])
+  @@map("campanha_desconto")
+}
+
+model RegraComissao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  vendedorId   String?  @map("vendedor_id")
+  produtoId    String?  @map("produto_id")
+  categoriaId  String?  @map("categoria_id") @db.VarChar(50)
+  regiaoUf     String?  @map("regiao_uf") @db.VarChar(2)
+  faixaInicio  Decimal  @default(0) @map("faixa_inicio") @db.Decimal(12, 2)
+  faixaFim     Decimal? @map("faixa_fim") @db.Decimal(12, 2)
+  percentual   Decimal  @db.Decimal(5, 2)
+  sobreRecebimento Boolean @default(false) @map("sobre_recebimento")
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@map("regra_comissao")
+}
+
+model RegraAprovacao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  tipo         String   @db.VarChar(30) // DESCONTO, CREDITO, PEDIDO_VALOR
+  condicao     String   @db.VarChar(20) // MAIOR_QUE, MENOR_QUE
+  valor        Decimal  @db.Decimal(12, 2)
+  aprovadorId  String   @map("aprovador_id") @db.VarChar(100)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@map("regra_aprovacao")
+}
+
+model SolicitacaoAprovacao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  regraId      String   @map("regra_id")
+  pedidoVendaId String? @map("pedido_venda_id")
+  solicitanteId String  @map("solicitante_id")
+  aprovadorId  String   @map("aprovador_id")
+  status       String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, APROVADO, REJEITADO
+  motivo       String?  @db.Text
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  resolvidoEm  DateTime? @map("resolvido_em")
+  @@map("solicitacao_aprovacao")
+}
+
+model MetaVendedor {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  vendedorId   String   @map("vendedor_id")
+  periodo      String   @db.VarChar(7) // "2026-07" (ano-mês)
+  metaValor    Decimal  @map("meta_valor") @db.Decimal(12, 2)
+  realizadoValor Decimal @default(0) @map("realizado_valor") @db.Decimal(12, 2)
+  metaQuantidade Int?   @map("meta_quantidade")
+  realizadoQuantidade Int @default(0) @map("realizado_quantidade")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@unique([empresaId, vendedorId, periodo])
+  @@map("meta_vendedor")
+}
+
+model RegraBonificacao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  nome         String   @db.VarChar(100)
+  produtoGatilhoId String @map("produto_gatilho_id")
+  quantidadeMinima Decimal @map("quantidade_minima") @db.Decimal(12, 4)
+  produtoBonusId String  @map("produto_bonus_id")
+  quantidadeBonus Decimal @map("quantidade_bonus") @db.Decimal(12, 4)
+  ativo        Boolean  @default(true)
+  dataInicio   DateTime? @map("data_inicio")
+  dataFim      DateTime? @map("data_fim")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@map("regra_bonificacao")
+}
+
+model VendaEncomenda {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  pedidoVendaId String  @map("pedido_venda_id")
+  ordemProducaoId String? @map("ordem_producao_id")
+  status       String   @default("AGUARDANDO_PRODUCAO") @db.VarChar(30) // AGUARDANDO_PRODUCAO, EM_PRODUCAO, PRONTO, FATURADO
+  previsaoEntrega DateTime? @map("previsao_entrega")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@map("venda_encomenda")
+}
+
+model RemessaConsignacao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  clienteId    String   @map("cliente_id")
+  numero       Int
+  status       String   @default("REMESSA") @db.VarChar(20) // REMESSA, RETORNO_PARCIAL, FATURADO, ENCERRADO
+  dataRemessa  DateTime @map("data_remessa")
+  dataRetornoPrevisto DateTime? @map("data_retorno_previsto")
+  valorTotal   Decimal  @default(0) @map("valor_total") @db.Decimal(12, 2)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  itens        ItemConsignacao[]
+  @@unique([empresaId, numero])
+  @@map("remessa_consignacao")
+}
+
+model ItemConsignacao {
+  id           String   @id @default(uuid())
+  remessaId    String   @map("remessa_id")
+  remessa      RemessaConsignacao @relation(fields: [remessaId], references: [id], onDelete: Cascade)
+  produtoId    String   @map("produto_id")
+  quantidade   Decimal  @db.Decimal(12, 4)
+  precoUnitario Decimal @map("preco_unitario") @db.Decimal(12, 4)
+  quantidadeVendida Decimal @default(0) @map("quantidade_vendida") @db.Decimal(12, 4)
+  quantidadeRetornada Decimal @default(0) @map("quantidade_retornada") @db.Decimal(12, 4)
+  @@map("item_consignacao")
+}
+
+model IntegracaoEcommerce {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  plataforma   String   @db.VarChar(30) // MERCADO_LIVRE, SHOPEE, AMAZON, MAGENTO, SHOPIFY, VTEX
+  apiKey       String?  @map("api_key") @db.VarChar(200)
+  apiSecret    String?  @map("api_secret") @db.VarChar(200)
+  storeId      String?  @map("store_id") @db.VarChar(100)
+  webhookUrl   String?  @map("webhook_url") @db.Text
+  ativo        Boolean  @default(true)
+  ultimaSync   DateTime? @map("ultima_sync")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@map("integracao_ecommerce")
+}
+
+model PedidoEcommerce {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  integracaoId String   @map("integracao_id")
+  pedidoExterno String  @map("pedido_externo") @db.VarChar(100)
+  plataforma   String   @db.VarChar(30)
+  status       String   @default("RECEBIDO") @db.VarChar(20) // RECEBIDO, IMPORTADO, ERRO
+  pedidoVendaId String? @map("pedido_venda_id")
+  dadosJson    Json?    @map("dados_json")
+  erroMsg      String?  @map("erro_msg") @db.Text
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  @@unique([empresaId, pedidoExterno, plataforma])
+  @@map("pedido_ecommerce")
 }
 
 // ============================================================================
