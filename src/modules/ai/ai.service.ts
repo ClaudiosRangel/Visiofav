@@ -31,6 +31,13 @@ export interface AIResponse {
 
 export const aiService = {
   async processar(mensagem: string, empresaId: string, historico?: ChatMessage[], usuarioId?: string): Promise<AIResponse> {
+    // Shortcut: se a mensagem é uma sugestão conhecida, executar diretamente sem LLM
+    const shortcutResult = this.processarShortcut(mensagem)
+    if (shortcutResult) {
+      if (usuarioId) { try { await prisma.conversaAI.create({ data: { empresaId, usuarioId, mensagem, resposta: shortcutResult.resposta } }) } catch {} }
+      return shortcutResult
+    }
+
     // Se não tem API key, retorna resposta básica
     if (!process.env.ANTHROPIC_API_KEY) {
       return this.respostaFallback(mensagem)
@@ -141,6 +148,61 @@ export const aiService = {
     if (msg.includes('estoque')) return ['Ver produtos sem estoque', 'Fazer inventário', 'Ver movimentações']
     if (msg.includes('financ')) return ['Contas vencidas', 'Fluxo de caixa', 'Contas a pagar']
     return ['Quanto vendemos esse mês?', 'Consultar estoque', 'Abrir relatórios', 'Criar pedido']
+  },
+
+  // Shortcuts: respostas instantâneas para sugestões clicáveis (sem chamar LLM)
+  processarShortcut(mensagem: string): AIResponse | null {
+    const msg = mensagem.toLowerCase().trim()
+
+    // Agendamento
+    if (msg.includes('sim, agendar recebimento') || msg.includes('agendar recebimento')) {
+      return { resposta: '📅 Abrindo a **agenda de recebimentos** para você agendar.', acao: { tipo: 'NAVEGAR', rota: '/wms/agenda' }, sugestoes: ['Voltar ao chat', 'Consultar estoque'] }
+    }
+    if (msg.includes('ver horários disponíveis') || msg.includes('horarios disponiveis')) {
+      return { resposta: '📅 Abrindo a **agenda** para ver horários disponíveis.', acao: { tipo: 'NAVEGAR', rota: '/wms/agenda' } }
+    }
+
+    // Importação
+    if (msg.includes('importar no módulo de compras') || msg.includes('importar no modulo de compras')) {
+      return { resposta: '📥 Abrindo a tela de **importação de XML**.', acao: { tipo: 'NAVEGAR', rota: '/compras/importar-xml' }, sugestoes: ['Importar outro XML', 'Ver compras'] }
+    }
+    if (msg.includes('importar outro xml')) {
+      return { resposta: '📎 Clique no ícone de **clips** (📎) para enviar outro XML.', sugestoes: ['Consultar compras', 'Ver estoque'] }
+    }
+
+    // Consultas rápidas
+    if (msg === 'consultar vendas' || msg === 'quanto vendemos esse mês?') {
+      const hoje = new Date()
+      const inicio = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`
+      return { resposta: '📊 Abrindo **relatório de vendas** do mês.', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios', params: { dataInicio: inicio } } }
+    }
+    if (msg === 'ver estoque' || msg === 'consultar estoque') {
+      return { resposta: '📦 Abrindo **consulta de estoque**.', acao: { tipo: 'NAVEGAR', rota: '/estoque' } }
+    }
+    if (msg === 'abrir relatórios' || msg === 'abrir relatorios') {
+      return { resposta: '📊 Abrindo **relatórios de vendas**.', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios' } }
+    }
+    if (msg === 'criar pedido' || msg === 'criar novo pedido') {
+      return { resposta: '🛒 Abrindo tela de **novo pedido de venda**.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pedidos/novo' } }
+    }
+    if (msg.includes('ver curva abc')) {
+      return { resposta: '📈 Abrindo **Curva ABC** nos relatórios.', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios' } }
+    }
+    if (msg.includes('top clientes')) {
+      return { resposta: '🏆 Abrindo **Top Clientes** nos relatórios.', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios' } }
+    }
+    if (msg.includes('contas vencidas') || msg.includes('contas atrasadas')) {
+      return { resposta: '⚠️ Abrindo **contas a receber**.', acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-receber' } }
+    }
+    if (msg.includes('fazer sangria')) {
+      return { resposta: '💵 Abrindo o **PDV** para registrar sangria (pressione F8).', acao: { tipo: 'NAVEGAR', rota: '/vendas/pdv' } }
+    }
+    if (msg.includes('fechar caixa')) {
+      return { resposta: '🔒 Abrindo o **PDV** para fechar o caixa.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pdv' } }
+    }
+
+    // Não é shortcut
+    return null
   },
 
   async processarXml(xmlContent: string, empresaId: string, mensagemUsuario?: string): Promise<AIResponse> {
