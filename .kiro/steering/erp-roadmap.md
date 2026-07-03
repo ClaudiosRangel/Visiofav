@@ -36,18 +36,19 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 
 | # | Módulo | Status | Detalhe |
 |---|--------|--------|---------|
-| 4 | **Vendas Completo** | 🔨 Em andamento | Pedido completo ✅. Próximos: Orçamento → Devolução Venda → Relatórios → PDV |
+| 4 | **Vendas Completo** | ✅ **COMPLETO** | Pedido, Orçamento (PDF), Devolução (NF-e), Relatórios, PDV, Campanhas, Comissão, Workflow, Metas, Bonificação, Encomenda, Consignada, E-commerce |
 | 5 | **Compras Completo** | ⚠️ Parcial | Pedido + efetivação + XML ok. Falta cotação, MRP, aprovação |
-| 6 | **Devolução** | ⚠️ Parcial | Devolução compra ok + Logística reversa ok. Falta devolução venda fiscal |
+| 6 | **Devolução** | ✅ Completo | Devolução compra + venda (NF-e finalidade=4) + estorno financeiro + reentrada estoque |
 | 7 | **Transferência** | ⚠️ Básico | Transferência estoque entre empresas ok. Falta NF-e de transferência |
 | 8 | **Régua de cobrança** | 🔲 Não iniciado | — |
+| 9 | **Vizor AI** | ✅ **IMPLEMENTADO** | Chat IA com function calling, upload XML, onboarding, 30+ tools, conhecimento completo do sistema |
 
 ### Prioridade 3 (Amadurecimento)
 
 | # | Módulo | Status |
 |---|--------|--------|
-| 9 | Contábil (exportação para Domínio/Fortes) | 🔲 |
-| 10 | Integrações (marketplaces, Open Finance) | 🔲 |
+| 10 | Contábil (exportação para Domínio/Fortes) | 🔲 |
+| 11 | Integrações (marketplaces, Open Finance) | ⚠️ Básico (estrutura pronta) |
 | 11 | CRM integrado | 🔲 |
 
 ---
@@ -75,28 +76,48 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 
 #### O que FALTA para módulo completo (padrão Totvs/Omie/Sankhya)
 
-##### Sprint atual — Vendas Completo (em ordem de execução)
+##### ✅ Módulo de Vendas — COMPLETO (implementado nesta sprint)
 
-| # | Funcionalidade | Status | Spec |
-|---|---|---|---|
-| 1 | **Orçamento/Proposta** | 🔨 A fazer agora | Orçamento com validade, aprovação, conversão em pedido, PDF |
-| 2 | **Devolução de venda** | 🔨 A fazer agora | NF-e entrada ref. saída, estorno financeiro, reentrada estoque |
-| 3 | **Relatórios de vendas** | 🔨 A fazer agora | Curva ABC, ticket médio, vendas por período/vendedor/cliente |
-| 4 | **PDV (Ponto de Venda)** | 🎯 Por último (design especial) | Caixa, NFC-e, sangria/suprimento, UX diferenciada e chamativa |
+| # | Funcionalidade | Status |
+|---|---|---|
+| 1 | Orçamento/Proposta (CRUD + workflow + PDF + conversão pedido) | ✅ |
+| 2 | Devolução de venda (NF-e finalidade=4 + estorno + reentrada estoque) | ✅ |
+| 3 | Relatórios (KPIs, por período, vendedor, cliente, curva ABC) | ✅ |
+| 4 | PDV (caixa, sangria, suprimento, venda rápida, pagamentos múltiplos, dark-mode UX) | ✅ |
+| 5 | Desconto por campanha/cupom (CRUD + validar + aplicar) | ✅ |
+| 6 | Tabela de preço com vigência (data início/fim, por cliente/grupo, prioridade) | ✅ |
+| 7 | Força de vendas (metas por vendedor/período, dashboard performance) | ✅ |
+| 8 | Bonificação (regras gatilho por produto/quantidade) | ✅ |
+| 9 | Venda sob encomenda (make-to-order com link OP) | ✅ |
+| 10 | Venda consignada (remessa + retorno parcial) | ✅ |
+| 11 | Comissão avançada (por faixa, produto, região, sobre recebimento) | ✅ |
+| 12 | Workflow de aprovação (regras + solicitações + aprovar/rejeitar) | ✅ |
+| 13 | Integração e-commerce (CRUD integrações + importar pedido) | ✅ |
 
-##### Backlog restante (após sprint atual)
+##### 🤖 Vizor AI — Assistente Inteligente (implementado)
 
-| Funcionalidade | Prioridade | Descrição |
-|----------------|-----------|-----------|
-| **Desconto por campanha/cupom** | Média | Motor de descontos: percentual, valor fixo, escalonado, por quantidade |
-| **Tabela de preço com vigência** | Média | Data início/fim, preço por cliente/grupo, hierarquia de prioridade |
-| **Força de vendas** | Média | Meta por vendedor/equipe, dashboard de performance, ranking, premiação |
-| **Bonificação** | Baixa | Item grátis vinculado a regra de quantidade/valor |
-| **Venda sob encomenda** | Baixa | Make-to-order: pedido reserva produção antes de faturar |
-| **Venda consignada** | Baixa | Remessa consignação → retorno ou faturamento posterior |
-| **Comissão avançada** | Média | Comissão por faixa, produto, região; comissão sobre recebimento |
-| **Workflow de aprovação** | Média | Desconto acima de X% exige aprovação do gerente |
-| **Integração e-commerce** | Baixa | Receber pedidos de marketplaces/loja virtual |
+| Funcionalidade | Status |
+|---|---|
+| Chat com function calling (Claude API) | ✅ |
+| 30+ tools (navegar, criar pedido, consultar vendas/estoque/financeiro, etc.) | ✅ |
+| Upload XML no chat → extrai dados + concilia pedido + oferece agendamento WMS | ✅ |
+| Conhecimento completo do sistema (todas tabelas, regras, pré-requisitos) | ✅ |
+| Onboarding automático (detecta sistema vazio, guia configuração) | ✅ |
+| Histórico persistente (salva conversas no banco) | ✅ |
+| Diagnóstico de pré-requisitos antes de executar ações | ✅ |
+| Shortcuts para sugestões (resposta instantânea sem LLM) | ✅ |
+
+##### 🔧 Infraestrutura (implementado)
+
+| Funcionalidade | Status |
+|---|---|
+| Token keep-alive (renova automaticamente enquanto usuário ativo) | ✅ |
+| PDV: recuperação de venda após relogin | ✅ |
+| PDV: busca produto por nome (F3) | ✅ |
+| Layout ERP (Sankhya/TOTVS) no pedido de venda | ✅ |
+| Limpar dados: filtra por empresa (não global) | ✅ |
+| Backup: exportar dados empresa como JSON (download local) | ✅ |
+| Restaurar: importar backup JSON com upsert | ✅ |
 
 ---
 
