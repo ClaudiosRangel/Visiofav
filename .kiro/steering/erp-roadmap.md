@@ -36,7 +36,7 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 
 | # | Módulo | Status | Detalhe |
 |---|--------|--------|---------|
-| 4 | **Vendas Completo** | ⚠️ Parcial | Pedido + efetivação + NF-e ok. Falta PDV, orçamento, parcial, bonificação |
+| 4 | **Vendas Completo** | 🔨 Em andamento | Pedido completo ✅. Próximos: Orçamento → Devolução Venda → Relatórios → PDV |
 | 5 | **Compras Completo** | ⚠️ Parcial | Pedido + efetivação + XML ok. Falta cotação, MRP, aprovação |
 | 6 | **Devolução** | ⚠️ Parcial | Devolução compra ok + Logística reversa ok. Falta devolução venda fiscal |
 | 7 | **Transferência** | ⚠️ Básico | Transferência estoque entre empresas ok. Falta NF-e de transferência |
@@ -75,20 +75,26 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 
 #### O que FALTA para módulo completo (padrão Totvs/Omie/Sankhya)
 
+##### Sprint atual — Vendas Completo (em ordem de execução)
+
+| # | Funcionalidade | Status | Spec |
+|---|---|---|---|
+| 1 | **Orçamento/Proposta** | 🔨 A fazer agora | Orçamento com validade, aprovação, conversão em pedido, PDF |
+| 2 | **Devolução de venda** | 🔨 A fazer agora | NF-e entrada ref. saída, estorno financeiro, reentrada estoque |
+| 3 | **Relatórios de vendas** | 🔨 A fazer agora | Curva ABC, ticket médio, vendas por período/vendedor/cliente |
+| 4 | **PDV (Ponto de Venda)** | 🎯 Por último (design especial) | Caixa, NFC-e, sangria/suprimento, UX diferenciada e chamativa |
+
+##### Backlog restante (após sprint atual)
+
 | Funcionalidade | Prioridade | Descrição |
 |----------------|-----------|-----------|
-| **PDV (Ponto de Venda)** | Alta | Caixa, abertura/fechamento, sangria, suprimento, NFC-e no balcão, impressão cupom |
-| **Orçamento/Proposta** | Alta | Orçamento com validade, aprovação cliente, conversão em pedido, PDF para envio |
-| **Faturamento parcial** | Alta | Faturar apenas parte dos itens de um pedido (backorder) |
 | **Desconto por campanha/cupom** | Média | Motor de descontos: percentual, valor fixo, escalonado, por quantidade |
 | **Tabela de preço com vigência** | Média | Data início/fim, preço por cliente/grupo, hierarquia de prioridade |
 | **Força de vendas** | Média | Meta por vendedor/equipe, dashboard de performance, ranking, premiação |
-| **Devolução de venda** | Alta | NF-e de entrada referenciando a NF-e de saída, estorno financeiro, reentrada estoque |
 | **Bonificação** | Baixa | Item grátis vinculado a regra de quantidade/valor |
 | **Venda sob encomenda** | Baixa | Make-to-order: pedido reserva produção antes de faturar |
 | **Venda consignada** | Baixa | Remessa consignação → retorno ou faturamento posterior |
 | **Comissão avançada** | Média | Comissão por faixa, produto, região; comissão sobre recebimento |
-| **Relatórios vendas** | Alta | Curva ABC, ticket médio, inadimplência, vendas por período/vendedor/cliente |
 | **Workflow de aprovação** | Média | Desconto acima de X% exige aprovação do gerente |
 | **Integração e-commerce** | Baixa | Receber pedidos de marketplaces/loja virtual |
 

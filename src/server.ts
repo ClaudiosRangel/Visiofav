@@ -44,6 +44,9 @@ import { pedidoCompraRoutes } from './modules/pedido-compra/pedido-compra.routes
 import { compraRoutes } from './modules/compra/compra.routes'
 import { tabelaPrecoRoutes } from './modules/tabela-preco/tabela-preco.routes'
 import { pedidoVendaRoutes } from './modules/pedido-venda/pedido-venda.routes'
+import { orcamentoRoutes } from './modules/orcamento/orcamento.routes'
+import { devolucaoVendaRoutes } from './modules/devolucao-venda/devolucao-venda.routes'
+import { relatoriosVendasRoutes } from './modules/relatorios-vendas/relatorios-vendas.routes'
 import { vendaRoutes } from './modules/venda/venda.routes'
 import { contaPagarRoutes } from './modules/conta-pagar/conta-pagar.routes'
 import { contaReceberRoutes } from './modules/conta-receber/conta-receber.routes'
@@ -237,6 +240,9 @@ async function bootstrap() {
   await app.register(tabelaPrecoRoutes, { prefix: '/api/tabelas-preco' })
   await app.register(pedidoVendaRoutes, { prefix: '/api/pedidos-venda' })
   await app.register(vendaRoutes, { prefix: '/api/vendas' })
+  await app.register(orcamentoRoutes, { prefix: '/api/orcamentos' })
+  await app.register(devolucaoVendaRoutes, { prefix: '/api/devolucoes-venda' })
+  await app.register(relatoriosVendasRoutes, { prefix: '/api/relatorios/vendas' })
 
   // Módulo Financeiro
   await app.register(contaPagarRoutes, { prefix: '/api/contas-pagar' })
