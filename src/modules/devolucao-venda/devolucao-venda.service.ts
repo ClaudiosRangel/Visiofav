@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma'
+import { devolucaoFiscalService } from './devolucao-fiscal.service'
 import type { CriarDevolucaoVendaInput } from './devolucao-venda.schemas'
 
 export const devolucaoVendaService = {
@@ -124,6 +125,29 @@ export const devolucaoVendaService = {
 
       return dev
     })
+
+    // 4. Emitir NF-e de devolução (finalidade=4, tipoOperacao=0 entrada)
+    try {
+      const resultadoNFe = await devolucaoFiscalService.emitirNFeDevolucao({
+        empresaId,
+        vendaEfetivadaId: input.vendaEfetivadaId,
+        itens: itensDevolucao,
+        valorTotal: valorDevolucao,
+        motivo: input.motivo,
+      })
+
+      // Atualizar devolução com chave da NF-e
+      if (resultadoNFe?.chaveAcesso) {
+        await prisma.devolucaoVenda.update({
+          where: { id: devolucao.id },
+          data: { nfeEntradaChave: resultadoNFe.chaveAcesso },
+        })
+      }
+    } catch (errNfe) {
+      // NF-e falhou mas a devolução já foi processada (estoque + financeiro ok)
+      // Em produção isso iria para contingência. Não bloqueia a operação.
+      console.error('Falha ao emitir NF-e de devolução:', errNfe)
+    }
 
     return { data: devolucao }
   },

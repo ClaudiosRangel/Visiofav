@@ -47,6 +47,8 @@ export interface DadosNFe extends DadosDocumentoFiscal {
   modalidadeFrete?: number
   /** Informações adicionais de interesse do Fisco */
   infAdicionais?: string
+  /** Chaves de acesso de NF-e referenciadas (para devolução finNFe=4) */
+  nfesReferenciadas?: string[]
 }
 
 export interface DadosEmitenteNFe extends DadosEmitente {
@@ -201,6 +203,16 @@ function fmtDataHora(date: Date): string {
 
 function buildIde(dados: DadosNFe, chaveAcesso: string): string {
   const dv = chaveAcesso.slice(-1)
+
+  // NFref — referência de NF-e (obrigatório para finalidade=4 devolução)
+  let nfRefBlock = ''
+  if (dados.nfesReferenciadas && dados.nfesReferenciadas.length > 0) {
+    nfRefBlock = dados.nfesReferenciadas
+      .map(chave => `<NFref><refNFe>${chave}</refNFe></NFref>`)
+      .join('\n')
+    nfRefBlock = '\n' + nfRefBlock + '\n'
+  }
+
   return `<ide>
 <cUF>${dados.cUF}</cUF>
 <cNF>${dados.cNF}</cNF>
@@ -220,7 +232,7 @@ ${dados.dataSaida ? `<dhSaiEnt>${fmtDataHora(dados.dataSaida)}</dhSaiEnt>\n` : '
 <indFinal>${dados.destinatario?.indIEDest === 9 ? '1' : '0'}</indFinal>
 <indPres>${dados.indPres ?? 1}</indPres>
 <procEmi>0</procEmi>
-<verProc>VisioFab-1.0.0</verProc>
+<verProc>VisioFab-1.0.0</verProc>${nfRefBlock}
 </ide>`
 }
 

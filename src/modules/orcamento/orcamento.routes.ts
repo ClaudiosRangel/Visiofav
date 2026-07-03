@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { orcamentoService } from './orcamento.service'
+import { orcamentoPdfService } from './orcamento-pdf.service'
 import { createOrcamentoSchema, editOrcamentoSchema, reprovarOrcamentoSchema } from './orcamento.schemas'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
@@ -88,5 +89,19 @@ export async function orcamentoRoutes(app: FastifyInstance) {
     const result = await orcamentoService.converterEmPedido(user.empresaId, id)
     if ('error' in result && result.error) return reply.status(result.error.status).send(result.error)
     return reply.status(201).send(result.data)
+  })
+
+  // GET /:id/pdf — gerar PDF da proposta
+  app.get('/:id/pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    try {
+      const pdfBuffer = await orcamentoPdfService.gerarPdf(id, user.empresaId)
+      reply.header('Content-Type', 'application/pdf')
+      reply.header('Content-Disposition', `inline; filename="orcamento-${id}.pdf"`)
+      return reply.send(pdfBuffer)
+    } catch (err: any) {
+      return reply.status(404).send({ message: err.message || 'Orçamento não encontrado' })
+    }
   })
 }
