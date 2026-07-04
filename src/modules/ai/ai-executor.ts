@@ -804,76 +804,101 @@ async function executarConsultarTributacao(input: { produtoNome: string; ufDesti
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function executarCriarCliente(input: any, empresaId: string): Promise<ToolResult> {
+  const razaoSocial = String(input.razaoSocial || '').substring(0, 200)
+  const cpfCnpj = String(input.cpfCnpj || '').replace(/\D/g, '').substring(0, 20)
+  const uf = input.uf ? String(input.uf).toUpperCase().substring(0, 2) : undefined
+
+  if (!razaoSocial || !cpfCnpj) {
+    return { resposta: '❌ Razão social e CPF/CNPJ são obrigatórios.' }
+  }
+
   const existe = await prisma.cliente.findFirst({
-    where: { empresaId, cpfCnpj: input.cpfCnpj },
+    where: { empresaId, cpfCnpj },
   })
   if (existe) {
-    return { resposta: `⚠️ Cliente com CPF/CNPJ **${input.cpfCnpj}** já existe: **${existe.razaoSocial}**` }
+    return { resposta: `⚠️ Cliente com CPF/CNPJ **${cpfCnpj}** já existe: **${existe.razaoSocial}**` }
   }
 
   await prisma.cliente.create({
     data: {
       empresaId,
-      razaoSocial: input.razaoSocial,
-      cpfCnpj: input.cpfCnpj,
-      email: input.email,
-      telefone: input.telefone,
-      cidade: input.cidade,
-      uf: input.uf,
+      razaoSocial,
+      cpfCnpj,
+      email: input.email?.substring(0, 200),
+      telefone: input.telefone?.substring(0, 20),
+      cidade: input.cidade?.substring(0, 100),
+      uf,
     },
   })
 
   return {
-    resposta: `✅ Cliente **${input.razaoSocial}** cadastrado com sucesso!`,
+    resposta: `✅ Cliente **${razaoSocial}** cadastrado com sucesso!`,
     acao: { tipo: 'NAVEGAR', rota: '/configurador/clientes' },
   }
 }
 
 async function executarCriarProduto(input: any, empresaId: string): Promise<ToolResult> {
+  // Sanitizar campos: remover pontuação e truncar para os limites do banco
+  const codigo = String(input.codigo || '').substring(0, 60)
+  const nome = String(input.nome || '').substring(0, 200)
+  const unidade = String(input.unidade || 'UN').substring(0, 6)
+  const ncm = input.ncm ? String(input.ncm).replace(/\D/g, '').substring(0, 8) : undefined
+
+  if (!codigo || !nome) {
+    return { resposta: '❌ Nome e código do produto são obrigatórios.' }
+  }
+
   const existe = await prisma.produto.findFirst({
-    where: { empresaId, codigo: input.codigo },
+    where: { empresaId, codigo },
   })
   if (existe) {
-    return { resposta: `⚠️ Produto com código **${input.codigo}** já existe: **${existe.nome}**` }
+    return { resposta: `⚠️ Produto com código **${codigo}** já existe: **${existe.nome}**` }
   }
 
   await prisma.produto.create({
     data: {
       empresaId,
-      nome: input.nome,
-      codigo: input.codigo,
-      unidade: input.unidade || 'UN',
+      nome,
+      codigo,
+      unidade,
       precoBase: input.precoBase || 0,
-      ncm: input.ncm,
+      ncm: ncm || undefined,
     },
   })
 
   return {
-    resposta: `✅ Produto **${input.nome}** (${input.codigo}) cadastrado com sucesso!`,
+    resposta: `✅ Produto **${nome}** (${codigo}) cadastrado com sucesso!`,
     acao: { tipo: 'NAVEGAR', rota: '/configurador/produtos' },
   }
 }
 
 async function executarCriarFornecedor(input: any, empresaId: string): Promise<ToolResult> {
+  const razaoSocial = String(input.razaoSocial || '').substring(0, 200)
+  const cnpj = String(input.cnpj || '').replace(/\D/g, '').substring(0, 20)
+
+  if (!razaoSocial || !cnpj) {
+    return { resposta: '❌ Razão social e CNPJ são obrigatórios.' }
+  }
+
   const existe = await prisma.fornecedor.findFirst({
-    where: { empresaId, cnpj: input.cnpj },
+    where: { empresaId, cnpj },
   })
   if (existe) {
-    return { resposta: `⚠️ Fornecedor com CNPJ **${input.cnpj}** já existe: **${existe.razaoSocial}**` }
+    return { resposta: `⚠️ Fornecedor com CNPJ **${cnpj}** já existe: **${existe.razaoSocial}**` }
   }
 
   await prisma.fornecedor.create({
     data: {
       empresaId,
-      razaoSocial: input.razaoSocial,
-      cnpj: input.cnpj,
-      email: input.email,
-      telefone: input.telefone,
+      razaoSocial,
+      cnpj,
+      email: input.email?.substring(0, 200),
+      telefone: input.telefone?.substring(0, 20),
     },
   })
 
   return {
-    resposta: `✅ Fornecedor **${input.razaoSocial}** cadastrado com sucesso!`,
+    resposta: `✅ Fornecedor **${razaoSocial}** cadastrado com sucesso!`,
     acao: { tipo: 'NAVEGAR', rota: '/configurador/fornecedores' },
   }
 }
