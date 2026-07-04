@@ -194,6 +194,148 @@ export class AutoSchedulerService {
     return sugestoes
   }
 
+  /**
+   * Lista TODOS os slots disponíveis (até maxSlots) de uma doca em um dia,
+   * ao invés de retornar apenas o primeiro. Usado para apresentar múltiplas
+   * opções de horário ao usuário (ex: via Vizor AI).
+   *
+   * Mesmo algoritmo greedy de encontrarProximoSlot, mas continua varrendo
+   * os gaps disponíveis (avançando de duracaoMinutos em duracaoMinutos)
+   * em vez de parar no primeiro encontrado.
+   *
+   * @param docaId - ID da doca alvo
+   * @param data - Data no formato "YYYY-MM-DD"
+   * @param duracaoMinutos - Duração desejada de cada slot em minutos
+   * @param empresaId - ID da empresa (multi-tenant)
+   * @param maxSlots - Quantidade máxima de slots a retornar (default 6)
+   */
+  async listarSlotsDisponiveis(
+    docaId: string,
+    data: string,
+    duracaoMinutos: number,
+    empresaId: string,
+    maxSlots = 6,
+  ): Promise<{ horaInicio: string; horaFim: string }[]> {
+    const config = await this.getConfigOrDefault(empresaId)
+    const aberturaMin = toMinutes(config.horaAberturaOp)
+    const fechamentoMin = toMinutes(config.horaFechamentoOp)
+
+    const dataBase = new Date(data + 'T00:00:00')
+    const dataFimDia = new Date(data + 'T23:59:59')
+
+    const agendamentos = await prisma.agendaWms.findMany({
+      where: {
+        empresaId,
+        docaId,
+        dataPrevista: { gte: dataBase, lte: dataFimDia },
+        status: { notIn: ['CANCELADO'] },
+      },
+      select: { horaInicio: true, horaFim: true },
+    })
+
+    const bloqueios = await prisma.bloqueioSlotDoca.findMany({
+      where: {
+        empresaId,
+        docaId,
+        dataInicio: { lt: dataFimDia },
+        dataFim: { gt: dataBase },
+      },
+      select: { dataInicio: true, dataFim: true },
+    })
+
+    const intervalos: IntervaloMinutos[] = []
+    for (const ag of agendamentos) {
+      if (!ag.horaInicio || !ag.horaFim) continue
+      intervalos.push({
+        inicio: toMinutes(ag.horaInicio) - config.bufferMinutos,
+        fim: toMinutes(ag.horaFim) + config.bufferMinutos,
+      })
+    }
+    for (const bloqueio of bloqueios) {
+      const bloqueioInicioMin = this.dateToMinutesOfDay(bloqueio.dataInicio, dataBase)
+      const bloqueioFimMin = this.dateToMinutesOfDay(bloqueio.dataFim, dataBase)
+      intervalos.push({
+        inicio: Math.max(bloqueioInicioMin, 0),
+        fim: Math.min(bloqueioFimMin, 1440),
+      })
+    }
+    intervalos.sort((a, b) => a.inicio - b.inicio)
+
+    const slots: { horaInicio: string; horaFim: string }[] = []
+    let candidatoInicio = aberturaMin
+
+    for (const intervalo of intervalos) {
+      if (intervalo.fim <= candidatoInicio) continue
+
+      while (
+        candidatoInicio + duracaoMinutos <= intervalo.inicio &&
+        candidatoInicio + duracaoMinutos <= fechamentoMin
+      ) {
+        slots.push({
+          horaInicio: fromMinutes(candidatoInicio),
+          horaFim: fromMinutes(candidatoInicio + duracaoMinutos),
+        })
+        if (slots.length >= maxSlots) return slots
+        candidatoInicio += duracaoMinutos
+      }
+
+      candidatoInicio = Math.max(candidatoInicio, intervalo.fim)
+    }
+
+    while (candidatoInicio + duracaoMinutos <= fechamentoMin && slots.length < maxSlots) {
+      slots.push({
+        horaInicio: fromMinutes(candidatoInicio),
+        horaFim: fromMinutes(candidatoInicio + duracaoMinutos),
+      })
+      candidatoInicio += duracaoMinutos
+    }
+
+    return slots
+  }
+
+  /**
+   * Varre os próximos dias (a partir de dataInicial + 1) buscando dias com
+   * disponibilidade em qualquer uma das docas informadas. Usado quando o dia
+   * solicitado pelo usuário está totalmente lotado, para sugerir alternativas.
+   *
+   * @param docaIds - Lista de IDs de docas candidatas
+   * @param dataInicial - Data de referência no formato "YYYY-MM-DD" (a varredura começa no dia seguinte)
+   * @param duracaoMinutos - Duração desejada do slot em minutos
+   * @param empresaId - ID da empresa (multi-tenant)
+   * @param maxDiasVarredura - Quantos dias futuros varrer no máximo (default 14)
+   * @param maxDiasRetorno - Quantos dias com disponibilidade retornar no máximo (default 3)
+   */
+  async buscarProximosDiasDisponiveis(
+    docaIds: string[],
+    dataInicial: string,
+    duracaoMinutos: number,
+    empresaId: string,
+    maxDiasVarredura = 14,
+    maxDiasRetorno = 3,
+  ): Promise<{ data: string; slots: { horaInicio: string; horaFim: string }[] }[]> {
+    const resultado: { data: string; slots: { horaInicio: string; horaFim: string }[] }[] = []
+    const dataBase = new Date(dataInicial + 'T00:00:00')
+
+    for (let i = 1; i <= maxDiasVarredura && resultado.length < maxDiasRetorno; i++) {
+      const d = new Date(dataBase)
+      d.setDate(d.getDate() + i)
+      const dataStr = d.toISOString().split('T')[0]
+
+      let slotsDoDia: { horaInicio: string; horaFim: string }[] = []
+      for (const docaId of docaIds) {
+        const slots = await this.listarSlotsDisponiveis(docaId, dataStr, duracaoMinutos, empresaId, 3)
+        slotsDoDia = slotsDoDia.concat(slots)
+        if (slotsDoDia.length >= 3) break
+      }
+
+      if (slotsDoDia.length > 0) {
+        resultado.push({ data: dataStr, slots: slotsDoDia.slice(0, 3) })
+      }
+    }
+
+    return resultado
+  }
+
   // ─── Métodos auxiliares privados ────────────────────────────────────────────
 
   /**

@@ -336,21 +336,38 @@ export const AI_TOOLS: AITool[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // WMS / ARMAZÉM
+  // WMS / ARMAZÉM — Agendamento de Recebimento
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    name: 'agendar_recebimento',
-    description: 'Agenda recebimento de mercadoria na doca.',
+    name: 'consultar_disponibilidade_docas',
+    description: 'Verifica a disponibilidade real das docas para uma data e duração desejada. Use SEMPRE antes de agendar_recebimento_real, para mostrar ao usuário os horários livres. Se não houver horários no dia pedido, retorna sugestões de outros dias.',
     input_schema: {
       type: 'object',
       properties: {
-        fornecedorNome: { type: 'string' },
+        data: { type: 'string', description: 'YYYY-MM-DD — dia desejado para o agendamento' },
+        duracaoMinutos: { type: 'number', description: 'Duração estimada da operação em minutos (default 60)' },
+        docaId: { type: 'string', description: 'ID de uma doca específica (opcional). Se omitido, verifica todas as docas ativas.' },
+      },
+      required: ['data'],
+    },
+  },
+  {
+    name: 'agendar_recebimento_real',
+    description: 'Cria de fato um agendamento de recebimento na doca (grava no banco). Use SOMENTE depois de consultar_disponibilidade_docas e o usuário confirmar dia/hora/doca desejados.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        docaId: { type: 'string', description: 'ID da doca escolhida (retornado por consultar_disponibilidade_docas)' },
         data: { type: 'string', description: 'YYYY-MM-DD' },
-        horario: { type: 'string', description: 'HH:MM' },
-        doca: { type: 'number' },
+        horaInicio: { type: 'string', description: 'HH:MM' },
+        horaFim: { type: 'string', description: 'HH:MM' },
+        fornecedorNome: { type: 'string', description: 'Nome do fornecedor que vai entregar (opcional)' },
+        pedidoCompraNumero: { type: 'number', description: 'Número do pedido de compra relacionado (opcional)' },
+        motorista: { type: 'string' },
+        placa: { type: 'string' },
         observacao: { type: 'string' },
       },
-      required: ['fornecedorNome', 'data', 'horario'],
+      required: ['docaId', 'data', 'horaInicio', 'horaFim'],
     },
   },
   {
@@ -391,14 +408,32 @@ export const AI_TOOLS: AITool[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   {
     name: 'configurar_empresa',
-    description: 'Configura parâmetros da empresa (regime tributário, módulos, segmento).',
+    description: 'Configura parâmetros da empresa (regime tributário, módulos, segmento, se usa WMS).',
     input_schema: {
       type: 'object',
       properties: {
         regimeTributario: { type: 'number', description: '1=Simples Nacional, 2=Lucro Presumido, 3=Lucro Real' },
         segmento: { type: 'string' },
+        usaWms: { type: 'boolean', description: 'Se a empresa vai usar o módulo WMS (armazém)' },
       },
     },
+  },
+  {
+    name: 'configurar_integracao_erp',
+    description: 'Configura a integração com outro ERP externo (quando a empresa já usa outro sistema e quer integrar com o WMS/Vizor).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        integracaoAtiva: { type: 'boolean', description: 'Se a integração está ativa' },
+        sistemaExterno: { type: 'string', description: 'Nome do ERP externo (ex: SAP, TOTVS, Sankhya, Senior, Bling)' },
+      },
+      required: ['integracaoAtiva'],
+    },
+  },
+  {
+    name: 'consultar_integracao_erp',
+    description: 'Consulta o estado atual da configuração de integração com ERP externo.',
+    input_schema: { type: 'object', properties: {} },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -51,11 +51,14 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'criar_fornecedor': return await executarCriarFornecedor(input, empresaId)
       case 'consultar_cliente': return await executarConsultarCliente(input, empresaId)
       case 'consultar_produto': return await executarConsultarProduto(input, empresaId)
-      case 'agendar_recebimento': return executarAgendarRecebimento(input)
-      case 'consultar_agendamentos': return executarConsultarAgendamentos()
+      case 'consultar_disponibilidade_docas': return await executarConsultarDisponibilidadeDocas(input, empresaId)
+      case 'agendar_recebimento_real': return await executarAgendarRecebimentoReal(input, empresaId)
+      case 'consultar_agendamentos': return await executarConsultarAgendamentos(input, empresaId)
       case 'pdv_sangria': return executarPdvSangria(input)
       case 'pdv_suprimento': return executarPdvSuprimento(input)
       case 'configurar_empresa': return await executarConfigurarEmpresa(input, empresaId)
+      case 'configurar_integracao_erp': return await executarConfigurarIntegracaoErp(input, empresaId)
+      case 'consultar_integracao_erp': return await executarConsultarIntegracaoErp(empresaId)
       case 'diagnosticar_prerequisitos': return await executarDiagnostico(input, empresaId)
       case 'verificar_configuracao_empresa': return await executarVerificarConfiguracao(empresaId)
       default:
@@ -959,20 +962,140 @@ async function executarConsultarProduto(input: { busca: string }, empresaId: str
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WMS / ARMAZÉM
+// WMS / ARMAZÉM — Agendamento de Recebimento (REAL)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function executarAgendarRecebimento(input: any): ToolResult {
+async function executarConsultarDisponibilidadeDocas(
+  input: { data: string; duracaoMinutos?: number; docaId?: string },
+  empresaId: string,
+): Promise<ToolResult> {
+  const { autoSchedulerService } = await import('../agenda/auto-scheduler.service')
+  const duracao = input.duracaoMinutos || 60
+
+  const docas = input.docaId
+    ? await prisma.doca.findMany({ where: { id: input.docaId, empresaId, status: true }, select: { id: true, descricao: true, codigo: true } })
+    : await prisma.doca.findMany({ where: { empresaId, status: true }, select: { id: true, descricao: true, codigo: true } })
+
+  if (docas.length === 0) {
+    return { resposta: `❌ Nenhuma doca ativa cadastrada. Cadastre docas em **Configurador > Docas** antes de agendar recebimentos.` }
+  }
+
+  const porDoca: { docaId: string; docaNome: string; slots: { horaInicio: string; horaFim: string }[] }[] = []
+  for (const doca of docas) {
+    const slots = await autoSchedulerService.listarSlotsDisponiveis(doca.id, input.data, duracao, empresaId, 6)
+    porDoca.push({ docaId: doca.id, docaNome: doca.descricao || `Doca ${doca.codigo}`, slots })
+  }
+
+  const comDisponibilidade = porDoca.filter(d => d.slots.length > 0)
+
+  if (comDisponibilidade.length === 0) {
+    // Dia lotado — buscar próximos dias disponíveis
+    const docaIds = docas.map(d => d.id)
+    const alternativas = await autoSchedulerService.buscarProximosDiasDisponiveis(docaIds, input.data, duracao, empresaId)
+
+    if (alternativas.length === 0) {
+      return {
+        resposta: `⚠️ O dia **${formatDate(new Date(input.data + 'T00:00:00'))}** está totalmente lotado em todas as docas, e não encontrei disponibilidade nos próximos 14 dias. Verifique a configuração de horário operacional das docas ou tente uma data mais distante.`,
+        acao: { tipo: 'MOSTRAR_DADOS', resultado: { lotado: true, alternativas: [] } },
+      }
+    }
+
+    let resposta = `⚠️ O dia **${formatDate(new Date(input.data + 'T00:00:00'))}** está lotado em todas as docas. Encontrei disponibilidade em outros dias:\n\n`
+    for (const alt of alternativas) {
+      const horarios = alt.slots.map(s => `${s.horaInicio}-${s.horaFim}`).join(', ')
+      resposta += `📅 **${formatDate(new Date(alt.data + 'T00:00:00'))}**: ${horarios}\n`
+    }
+    resposta += `\nQual data e horário prefere?`
+
+    return {
+      resposta,
+      acao: { tipo: 'MOSTRAR_DADOS', resultado: { lotado: true, alternativas } },
+    }
+  }
+
+  let resposta = `📅 **Horários disponíveis em ${formatDate(new Date(input.data + 'T00:00:00'))}:**\n\n`
+  for (const d of comDisponibilidade) {
+    const horarios = d.slots.map(s => `${s.horaInicio}-${s.horaFim}`).join(', ')
+    resposta += `🚪 **${d.docaNome}**: ${horarios}\n`
+  }
+  resposta += `\nQual doca e horário deseja agendar?`
+
   return {
-    resposta: `📅 Para agendar o recebimento de **${input.fornecedorNome}** em **${input.data}** às **${input.horario}**, vou abrir a agenda de docas.`,
-    acao: { tipo: 'NAVEGAR', rota: '/wms/agenda', params: { data: input.data, fornecedor: input.fornecedorNome } },
+    resposta,
+    acao: { tipo: 'MOSTRAR_DADOS', resultado: { lotado: false, docas: comDisponibilidade } },
   }
 }
 
-function executarConsultarAgendamentos(): ToolResult {
+async function executarAgendarRecebimentoReal(input: any, empresaId: string): Promise<ToolResult> {
+  const { agendaService } = await import('../agenda/agenda.service')
+
+  let fornecedorId: string | undefined
+  if (input.fornecedorNome) {
+    const fornecedor = await prisma.fornecedor.findFirst({
+      where: {
+        empresaId,
+        OR: [
+          { razaoSocial: { contains: input.fornecedorNome, mode: 'insensitive' } },
+          { nomeFantasia: { contains: input.fornecedorNome, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    })
+    fornecedorId = fornecedor?.id
+  }
+
+  let pedidoCompraId: string | undefined
+  if (input.pedidoCompraNumero) {
+    const pedido = await prisma.pedidoCompra.findFirst({
+      where: { empresaId, numero: input.pedidoCompraNumero },
+      select: { id: true },
+    })
+    pedidoCompraId = pedido?.id
+  }
+
+  try {
+    const agendamento = await agendaService.criarAgendamento(
+      {
+        docaId: input.docaId,
+        dataPrevista: input.data,
+        horaInicio: input.horaInicio,
+        horaFim: input.horaFim,
+        fornecedorId,
+        pedidoCompraId,
+        motorista: input.motorista,
+        placa: input.placa,
+        observacao: input.observacao,
+      },
+      empresaId,
+    )
+
+    return {
+      resposta: `✅ **Recebimento agendado!**\n• Data: **${formatDate(new Date(input.data + 'T00:00:00'))}**\n• Horário: **${input.horaInicio} - ${input.horaFim}**${input.fornecedorNome ? `\n• Fornecedor: **${input.fornecedorNome}**` : ''}`,
+      acao: { tipo: 'NAVEGAR', rota: '/wms/agenda', params: { agendamentoId: agendamento.id } },
+    }
+  } catch (e: any) {
+    const msg = e?.message || 'Erro desconhecido'
+    return { resposta: `❌ Não consegui agendar: ${msg}` }
+  }
+}
+
+async function executarConsultarAgendamentos(input: { data?: string }, empresaId: string): Promise<ToolResult> {
+  const { agendaService } = await import('../agenda/agenda.service')
+  const data = input.data || new Date().toISOString().split('T')[0]
+
+  const { data: agendamentos } = await agendaService.listarAgendamentos({ dataPrevista: data }, empresaId)
+
+  if (agendamentos.length === 0) {
+    return { resposta: `📅 Nenhum agendamento para **${formatDate(new Date(data + 'T00:00:00'))}**.` }
+  }
+
+  const lista = agendamentos.map((a: any) =>
+    `  • **${a.horaInicio}-${a.horaFim}** | ${a.doca?.descricao || 'Doca N/D'} | ${a.fornecedor?.razaoSocial || 'Sem fornecedor'} | Status: **${a.status}**`
+  ).join('\n')
+
   return {
-    resposta: `📅 Abrindo a **agenda de recebimentos**...`,
-    acao: { tipo: 'NAVEGAR', rota: '/wms/agenda' },
+    resposta: `📅 **Agendamentos de ${formatDate(new Date(data + 'T00:00:00'))}** (${agendamentos.length}):\n${lista}`,
+    acao: { tipo: 'NAVEGAR', rota: '/wms/agenda', params: { data } },
   }
 }
 
@@ -1001,6 +1124,7 @@ function executarPdvSuprimento(input: { valor: number; motivo: string }): ToolRe
 async function executarConfigurarEmpresa(input: any, empresaId: string): Promise<ToolResult> {
   const updates: any = {}
   if (input.regimeTributario) updates.regimeTributario = input.regimeTributario
+  if (typeof input.usaWms === 'boolean') updates.usaWms = input.usaWms
 
   if (Object.keys(updates).length > 0) {
     await prisma.empresa.update({ where: { id: empresaId }, data: updates })
@@ -1009,7 +1133,36 @@ async function executarConfigurarEmpresa(input: any, empresaId: string): Promise
   const regimeLabel = ({ 1: 'Simples Nacional', 2: 'Lucro Presumido', 3: 'Lucro Real' } as Record<number, string>)[input.regimeTributario] || ''
 
   return {
-    resposta: `✅ Empresa configurada!\n${regimeLabel ? `• Regime: **${regimeLabel}**` : ''}${input.segmento ? `\n• Segmento: **${input.segmento}**` : ''}`,
+    resposta: `✅ Empresa configurada!\n${regimeLabel ? `• Regime: **${regimeLabel}**\n` : ''}${typeof input.usaWms === 'boolean' ? `• WMS: **${input.usaWms ? 'Ativado' : 'Desativado'}**\n` : ''}${input.segmento ? `• Segmento: **${input.segmento}**` : ''}`,
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INTEGRAÇÃO COM ERP EXTERNO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function executarConfigurarIntegracaoErp(input: { integracaoAtiva: boolean; sistemaExterno?: string }, empresaId: string): Promise<ToolResult> {
+  await prisma.configIntegracao.upsert({
+    where: { empresaId },
+    create: { empresaId, integracaoAtiva: input.integracaoAtiva, sistemaExterno: input.sistemaExterno },
+    update: { integracaoAtiva: input.integracaoAtiva, sistemaExterno: input.sistemaExterno },
+  })
+
+  return {
+    resposta: `✅ Integração com ERP externo **${input.integracaoAtiva ? 'ativada' : 'desativada'}**${input.sistemaExterno ? ` (${input.sistemaExterno})` : ''}.`,
+  }
+}
+
+async function executarConsultarIntegracaoErp(empresaId: string): Promise<ToolResult> {
+  const config = await prisma.configIntegracao.findUnique({ where: { empresaId } })
+
+  if (!config || !config.integracaoAtiva) {
+    return { resposta: `🔌 Nenhuma integração com ERP externo configurada atualmente.` }
+  }
+
+  return {
+    resposta: `🔌 **Integração ativa** com **${config.sistemaExterno || 'sistema externo não identificado'}**.`,
+    acao: { tipo: 'MOSTRAR_DADOS', resultado: config },
   }
 }
 
