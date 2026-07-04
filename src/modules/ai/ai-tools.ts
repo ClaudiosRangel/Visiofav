@@ -263,6 +263,11 @@ export const AI_TOOLS: AITool[] = [
     },
   },
   {
+    name: 'consultar_notas_emitidas_contra_cnpj',
+    description: 'Consulta na SEFAZ (Distribuição DFe) as NF-e/CT-e emitidas contra o CNPJ da empresa logada (notas de compra que fornecedores emitiram para a empresa) e baixa as novas encontradas para lançamento posterior. Requer certificado digital ativo cadastrado.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name: 'consultar_tributacao',
     description: 'Simula/consulta tributação de um produto (ICMS, IPI, PIS, COFINS).',
     input_schema: {
@@ -280,7 +285,7 @@ export const AI_TOOLS: AITool[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   {
     name: 'criar_cliente',
-    description: 'Cadastra um novo cliente.',
+    description: 'Cadastra um novo cliente. Se o usuário informar um CEP, use a tool consultar_cep primeiro para preencher logradouro/bairro/cidade/UF automaticamente.',
     input_schema: {
       type: 'object',
       properties: {
@@ -288,6 +293,11 @@ export const AI_TOOLS: AITool[] = [
         cpfCnpj: { type: 'string' },
         email: { type: 'string' },
         telefone: { type: 'string' },
+        cep: { type: 'string', description: 'Apenas dígitos' },
+        logradouro: { type: 'string' },
+        numero: { type: 'string' },
+        complemento: { type: 'string' },
+        bairro: { type: 'string' },
         cidade: { type: 'string' },
         uf: { type: 'string' },
       },
@@ -311,7 +321,7 @@ export const AI_TOOLS: AITool[] = [
   },
   {
     name: 'criar_fornecedor',
-    description: 'Cadastra um novo fornecedor.',
+    description: 'Cadastra um novo fornecedor. Se o usuário informar um CEP, use a tool consultar_cep primeiro para preencher logradouro/bairro/cidade/UF automaticamente.',
     input_schema: {
       type: 'object',
       properties: {
@@ -319,6 +329,13 @@ export const AI_TOOLS: AITool[] = [
         cnpj: { type: 'string' },
         email: { type: 'string' },
         telefone: { type: 'string' },
+        cep: { type: 'string', description: 'Apenas dígitos' },
+        logradouro: { type: 'string' },
+        numero: { type: 'string' },
+        complemento: { type: 'string' },
+        bairro: { type: 'string' },
+        cidade: { type: 'string' },
+        uf: { type: 'string' },
       },
       required: ['razaoSocial', 'cnpj'],
     },
@@ -433,6 +450,17 @@ export const AI_TOOLS: AITool[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   // ONBOARDING — Configurar Nova Empresa do Zero
   // ═══════════════════════════════════════════════════════════════════════════
+  {
+    name: 'consultar_cep',
+    description: 'Consulta um CEP e retorna logradouro, bairro, cidade e UF automaticamente (via ViaCEP). Use SEMPRE que o usuário informar um CEP durante o cadastro de empresa/cliente/fornecedor, para preencher o endereço sem precisar perguntar rua/bairro/cidade/estado manualmente. Depois pergunte apenas número e complemento.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        cep: { type: 'string', description: 'CEP com 8 dígitos, apenas números' },
+      },
+      required: ['cep'],
+    },
+  },
   {
     name: 'configurar_dados_empresa',
     description: 'Salva os dados cadastrais básicos da empresa: razão social, nome fantasia, CNPJ, endereço, telefone, email. Use durante o onboarding quando o usuário fornecer esses dados.',

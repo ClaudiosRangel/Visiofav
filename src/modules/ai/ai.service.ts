@@ -78,9 +78,15 @@ export const aiService = {
       // Montar mensagens para o LLM
       const messages: Anthropic.MessageParam[] = []
 
-      // Adicionar histórico (últimas 10 mensagens)
+      // Adicionar histórico sanitizado (últimas 10 mensagens).
+      // A API da Anthropic EXIGE que a conversa comece com role 'user' e não
+      // aceita mensagens com content vazio. Como o frontend guarda uma mensagem
+      // de boas-vindas 'assistant' como primeiro item da lista, um slice(-N) pode
+      // cortar exatamente no meio e devolver um histórico que começa com
+      // 'assistant' — isso causa 400 da Anthropic (erro genérico no chat).
       if (historico && historico.length > 0) {
-        for (const msg of historico.slice(-10)) {
+        const sanitizado = this.sanitizarHistorico(historico.slice(-10))
+        for (const msg of sanitizado) {
           messages.push({ role: msg.role, content: msg.content })
         }
       }
@@ -138,6 +144,9 @@ export const aiService = {
       console.error(`[Vizor AI] ERRO: status=${statusCode} msg=${errorMsg}`)
       console.error(`[Vizor AI] API_KEY present: ${!!process.env.ANTHROPIC_API_KEY}`)
       console.error(`[Vizor AI] API_KEY starts with: ${process.env.ANTHROPIC_API_KEY?.substring(0, 10)}...`)
+      if (error?.error) {
+        console.error(`[Vizor AI] Detalhe do erro Anthropic:`, JSON.stringify(error.error))
+      }
 
       // Se o erro é de autenticação, informar claramente
       if (statusCode === 401 || errorMsg.includes('authentication') || errorMsg.includes('api_key')) {
@@ -253,6 +262,35 @@ export const aiService = {
       resposta: '🤖 Entendi sua pergunta! Para atendê-lo melhor, posso ajudar com:\n\n• Navegar para qualquer tela do sistema\n• Consultar dados (vendas, estoque, financeiro)\n• Criar registros (pedidos, orçamentos, clientes)\n• Importar XML de NF-e\n• Tirar dúvidas sobre o sistema\n\nTente ser mais específico ou clique em uma sugestão abaixo.',
       sugestoes: ['O que pode fazer?', 'Consultar vendas', 'Ver estoque', 'Abrir PDV', 'Importar XML'],
     }
+  },
+
+  /**
+   * Sanitiza o histórico de mensagens antes de enviar à Anthropic API:
+   * 1. Remove mensagens com conteúdo vazio (a API rejeita content vazio)
+   * 2. Garante que a primeira mensagem seja 'user' (API exige isso)
+   * 3. Mescla mensagens consecutivas do mesmo role (API também rejeita
+   *    role repetido sem alternância — ex: dois 'assistant' seguidos)
+   */
+  sanitizarHistorico(historico: ChatMessage[]): ChatMessage[] {
+    let msgs = historico.filter(m => m.content && m.content.trim().length > 0)
+
+    // Descarta mensagens iniciais até a primeira ser 'user'
+    const primeiroUserIdx = msgs.findIndex(m => m.role === 'user')
+    if (primeiroUserIdx === -1) return []
+    msgs = msgs.slice(primeiroUserIdx)
+
+    // Mescla turnos consecutivos do mesmo role
+    const mesclado: ChatMessage[] = []
+    for (const msg of msgs) {
+      const ultimo = mesclado[mesclado.length - 1]
+      if (ultimo && ultimo.role === msg.role) {
+        ultimo.content = `${ultimo.content}\n${msg.content}`
+      } else {
+        mesclado.push({ role: msg.role, content: msg.content })
+      }
+    }
+
+    return mesclado
   },
 
   gerarSugestoes(mensagemAnterior: string): string[] {

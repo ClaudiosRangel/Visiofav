@@ -14,6 +14,7 @@ import { cfopRoutes } from './cadastros/cfop.routes'
 import { cestRoutes } from './cadastros/cest.routes'
 import { gnreRoutes } from './gnre/gnre.routes'
 import { importacaoXmlRoutes } from './importacao/importacao-xml.routes'
+import { distribuicaoDfeRoutes } from './distribuicao-dfe/distribuicao-dfe.routes'
 
 export async function fiscalRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -56,4 +57,7 @@ export async function fiscalRoutes(app: FastifyInstance) {
 
   // Importação de XML (upload, listagem, geração de entrada)
   app.register(importacaoXmlRoutes, { prefix: '/importacao' })
+
+  // Distribuição DFe (verificar/baixar NF-e/CT-e emitidas contra o CNPJ da empresa)
+  app.register(distribuicaoDfeRoutes, { prefix: '/distribuicao-dfe' })
 }

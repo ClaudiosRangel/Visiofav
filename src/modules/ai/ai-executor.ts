@@ -46,6 +46,7 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'criar_conta_receber': return await executarCriarContaReceber(input, empresaId)
       case 'baixar_titulo': return await executarBaixarTitulo(input, empresaId)
       case 'consultar_nfe': return await executarConsultarNfe(input, empresaId)
+      case 'consultar_notas_emitidas_contra_cnpj': return await executarConsultarNotasEmitidasContraCnpj(empresaId)
       case 'consultar_tributacao': return await executarConsultarTributacao(input, empresaId)
       case 'criar_cliente': return await executarCriarCliente(input, empresaId)
       case 'criar_produto': return await executarCriarProduto(input, empresaId)
@@ -60,6 +61,7 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'configurar_empresa': return await executarConfigurarEmpresa(input, empresaId)
       case 'configurar_integracao_erp': return await executarConfigurarIntegracaoErp(input, empresaId)
       case 'consultar_integracao_erp': return await executarConsultarIntegracaoErp(empresaId)
+      case 'consultar_cep': return await executarConsultarCep(input)
       case 'configurar_dados_empresa': return await executarConfigurarDadosEmpresa(input, empresaId)
       case 'configurar_tributacao_inicial': return await executarConfigurarTributacaoInicial(input, empresaId)
       case 'criar_centro_distribuicao': return await executarCriarCentroDistribuicao(input, empresaId)
@@ -989,6 +991,66 @@ async function executarConsultarNfe(input: any, empresaId: string): Promise<Tool
   }
 }
 
+async function executarConsultarNotasEmitidasContraCnpj(empresaId: string): Promise<ToolResult> {
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: empresaId },
+    select: { cnpj: true, uf: true },
+  })
+  if (!empresa) {
+    return { resposta: `❌ Empresa não encontrada.` }
+  }
+
+  const cnpjLimpo = (empresa.cnpj || '').replace(/\D/g, '')
+  if (cnpjLimpo.length !== 14) {
+    return { resposta: `❌ O CNPJ da empresa não está configurado corretamente. Configure-o primeiro (configurar_dados_empresa).` }
+  }
+
+  try {
+    const { certificadoService } = await import('../fiscal/certificado/certificado.service')
+    const { criarSefazClient } = await import('../fiscal/emissor-dfe/sefaz/sefaz-client')
+    const { obterUrlWebservice } = await import('../fiscal/emissor-dfe/sefaz/sefaz-urls')
+    const { AmbienteSefaz, ServicoSefaz } = await import('../fiscal/emissor-dfe/sefaz/tipos')
+    const { criarDistribuicaoDFeService } = await import('../fiscal/emissor-dfe/sefaz/distribuicao-dfe')
+
+    const certificado = await certificadoService.obterParaAssinatura(cnpjLimpo, empresaId)
+
+    const ambiente = Number(process.env.SEFAZ_AMBIENTE) || 2
+    const sefazConfig = {
+      ambiente: ambiente === 1 ? AmbienteSefaz.PRODUCAO : AmbienteSefaz.HOMOLOGACAO,
+      uf: empresa.uf || 'SP',
+      timeoutMs: Number(process.env.SEFAZ_TIMEOUT_MS) || 30000,
+      maxRetentativas: 3,
+      intervaloRetentativaMs: 5000,
+      certificadoPfx: certificado.pfxBuffer,
+      certificadoSenha: certificado.senha,
+    }
+
+    const urlResolver = {
+      resolverUrl: (uf: string, servico: any, amb: number) => obterUrlWebservice(uf, servico, amb),
+    }
+
+    const sefazClient = criarSefazClient(sefazConfig as any, urlResolver)
+    const distribuicaoService = criarDistribuicaoDFeService(sefazClient, prisma as any)
+
+    const resultado = await distribuicaoService.consultarEBaixar({ cnpj: cnpjLimpo, empresaId })
+
+    if (resultado.documentosProcessados === 0) {
+      return { resposta: `✅ Consultei a SEFAZ — nenhuma nota nova emitida contra o CNPJ da empresa desde a última verificação.` }
+    }
+
+    return {
+      resposta: `📥 **${resultado.documentosProcessados} nova(s) nota(s)** emitida(s) contra o CNPJ da empresa foram encontradas e baixadas!${resultado.erros.length > 0 ? `\n⚠️ ${resultado.erros.length} documento(s) tiveram erro ao processar.` : ''}\n\nQuer que eu gere os lançamentos de entrada agora?`,
+      acao: { tipo: 'NAVEGAR', rota: '/fiscal/distribuicao-dfe' },
+    }
+  } catch (err: any) {
+    const msg = err?.message || 'erro desconhecido'
+    if (msg.includes('certificado') || msg.includes('Certificado')) {
+      return { resposta: `❌ Não encontrei um certificado digital ativo para o CNPJ da empresa. Cadastre o certificado A1 em **Fiscal > Certificados** antes de consultar as notas.` }
+    }
+    return { resposta: `❌ Não consegui consultar a SEFAZ agora: ${msg}` }
+  }
+}
+
 async function executarConsultarTributacao(input: { produtoNome: string; ufDestino?: string }, empresaId: string): Promise<ToolResult> {
   const produto = await prisma.produto.findFirst({
     where: {
@@ -1041,7 +1103,12 @@ async function executarCriarCliente(input: any, empresaId: string): Promise<Tool
       razaoSocial,
       cpfCnpj,
       email: input.email?.substring(0, 200),
-      telefone: input.telefone?.substring(0, 20),
+      telefone: input.telefone ? String(input.telefone).replace(/\D/g, '').substring(0, 20) : undefined,
+      cep: input.cep ? String(input.cep).replace(/\D/g, '').substring(0, 10) : undefined,
+      logradouro: input.logradouro?.substring(0, 200),
+      numero: input.numero?.substring(0, 20),
+      complemento: input.complemento?.substring(0, 100),
+      bairro: input.bairro?.substring(0, 100),
       cidade: input.cidade?.substring(0, 100),
       uf,
     },
@@ -1109,7 +1176,14 @@ async function executarCriarFornecedor(input: any, empresaId: string): Promise<T
       razaoSocial,
       cnpj,
       email: input.email?.substring(0, 200),
-      telefone: input.telefone?.substring(0, 20),
+      telefone: input.telefone ? String(input.telefone).replace(/\D/g, '').substring(0, 20) : undefined,
+      cep: input.cep ? String(input.cep).replace(/\D/g, '').substring(0, 10) : undefined,
+      logradouro: input.logradouro?.substring(0, 200),
+      numero: input.numero?.substring(0, 20),
+      complemento: input.complemento?.substring(0, 100),
+      bairro: input.bairro?.substring(0, 100),
+      cidade: input.cidade?.substring(0, 100),
+      uf: input.uf ? String(input.uf).toUpperCase().substring(0, 2) : undefined,
     },
   })
 
@@ -1382,6 +1456,45 @@ async function executarConsultarIntegracaoErp(empresaId: string): Promise<ToolRe
 // ═══════════════════════════════════════════════════════════════════════════════
 // ONBOARDING — Configurar Nova Empresa do Zero
 // ═══════════════════════════════════════════════════════════════════════════════
+
+async function executarConsultarCep(input: { cep: string }): Promise<ToolResult> {
+  const cepLimpo = String(input.cep || '').replace(/\D/g, '')
+  if (cepLimpo.length !== 8) {
+    return { resposta: `❌ CEP inválido. Informe os 8 dígitos do CEP (ex: 01310100).` }
+  }
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`, { signal: controller.signal })
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      return { resposta: `⚠️ Não consegui consultar o CEP **${cepLimpo}** agora. Pode informar o endereço manualmente (rua, bairro, cidade, UF)?` }
+    }
+
+    const data: any = await response.json()
+    if (data.erro) {
+      return { resposta: `❌ CEP **${cepLimpo}** não encontrado. Verifique se digitou corretamente.` }
+    }
+
+    return {
+      resposta: `📍 Endereço encontrado para o CEP **${cepLimpo}**:\n• Logradouro: **${data.logradouro || 'não informado'}**\n• Bairro: **${data.bairro || 'não informado'}**\n• Cidade: **${data.localidade}**\n• UF: **${data.uf}**\n\nMe informe o número e complemento (se houver).`,
+      acao: {
+        tipo: 'MOSTRAR_DADOS',
+        resultado: {
+          cep: cepLimpo,
+          logradouro: data.logradouro || '',
+          bairro: data.bairro || '',
+          cidade: data.localidade || '',
+          uf: data.uf || '',
+        },
+      },
+    }
+  } catch (err: any) {
+    return { resposta: `⚠️ Não consegui consultar o CEP agora (${err.message || 'erro de conexão'}). Pode informar o endereço manualmente?` }
+  }
+}
 
 async function executarConfigurarDadosEmpresa(input: any, empresaId: string): Promise<ToolResult> {
   const updates: any = {}
