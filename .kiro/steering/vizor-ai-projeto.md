@@ -4,6 +4,27 @@ inclusion: auto
 
 # Vizor AI — Projeto de IA Integrada ao ERP
 
+## STATUS ATUAL (implementado e em produção)
+
+- **LLM**: `claude-haiku-4-5` via Anthropic SDK, com function calling (`src/modules/ai/ai.service.ts`, `ai-tools.ts`, `ai-executor.ts`, `ai-system-prompt.ts`).
+- **Chat**: widget no frontend (`src/components/ai/ChatWidget.tsx`) com upload de XML, sugestões clicáveis (shortcuts locais sem LLM), markdown renderizado, fallback local rico quando sem API key ou em erro.
+- **Persistência**: histórico salvo em `ConversaAI`.
+- **Tools ativas** (30+): navegação, CRUD de pedidos de venda/compra, orçamentos, consultas (vendas, top clientes/produtos, estoque, financeiro, NF-e, tributação), cadastros (cliente/produto/fornecedor) com sanitização de campos (NCM/CPF/CNPJ/telefone sem formatação), PDV (sangria/suprimento), diagnóstico de pré-requisitos, verificação de configuração da empresa.
+- **Agendamento de recebimento no WMS — AGORA REAL** (antes só navegava):
+  - `consultar_disponibilidade_docas`: verifica disponibilidade real nas docas (via `autoSchedulerService.listarSlotsDisponiveis`), retorna múltiplos horários livres por doca; se o dia estiver lotado em todas as docas, busca automaticamente os próximos dias com disponibilidade (`buscarProximosDiasDisponiveis`, varre até 14 dias).
+  - `agendar_recebimento_real`: cria de fato o registro em `AgendaWms` via `agendaService.criarAgendamento`, resolvendo fornecedor/pedido de compra por nome/número.
+  - `consultar_agendamentos`: lista agendamentos reais do dia (antes só navegava).
+  - Fluxo documentado no system prompt: IA sempre pergunta dia/hora → consulta disponibilidade real → apresenta opções → só agenda após confirmação explícita do usuário. Nunca inventa horários.
+- **Integração com ERP externo**: novo model `ConfigIntegracao` já existia; tools `configurar_integracao_erp` e `consultar_integracao_erp` adicionadas para a IA perguntar/configurar durante onboarding (nome do ERP externo: SAP, TOTVS, Sankhya, Senior, Bling, etc.).
+- **Onboarding guiado**: system prompt expandido com roteiro passo-a-passo (segmento → regime tributário → módulos → detalhes de WMS: CDs, formato de endereçamento, docas, coletor de dados, funcionários → integração com ERP externo → cadastros iniciais → certificado digital). A IA faz UMA pergunta por vez, nunca despeja tudo de uma vez.
+- **Importação de XML**: hoje é diagnóstico + navegação (`processarXml` em `ai.service.ts` extrai dados via regex e sugere ações); importação real (criar fornecedor/pedido/conta a pagar automaticamente) ainda é um NEXT STEP.
+
+## PRÓXIMOS PASSOS (pendente)
+1. Importação REAL de XML via IA (hoje só navega para `/compras/importar-xml`): cadastrar fornecedor se não existir, criar `PedidoCompra` + `CompraEfetivada`, gerar conta a pagar automaticamente.
+2. Aprendizado de comportamento do usuário (hoje é só um comentário no prompt, sem implementação real de tracking).
+3. Expandir tools de PCP e Fiscal com o mesmo nível de detalhe que Vendas/Compras/WMS já têm.
+
+
 ## Visão Geral
 
 O Vizor AI é um assistente de inteligência artificial nativo integrado ao VisioFab ERP. Ele funciona como um "copilot" que ajuda o usuário em TODOS os módulos do sistema, desde configuração inicial até operações do dia a dia.
