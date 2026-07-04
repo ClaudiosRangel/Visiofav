@@ -42,13 +42,14 @@ inclusion: auto
   - Nova tool de IA `consultar_notas_emitidas_contra_cnpj`: permite pedir "verifica se chegou nota fiscal" no chat, a IA consulta a SEFAZ e informa quantas notas novas foram encontradas.
   - Pré-requisito: certificado digital A1 ativo cadastrado para o CNPJ da empresa (módulo `certificado`).
 
+- **Frontend da Distribuição DFe implementado** (repo VisioFab.Wms.Front): `/fiscal/distribuicao-dfe` — página com botão "Verificar Notas na SEFAZ" (consulta manual), cards de status (pendentes de lançamento, último NSU), tabela de documentos com filtro por status, e modal de detalhe com ação "Gerar Entrada". Hook `useDistribuicaoDfe.ts` (useListar, useStatus, useConsultar, useGerarEntrada). Item de menu adicionado em Fiscal > Utilitários > "Notas do Fornecedor (DFe)".
+
 ## PRÓXIMOS PASSOS (pendente)
 1. Aprendizado de comportamento do usuário (hoje é só um comentário no prompt, sem implementação real de tracking).
 2. Expandir tools de PCP e Fiscal com o mesmo nível de detalhe que Vendas/Compras/WMS já têm.
 3. Persistir o cache de XML pendente em banco/Redis em vez de memória do processo, para sobreviver a restarts do Render (hoje é aceitável pois TTL é curto e o usuário pode reenviar).
 4. Upload de certificado digital (.pfx) via IA — hoje ainda precisa ser feito manualmente na tela de configurações.
-5. Frontend: criar tela `/fiscal/distribuicao-dfe` para listar/consultar/gerar entrada das notas baixadas via Distribuição DFe (hoje só existe o backend).
-6. Agendar consulta automática periódica de Distribuição DFe (hoje só é acionada manualmente via chat ou endpoint).
+5. Agendar consulta automática periódica de Distribuição DFe (hoje só é acionada manualmente via chat, endpoint ou botão na tela).
 
 
 ## Visão Geral

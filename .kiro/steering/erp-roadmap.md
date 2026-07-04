@@ -113,7 +113,7 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 | Onboarding REAL de nova empresa: dados cadastrais, tributação inicial (seed de naturezas de operação/CFOP), CD/depósito/zona/docas/endereços WMS em lote, criação de usuários com nível de acesso, cadastro de funcionários com vínculo a coletor | ✅ |
 | Bug corrigido: erro genérico "Erro ao processar" causado por histórico de chat mal formatado (roles não alternando) enviado à Anthropic API | ✅ |
 | Busca automática de CEP (ViaCEP) no cadastro de empresa/cliente/fornecedor via chat | ✅ |
-| Módulo Distribuição DFe: verificar e baixar NF-e/CT-e emitidas contra o CNPJ da empresa direto na SEFAZ (requer certificado digital ativo) | ✅ backend, 🔲 frontend |
+| Módulo Distribuição DFe: verificar e baixar NF-e/CT-e emitidas contra o CNPJ da empresa direto na SEFAZ (requer certificado digital ativo) | ✅ backend + frontend |
 
 ##### 🔧 Infraestrutura (implementado)
 
