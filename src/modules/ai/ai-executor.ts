@@ -60,6 +60,15 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'configurar_empresa': return await executarConfigurarEmpresa(input, empresaId)
       case 'configurar_integracao_erp': return await executarConfigurarIntegracaoErp(input, empresaId)
       case 'consultar_integracao_erp': return await executarConsultarIntegracaoErp(empresaId)
+      case 'configurar_dados_empresa': return await executarConfigurarDadosEmpresa(input, empresaId)
+      case 'configurar_tributacao_inicial': return await executarConfigurarTributacaoInicial(input, empresaId)
+      case 'criar_centro_distribuicao': return await executarCriarCentroDistribuicao(input, empresaId)
+      case 'criar_deposito': return await executarCriarDeposito(input, empresaId)
+      case 'criar_zona_wms': return await executarCriarZonaWms(input, empresaId)
+      case 'criar_docas_wms': return await executarCriarDocasWms(input, empresaId)
+      case 'gerar_enderecos_wms': return await executarGerarEnderecosWms(input, empresaId)
+      case 'criar_usuario_sistema': return await executarCriarUsuarioSistema(input, empresaId)
+      case 'criar_funcionario': return await executarCriarFuncionario(input, empresaId)
       case 'diagnosticar_prerequisitos': return await executarDiagnostico(input, empresaId)
       case 'verificar_configuracao_empresa': return await executarVerificarConfiguracao(empresaId)
       default:
@@ -1370,6 +1379,328 @@ async function executarConsultarIntegracaoErp(empresaId: string): Promise<ToolRe
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING — Configurar Nova Empresa do Zero
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function executarConfigurarDadosEmpresa(input: any, empresaId: string): Promise<ToolResult> {
+  const updates: any = {}
+  if (input.razaoSocial) updates.razaoSocial = input.razaoSocial
+  if (input.nomeFantasia) updates.nomeFantasia = input.nomeFantasia
+  if (input.cnpj) updates.cnpj = String(input.cnpj).replace(/\D/g, '').substring(0, 14)
+  if (input.inscEstadual) updates.inscEstadual = input.inscEstadual
+  if (input.logradouro) updates.logradouro = input.logradouro
+  if (input.numero) updates.numero = input.numero
+  if (input.complemento) updates.complemento = input.complemento
+  if (input.bairro) updates.bairro = input.bairro
+  if (input.cidade) updates.cidade = input.cidade
+  if (input.uf) updates.uf = String(input.uf).toUpperCase().substring(0, 2)
+  if (input.cep) updates.cep = String(input.cep).replace(/\D/g, '').substring(0, 8)
+  if (input.telefone) updates.telefone = String(input.telefone).replace(/\D/g, '').substring(0, 11)
+  if (input.email) updates.email = input.email
+
+  if (Object.keys(updates).length === 0) {
+    return { resposta: `⚠️ Nenhum dado informado para atualizar.` }
+  }
+
+  const empresa = await prisma.empresa.update({ where: { id: empresaId }, data: updates })
+
+  const camposAtualizados = Object.keys(updates).join(', ')
+  return {
+    resposta: `✅ Dados da empresa **${empresa.razaoSocial}** atualizados (${camposAtualizados}).`,
+  }
+}
+
+/**
+ * Naturezas de operação padrão por regime tributário, com CFOPs típicos
+ * de entrada (compra) e saída (venda) dentro e fora do estado.
+ * Não substitui a configuração fiscal completa por produto (NCM/CST/CSOSN),
+ * mas dá um ponto de partida funcional para o motor de cálculo tributário.
+ */
+function naturezasOperacaoPadrao(): Array<{ descricao: string; cfopEntrada: string | null; cfopSaida: string | null; tipoOperacao: string }> {
+  return [
+    { descricao: 'Compra para revenda (dentro do estado)', cfopEntrada: '1102', cfopSaida: null, tipoOperacao: 'COMPRA' },
+    { descricao: 'Compra para revenda (fora do estado)', cfopEntrada: '2102', cfopSaida: null, tipoOperacao: 'COMPRA' },
+    { descricao: 'Compra para uso/consumo (dentro do estado)', cfopEntrada: '1556', cfopSaida: null, tipoOperacao: 'COMPRA' },
+    { descricao: 'Venda de mercadoria (dentro do estado)', cfopEntrada: null, cfopSaida: '5102', tipoOperacao: 'VENDA' },
+    { descricao: 'Venda de mercadoria (fora do estado)', cfopEntrada: null, cfopSaida: '6102', tipoOperacao: 'VENDA' },
+    { descricao: 'Devolução de compra (dentro do estado)', cfopEntrada: null, cfopSaida: '5202', tipoOperacao: 'DEVOLUCAO_COMPRA' },
+    { descricao: 'Devolução de venda (dentro do estado)', cfopEntrada: '1202', cfopSaida: null, tipoOperacao: 'DEVOLUCAO_VENDA' },
+    { descricao: 'Transferência entre estabelecimentos (dentro do estado)', cfopEntrada: '1152', cfopSaida: '5152', tipoOperacao: 'TRANSFERENCIA' },
+  ]
+}
+
+async function executarConfigurarTributacaoInicial(input: { regimeTributario: number }, empresaId: string): Promise<ToolResult> {
+  if (![1, 2, 3].includes(input.regimeTributario)) {
+    return { resposta: `❌ Regime tributário inválido. Use 1 (Simples Nacional), 2 (Lucro Presumido) ou 3 (Lucro Real).` }
+  }
+
+  await prisma.empresa.update({ where: { id: empresaId }, data: { regimeTributario: input.regimeTributario } })
+
+  const naturezas = naturezasOperacaoPadrao()
+  let criadas = 0
+  for (const nat of naturezas) {
+    const existente = await prisma.naturezaOperacao.findFirst({ where: { empresaId, descricao: nat.descricao } })
+    if (!existente) {
+      await prisma.naturezaOperacao.create({
+        data: {
+          empresaId,
+          descricao: nat.descricao,
+          cfopEntrada: nat.cfopEntrada,
+          cfopSaida: nat.cfopSaida,
+          tipoOperacao: nat.tipoOperacao,
+        },
+      })
+      criadas++
+    }
+  }
+
+  const regimeLabel = ({ 1: 'Simples Nacional', 2: 'Lucro Presumido', 3: 'Lucro Real' } as Record<number, string>)[input.regimeTributario]
+
+  return {
+    resposta: `✅ Regime tributário definido como **${regimeLabel}**.\n📋 ${criadas} natureza(s) de operação padrão criada(s) (Compra, Venda dentro/fora do estado, Devolução, Transferência) com CFOPs típicos.\n\n⚠️ Isso é um ponto de partida. Cada produto ainda precisa ter NCM${input.regimeTributario === 1 ? ' e CSOSN' : ' e CST'} configurados individualmente para o motor tributário calcular corretamente na emissão de NF-e.`,
+  }
+}
+
+async function executarCriarCentroDistribuicao(input: { nome: string; codigo?: string }, empresaId: string): Promise<ToolResult> {
+  const existente = await prisma.centroDistribuicao.findFirst({ where: { empresaId, nome: input.nome } })
+  if (existente) {
+    return { resposta: `⚠️ Já existe um Centro de Distribuição chamado **"${input.nome}"**.` }
+  }
+
+  let codigo = input.codigo
+  if (!codigo) {
+    const total = await prisma.centroDistribuicao.count({ where: { empresaId } })
+    codigo = `CD${String(total + 1).padStart(2, '0')}`
+  }
+
+  const cd = await prisma.centroDistribuicao.create({
+    data: { empresaId, nome: input.nome, codigo },
+  })
+
+  return {
+    resposta: `✅ Centro de Distribuição **${cd.nome}** (${cd.codigo}) cadastrado!`,
+  }
+}
+
+async function executarCriarDeposito(input: { centroDistribuicaoNome: string; descricao: string; cidade?: string; uf?: string }, empresaId: string): Promise<ToolResult> {
+  const cd = await prisma.centroDistribuicao.findFirst({ where: { empresaId, nome: { contains: input.centroDistribuicaoNome, mode: 'insensitive' } } })
+  if (!cd) {
+    return { resposta: `❌ Centro de Distribuição **"${input.centroDistribuicaoNome}"** não encontrado. Cadastre-o primeiro (criar_centro_distribuicao).` }
+  }
+
+  const deposito = await prisma.deposito.create({
+    data: {
+      empresaId,
+      centroDistribuicaoId: cd.id,
+      descricao: input.descricao,
+      cidade: input.cidade,
+      uf: input.uf?.toUpperCase(),
+    },
+  })
+
+  return {
+    resposta: `✅ Depósito **${deposito.descricao}** cadastrado dentro de **${cd.nome}**!`,
+  }
+}
+
+async function executarCriarZonaWms(input: { depositoDescricao: string; descricao: string }, empresaId: string): Promise<ToolResult> {
+  const deposito = await prisma.deposito.findFirst({ where: { empresaId, descricao: { contains: input.depositoDescricao, mode: 'insensitive' } } })
+  if (!deposito) {
+    return { resposta: `❌ Depósito **"${input.depositoDescricao}"** não encontrado. Cadastre-o primeiro (criar_deposito).` }
+  }
+
+  const zona = await prisma.zona.create({
+    data: { empresaId, depositoId: deposito.id, descricao: input.descricao },
+  })
+
+  return {
+    resposta: `✅ Zona **${zona.descricao}** cadastrada dentro do depósito **${deposito.descricao}**!`,
+  }
+}
+
+async function executarCriarDocasWms(
+  input: { centroDistribuicaoNome?: string; depositoDescricao?: string; quantidade: number; tipo?: string },
+  empresaId: string,
+): Promise<ToolResult> {
+  if (input.quantidade < 1 || input.quantidade > 50) {
+    return { resposta: `❌ Quantidade de docas deve ser entre 1 e 50.` }
+  }
+
+  let centroDistribuicaoId: string | undefined
+  let depositoId: string | undefined
+
+  if (input.depositoDescricao) {
+    const deposito = await prisma.deposito.findFirst({ where: { empresaId, descricao: { contains: input.depositoDescricao, mode: 'insensitive' } } })
+    if (!deposito) {
+      return { resposta: `❌ Depósito **"${input.depositoDescricao}"** não encontrado.` }
+    }
+    depositoId = deposito.id
+    centroDistribuicaoId = deposito.centroDistribuicaoId
+  } else if (input.centroDistribuicaoNome) {
+    const cd = await prisma.centroDistribuicao.findFirst({ where: { empresaId, nome: { contains: input.centroDistribuicaoNome, mode: 'insensitive' } } })
+    if (!cd) {
+      return { resposta: `❌ Centro de Distribuição **"${input.centroDistribuicaoNome}"** não encontrado.` }
+    }
+    centroDistribuicaoId = cd.id
+  } else {
+    const cd = await prisma.centroDistribuicao.findFirst({ where: { empresaId } })
+    if (!cd) {
+      return { resposta: `❌ Nenhum Centro de Distribuição cadastrado ainda. Cadastre um primeiro (criar_centro_distribuicao).` }
+    }
+    centroDistribuicaoId = cd.id
+  }
+
+  const tipo = input.tipo || 'MISTA'
+  const docasCriadas = []
+  for (let i = 0; i < input.quantidade; i++) {
+    const doca = await prisma.doca.create({
+      data: {
+        empresaId,
+        descricao: `Doca ${i + 1}`,
+        tipo,
+        centroDistribuicaoId,
+        depositoId,
+      },
+    })
+    docasCriadas.push(doca)
+  }
+
+  return {
+    resposta: `✅ **${docasCriadas.length} doca(s)** cadastrada(s) (tipo: ${tipo}): ${docasCriadas.map(d => d.descricao).join(', ')}.`,
+  }
+}
+
+async function executarGerarEnderecosWms(
+  input: {
+    depositoDescricao: string
+    zonaDescricao?: string
+    codigoDeposito?: string
+    codigoZona?: string
+    quantidadeRuas: number
+    quantidadePredios: number
+    quantidadeNiveis: number
+    quantidadeAptos: number
+  },
+  empresaId: string,
+): Promise<ToolResult> {
+  const deposito = await prisma.deposito.findFirst({ where: { empresaId, descricao: { contains: input.depositoDescricao, mode: 'insensitive' } } })
+  if (!deposito) {
+    return { resposta: `❌ Depósito **"${input.depositoDescricao}"** não encontrado. Cadastre-o primeiro (criar_deposito).` }
+  }
+
+  let zonaId: string | undefined
+  if (input.zonaDescricao) {
+    const zona = await prisma.zona.findFirst({ where: { empresaId, depositoId: deposito.id, descricao: { contains: input.zonaDescricao, mode: 'insensitive' } } })
+    if (!zona) {
+      return { resposta: `❌ Zona **"${input.zonaDescricao}"** não encontrada neste depósito.` }
+    }
+    zonaId = zona.id
+  }
+
+  const totalEsperado = input.quantidadeRuas * input.quantidadePredios * input.quantidadeNiveis * input.quantidadeAptos
+  if (totalEsperado > 5000) {
+    return { resposta: `⚠️ Essa combinação geraria **${totalEsperado} endereços**, o que é muito para uma única operação. Reduza as quantidades ou gere em lotes menores.` }
+  }
+
+  const { AddressGenerationService } = await import('../endereco/address-generation.service')
+  const service = new AddressGenerationService()
+
+  try {
+    const result = await service.generate({
+      centroDistribuicaoId: deposito.centroDistribuicaoId,
+      depositoId: deposito.id,
+      codigoDeposito: input.codigoDeposito || '01',
+      codigoZona: input.codigoZona || '01',
+      zonaId,
+      ruaInicio: 1,
+      ruaFim: input.quantidadeRuas,
+      predioInicio: 1,
+      predioFim: input.quantidadePredios,
+      nivelInicio: 1,
+      nivelFim: input.quantidadeNiveis,
+      aptoInicio: 1,
+      aptoFim: input.quantidadeAptos,
+    })
+
+    return {
+      resposta: `✅ **${result.criados} endereços** de armazenagem gerados no depósito **${deposito.descricao}**!${result.ignorados > 0 ? `\n(${result.ignorados} já existiam e foram ignorados)` : ''}\n\nExemplo: ${result.enderecos[0]?.enderecoCompleto || ''}`,
+      acao: { tipo: 'NAVEGAR', rota: '/wms/enderecos' },
+    }
+  } catch (err: any) {
+    return { resposta: `❌ Não consegui gerar os endereços: ${err.message || 'erro desconhecido'}` }
+  }
+}
+
+async function executarCriarUsuarioSistema(
+  input: { nome: string; email: string; senha: string; perfil?: string; modulos?: string[] },
+  empresaId: string,
+): Promise<ToolResult> {
+  if (input.senha.length < 6) {
+    return { resposta: `❌ A senha precisa ter pelo menos 6 caracteres.` }
+  }
+
+  const existente = await prisma.usuario.findUnique({ where: { email: input.email } })
+  if (existente) {
+    return { resposta: `⚠️ Já existe um usuário cadastrado com o email **${input.email}**.` }
+  }
+
+  const bcrypt = await import('bcryptjs')
+  const senhaHash = bcrypt.hashSync(input.senha, 10)
+  const perfil = input.perfil || 'OPERADOR'
+
+  const usuario = await prisma.usuario.create({
+    data: { nome: input.nome, email: input.email, senha: senhaHash, perfil },
+  })
+
+  const ALL_MODULES = ['WMS', 'COMPRAS', 'VENDAS', 'FINANCEIRO', 'FISCAL']
+  const modulosSelecionados = input.modulos && input.modulos.length > 0 ? input.modulos : ALL_MODULES
+  const allSelected = ALL_MODULES.every(m => modulosSelecionados.includes(m))
+  const modulosStr = allSelected ? '*' : modulosSelecionados.join(',')
+
+  await prisma.usuarioEmpresa.create({
+    data: { usuarioId: usuario.id, empresaId, modulos: modulosStr },
+  })
+
+  return {
+    resposta: `✅ Usuário **${usuario.nome}** (${usuario.email}) criado!\n• Nível de acesso: **${perfil}**\n• Módulos: **${allSelected ? 'Todos' : modulosSelecionados.join(', ')}**\n\n⚠️ Guarde a senha informada — ela não será exibida novamente.`,
+  }
+}
+
+async function executarCriarFuncionario(
+  input: { nome: string; matricula: string; tipo?: string; usaColetor?: boolean; vincularUsuarioEmail?: string },
+  empresaId: string,
+): Promise<ToolResult> {
+  let usuarioId: string | undefined
+  if (input.usaColetor) {
+    if (!input.vincularUsuarioEmail) {
+      return { resposta: `⚠️ Para usar coletor de dados, o funcionário precisa estar vinculado a um usuário do sistema. Informe o email de um usuário já cadastrado, ou cadastre um novo primeiro (criar_usuario_sistema).` }
+    }
+    const usuario = await prisma.usuario.findUnique({ where: { email: input.vincularUsuarioEmail } })
+    if (!usuario) {
+      return { resposta: `❌ Usuário com email **"${input.vincularUsuarioEmail}"** não encontrado.` }
+    }
+    const jaVinculado = await prisma.funcionario.findFirst({ where: { usuarioId: usuario.id } })
+    if (jaVinculado) {
+      return { resposta: `⚠️ Este usuário já está vinculado ao funcionário **${jaVinculado.nome}**.` }
+    }
+    usuarioId = usuario.id
+  }
+
+  const funcionario = await prisma.funcionario.create({
+    data: {
+      empresaId,
+      nome: input.nome,
+      matricula: input.matricula,
+      tipo: input.tipo || 'OPERADOR',
+      usuarioId,
+    },
+  })
+
+  return {
+    resposta: `✅ Funcionário **${funcionario.nome}** (matrícula ${funcionario.matricula}) cadastrado!${usuarioId ? `\n• Vinculado ao login para uso do coletor de dados` : ''}`,
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIAGNÓSTICO E PRÉ-REQUISITOS

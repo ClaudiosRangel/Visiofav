@@ -429,6 +429,143 @@ export const AI_TOOLS: AITool[] = [
       },
     },
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ONBOARDING — Configurar Nova Empresa do Zero
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    name: 'configurar_dados_empresa',
+    description: 'Salva os dados cadastrais básicos da empresa: razão social, nome fantasia, CNPJ, endereço, telefone, email. Use durante o onboarding quando o usuário fornecer esses dados.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        razaoSocial: { type: 'string' },
+        nomeFantasia: { type: 'string' },
+        cnpj: { type: 'string', description: 'Apenas dígitos, sem formatação' },
+        inscEstadual: { type: 'string' },
+        logradouro: { type: 'string' },
+        numero: { type: 'string' },
+        complemento: { type: 'string' },
+        bairro: { type: 'string' },
+        cidade: { type: 'string' },
+        uf: { type: 'string', description: '2 letras' },
+        cep: { type: 'string', description: 'Apenas dígitos, sem formatação' },
+        telefone: { type: 'string', description: 'Apenas dígitos, sem formatação' },
+        email: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'configurar_tributacao_inicial',
+    description: 'Define o regime tributário da empresa e cria automaticamente as naturezas de operação padrão (Compra, Venda dentro do estado, Venda fora do estado, Transferência) com os CFOPs típicos, prontas para uso. Use depois que o usuário informar o regime tributário no onboarding. NÃO substitui a configuração fiscal completa (NCM/CST por produto ainda precisa ser feita no cadastro de produtos).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        regimeTributario: { type: 'number', description: '1=Simples Nacional, 2=Lucro Presumido, 3=Lucro Real' },
+      },
+      required: ['regimeTributario'],
+    },
+  },
+  {
+    name: 'criar_centro_distribuicao',
+    description: 'Cadastra um Centro de Distribuição (CD) ou galpão da empresa. Pré-requisito para configurar o WMS. Use uma vez para cada CD/galpão que o usuário informar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nome: { type: 'string' },
+        codigo: { type: 'string', description: 'Código curto do CD (ex: CD01). Se omitido, gera automaticamente.' },
+      },
+      required: ['nome'],
+    },
+  },
+  {
+    name: 'criar_deposito',
+    description: 'Cadastra um Depósito dentro de um Centro de Distribuição. Pré-requisito para gerar endereços de armazenagem.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centroDistribuicaoNome: { type: 'string', description: 'Nome do CD já cadastrado' },
+        descricao: { type: 'string' },
+        cidade: { type: 'string' },
+        uf: { type: 'string' },
+      },
+      required: ['centroDistribuicaoNome', 'descricao'],
+    },
+  },
+  {
+    name: 'criar_zona_wms',
+    description: 'Cadastra uma Zona de armazenagem dentro de um Depósito (ex: Zona Seca, Zona Refrigerada, Picking).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        depositoDescricao: { type: 'string', description: 'Descrição do depósito já cadastrado' },
+        descricao: { type: 'string' },
+      },
+      required: ['depositoDescricao', 'descricao'],
+    },
+  },
+  {
+    name: 'criar_docas_wms',
+    description: 'Cadastra docas de recebimento/expedição vinculadas a um Centro de Distribuição ou Depósito. Use quando o usuário informar quantas docas existem.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centroDistribuicaoNome: { type: 'string' },
+        depositoDescricao: { type: 'string' },
+        quantidade: { type: 'number', description: 'Quantidade de docas a criar' },
+        tipo: { type: 'string', enum: ['ENTRADA', 'SAIDA', 'MISTA'], description: 'Default: MISTA' },
+      },
+      required: ['quantidade'],
+    },
+  },
+  {
+    name: 'gerar_enderecos_wms',
+    description: 'Gera em lote os endereços de armazenagem (formato Depósito-Zona-Rua-Prédio-Nível-Apto) dentro de um depósito, a partir de quantidades simples informadas pelo usuário (quantas ruas, prédios, níveis e posições por nível). Use depois de já ter Centro de Distribuição e Depósito cadastrados.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        depositoDescricao: { type: 'string', description: 'Descrição do depósito já cadastrado' },
+        zonaDescricao: { type: 'string', description: 'Descrição da zona já cadastrada (opcional)' },
+        codigoDeposito: { type: 'string', description: 'Código curto do depósito para compor o endereço (ex: 01). Default: 01' },
+        codigoZona: { type: 'string', description: 'Código curto da zona para compor o endereço (ex: 01). Default: 01' },
+        quantidadeRuas: { type: 'number', description: 'Quantidade de ruas/corredores' },
+        quantidadePredios: { type: 'number', description: 'Quantidade de prédios/colunas por rua' },
+        quantidadeNiveis: { type: 'number', description: 'Quantidade de níveis (andares) por prédio' },
+        quantidadeAptos: { type: 'number', description: 'Quantidade de posições (apartamentos) por nível' },
+      },
+      required: ['depositoDescricao', 'quantidadeRuas', 'quantidadePredios', 'quantidadeNiveis', 'quantidadeAptos'],
+    },
+  },
+  {
+    name: 'criar_usuario_sistema',
+    description: 'Cadastra um novo usuário de acesso ao sistema, com email, senha inicial e nível de acesso (perfil).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nome: { type: 'string' },
+        email: { type: 'string' },
+        senha: { type: 'string', description: 'Senha inicial, mínimo 6 caracteres' },
+        perfil: { type: 'string', enum: ['ADMIN', 'SUPERVISOR', 'OPERADOR'], description: 'Nível de acesso. ADMIN vê tudo, SUPERVISOR gerencia operações, OPERADOR uso operacional do dia a dia.' },
+        modulos: { type: 'array', items: { type: 'string', enum: ['WMS', 'COMPRAS', 'VENDAS', 'FINANCEIRO', 'FISCAL'] }, description: 'Módulos que o usuário pode acessar. Omitir para liberar todos.' },
+      },
+      required: ['nome', 'email', 'senha'],
+    },
+  },
+  {
+    name: 'criar_funcionario',
+    description: 'Cadastra um funcionário do armazém/operação (nome, matrícula, função) e opcionalmente vincula a um usuário do sistema para habilitar login no coletor de dados.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nome: { type: 'string' },
+        matricula: { type: 'string' },
+        tipo: { type: 'string', enum: ['OPERADOR', 'CONFERENTE', 'SUPERVISOR', 'MOTORISTA'], description: 'Default: OPERADOR' },
+        usaColetor: { type: 'boolean', description: 'Se este funcionário vai usar coletor de dados (scanner)' },
+        vincularUsuarioEmail: { type: 'string', description: 'Email de um usuário do sistema já cadastrado, para vincular o login (necessário se usaColetor=true)' },
+      },
+      required: ['nome', 'matricula'],
+    },
+  },
   {
     name: 'configurar_integracao_erp',
     description: 'Configura a integração com outro ERP externo (quando a empresa já usa outro sistema e quer integrar com o WMS/Vizor).',
