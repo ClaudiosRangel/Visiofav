@@ -8,6 +8,27 @@ import { prisma } from '../../lib/prisma'
 import { AI_TOOLS } from './ai-tools'
 import { VIZOR_AI_SYSTEM_PROMPT } from './ai-system-prompt'
 import { executarTool, type ToolResult } from './ai-executor'
+import { salvarXmlPendente, obterXmlPendente } from './ai-xml-pendente'
+
+// Frases que indicam confirmação explícita de importação de XML pendente.
+// Interceptadas ANTES do LLM/shortcuts para executar a importação real de forma
+// determinística (sem depender do modelo decidir chamar a tool).
+const FRASES_CONFIRMACAO_IMPORT_XML = [
+  'importar no módulo de compras',
+  'importar no modulo de compras',
+  'quero que importe',
+  'importe pra mim',
+  'importar pra mim',
+  'pode importar',
+  'importa esse xml',
+  'importar xml',
+  'sim, importar',
+  'sim importar',
+  'confirmar importação',
+  'confirmar importacao',
+  'pode confirmar',
+  'sim, pode importar',
+]
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -31,6 +52,16 @@ export interface AIResponse {
 
 export const aiService = {
   async processar(mensagem: string, empresaId: string, historico?: ChatMessage[], usuarioId?: string): Promise<AIResponse> {
+    // Confirmação de importação de XML pendente: executar de forma determinística
+    // (sem depender do LLM decidir chamar a tool), desde que exista XML aguardando.
+    const msgNormalizada = mensagem.toLowerCase().trim()
+    const temXmlPendente = !!obterXmlPendente(empresaId)
+    if (temXmlPendente && FRASES_CONFIRMACAO_IMPORT_XML.some(f => msgNormalizada.includes(f))) {
+      const toolResult = await executarTool('importar_xml_compras_real', {}, empresaId)
+      if (usuarioId) { try { await prisma.conversaAI.create({ data: { empresaId, usuarioId, mensagem, resposta: toolResult.resposta } }) } catch {} }
+      return { resposta: toolResult.resposta, acao: toolResult.acao, sugestoes: toolResult.acao?.tipo === 'NAVEGAR' ? ['Importar outro XML', 'Ver compras'] : undefined }
+    }
+
     // Shortcut: se a mensagem é uma sugestão conhecida, executar diretamente sem LLM
     const shortcutResult = this.processarShortcut(mensagem)
     if (shortcutResult) {
@@ -294,6 +325,10 @@ export const aiService = {
       return { resposta: '❌ Não consegui interpretar o XML. Verifique se é um XML de NF-e válido.' }
     }
 
+    // Guarda o XML em cache temporário (por empresa) para a IA poder importar
+    // de fato quando o usuário confirmar em uma mensagem seguinte.
+    salvarXmlPendente(empresaId, xmlContent)
+
     // 2. Check if company uses WMS
     const empresa = await prisma.empresa.findUnique({
       where: { id: empresaId },
@@ -339,22 +374,21 @@ export const aiService = {
     resposta += `• Itens: ${dadosNfe.quantidadeItens}\n`
 
     if (importResult.sucesso) {
-      resposta += `\n✅ **XML válido — pronto para importar no módulo de Compras!**\n`
+      resposta += `\n✅ **XML válido — posso importar agora** (cadastro fornecedor/produtos, gero pedido de compra, documento fiscal e conta a pagar).\n`
     } else {
       resposta += `\n⚠️ Não foi possível validar automaticamente: ${importResult.erro || 'erro desconhecido'}.\n`
     }
 
     if (pedidoConciliado) {
-      resposta += `\n🔗 **Conciliação:** Encontrei o pedido de compra **#${pedidoConciliado.numero}** (R$ ${Number(pedidoConciliado.valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) do mesmo fornecedor. Pode ser vinculado automaticamente na importação.\n`
+      resposta += `\n🔗 **Conciliação:** Encontrei o pedido de compra **#${pedidoConciliado.numero}** (R$ ${Number(pedidoConciliado.valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) do mesmo fornecedor.\n`
     }
 
-    let sugestoes: string[] = []
+    resposta += `\nQuer que eu importe agora?`
+
+    let sugestoes: string[] = ['Pode importar', 'Ver detalhes', 'Importar outro XML']
 
     if (usaWms) {
-      resposta += `\n📦 **WMS ativo** — Deseja agendar o recebimento na doca?`
-      sugestoes = ['Sim, agendar recebimento', 'Importar no módulo de compras', 'Ver horários disponíveis']
-    } else {
-      sugestoes = ['Importar no módulo de compras', 'Ver detalhes', 'Importar outro XML']
+      sugestoes = ['Pode importar', 'Sim, agendar recebimento', 'Ver detalhes']
     }
 
     return {

@@ -143,6 +143,17 @@ export const AI_TOOLS: AITool[] = [
   // COMPRAS
   // ═══════════════════════════════════════════════════════════════════════════
   {
+    name: 'importar_xml_compras_real',
+    description: 'Importa DE FATO o XML de NF-e de compra que o usuário enviou no chat: cadastra fornecedor automaticamente se não existir, cadastra produtos novos, cria o PedidoCompra + CompraEfetivada, gera o DocumentoFiscal de entrada e as Contas a Pagar. Use SOMENTE depois que o usuário confirmar explicitamente que quer importar (ex: "sim, importar", "pode importar"). O XML já foi enviado anteriormente via upload — não é necessário passar o conteúdo do XML aqui.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        formaPagamento: { type: 'string', description: 'Forma de pagamento para a conta a pagar gerada (ex: BOLETO, PIX, TRANSFERENCIA). Default: BOLETO' },
+        parcelas: { type: 'number', description: 'Número de parcelas para dividir o valor em contas a pagar. Default: 1' },
+      },
+    },
+  },
+  {
     name: 'criar_pedido_compra',
     description: 'Cria um pedido de compra para um fornecedor.',
     input_schema: {

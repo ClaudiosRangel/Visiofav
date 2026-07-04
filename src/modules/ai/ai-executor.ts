@@ -36,6 +36,7 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'consultar_vendas': return await executarConsultarVendas(input, empresaId)
       case 'consultar_top_clientes': return await executarConsultarTopClientes(input, empresaId)
       case 'consultar_top_produtos': return await executarConsultarTopProdutos(input, empresaId)
+      case 'importar_xml_compras_real': return await executarImportarXmlComprasReal(input, empresaId)
       case 'criar_pedido_compra': return await executarCriarPedidoCompra(input, empresaId)
       case 'consultar_compras_pendentes': return await executarConsultarComprasPendentes(empresaId)
       case 'consultar_estoque': return await executarConsultarEstoque(input, empresaId)
@@ -412,6 +413,209 @@ async function executarConsultarTopProdutos(input: any, empresaId: string): Prom
   return {
     resposta: `📦 **Top ${top} Produtos (Curva ABC):**\n${lista}`,
     acao: { tipo: 'MOSTRAR_DADOS', resultado: ranking },
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPRAS — Importação REAL de XML via IA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function executarImportarXmlComprasReal(
+  input: { formaPagamento?: string; parcelas?: number },
+  empresaId: string,
+): Promise<ToolResult> {
+  const { obterXmlPendente, limparXmlPendente } = await import('./ai-xml-pendente')
+  const { compraFiscalService } = await import('../fiscal/integracao/compra-fiscal.service')
+  const { ErroFiscal } = await import('../fiscal/erros')
+
+  const xmlContent = obterXmlPendente(empresaId)
+  if (!xmlContent) {
+    return { resposta: `⚠️ Não encontrei nenhum XML pendente de importação. Envie o arquivo XML novamente (📎) e depois confirme a importação.` }
+  }
+
+  // 1. Validar via parser fiscal (mesmo usado pelo endpoint oficial)
+  let parsedFiscal
+  try {
+    parsedFiscal = compraFiscalService.parseNFeXml(xmlContent)
+  } catch (err: any) {
+    return { resposta: `❌ XML inválido: ${err instanceof ErroFiscal ? err.message : 'não foi possível interpretar o conteúdo.'}` }
+  }
+
+  // 2. Verificar duplicidade (mesmo fornecedor + número + série)
+  const duplicado = await prisma.documentoFiscal.findFirst({
+    where: {
+      empresaId,
+      emitenteCnpj: parsedFiscal.emitente.cnpj,
+      numero: parsedFiscal.numero,
+      serie: parsedFiscal.serie,
+      tipoOperacao: 0,
+    },
+    select: { id: true },
+  })
+  if (duplicado) {
+    limparXmlPendente(empresaId)
+    return { resposta: `⚠️ A nota fiscal **${parsedFiscal.numero}/${parsedFiscal.serie}** do fornecedor **${parsedFiscal.emitente.cnpj}** já foi importada anteriormente. Não fiz nada para evitar duplicidade.` }
+  }
+
+  // 3. Extrair itens (parser fiscal não traz cProd/xProd/uCom cru necessários para cadastro; usar regex simples local)
+  const detMatches = xmlContent.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
+  const itensXml = detMatches.map((det) => {
+    const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
+    return {
+      cProd: prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || '',
+      xProd: prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || '',
+      ncm: prod.match(/<NCM>([^<]*)<\/NCM>/)?.[1]?.replace(/\D/g, '').substring(0, 8) || '',
+      uCom: prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN',
+      qCom: parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0'),
+      vUnCom: parseFloat(prod.match(/<vUnCom>([^<]*)<\/vUnCom>/)?.[1] || '0'),
+      vProd: parseFloat(prod.match(/<vProd>([^<]*)<\/vProd>/)?.[1] || '0'),
+    }
+  })
+
+  if (itensXml.length === 0) {
+    return { resposta: `❌ Não encontrei itens no XML. Verifique se o arquivo está completo.` }
+  }
+
+  const cnpjLimpo = parsedFiscal.emitente.cnpj.replace(/\D/g, '')
+  const vNF = parsedFiscal.totais.valorTotal || itensXml.reduce((s, i) => s + i.vProd, 0)
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Fornecedor: buscar ou criar
+      let fornecedor = await tx.fornecedor.findFirst({
+        where: { empresaId, cnpj: cnpjLimpo },
+      })
+      const fornecedorCriado = !fornecedor
+      if (!fornecedor) {
+        fornecedor = await tx.fornecedor.create({
+          data: {
+            empresaId,
+            cnpj: cnpjLimpo,
+            razaoSocial: parsedFiscal.emitente.razaoSocial || `Fornecedor ${cnpjLimpo}`,
+          },
+        })
+      }
+
+      // Produtos: buscar ou criar
+      const produtoIds: string[] = []
+      let produtosCriados = 0
+      for (const item of itensXml) {
+        let produto = await tx.produto.findFirst({
+          where: { empresaId, codigo: item.cProd },
+        })
+        if (!produto) {
+          produto = await tx.produto.create({
+            data: {
+              empresaId,
+              codigo: item.cProd || `XML-${Date.now()}`,
+              nome: item.xProd || `Produto ${item.cProd}`,
+              unidade: item.uCom || 'UN',
+              ncm: item.ncm || undefined,
+              precoBase: item.vUnCom,
+            },
+          })
+          produtosCriados++
+        }
+        produtoIds.push(produto.id)
+      }
+
+      // Número sequencial do pedido
+      const ultimo = await tx.pedidoCompra.findFirst({
+        where: { empresaId },
+        orderBy: { numero: 'desc' },
+        select: { numero: true },
+      })
+      const numero = (ultimo?.numero ?? 0) + 1
+
+      const pedido = await tx.pedidoCompra.create({
+        data: {
+          empresaId,
+          numero,
+          fornecedorId: fornecedor.id,
+          valorTotal: vNF,
+          status: 'CONFIRMADO',
+          itens: {
+            create: itensXml.map((item, idx) => ({
+              produtoId: produtoIds[idx],
+              quantidade: item.qCom,
+              precoUnitario: item.vUnCom,
+              unidade: item.uCom || 'UN',
+              classificacao: 'REVENDA',
+              valorTotal: item.vProd,
+            })),
+          },
+        },
+      })
+
+      const compra = await tx.compraEfetivada.create({
+        data: {
+          empresaId,
+          pedidoCompraId: pedido.id,
+          valorTotal: vNF,
+          xmlNfe: xmlContent,
+          dataEntrega: new Date(),
+        },
+      })
+
+      // Documento fiscal de entrada (dentro da mesma transação)
+      const documentoFiscal = await compraFiscalService.criarDocFiscalEntrada({
+        empresaId,
+        xmlNfe: xmlContent,
+        compraEfetivadaId: compra.id,
+        tx,
+      })
+
+      // Contas a pagar
+      const parcelas = input.parcelas && input.parcelas > 0 ? input.parcelas : 1
+      const formaPagamento = input.formaPagamento || 'BOLETO'
+      const valorParcela = Number((vNF / parcelas).toFixed(2))
+      const contasData = Array.from({ length: parcelas }, (_, i) => {
+        const vencimento = new Date()
+        vencimento.setDate(vencimento.getDate() + 30 * (i + 1))
+        return {
+          empresaId,
+          compraEfetivadaId: compra.id,
+          fornecedorId: fornecedor!.id,
+          descricao: `Compra Pedido #${numero} - Parcela ${i + 1}/${parcelas}`,
+          valor: i === parcelas - 1 ? Number((vNF - valorParcela * (parcelas - 1)).toFixed(2)) : valorParcela,
+          dataVencimento: vencimento,
+          formaPagamento,
+          parcela: i + 1,
+          totalParcelas: parcelas,
+        }
+      })
+      await tx.contaPagar.createMany({ data: contasData })
+
+      // Atualizar status do pedido para RECEBIDO (mesma regra do fluxo manual quando não usa WMS)
+      const empresaInfo = await tx.empresa.findUnique({ where: { id: empresaId }, select: { usaWms: true } })
+      if (!empresaInfo?.usaWms) {
+        await tx.pedidoCompra.update({ where: { id: pedido.id }, data: { status: 'RECEBIDO' } })
+      }
+
+      return { pedido, compra, fornecedorCriado, produtosCriados, documentoFiscalId: documentoFiscal.id, usaWms: !!empresaInfo?.usaWms }
+    })
+
+    limparXmlPendente(empresaId)
+
+    let resposta = `✅ **XML importado com sucesso!**\n`
+    resposta += `• Pedido de Compra: **#${result.pedido.numero}**\n`
+    resposta += `• Fornecedor: **${parsedFiscal.emitente.razaoSocial}**${result.fornecedorCriado ? ' _(cadastrado agora)_' : ''}\n`
+    resposta += `• Valor: **R$ ${formatBRL(vNF)}**\n`
+    resposta += `• Itens: ${itensXml.length}${result.produtosCriados > 0 ? ` (${result.produtosCriados} produto(s) novo(s) cadastrado(s))` : ''}\n`
+    resposta += `• Documento fiscal de entrada gerado ✅\n`
+    resposta += `• Conta(s) a pagar geradas: ${input.parcelas || 1}\n`
+
+    if (result.usaWms) {
+      resposta += `\n📦 A empresa usa WMS. Deseja agendar o recebimento na doca agora?`
+    }
+
+    return {
+      resposta,
+      acao: { tipo: 'NAVEGAR', rota: `/compras/pedidos/${result.pedido.id}` },
+    }
+  } catch (err: any) {
+    const msg = err instanceof ErroFiscal ? err.message : (err?.message || 'erro desconhecido')
+    return { resposta: `❌ Falha ao importar o XML: ${msg}` }
   }
 }
 
