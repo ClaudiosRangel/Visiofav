@@ -110,6 +110,7 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 | Configuração de integração com ERP externo (SAP, TOTVS, Sankhya, etc.) via IA | ✅ |
 | Onboarding guiado passo-a-passo (segmento, regime tributário, módulos, WMS detalhado, integração ERP, cadastros, certificado digital) | ✅ |
 | Importação REAL de XML (cadastra fornecedor/produtos, cria pedido+doc fiscal+conta a pagar, confirmação determinística no chat) | ✅ |
+| Onboarding REAL de nova empresa: dados cadastrais, tributação inicial (seed de naturezas de operação/CFOP), CD/depósito/zona/docas/endereços WMS em lote, criação de usuários com nível de acesso, cadastro de funcionários com vínculo a coletor | ✅ |
 
 ##### 🔧 Infraestrutura (implementado)
 

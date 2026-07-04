@@ -23,10 +23,20 @@ inclusion: auto
   - `executarImportarXmlComprasReal` (em `ai-executor.ts`): valida o XML com `compraFiscalService.parseNFeXml`, verifica duplicidade (CNPJ+número+série), cadastra fornecedor automaticamente se não existir, cadastra produtos novos com NCM sanitizado, cria `PedidoCompra` + `CompraEfetivada`, gera `DocumentoFiscal` de entrada (via `compraFiscalService.criarDocFiscalEntrada`, dentro da mesma transação) e as `ContaPagar` (parcelas configuráveis). Se a empresa não usa WMS, marca o pedido como RECEBIDO; se usa WMS, sugere agendar o recebimento a seguir.
   - Tool também pode ser chamada manualmente pela IA (`importar_xml_compras_real`, sem args — XML já em cache do servidor).
 
+- **Onboarding de nova empresa — AGORA COM TOOLS REAIS DE EXECUÇÃO** (antes só tinha o roteiro de perguntas, sem persistir nada além de regime/WMS):
+  - `configurar_dados_empresa`: salva razão social, nome fantasia, CNPJ, endereço completo, telefone, email (sanitizando CNPJ/CEP/telefone).
+  - `configurar_tributacao_inicial`: define regimeTributario E cria automaticamente 8 `NaturezaOperacao` padrão (compra/venda dentro/fora do estado, devolução, transferência) com CFOPs típicos — ponto de partida funcional pro motor tributário (cada produto ainda precisa de NCM/CST/CSOSN próprios).
+  - `criar_centro_distribuicao`, `criar_deposito`, `criar_zona_wms`, `criar_docas_wms`: cadastram a hierarquia física do WMS (CD → Depósito → Zona → Docas) a partir de nome/quantidade informados pelo usuário.
+  - `gerar_enderecos_wms`: gera em lote os endereços de armazenagem (reusa `AddressGenerationService` já existente) a partir de quantidades simples (ruas x prédios x níveis x posições), com limite de segurança de 5000 endereços por chamada.
+  - `criar_usuario_sistema`: cria usuário com senha hash (bcryptjs), perfil (ADMIN/SUPERVISOR/OPERADOR) e módulos liberados.
+  - `criar_funcionario`: cadastra funcionário de armazém (nome, matrícula, tipo) e opcionalmente vincula a um usuário existente para habilitar coletor de dados.
+  - System prompt reescrito para instruir a IA a EXECUTAR essas tools passo a passo durante o onboarding, não apenas conversar sobre elas.
+
 ## PRÓXIMOS PASSOS (pendente)
 1. Aprendizado de comportamento do usuário (hoje é só um comentário no prompt, sem implementação real de tracking).
 2. Expandir tools de PCP e Fiscal com o mesmo nível de detalhe que Vendas/Compras/WMS já têm.
 3. Persistir o cache de XML pendente em banco/Redis em vez de memória do processo, para sobreviver a restarts do Render (hoje é aceitável pois TTL é curto e o usuário pode reenviar).
+4. Upload de certificado digital (.pfx) via IA — hoje ainda precisa ser feito manualmente na tela de configurações.
 
 
 ## Visão Geral
