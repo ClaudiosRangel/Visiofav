@@ -59,7 +59,7 @@ export const aiService = {
 
       // Chamar Claude com tools
       const response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20241022',
+        model: 'claude-haiku-4-5',
         max_tokens: 1024,
         system: VIZOR_AI_SYSTEM_PROMPT,
         messages,
