@@ -32,11 +32,23 @@ inclusion: auto
   - `criar_funcionario`: cadastra funcionário de armazém (nome, matrícula, tipo) e opcionalmente vincula a um usuário existente para habilitar coletor de dados.
   - System prompt reescrito para instruir a IA a EXECUTAR essas tools passo a passo durante o onboarding, não apenas conversar sobre elas.
 
+- **Bug crítico corrigido — "Erro ao processar, tente novamente"**: a Anthropic Messages API exige que o histórico de conversa comece com role `user` e não aceita dois turnos consecutivos do mesmo role. O frontend (`ChatWidget.tsx`) injeta uma mensagem de boas-vindas `assistant` como primeiro item da lista de mensagens; ao crescer a conversa, `historico.slice(-10)` eventualmente cortava a lista exatamente num ponto onde ela recomeçava com `assistant` (ou tinha dois turnos do mesmo role em sequência), causando erro 400 da Anthropic capturado pelo catch genérico. Corrigido com `ai.service.ts#sanitizarHistorico()`: remove mensagens vazias, descarta tudo antes do primeiro `user`, e mescla turnos consecutivos do mesmo role antes de enviar à API. Log de erro também melhorado para imprimir o detalhe (`error.error`) retornado pela Anthropic em caso de falha futura.
+- **Busca automática de CEP no cadastro**: nova tool `consultar_cep` (usa ViaCEP, sem custo/chave). A IA agora é instruída a pedir o CEP PRIMEIRO em qualquer cadastro de endereço (empresa, cliente, fornecedor), consultar automaticamente logradouro/bairro/cidade/UF, e só perguntar número/complemento — nunca mais pergunta rua/bairro/cidade/UF manualmente quando o CEP é informado. `criar_cliente` e `criar_fornecedor` expandidos com campos de endereço completo (cep, logradouro, numero, complemento, bairro, uf).
+- **Novo módulo: Distribuição DFe (verificar/baixar notas emitidas contra o CNPJ)** — `src/modules/fiscal/distribuicao-dfe/distribuicao-dfe.routes.ts`, registrado em `/api/fiscal/distribuicao-dfe`. Reaproveita 100% da infraestrutura SEFAZ já existente (`criarSefazClient`, `criarDistribuicaoDFeService`, `certificadoService`) que já estava implementada mas sem endpoint HTTP exposto:
+  - `POST /consultar`: usa o certificado digital ativo da empresa para consultar o webservice `NFeDistribuicaoDFe` (Ambiente Nacional), baixa os XMLs novos desde o último NSU processado (armazenado em `Parametro` com chave `DIST_DFE_ULTIMO_NSU`) e grava em `XmlImportado` (mesma tabela do upload manual, origem=`DISTRIBUICAO_DFE`).
+  - `GET /`: lista os documentos já baixados com filtros de status/período.
+  - `GET /status`: retorna último NSU e quantidade de documentos pendentes de lançamento.
+  - `POST /:id/gerar-entrada`: gera o `DocumentoFiscal` de entrada a partir de um XML baixado (mesmo fluxo do módulo de importação manual).
+  - Nova tool de IA `consultar_notas_emitidas_contra_cnpj`: permite pedir "verifica se chegou nota fiscal" no chat, a IA consulta a SEFAZ e informa quantas notas novas foram encontradas.
+  - Pré-requisito: certificado digital A1 ativo cadastrado para o CNPJ da empresa (módulo `certificado`).
+
 ## PRÓXIMOS PASSOS (pendente)
 1. Aprendizado de comportamento do usuário (hoje é só um comentário no prompt, sem implementação real de tracking).
 2. Expandir tools de PCP e Fiscal com o mesmo nível de detalhe que Vendas/Compras/WMS já têm.
 3. Persistir o cache de XML pendente em banco/Redis em vez de memória do processo, para sobreviver a restarts do Render (hoje é aceitável pois TTL é curto e o usuário pode reenviar).
 4. Upload de certificado digital (.pfx) via IA — hoje ainda precisa ser feito manualmente na tela de configurações.
+5. Frontend: criar tela `/fiscal/distribuicao-dfe` para listar/consultar/gerar entrada das notas baixadas via Distribuição DFe (hoje só existe o backend).
+6. Agendar consulta automática periódica de Distribuição DFe (hoje só é acionada manualmente via chat ou endpoint).
 
 
 ## Visão Geral
