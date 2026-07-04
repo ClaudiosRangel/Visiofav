@@ -102,43 +102,125 @@ export const aiService = {
 
       return { resposta, acao, sugestoes }
     } catch (error: any) {
-      console.error('Vizor AI error:', error.message)
-      return {
-        resposta: 'Desculpe, tive um problema ao processar sua solicitação. Tente novamente.',
-        sugestoes: ['Consultar vendas', 'Ver estoque', 'Abrir relatórios'],
+      const errorMsg = error?.message || 'Erro desconhecido'
+      const statusCode = error?.status || error?.statusCode || ''
+      console.error(`[Vizor AI] ERRO: status=${statusCode} msg=${errorMsg}`)
+      console.error(`[Vizor AI] API_KEY present: ${!!process.env.ANTHROPIC_API_KEY}`)
+      console.error(`[Vizor AI] API_KEY starts with: ${process.env.ANTHROPIC_API_KEY?.substring(0, 10)}...`)
+
+      // Se o erro é de autenticação, informar claramente
+      if (statusCode === 401 || errorMsg.includes('authentication') || errorMsg.includes('api_key')) {
+        return {
+          resposta: '⚠️ A API key do Vizor AI está inválida ou expirada. Verifique a variável ANTHROPIC_API_KEY no Render.',
+          sugestoes: ['Consultar vendas', 'Ver estoque', 'Abrir relatórios'],
+        }
       }
+
+      // Para outros erros, usar o fallback inteligente
+      return this.respostaFallback(mensagem)
     }
   },
 
-  // Resposta sem API key (modo offline)
+  // Resposta sem API key ou quando LLM falha (modo offline inteligente)
   respostaFallback(mensagem: string): AIResponse {
-    const msg = mensagem.toLowerCase()
+    const msg = mensagem.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
-    if (msg.includes('vend') || msg.includes('pedido')) {
-      return { resposta: 'Para acessar vendas, vou abrir a tela de pedidos para você.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pedidos' } }
+    // === VENDAS ===
+    if (msg.includes('vend') || msg.includes('pedido de venda') || msg.includes('faturamento')) {
+      return { resposta: '🛒 **Módulo de Vendas:**\nVocê pode criar pedidos, orçamentos, usar o PDV, ver relatórios de vendas, gerenciar campanhas de desconto e muito mais.\n\nO que deseja fazer?', acao: { tipo: 'NAVEGAR', rota: '/vendas/pedidos' }, sugestoes: ['Criar pedido', 'Abrir PDV', 'Relatórios vendas', 'Orçamentos'] }
+    }
+    if (msg.includes('pedido') && !msg.includes('compra')) {
+      return { resposta: '📋 Para criar um **pedido de venda**, vou abrir a tela.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pedidos/novo' }, sugestoes: ['Ver pedidos', 'Criar orçamento'] }
+    }
+    if (msg.includes('orcamento') || msg.includes('proposta')) {
+      return { resposta: '📄 Abrindo **orçamentos/propostas**.', acao: { tipo: 'NAVEGAR', rota: '/vendas/orcamentos' }, sugestoes: ['Novo orçamento', 'Ver pedidos'] }
     }
     if (msg.includes('relat')) {
-      return { resposta: 'Abrindo a tela de relatórios de vendas.', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios' } }
+      return { resposta: '📊 Abrindo **relatórios de vendas** (faturamento, ticket médio, curva ABC).', acao: { tipo: 'NAVEGAR', rota: '/vendas/relatorios' }, sugestoes: ['Top clientes', 'Curva ABC', 'Por vendedor'] }
     }
-    if (msg.includes('estoque') || msg.includes('saldo')) {
-      return { resposta: 'Abrindo consulta de estoque.', acao: { tipo: 'NAVEGAR', rota: '/estoque' } }
+    if (msg.includes('pdv') || msg.includes('caixa') || msg.includes('ponto de venda')) {
+      return { resposta: '🏪 Abrindo o **PDV** (Ponto de Venda).', acao: { tipo: 'NAVEGAR', rota: '/vendas/pdv' }, sugestoes: ['Fazer sangria', 'Fechar caixa'] }
     }
-    if (msg.includes('compra')) {
-      return { resposta: 'Abrindo pedidos de compra.', acao: { tipo: 'NAVEGAR', rota: '/compras/pedidos' } }
-    }
-    if (msg.includes('fiscal') || msg.includes('nfe') || msg.includes('nota')) {
-      return { resposta: 'Abrindo módulo fiscal.', acao: { tipo: 'NAVEGAR', rota: '/fiscal/nfe' } }
-    }
-    if (msg.includes('financ') || msg.includes('pagar') || msg.includes('receber')) {
-      return { resposta: 'Abrindo módulo financeiro.', acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-receber' } }
-    }
-    if (msg.includes('pdv') || msg.includes('caixa')) {
-      return { resposta: 'Abrindo o PDV.', acao: { tipo: 'NAVEGAR', rota: '/vendas/pdv' } }
+    if (msg.includes('comiss')) {
+      return { resposta: '💰 Abrindo **comissões** de vendedores.', acao: { tipo: 'NAVEGAR', rota: '/vendas/comissoes' } }
     }
 
+    // === COMPRAS ===
+    if (msg.includes('compra') || msg.includes('fornecedor')) {
+      return { resposta: '🛒 **Módulo de Compras:**\nVocê pode criar pedidos de compra, importar XML de NF-e, e gerenciar devoluções.\n\nO que deseja?', acao: { tipo: 'NAVEGAR', rota: '/compras/pedidos' }, sugestoes: ['Importar XML', 'Pedidos compra', 'Devoluções'] }
+    }
+    if (msg.includes('xml') || msg.includes('importar')) {
+      return { resposta: '📥 Abrindo **importação de XML** de NF-e.', acao: { tipo: 'NAVEGAR', rota: '/compras/importar-xml' }, sugestoes: ['Ver compras', 'Novo pedido compra'] }
+    }
+
+    // === ESTOQUE ===
+    if (msg.includes('estoque') || msg.includes('saldo') || msg.includes('produto')) {
+      return { resposta: '📦 Abrindo **consulta de estoque**.', acao: { tipo: 'NAVEGAR', rota: '/estoque' }, sugestoes: ['Produtos sem estoque', 'Cadastrar produto', 'Inventário'] }
+    }
+
+    // === FISCAL ===
+    if (msg.includes('fiscal') || msg.includes('nfe') || msg.includes('nf-e') || msg.includes('nota fiscal')) {
+      return { resposta: '🧾 **Módulo Fiscal:**\nNF-e, NFC-e, CT-e, MDF-e, SPED, Motor Tributário, Apuração.\n\nO que precisa?', acao: { tipo: 'NAVEGAR', rota: '/fiscal/nfe' }, sugestoes: ['Ver NF-e', 'Motor tributário', 'SPED', 'Apuração'] }
+    }
+    if (msg.includes('sped')) {
+      return { resposta: '📑 Abrindo geração de **SPED**.', acao: { tipo: 'NAVEGAR', rota: '/fiscal/sped' } }
+    }
+    if (msg.includes('tribut') || msg.includes('icms') || msg.includes('cfop')) {
+      return { resposta: '🧮 Abrindo **Motor Tributário** para simular/consultar tributação.', acao: { tipo: 'NAVEGAR', rota: '/fiscal/motor-tributario' } }
+    }
+
+    // === FINANCEIRO ===
+    if (msg.includes('financ') || msg.includes('pagar') || msg.includes('receber') || msg.includes('boleto')) {
+      return { resposta: '💼 **Módulo Financeiro:**\nContas a pagar, contas a receber, parcelas automáticas.\n\nO que precisa?', sugestoes: ['Contas a receber', 'Contas a pagar', 'Vencidos'] }
+    }
+    if (msg.includes('conta') && msg.includes('receber')) {
+      return { resposta: '💰 Abrindo **contas a receber**.', acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-receber' } }
+    }
+    if (msg.includes('conta') && msg.includes('pagar')) {
+      return { resposta: '💸 Abrindo **contas a pagar**.', acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-pagar' } }
+    }
+
+    // === WMS ===
+    if (msg.includes('wms') || msg.includes('armazem') || msg.includes('separacao') || msg.includes('picking') || msg.includes('enderecamento')) {
+      return { resposta: '🏭 **Módulo WMS:**\nRecebimento, conferência, endereçamento, separação, expedição, inventário.\n\nO que precisa?', acao: { tipo: 'NAVEGAR', rota: '/wms/dashboard' }, sugestoes: ['Dashboard WMS', 'Agenda docas', 'Estoque', 'Separação'] }
+    }
+    if (msg.includes('agenda') || msg.includes('doca') || msg.includes('recebimento')) {
+      return { resposta: '📅 Abrindo **agenda de recebimentos/docas**.', acao: { tipo: 'NAVEGAR', rota: '/wms/agenda' } }
+    }
+
+    // === PCP ===
+    if (msg.includes('pcp') || msg.includes('producao') || msg.includes('ordem de producao') || msg.includes('op ')) {
+      return { resposta: '🏭 **Módulo PCP:**\nOrdens de produção, estruturas (BOM), roteiros, apontamentos.\n\nO que precisa?', acao: { tipo: 'NAVEGAR', rota: '/pcp/ordens-producao' }, sugestoes: ['Ordens produção', 'Kanban', 'Apontamentos'] }
+    }
+
+    // === CADASTROS ===
+    if (msg.includes('cliente')) {
+      return { resposta: '👤 Abrindo **cadastro de clientes**.', acao: { tipo: 'NAVEGAR', rota: '/configurador/clientes' }, sugestoes: ['Novo cliente', 'Buscar cliente'] }
+    }
+    if (msg.includes('fornecedor')) {
+      return { resposta: '🏪 Abrindo **cadastro de fornecedores**.', acao: { tipo: 'NAVEGAR', rota: '/configurador/fornecedores' } }
+    }
+
+    // === AJUDA GERAL ===
+    if (msg.includes('ajuda') || msg.includes('help') || msg.includes('o que') || msg.includes('pode fazer') || msg.includes('como')) {
+      return {
+        resposta: '🤖 **Sou o Vizor AI!** Posso ajudar com:\n\n• 🛒 **Vendas** — criar pedidos, orçamentos, PDV, relatórios\n• 📥 **Compras** — pedidos, importar XML\n• 📦 **Estoque** — consultar saldos, produtos sem estoque\n• 🧾 **Fiscal** — NF-e, tributação, SPED\n• 💼 **Financeiro** — contas a pagar/receber\n• 🏭 **WMS** — recebimento, separação, expedição\n• 🏭 **PCP** — ordens de produção\n• 📎 **Upload XML** — arraste um XML de NF-e aqui\n\nDigite o que precisa ou clique em uma sugestão!',
+        sugestoes: ['Criar pedido', 'Consultar estoque', 'Importar XML', 'Relatórios vendas', 'Abrir PDV'],
+      }
+    }
+
+    // === SAUDAÇÃO ===
+    if (msg.includes('ola') || msg.includes('oi') || msg.includes('bom dia') || msg.includes('boa tarde') || msg.includes('boa noite') || msg.includes('hey') || msg.includes('eai')) {
+      return {
+        resposta: '👋 Olá! Sou o **Vizor AI**. Posso te ajudar com qualquer operação do sistema — vendas, compras, estoque, fiscal, financeiro, WMS ou PCP. O que precisa?',
+        sugestoes: ['O que pode fazer?', 'Criar pedido', 'Consultar estoque', 'Abrir relatórios'],
+      }
+    }
+
+    // === DEFAULT ===
     return {
-      resposta: 'Olá! Sou o Vizor AI. Posso te ajudar a navegar pelo sistema, criar pedidos, consultar estoque, ver relatórios e muito mais. O que precisa?',
-      sugestoes: ['Quanto vendemos esse mês?', 'Abrir relatórios', 'Consultar estoque', 'Criar pedido'],
+      resposta: '🤖 Entendi sua pergunta! Para atendê-lo melhor, posso ajudar com:\n\n• Navegar para qualquer tela do sistema\n• Consultar dados (vendas, estoque, financeiro)\n• Criar registros (pedidos, orçamentos, clientes)\n• Importar XML de NF-e\n• Tirar dúvidas sobre o sistema\n\nTente ser mais específico ou clique em uma sugestão abaixo.',
+      sugestoes: ['O que pode fazer?', 'Consultar vendas', 'Ver estoque', 'Abrir PDV', 'Importar XML'],
     }
   },
 
