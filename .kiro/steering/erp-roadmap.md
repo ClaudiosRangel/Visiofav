@@ -109,7 +109,7 @@ O VisioFab está evoluindo de um WMS especializado para um **ERP completo** foca
 | Agendamento REAL de recebimento no WMS (consulta disponibilidade real nas docas, sugere próximos dias se lotado, agenda só após confirmação) | ✅ |
 | Configuração de integração com ERP externo (SAP, TOTVS, Sankhya, etc.) via IA | ✅ |
 | Onboarding guiado passo-a-passo (segmento, regime tributário, módulos, WMS detalhado, integração ERP, cadastros, certificado digital) | ✅ |
-| Importação REAL de XML (criar fornecedor/pedido/conta a pagar automaticamente) | 🔲 pendente |
+| Importação REAL de XML (cadastra fornecedor/produtos, cria pedido+doc fiscal+conta a pagar, confirmação determinística no chat) | ✅ |
 
 ##### 🔧 Infraestrutura (implementado)
 

@@ -17,12 +17,16 @@ inclusion: auto
   - Fluxo documentado no system prompt: IA sempre pergunta dia/hora → consulta disponibilidade real → apresenta opções → só agenda após confirmação explícita do usuário. Nunca inventa horários.
 - **Integração com ERP externo**: novo model `ConfigIntegracao` já existia; tools `configurar_integracao_erp` e `consultar_integracao_erp` adicionadas para a IA perguntar/configurar durante onboarding (nome do ERP externo: SAP, TOTVS, Sankhya, Senior, Bling, etc.).
 - **Onboarding guiado**: system prompt expandido com roteiro passo-a-passo (segmento → regime tributário → módulos → detalhes de WMS: CDs, formato de endereçamento, docas, coletor de dados, funcionários → integração com ERP externo → cadastros iniciais → certificado digital). A IA faz UMA pergunta por vez, nunca despeja tudo de uma vez.
-- **Importação de XML**: hoje é diagnóstico + navegação (`processarXml` em `ai.service.ts` extrai dados via regex e sugere ações); importação real (criar fornecedor/pedido/conta a pagar automaticamente) ainda é um NEXT STEP.
+- **Importação de XML — AGORA REAL**:
+  - Upload do XML (`POST /api/ai/upload`) → `processarXml()` extrai dados via regex, mostra resumo (fornecedor/valor/itens/conciliação) e guarda o XML em cache temporário por empresa (`ai-xml-pendente.ts`, TTL 30min, em memória — se o processo reiniciar no Render o usuário só precisa reenviar).
+  - Quando o usuário confirma ("sim", "pode importar", etc.), `ai.service.ts` intercepta a frase ANTES do LLM/shortcuts e chama a tool `importar_xml_compras_real` de forma determinística (não depende do modelo decidir chamar a tool).
+  - `executarImportarXmlComprasReal` (em `ai-executor.ts`): valida o XML com `compraFiscalService.parseNFeXml`, verifica duplicidade (CNPJ+número+série), cadastra fornecedor automaticamente se não existir, cadastra produtos novos com NCM sanitizado, cria `PedidoCompra` + `CompraEfetivada`, gera `DocumentoFiscal` de entrada (via `compraFiscalService.criarDocFiscalEntrada`, dentro da mesma transação) e as `ContaPagar` (parcelas configuráveis). Se a empresa não usa WMS, marca o pedido como RECEBIDO; se usa WMS, sugere agendar o recebimento a seguir.
+  - Tool também pode ser chamada manualmente pela IA (`importar_xml_compras_real`, sem args — XML já em cache do servidor).
 
 ## PRÓXIMOS PASSOS (pendente)
-1. Importação REAL de XML via IA (hoje só navega para `/compras/importar-xml`): cadastrar fornecedor se não existir, criar `PedidoCompra` + `CompraEfetivada`, gerar conta a pagar automaticamente.
-2. Aprendizado de comportamento do usuário (hoje é só um comentário no prompt, sem implementação real de tracking).
-3. Expandir tools de PCP e Fiscal com o mesmo nível de detalhe que Vendas/Compras/WMS já têm.
+1. Aprendizado de comportamento do usuário (hoje é só um comentário no prompt, sem implementação real de tracking).
+2. Expandir tools de PCP e Fiscal com o mesmo nível de detalhe que Vendas/Compras/WMS já têm.
+3. Persistir o cache de XML pendente em banco/Redis em vez de memória do processo, para sobreviver a restarts do Render (hoje é aceitável pois TTL é curto e o usuário pode reenviar).
 
 
 ## Visão Geral
