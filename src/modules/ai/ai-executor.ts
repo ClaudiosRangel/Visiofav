@@ -48,6 +48,7 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'consultar_nfe': return await executarConsultarNfe(input, empresaId)
       case 'consultar_notas_emitidas_contra_cnpj': return await executarConsultarNotasEmitidasContraCnpj(empresaId)
       case 'consultar_tributacao': return await executarConsultarTributacao(input, empresaId)
+      case 'buscar_dados_produto_web': return await executarBuscarDadosProdutoWeb(input)
       case 'criar_cliente': return await executarCriarCliente(input, empresaId)
       case 'criar_produto': return await executarCriarProduto(input, empresaId)
       case 'criar_fornecedor': return await executarCriarFornecedor(input, empresaId)
@@ -1120,12 +1121,66 @@ async function executarCriarCliente(input: any, empresaId: string): Promise<Tool
   }
 }
 
+/**
+ * Busca dados de um produto na base aberta Open Food Facts (search-a-licious API).
+ * Não requer API key. Cobre principalmente alimentos/bebidas/produtos de consumo
+ * de mercado — cadeia útil para pré-preencher cadastro (nome completo, marca,
+ * quantidade/peso da embalagem, código de barras).
+ */
+async function executarBuscarDadosProdutoWeb(input: { busca: string }): Promise<ToolResult> {
+  const termo = String(input.busca || '').trim()
+  if (!termo) {
+    return { resposta: '❌ Informe o nome ou código de barras do produto para buscar.' }
+  }
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const url = `https://search.openfoodfacts.org/search?q=${encodeURIComponent(termo)}&fields=product_name,brands,quantity,code&page_size=5`
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'VizorERP/1.0 (contato@vizorerp.com.br)' },
+    })
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      return { resposta: `⚠️ Não consegui buscar dados do produto agora. Pode informar os dados manualmente (nome, código de barras, peso)?` }
+    }
+
+    const data: any = await response.json()
+    const hits = (data?.hits || []).filter((h: any) => h.product_name)
+
+    if (hits.length === 0) {
+      return { resposta: `❌ Não encontrei "${termo}" na base de dados. Vamos cadastrar manualmente — pode me passar nome, código e preço?` }
+    }
+
+    const resultados = hits.slice(0, 5).map((h: any) => ({
+      nome: h.product_name,
+      marca: Array.isArray(h.brands) ? h.brands.join(', ') : (h.brands || ''),
+      quantidade: h.quantity || '',
+      codigoBarras: h.code || '',
+    }))
+
+    const lista = resultados.map((r: any, i: number) =>
+      `  ${i + 1}. **${r.nome}**${r.marca ? ` (${r.marca})` : ''}${r.quantidade ? ` — ${r.quantidade}` : ''}${r.codigoBarras ? ` | EAN: ${r.codigoBarras}` : ''}`
+    ).join('\n')
+
+    return {
+      resposta: `🔍 **Encontrei estes resultados para "${termo}":**\n${lista}\n\nQual deles é o produto certo? Posso usar o nome, quantidade e código de barras para completar o cadastro.`,
+      acao: { tipo: 'MOSTRAR_DADOS', resultado: resultados },
+    }
+  } catch (err: any) {
+    return { resposta: `⚠️ Não consegui buscar dados do produto agora (${err.message || 'erro de conexão'}). Pode informar os dados manualmente?` }
+  }
+}
+
 async function executarCriarProduto(input: any, empresaId: string): Promise<ToolResult> {
   // Sanitizar campos: remover pontuação e truncar para os limites do banco
   const codigo = String(input.codigo || '').substring(0, 60)
   const nome = String(input.nome || '').substring(0, 200)
   const unidade = String(input.unidade || 'UN').substring(0, 6)
   const ncm = input.ncm ? String(input.ncm).replace(/\D/g, '').substring(0, 8) : undefined
+  const cEAN = input.cEAN ? String(input.cEAN).replace(/\D/g, '').substring(0, 14) : undefined
 
   if (!codigo || !nome) {
     return { resposta: '❌ Nome e código do produto são obrigatórios.' }
@@ -1146,6 +1201,7 @@ async function executarCriarProduto(input: any, empresaId: string): Promise<Tool
       unidade,
       precoBase: input.precoBase || 0,
       ncm: ncm || undefined,
+      cEAN: cEAN || undefined,
     },
   })
 

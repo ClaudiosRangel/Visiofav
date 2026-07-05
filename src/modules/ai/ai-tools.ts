@@ -305,8 +305,19 @@ export const AI_TOOLS: AITool[] = [
     },
   },
   {
+    name: 'buscar_dados_produto_web',
+    description: 'Busca na internet (base de dados aberta Open Food Facts) informações de um produto pelo nome (ex: "Leite Moça", "Nescau", "Coca-Cola 2L") ou código de barras (EAN/GTIN). Retorna nome completo, marca, quantidade/peso da embalagem e código de barras. Use ANTES de criar_produto quando o usuário pedir para cadastrar um produto conhecido de mercado e não tiver informado todos os dados — assim você preenche peso e código de barras automaticamente ao invés de perguntar. Funciona melhor para alimentos/bebidas/produtos de consumo; pode não encontrar itens industriais ou muito específicos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        busca: { type: 'string', description: 'Nome do produto ou código de barras (EAN)' },
+      },
+      required: ['busca'],
+    },
+  },
+  {
     name: 'criar_produto',
-    description: 'Cadastra um novo produto.',
+    description: 'Cadastra um novo produto. Se o usuário mencionar um produto de mercado conhecido (ex: Leite Moça, Nescau), use buscar_dados_produto_web primeiro para preencher cEAN e dados logísticos automaticamente.',
     input_schema: {
       type: 'object',
       properties: {
@@ -315,6 +326,7 @@ export const AI_TOOLS: AITool[] = [
         unidade: { type: 'string' },
         precoBase: { type: 'number' },
         ncm: { type: 'string' },
+        cEAN: { type: 'string', description: 'Código de barras (EAN/GTIN), apenas dígitos' },
       },
       required: ['nome', 'codigo'],
     },

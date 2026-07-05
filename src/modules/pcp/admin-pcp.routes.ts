@@ -155,6 +155,11 @@ export async function adminPcpRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Apenas administradores podem fazer backup' })
     }
 
+    // Dados da empresa SEM campos sensíveis (certificado digital e senha nunca
+    // devem sair no arquivo de backup, que é salvo sem proteção na máquina do usuário)
+    const empresaCompleta = await prisma.empresa.findUnique({ where: { id: empresaId } })
+    const { certificadoPfx, senhaCertificado, ...empresaSemSegredos } = empresaCompleta || {}
+
     // Exportar dados por módulo
     const backup: Record<string, any> = {
       _meta: {
@@ -163,7 +168,7 @@ export async function adminPcpRoutes(app: FastifyInstance) {
         dataExportacao: new Date().toISOString(),
         sistema: 'VisioFab ERP',
       },
-      empresa: await prisma.empresa.findUnique({ where: { id: empresaId } }),
+      empresa: empresaSemSegredos,
       clientes: await prisma.cliente.findMany({ where: { empresaId } }),
       fornecedores: await prisma.fornecedor.findMany({ where: { empresaId } }),
       produtos: await prisma.produto.findMany({ where: { empresaId } }),

@@ -131,6 +131,10 @@ Se a empresa usa WMS e tem funcionários de armazém (operadores, conferentes), 
 Sugira: "Quer que eu cadastre seus primeiros produtos/clientes/fornecedores?"
 Ajude a preencher campos obrigatórios explicando cada um (use as tools criar_produto, criar_cliente, criar_fornecedor). Para cliente/fornecedor com endereço, siga a mesma regra do Passo 1: peça o CEP primeiro, use consultar_cep, e só pergunte número/complemento depois.
 
+## BUSCA DE DADOS DE PRODUTO NA INTERNET (produtos de mercado conhecidos)
+
+Quando o usuário pedir para cadastrar um produto de consumo conhecido (ex: "cadastra o Leite Moça", "adiciona Nescau", "quero cadastrar Coca-Cola 2L"), use a tool **buscar_dados_produto_web** ANTES de perguntar os dados manualmente. Ela consulta uma base pública (Open Food Facts) e retorna nome completo, marca, quantidade/peso da embalagem e código de barras (EAN). Apresente as opções encontradas e peça para o usuário confirmar qual é a correta, depois use **criar_produto** já preenchendo o campo cEAN com o código de barras encontrado. Essa busca funciona melhor para alimentos, bebidas e produtos de consumo — para itens industriais/matéria-prima ou produtos muito específicos, é normal não encontrar nada; nesse caso, cadastre normalmente perguntando os dados ao usuário.
+
 ## VERIFICAÇÃO DE NOTAS EMITIDAS CONTRA O CNPJ (Distribuição DFe)
 
 Se o usuário perguntar sobre notas fiscais que fornecedores emitiram contra a empresa (ex: "tem nota nova pra mim?", "verifica se chegou nota fiscal", "consulta notas na SEFAZ"), use a tool **consultar_notas_emitidas_contra_cnpj**. Ela consulta direto na SEFAZ (webservice de Distribuição DFe) usando o certificado digital da empresa, baixa os XMLs novos e os deixa disponíveis para gerar o lançamento de entrada depois (tela /fiscal/distribuicao-dfe). Requer certificado digital A1 ativo cadastrado — se não houver, oriente o usuário a cadastrar em Fiscal > Certificados.
