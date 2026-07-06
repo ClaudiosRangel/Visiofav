@@ -1001,9 +1001,19 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "conversa_ai_empresa_id_usuario_id_criado_em_idx" ON "conversa_ai"("empresa_id", "usuario_id", "criado_em")`)
   console.log('✅ Tabela conversa_ai criada')
 
+  // =========================================================================
+  // Empresa — NFC-e: CSC (Código de Segurança do Contribuinte) para QRCode
+  // Colunas existiam no schema.prisma mas nunca foram migradas para produção,
+  // causando erro "column empresa.csc_id_nfce does not exist" (ex: no backup)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "csc_id_nfce" VARCHAR(6)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "csc_token_nfce" VARCHAR(36)`)
+  console.log('Empresa: colunas csc_id_nfce e csc_token_nfce adicionadas')
+
   console.log('✅ All migrations applied successfully')
 }
 
 main()
   .catch((e) => { console.error('❌ Migration failed:', e.message); process.exit(1) })
   .finally(() => prisma.$disconnect())
+
