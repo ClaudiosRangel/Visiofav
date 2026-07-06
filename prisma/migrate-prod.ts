@@ -1010,6 +1010,78 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "csc_token_nfce" VARCHAR(36)`)
   console.log('Empresa: colunas csc_id_nfce e csc_token_nfce adicionadas')
 
+  // =========================================================================
+  // Pedido de Venda Completo — campos de cabeçalho e item que estavam apenas
+  // na migration formal 20260702140606_add_pedido_venda_completo, nunca
+  // aplicada em produção (o start do container só executa este script,
+  // não "prisma migrate deploy"). Causava "column pedido_venda.data_entrega
+  // does not exist" (ex: no backup).
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "data_entrega" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "observacao" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "observacao_nota" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "transportadora_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "modalidade_frete" VARCHAR(1)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "origem_pedido" VARCHAR(20) NOT NULL DEFAULT 'MANUAL'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "prioridade" VARCHAR(10) NOT NULL DEFAULT 'NORMAL'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "data_validade" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "numero_pedido_cliente" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "tipo_desconto" VARCHAR(15)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "desconto_geral" DECIMAL(12,2) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "acrescimo_geral" DECIMAL(12,2) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "tipo_acrescimo" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "endereco_entrega" JSONB`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "orcamento_origem_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "data_limite_atendimento" TIMESTAMP(3)`)
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "desconto_valor" DECIMAL(12,4) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "frete" DECIMAL(12,2) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "seguro" DECIMAL(12,2) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "outras_despesas" DECIMAL(12,2) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "observacao_item" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "data_entrega_item" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "comissao_perc_item" DECIMAL(5,2) NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_venda" ADD COLUMN IF NOT EXISTS "quantidade_faturada" DECIMAL(12,4) NOT NULL DEFAULT 0`)
+
+  // DropIndex: remove @unique de pedidoVendaId para permitir relação 1:N (faturamento parcial)
+  await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "venda_efetivada_pedido_venda_id_key"`)
+
+  // AddForeignKey: pedido_venda -> transportadora (idempotente via catch)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD CONSTRAINT "pedido_venda_transportadora_id_fkey" FOREIGN KEY ("transportadora_id") REFERENCES "transportadora"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+  } catch { /* constraint já existe */ }
+
+  console.log('✅ Pedido de Venda Completo: colunas de cabeçalho/item + FK transportadora adicionadas')
+
+  // =========================================================================
+  // Produto — campos PCP e Fiscal presentes no schema.prisma mas nunca
+  // migrados para produção (mesmo padrão de dívida técnica dos casos acima).
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "classificacao_pcp" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "tipo_fisico" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "exige_lote" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "ncm" VARCHAR(8)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "cfop_estadual" VARCHAR(4)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "cfop_interest" VARCHAR(4)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "cst" VARCHAR(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "csosn" VARCHAR(4)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "aliq_icms" DECIMAL(5,2) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "aliq_ipi" DECIMAL(5,2) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "cst_pis" VARCHAR(2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "aliq_pis" DECIMAL(5,2) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "cst_cofins" VARCHAR(2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "aliq_cofins" DECIMAL(5,2) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "origem_prod" INTEGER DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "c_ean" VARCHAR(14)`)
+  console.log('✅ Produto: campos PCP (classificacao_pcp, tipo_fisico, exige_lote) e Fiscal (ncm, cfop, cst/csosn, aliquotas, c_ean) adicionados')
+
+  // =========================================================================
+  // ItemPedidoCompra — campo classificacao presente no schema.prisma mas
+  // nunca migrado para produção.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_compra" ADD COLUMN IF NOT EXISTS "classificacao" VARCHAR(20) NOT NULL DEFAULT 'REVENDA'`)
+  console.log('✅ ItemPedidoCompra: campo classificacao adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 
