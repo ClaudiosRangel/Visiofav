@@ -14,6 +14,22 @@ async function main() {
   // ============================================================
   console.log('--- COMPRAS ---')
 
+  // Módulo Fiscal — documentos fiscais gerados na importação de XML de compra
+  // (precisam ser removidos ANTES de compraEfetivada/pedidoCompra, senão o
+  // documento_fiscal fica órfão e bloqueia reimportação da mesma NF-e)
+  try {
+    const gnre = await prisma.gnre.deleteMany({ where: { documentoFiscal: { compraEfetivadaId: { not: null } } } })
+    console.log(`  Gnre (de compras): ${gnre.count} removidos`)
+    const fc = await prisma.filaContingencia.deleteMany({ where: { documentoFiscal: { compraEfetivadaId: { not: null } } } })
+    console.log(`  Fila contingência (de compras): ${fc.count} removidos`)
+    const edf = await prisma.eventoDocumentoFiscal.deleteMany({ where: { documentoFiscal: { compraEfetivadaId: { not: null } } } })
+    console.log(`  Eventos documento fiscal (de compras): ${edf.count} removidos`)
+    const idf = await prisma.itemDocumentoFiscal.deleteMany({ where: { documentoFiscal: { compraEfetivadaId: { not: null } } } })
+    console.log(`  Itens documento fiscal (de compras): ${idf.count} removidos`)
+    const df = await prisma.documentoFiscal.deleteMany({ where: { compraEfetivadaId: { not: null } } })
+    console.log(`  Documentos fiscais (de compras): ${df.count} removidos`)
+  } catch { console.log('  Documentos fiscais: tabelas não existem (ok)') }
+
   // Contas a pagar vinculadas a compras
   const cp = await prisma.contaPagar.deleteMany({ where: { compraEfetivadaId: { not: null } } })
   console.log(`  Contas a pagar (de compras): ${cp.count} removidas`)
@@ -117,6 +133,23 @@ async function main() {
   // Estoque consolidado
   const est = await prisma.estoque.deleteMany({})
   console.log(`  Estoque consolidado: ${est.count} removidos`)
+
+  // Registros de conferência avançada e pendências vinculados a nota_entrada
+  // (FK RESTRICT — precisam ser removidos antes de notaEntrada)
+  try {
+    const cc = await prisma.cartaCorrecao.deleteMany({})
+    console.log(`  Cartas de correção: ${cc.count} removidas`)
+    const dc = await prisma.divergenciaConferencia.deleteMany({})
+    console.log(`  Divergências conferência: ${dc.count} removidas`)
+    const spi = await prisma.saldoPendenteItem.deleteMany({})
+    console.log(`  Saldos pendentes item: ${spi.count} removidos`)
+    const pcce = await prisma.pendenciaCce.deleteMany({})
+    console.log(`  Pendências CCE: ${pcce.count} removidas`)
+    const pl = await prisma.pendenciaLogistica.deleteMany({})
+    console.log(`  Pendências logísticas: ${pl.count} removidas`)
+    const cdi = await prisma.crossDockItem.deleteMany({})
+    console.log(`  Cross dock itens: ${cdi.count} removidos`)
+  } catch { console.log('  Conferência avançada/pendências: tabelas não existem (ok)') }
 
   // Itens nota de entrada
   const ine = await prisma.itemNotaEntrada.deleteMany({})
