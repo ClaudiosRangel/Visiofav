@@ -190,7 +190,26 @@ export async function pedidoCompraRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Pedido de compra não encontrado' })
     }
 
-    return pedido
+    // Buscar agendamento WMS vinculado (por pedidoCompraId ou, na falta, por fornecedor)
+    let agendamento = await prisma.agendaWms.findFirst({
+      where: { pedidoCompraId: id, status: { notIn: ['CANCELADO'] } },
+      orderBy: { criadoEm: 'desc' },
+    })
+    if (!agendamento) {
+      const semVinculo = await prisma.agendaWms.findFirst({
+        where: { empresaId: user.empresaId, fornecedorId: pedido.fornecedorId, pedidoCompraId: null, status: { notIn: ['CANCELADO'] } },
+        orderBy: { criadoEm: 'desc' },
+      })
+      if (semVinculo) {
+        agendamento = await prisma.agendaWms.update({ where: { id: semVinculo.id }, data: { pedidoCompraId: id } })
+      }
+    }
+    if (agendamento?.docaId) {
+      const doca = await prisma.doca.findUnique({ where: { id: agendamento.docaId }, select: { descricao: true, tipo: true } })
+      agendamento = { ...agendamento, doca } as any
+    }
+
+    return { ...pedido, agendamento }
   })
 
   /**
