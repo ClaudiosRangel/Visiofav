@@ -1093,6 +1093,426 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "config_conferencia_produto" ADD COLUMN IF NOT EXISTS "aceitar_senha" BOOLEAN NOT NULL DEFAULT false`)
   console.log('✅ ConfigConferenciaProduto: colunas aceitar_senha e aceitar_cce_pendente adicionadas')
 
+  // =========================================================================
+  // Módulo Fiscal — presente no schema.prisma (DocumentoFiscal, Gnre,
+  // RegraTributaria, etc.) mas nunca migrado para produção. Erro real:
+  // "The table public.documento_fiscal does not exist" ao importar XML.
+  // =========================================================================
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "documento_fiscal" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "tipo" VARCHAR(10) NOT NULL,
+        "modelo" INTEGER NOT NULL,
+        "serie" INTEGER NOT NULL,
+        "numero" INTEGER NOT NULL,
+        "chave_acesso" VARCHAR(44),
+        "status" VARCHAR(30) NOT NULL DEFAULT 'RASCUNHO',
+        "natureza_op" VARCHAR(100),
+        "data_emissao" TIMESTAMP(3) NOT NULL,
+        "data_saida" TIMESTAMP(3),
+        "tipo_operacao" INTEGER NOT NULL,
+        "finalidade" INTEGER NOT NULL DEFAULT 1,
+        "emitente_cnpj" VARCHAR(14) NOT NULL,
+        "emitente_razao" VARCHAR(200) NOT NULL,
+        "emitente_uf" VARCHAR(2) NOT NULL,
+        "dest_cpf_cnpj" VARCHAR(14),
+        "dest_razao" VARCHAR(200),
+        "dest_uf" VARCHAR(2),
+        "dest_ie" VARCHAR(20),
+        "valor_produtos" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_frete" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_seguro" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_desconto" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_outras" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_total" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_icms" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_icms_st" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_ipi" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_pis" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_cofins" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_fcp" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_iss" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "xml_enviado" TEXT,
+        "xml_autorizado" TEXT,
+        "xml_retorno" TEXT,
+        "protocolo" VARCHAR(20),
+        "data_autorizacao" TIMESTAMP(3),
+        "codigo_rejeicao" INTEGER,
+        "motivo_rejeicao" VARCHAR(500),
+        "contingencia" BOOLEAN NOT NULL DEFAULT false,
+        "tipo_contingencia" VARCHAR(10),
+        "ambiente" INTEGER NOT NULL DEFAULT 2,
+        "mapa_ok" BOOLEAN NOT NULL DEFAULT false,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "venda_efetivada_id" TEXT,
+        "compra_efetivada_id" TEXT,
+        CONSTRAINT "documento_fiscal_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "documento_fiscal_empresa_id_tipo_serie_numero_key" ON "documento_fiscal"("empresa_id", "tipo", "serie", "numero")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "documento_fiscal_empresa_id_status_idx" ON "documento_fiscal"("empresa_id", "status")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "documento_fiscal_empresa_id_data_emissao_idx" ON "documento_fiscal"("empresa_id", "data_emissao")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "documento_fiscal_chave_acesso_idx" ON "documento_fiscal"("chave_acesso")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "item_documento_fiscal" (
+        "id" TEXT NOT NULL,
+        "documento_fiscal_id" TEXT NOT NULL,
+        "n_item" INTEGER NOT NULL,
+        "produto_id" TEXT,
+        "codigo_prod" VARCHAR(60) NOT NULL,
+        "descricao" VARCHAR(120) NOT NULL,
+        "ncm" VARCHAR(8) NOT NULL,
+        "cest" VARCHAR(7),
+        "cfop" VARCHAR(4) NOT NULL,
+        "unidade" VARCHAR(6) NOT NULL,
+        "quantidade" DECIMAL(15,4) NOT NULL,
+        "valor_unitario" DECIMAL(15,4) NOT NULL,
+        "valor_total" DECIMAL(15,2) NOT NULL,
+        "valor_desconto" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "icms_origem" INTEGER NOT NULL DEFAULT 0,
+        "icms_cst" VARCHAR(3),
+        "icms_csosn" VARCHAR(4),
+        "icms_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "icms_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "icms_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "icms_reducao" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "icms_st_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "icms_st_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "icms_st_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "icms_st_mva" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "icms_difal_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "icms_difal_destino" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "fcp_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "fcp_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "fcp_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "ipi_cst" VARCHAR(2),
+        "ipi_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "ipi_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "ipi_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "pis_cst" VARCHAR(2),
+        "pis_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "pis_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "pis_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "cofins_cst" VARCHAR(2),
+        "cofins_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "cofins_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "cofins_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "iss_base" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "iss_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "iss_valor" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "iss_retido" BOOLEAN NOT NULL DEFAULT false,
+        "regra_tributaria_id" TEXT,
+        "nivel_fallback" VARCHAR(20),
+        CONSTRAINT "item_documento_fiscal_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "item_documento_fiscal_documento_fiscal_id_idx" ON "item_documento_fiscal"("documento_fiscal_id")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "evento_documento_fiscal" (
+        "id" TEXT NOT NULL,
+        "documento_fiscal_id" TEXT NOT NULL,
+        "tipo_evento" VARCHAR(10) NOT NULL,
+        "sequencia" INTEGER NOT NULL,
+        "data_evento" TIMESTAMP(3) NOT NULL,
+        "protocolo" VARCHAR(20),
+        "justificativa" VARCHAR(1000),
+        "texto_correcao" TEXT,
+        "xml_evento" TEXT,
+        "xml_retorno" TEXT,
+        "status" VARCHAR(20) NOT NULL,
+        CONSTRAINT "evento_documento_fiscal_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "evento_documento_fiscal_documento_fiscal_id_idx" ON "evento_documento_fiscal"("documento_fiscal_id")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "certificado_digital" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "cnpj" VARCHAR(14) NOT NULL,
+        "tipo" VARCHAR(2) NOT NULL,
+        "titular" VARCHAR(200) NOT NULL,
+        "valido_de" TIMESTAMP(3) NOT NULL,
+        "valido_ate" TIMESTAMP(3) NOT NULL,
+        "pfx_encrypted" TEXT,
+        "senha_encrypted" VARCHAR(500),
+        "ativo" BOOLEAN NOT NULL DEFAULT true,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "certificado_digital_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "certificado_digital_empresa_id_cnpj_ativo_idx" ON "certificado_digital"("empresa_id", "cnpj", "ativo")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "fila_contingencia" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "documento_fiscal_id" TEXT NOT NULL,
+        "xml_assinado" TEXT NOT NULL,
+        "tipo_contingencia" VARCHAR(10) NOT NULL,
+        "tentativas" INTEGER NOT NULL DEFAULT 0,
+        "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+        "erro" VARCHAR(500),
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "transmitido_em" TIMESTAMP(3),
+        CONSTRAINT "fila_contingencia_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "fila_contingencia_empresa_id_status_criado_em_idx" ON "fila_contingencia"("empresa_id", "status", "criado_em")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "log_contingencia" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "acao" VARCHAR(20) NOT NULL,
+        "motivo" VARCHAR(200) NOT NULL,
+        "modalidade" VARCHAR(10) NOT NULL,
+        "documentos_pendentes" INTEGER NOT NULL,
+        "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "log_contingencia_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "log_contingencia_empresa_id_timestamp_idx" ON "log_contingencia"("empresa_id", "timestamp")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "apuracao_fiscal" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "tipo" VARCHAR(20) NOT NULL,
+        "periodo" VARCHAR(7) NOT NULL,
+        "total_debitos" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "total_creditos" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "estorno_debitos" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "estorno_creditos" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "ajustes" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "saldo_anterior" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "saldo_final" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "valor_recolher" DECIMAL(15,2) NOT NULL DEFAULT 0,
+        "fechado" BOOLEAN NOT NULL DEFAULT false,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "apuracao_fiscal_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "apuracao_fiscal_empresa_id_tipo_periodo_key" ON "apuracao_fiscal"("empresa_id", "tipo", "periodo")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "detalhe_apuracao" (
+        "id" TEXT NOT NULL,
+        "apuracao_id" TEXT NOT NULL,
+        "documento_fiscal_id" TEXT,
+        "tipo" VARCHAR(20) NOT NULL,
+        "valor" DECIMAL(15,2) NOT NULL,
+        "descricao" VARCHAR(200),
+        CONSTRAINT "detalhe_apuracao_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "detalhe_apuracao_apuracao_id_idx" ON "detalhe_apuracao"("apuracao_id")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ncm" (
+        "id" TEXT NOT NULL,
+        "codigo" VARCHAR(8) NOT NULL,
+        "descricao" VARCHAR(500) NOT NULL,
+        "unidade_estat" VARCHAR(10),
+        "aliq_ii" DECIMAL(5,2),
+        "aliq_ipi" DECIMAL(5,2),
+        "ativo" BOOLEAN NOT NULL DEFAULT true,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "ncm_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "ncm_codigo_key" ON "ncm"("codigo")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "cfop" (
+        "id" TEXT NOT NULL,
+        "codigo" VARCHAR(4) NOT NULL,
+        "descricao" VARCHAR(500) NOT NULL,
+        "tipo" VARCHAR(10) NOT NULL,
+        "ambito" VARCHAR(15) NOT NULL,
+        "gera_cred_icms" BOOLEAN NOT NULL DEFAULT false,
+        "gera_cred_pis_cofins" BOOLEAN NOT NULL DEFAULT false,
+        "incide_ipi" BOOLEAN NOT NULL DEFAULT false,
+        "ativo" BOOLEAN NOT NULL DEFAULT true,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "cfop_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "cfop_codigo_key" ON "cfop"("codigo")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "cest" (
+        "id" TEXT NOT NULL,
+        "codigo" VARCHAR(7) NOT NULL,
+        "descricao" VARCHAR(500) NOT NULL,
+        "segmento" VARCHAR(200),
+        "ativo" BOOLEAN NOT NULL DEFAULT true,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "cest_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "cest_codigo_key" ON "cest"("codigo")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "cest_ncm" (
+        "id" TEXT NOT NULL,
+        "cest_id" TEXT NOT NULL,
+        "ncm_id" TEXT NOT NULL,
+        CONSTRAINT "cest_ncm_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "cest_ncm_cest_id_ncm_id_key" ON "cest_ncm"("cest_id", "ncm_id")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "natureza_operacao" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "descricao" VARCHAR(100) NOT NULL,
+        "cfop_entrada" VARCHAR(4),
+        "cfop_saida" VARCHAR(4),
+        "tipo_operacao" VARCHAR(30) NOT NULL,
+        "ativo" BOOLEAN NOT NULL DEFAULT true,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "natureza_operacao_pkey" PRIMARY KEY ("id")
+      )
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "regra_tributaria" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "ncm" VARCHAR(8) NOT NULL,
+        "cfop" VARCHAR(4) NOT NULL,
+        "uf_origem" VARCHAR(2) NOT NULL,
+        "uf_destino" VARCHAR(2) NOT NULL,
+        "regime_tributario" INTEGER NOT NULL,
+        "icms_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "icms_cst" VARCHAR(3),
+        "icms_csosn" VARCHAR(4),
+        "icms_base_calculo" DECIMAL(5,2) NOT NULL DEFAULT 100,
+        "icms_reducao" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "icms_st_mva" DECIMAL(5,2),
+        "icms_st_mva_ajust" DECIMAL(5,2),
+        "icms_st_aliq_interna" DECIMAL(5,2),
+        "fcp_aliquota" DECIMAL(5,2),
+        "pis_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "pis_cst" VARCHAR(2),
+        "cofins_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "cofins_cst" VARCHAR(2),
+        "ipi_aliquota" DECIMAL(5,2) NOT NULL DEFAULT 0,
+        "ipi_cst" VARCHAR(2),
+        "iss_aliquota" DECIMAL(5,2),
+        "ativo" BOOLEAN NOT NULL DEFAULT true,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "regra_tributaria_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "regra_tributaria_empresa_id_ncm_cfop_uf_origem_uf_destino_r_key" ON "regra_tributaria"("empresa_id", "ncm", "cfop", "uf_origem", "uf_destino", "regime_tributario")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "regra_tributaria_empresa_id_ncm_cfop_idx" ON "regra_tributaria"("empresa_id", "ncm", "cfop")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "gnre" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "documento_fiscal_id" TEXT NOT NULL,
+        "uf_destino" VARCHAR(2) NOT NULL,
+        "valor" DECIMAL(15,2) NOT NULL,
+        "codigo_receita" VARCHAR(10) NOT NULL,
+        "referencia" VARCHAR(7) NOT NULL,
+        "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+        "data_pagamento" TIMESTAMP(3),
+        "nosso_numero" VARCHAR(30),
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "gnre_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "gnre_empresa_id_status_idx" ON "gnre"("empresa_id", "status")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "xml_importado" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "chave_acesso" VARCHAR(44) NOT NULL,
+        "tipo" VARCHAR(10) NOT NULL,
+        "emitente_cnpj" VARCHAR(14) NOT NULL,
+        "emitente_razao" VARCHAR(200) NOT NULL,
+        "valor_total" DECIMAL(15,2) NOT NULL,
+        "data_emissao" TIMESTAMP(3) NOT NULL,
+        "xml_completo" TEXT NOT NULL,
+        "origem" VARCHAR(20) NOT NULL,
+        "manifestacao" VARCHAR(30),
+        "data_manifestacao" TIMESTAMP(3),
+        "documento_entrada_id" TEXT,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "xml_importado_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "xml_importado_empresa_id_chave_acesso_key" ON "xml_importado"("empresa_id", "chave_acesso")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "xml_importado_empresa_id_manifestacao_idx" ON "xml_importado"("empresa_id", "manifestacao")`)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "auditoria_fiscal" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "usuario_id" TEXT NOT NULL,
+        "operacao" VARCHAR(50) NOT NULL,
+        "entidade" VARCHAR(50) NOT NULL,
+        "entidade_id" TEXT NOT NULL,
+        "dados_antes" TEXT,
+        "dados_depois" TEXT,
+        "ip" VARCHAR(45),
+        "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "auditoria_fiscal_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "auditoria_fiscal_empresa_id_timestamp_idx" ON "auditoria_fiscal"("empresa_id", "timestamp")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "auditoria_fiscal_entidade_entidade_id_idx" ON "auditoria_fiscal"("entidade", "entidade_id")`)
+
+    console.log('✅ Módulo Fiscal: 17 tabelas criadas (documento_fiscal, item/evento_documento_fiscal, gnre, certificado_digital, regra_tributaria, ncm/cfop/cest, etc.)')
+  } catch (e: any) {
+    console.log('⚠️ Módulo Fiscal skipped:', e.message?.substring(0, 200))
+  }
+
+  // Foreign keys do Módulo Fiscal (idempotentes via catch individual)
+  const fiscalFks = [
+    `ALTER TABLE "documento_fiscal" ADD CONSTRAINT "documento_fiscal_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "documento_fiscal" ADD CONSTRAINT "documento_fiscal_venda_efetivada_id_fkey" FOREIGN KEY ("venda_efetivada_id") REFERENCES "venda_efetivada"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "documento_fiscal" ADD CONSTRAINT "documento_fiscal_compra_efetivada_id_fkey" FOREIGN KEY ("compra_efetivada_id") REFERENCES "compra_efetivada"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "item_documento_fiscal" ADD CONSTRAINT "item_documento_fiscal_documento_fiscal_id_fkey" FOREIGN KEY ("documento_fiscal_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "item_documento_fiscal" ADD CONSTRAINT "item_documento_fiscal_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "item_documento_fiscal" ADD CONSTRAINT "item_documento_fiscal_regra_tributaria_id_fkey" FOREIGN KEY ("regra_tributaria_id") REFERENCES "regra_tributaria"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "evento_documento_fiscal" ADD CONSTRAINT "evento_documento_fiscal_documento_fiscal_id_fkey" FOREIGN KEY ("documento_fiscal_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "certificado_digital" ADD CONSTRAINT "certificado_digital_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "fila_contingencia" ADD CONSTRAINT "fila_contingencia_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "fila_contingencia" ADD CONSTRAINT "fila_contingencia_documento_fiscal_id_fkey" FOREIGN KEY ("documento_fiscal_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "log_contingencia" ADD CONSTRAINT "log_contingencia_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "apuracao_fiscal" ADD CONSTRAINT "apuracao_fiscal_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "detalhe_apuracao" ADD CONSTRAINT "detalhe_apuracao_apuracao_id_fkey" FOREIGN KEY ("apuracao_id") REFERENCES "apuracao_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "cest_ncm" ADD CONSTRAINT "cest_ncm_cest_id_fkey" FOREIGN KEY ("cest_id") REFERENCES "cest"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "cest_ncm" ADD CONSTRAINT "cest_ncm_ncm_id_fkey" FOREIGN KEY ("ncm_id") REFERENCES "ncm"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "natureza_operacao" ADD CONSTRAINT "natureza_operacao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "regra_tributaria" ADD CONSTRAINT "regra_tributaria_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "gnre" ADD CONSTRAINT "gnre_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "gnre" ADD CONSTRAINT "gnre_documento_fiscal_id_fkey" FOREIGN KEY ("documento_fiscal_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "xml_importado" ADD CONSTRAINT "xml_importado_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "auditoria_fiscal" ADD CONSTRAINT "auditoria_fiscal_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "mapa_carregamento_nf" ADD CONSTRAINT "mapa_carregamento_nf_nfe_id_fkey" FOREIGN KEY ("nfe_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+  ]
+  for (const fk of fiscalFks) {
+    try {
+      await prisma.$executeRawUnsafe(fk)
+    } catch { /* constraint já existe */ }
+  }
+  console.log('✅ Módulo Fiscal: foreign keys adicionadas')
+
   console.log('✅ All migrations applied successfully')
 }
 
