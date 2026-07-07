@@ -15,6 +15,7 @@ RUN npx prisma generate
 
 # Copy source code
 COPY src ./src
+COPY scripts ./scripts
 COPY tsconfig.json ./
 
 # Expose port
