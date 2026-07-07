@@ -241,6 +241,28 @@ export async function compraRoutes(app: FastifyInstance) {
         where: { pedidoCompraId: compra.pedidoCompraId, status: { notIn: ['CANCELADO'] } },
         orderBy: { criadoEm: 'desc' },
       })
+
+      // Fallback: a tela "Agenda de Recebimento" cria agendamentos vinculados
+      // apenas por fornecedorId (sem pedidoCompraId). Buscar pelo fornecedor
+      // do pedido e vincular automaticamente para manter consistência.
+      if (!agendamento && compra.pedidoCompra?.fornecedorId) {
+        agendamento = await prisma.agendaWms.findFirst({
+          where: {
+            empresaId: user.empresaId,
+            fornecedorId: compra.pedidoCompra.fornecedorId,
+            pedidoCompraId: null,
+            status: { notIn: ['CANCELADO'] },
+          },
+          orderBy: { criadoEm: 'desc' },
+        })
+        if (agendamento) {
+          agendamento = await prisma.agendaWms.update({
+            where: { id: agendamento.id },
+            data: { pedidoCompraId: compra.pedidoCompraId },
+          })
+        }
+      }
+
       if (agendamento?.docaId) {
         const doca = await prisma.doca.findUnique({ where: { id: agendamento.docaId }, select: { descricao: true, tipo: true } })
         agendamento = { ...agendamento, doca }
