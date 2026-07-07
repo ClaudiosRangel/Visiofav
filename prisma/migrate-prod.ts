@@ -1082,6 +1082,17 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_pedido_compra" ADD COLUMN IF NOT EXISTS "classificacao" VARCHAR(20) NOT NULL DEFAULT 'REVENDA'`)
   console.log('✅ ItemPedidoCompra: campo classificacao adicionado')
 
+  // =========================================================================
+  // ConfigConferenciaProduto — troca de modo_resolucao_lote/validade (enum)
+  // por aceitar_senha/aceitar_cce_pendente (boolean), presente no
+  // schema.prisma (migration 20250627000000) mas nunca migrado para produção.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "config_conferencia_produto" DROP COLUMN IF EXISTS "modo_resolucao_lote"`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "config_conferencia_produto" DROP COLUMN IF EXISTS "modo_resolucao_validade"`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "config_conferencia_produto" ADD COLUMN IF NOT EXISTS "aceitar_cce_pendente" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "config_conferencia_produto" ADD COLUMN IF NOT EXISTS "aceitar_senha" BOOLEAN NOT NULL DEFAULT false`)
+  console.log('✅ ConfigConferenciaProduto: colunas aceitar_senha e aceitar_cce_pendente adicionadas')
+
   console.log('✅ All migrations applied successfully')
 }
 
