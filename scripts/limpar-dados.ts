@@ -51,17 +51,20 @@ async function main() {
 
   // Módulo Fiscal — documentos fiscais gerados na importação de XML de compra
   // (precisam ser removidos ANTES de compraEfetivada/pedidoCompra, senão o
-  // documento_fiscal fica órfão e bloqueia reimportação da mesma NF-e)
+  // documento_fiscal fica órfão e bloqueia reimportação da mesma NF-e).
+  // Filtra por tipoOperacao=0 (Entrada) em vez de compraEfetivadaId, pois esse
+  // campo pode já estar NULL (SET NULL) se a compraEfetivada foi removida
+  // antes desta correção existir — senão o documento fica órfão para sempre.
   try {
-    const gnre = await prisma.gnre.deleteMany({ where: { empresaId, documentoFiscal: { compraEfetivadaId: { not: null } } } })
+    const gnre = await prisma.gnre.deleteMany({ where: { empresaId, documentoFiscal: { tipoOperacao: 0 } } })
     console.log(`  Gnre (de compras): ${gnre.count} removidos`)
-    const fc = await prisma.filaContingencia.deleteMany({ where: { empresaId, documentoFiscal: { compraEfetivadaId: { not: null } } } })
+    const fc = await prisma.filaContingencia.deleteMany({ where: { empresaId, documentoFiscal: { tipoOperacao: 0 } } })
     console.log(`  Fila contingência (de compras): ${fc.count} removidos`)
-    const edf = await prisma.eventoDocumentoFiscal.deleteMany({ where: { documentoFiscal: { empresaId, compraEfetivadaId: { not: null } } } })
+    const edf = await prisma.eventoDocumentoFiscal.deleteMany({ where: { documentoFiscal: { empresaId, tipoOperacao: 0 } } })
     console.log(`  Eventos documento fiscal (de compras): ${edf.count} removidos`)
-    const idf = await prisma.itemDocumentoFiscal.deleteMany({ where: { documentoFiscal: { empresaId, compraEfetivadaId: { not: null } } } })
+    const idf = await prisma.itemDocumentoFiscal.deleteMany({ where: { documentoFiscal: { empresaId, tipoOperacao: 0 } } })
     console.log(`  Itens documento fiscal (de compras): ${idf.count} removidos`)
-    const df = await prisma.documentoFiscal.deleteMany({ where: { empresaId, compraEfetivadaId: { not: null } } })
+    const df = await prisma.documentoFiscal.deleteMany({ where: { empresaId, tipoOperacao: 0 } })
     console.log(`  Documentos fiscais (de compras): ${df.count} removidos`)
   } catch { console.log('  Documentos fiscais: tabelas não existem (ok)') }
 
