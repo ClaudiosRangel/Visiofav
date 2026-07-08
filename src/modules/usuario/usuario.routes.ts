@@ -5,6 +5,18 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { perfilGuard } from '../../middleware/perfil-guard'
 
+/**
+ * Verifica se um usuário pertence à empresa informada (via UsuarioEmpresa).
+ * SUPER_ADMIN sempre tem acesso, independente da empresa.
+ */
+async function pertenceAEmpresa(usuarioAlvoId: string, empresaId: string | undefined | null): Promise<boolean> {
+  if (!empresaId) return false
+  const vinculo = await prisma.usuarioEmpresa.findUnique({
+    where: { usuarioId_empresaId: { usuarioId: usuarioAlvoId, empresaId } },
+  })
+  return !!vinculo
+}
+
 export async function usuarioRoutes(app: FastifyInstance) {
   // All routes require authentication + ADMIN perfil
   app.addHook('onRequest', authenticate)
@@ -50,6 +62,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
 
     const { page, limit, search } = querySchema.parse(request.query)
     const skip = (page - 1) * limit
+    const user = request.user as { perfil: string; empresaId?: string }
 
     const where: any = {}
     if (search) {
@@ -57,6 +70,11 @@ export async function usuarioRoutes(app: FastifyInstance) {
         { nome: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
       ]
+    }
+
+    // SUPER_ADMIN vê usuários de todas as empresas. ADMIN só vê os da própria empresa.
+    if (user.perfil !== 'SUPER_ADMIN') {
+      where.empresas = { some: { empresaId: user.empresaId } }
     }
 
     const [data, total] = await Promise.all([
@@ -103,6 +121,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
   // GET /usuarios/:id — single user with permissions and funcionário link
   app.get('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const requester = request.user as { perfil: string; empresaId?: string }
 
     const usuario = await prisma.usuario.findUnique({
       where: { id },
@@ -120,6 +139,10 @@ export async function usuarioRoutes(app: FastifyInstance) {
     })
 
     if (!usuario) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    if (requester.perfil !== 'SUPER_ADMIN' && !(await pertenceAEmpresa(id, requester.empresaId))) {
       return reply.status(404).send({ message: 'Usuário não encontrado' })
     }
 
@@ -210,9 +233,14 @@ export async function usuarioRoutes(app: FastifyInstance) {
     })
 
     const data = bodySchema.parse(request.body)
+    const requester = request.user as { perfil: string; empresaId?: string }
 
     const usuario = await prisma.usuario.findUnique({ where: { id } })
     if (!usuario) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    if (requester.perfil !== 'SUPER_ADMIN' && !(await pertenceAEmpresa(id, requester.empresaId))) {
       return reply.status(404).send({ message: 'Usuário não encontrado' })
     }
 
@@ -243,9 +271,14 @@ export async function usuarioRoutes(app: FastifyInstance) {
     })
 
     const { modulos } = bodySchema.parse(request.body)
+    const requester = request.user as { perfil: string; empresaId?: string }
 
     const usuario = await prisma.usuario.findUnique({ where: { id } })
     if (!usuario) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    if (requester.perfil !== 'SUPER_ADMIN' && !(await pertenceAEmpresa(id, requester.empresaId))) {
       return reply.status(404).send({ message: 'Usuário não encontrado' })
     }
 
@@ -286,9 +319,14 @@ export async function usuarioRoutes(app: FastifyInstance) {
     })
 
     const { enabled, funcionarioId } = bodySchema.parse(request.body)
+    const requester = request.user as { perfil: string; empresaId?: string }
 
     const usuario = await prisma.usuario.findUnique({ where: { id } })
     if (!usuario) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    if (requester.perfil !== 'SUPER_ADMIN' && !(await pertenceAEmpresa(id, requester.empresaId))) {
       return reply.status(404).send({ message: 'Usuário não encontrado' })
     }
 
@@ -332,9 +370,14 @@ export async function usuarioRoutes(app: FastifyInstance) {
   // DELETE /usuarios/:id — soft delete (set status=false)
   app.delete('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const requester = request.user as { perfil: string; empresaId?: string }
 
     const usuario = await prisma.usuario.findUnique({ where: { id } })
     if (!usuario) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    if (requester.perfil !== 'SUPER_ADMIN' && !(await pertenceAEmpresa(id, requester.empresaId))) {
       return reply.status(404).send({ message: 'Usuário não encontrado' })
     }
 
