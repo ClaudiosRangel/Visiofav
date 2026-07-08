@@ -1100,6 +1100,86 @@ async function main() {
   console.log('✅ ItemNotaEntrada: coluna status_conferencia adicionada')
 
   // =========================================================================
+  // Tabelas identificadas via `prisma migrate diff` (comparação schema x
+  // banco de produção real) que nunca haviam sido criadas: preferencia_usuario,
+  // config_integracao, config_email_fiscal, pendencia_cce.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "preferencia_usuario" (
+      "id" TEXT NOT NULL,
+      "usuario_id" TEXT NOT NULL,
+      "tema" VARCHAR(10) NOT NULL DEFAULT 'auto',
+      "idioma" VARCHAR(10) NOT NULL DEFAULT 'pt-BR',
+      "densidade" VARCHAR(15) NOT NULL DEFAULT 'normal',
+      "formato_data" VARCHAR(15) NOT NULL DEFAULT 'DD/MM/YYYY',
+      "notif_sons" BOOLEAN NOT NULL DEFAULT true,
+      "notif_push" BOOLEAN NOT NULL DEFAULT true,
+      "notif_email" BOOLEAN NOT NULL DEFAULT true,
+      "modulo_padrao" VARCHAR(30),
+      "tamanho_fonte" VARCHAR(10) NOT NULL DEFAULT 'medio',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "preferencia_usuario_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "preferencia_usuario_usuario_id_key" ON "preferencia_usuario"("usuario_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "config_integracao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "integracao_ativa" BOOLEAN NOT NULL DEFAULT false,
+      "sistema_externo" VARCHAR(100),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "config_integracao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "config_integracao_empresa_id_key" ON "config_integracao"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "config_email_fiscal" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "email" VARCHAR(254) NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "config_email_fiscal_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "config_email_fiscal_empresa_id_key" ON "config_email_fiscal"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pendencia_cce" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nota_entrada_id" TEXT NOT NULL,
+      "codigo_produto" VARCHAR(60) NOT NULL,
+      "descricao_produto" VARCHAR(200) NOT NULL,
+      "fornecedor" VARCHAR(200) NOT NULL,
+      "tipo" VARCHAR(10) NOT NULL,
+      "motivo" VARCHAR(50) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'AGUARDANDO_CCE',
+      "resolvido_em" TIMESTAMP(3),
+      "resolvido_por_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "pendencia_cce_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pendencia_cce_empresa_id_status_idx" ON "pendencia_cce"("empresa_id", "status")`)
+
+  const cadastroFks = [
+    `ALTER TABLE "config_integracao" ADD CONSTRAINT "config_integracao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "config_email_fiscal" ADD CONSTRAINT "config_email_fiscal_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "pendencia_cce" ADD CONSTRAINT "pendencia_cce_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "pendencia_cce" ADD CONSTRAINT "pendencia_cce_nota_entrada_id_fkey" FOREIGN KEY ("nota_entrada_id") REFERENCES "nota_entrada"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+  ]
+  for (const fk of cadastroFks) {
+    try { await prisma.$executeRawUnsafe(fk) } catch { /* constraint já existe */ }
+  }
+  console.log('✅ Tabelas preferencia_usuario, config_integracao, config_email_fiscal, pendencia_cce criadas')
+
+  // =========================================================================
   // Módulo Fiscal — presente no schema.prisma (DocumentoFiscal, Gnre,
   // RegraTributaria, etc.) mas nunca migrado para produção. Erro real:
   // "The table public.documento_fiscal does not exist" ao importar XML.
