@@ -108,9 +108,14 @@ async function main() {
   }
 
   // Corrigir tipo das colunas XML na tabela nfe (VARCHAR → TEXT)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_enviado" TYPE TEXT`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_retorno" TYPE TEXT`)
-  console.log('✅ Colunas XML da NF-e alteradas para TEXT')
+  // Tabela legada — pode já ter sido removida (ver DROP TABLE "nfe" ao final)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_enviado" TYPE TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ALTER COLUMN "xml_retorno" TYPE TEXT`)
+    console.log('✅ Colunas XML da NF-e alteradas para TEXT')
+  } catch (e: any) {
+    console.log('⚠️ Tabela nfe já removida ou não existe, skip:', e.message?.substring(0, 80))
+  }
 
   // Tabelas de Roteirização e Montagem de Carga
   await prisma.$executeRawUnsafe(`
@@ -175,7 +180,9 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "cancelado_por_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "carregamento" ADD COLUMN IF NOT EXISTS "em_carregamento_em" TIMESTAMP(3)`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ADD COLUMN IF NOT EXISTS "mapa_ok" BOOLEAN DEFAULT false`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" ADD COLUMN IF NOT EXISTS "mapa_ok" BOOLEAN DEFAULT false`)
+  } catch { /* tabela nfe já removida (ver DROP TABLE "nfe" ao final) */ }
   console.log('✅ Tabelas de Roteirização e Montagem de Carga criadas')
 
   // Resolver pendências logísticas de produtos que já têm SKU/dados logísticos configurados
@@ -598,6 +605,23 @@ async function main() {
   }
   } catch (e: any) {
     console.log('⚠️ Multi-CD Transferências skipped:', e.message?.substring(0, 100))
+  }
+
+  // =========================================================================
+  // Remover tabelas legadas nfe/item_nfe (substituídas por documento_fiscal/
+  // item_documento_fiscal). Confirmado via `prisma migrate diff` + consulta
+  // manual que ambas estão vazias (0 registros) em produção — seguro remover.
+  // =========================================================================
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_nfe" DROP CONSTRAINT IF EXISTS "item_nfe_nfe_id_fkey"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_nfe" DROP CONSTRAINT IF EXISTS "item_nfe_produto_id_fkey"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" DROP CONSTRAINT IF EXISTS "nfe_empresa_id_fkey"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "nfe" DROP CONSTRAINT IF EXISTS "nfe_venda_efetivada_id_fkey"`)
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "item_nfe"`)
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "nfe"`)
+    console.log('✅ Tabelas legadas nfe/item_nfe removidas')
+  } catch (e: any) {
+    console.log('⚠️ Remoção nfe/item_nfe skipped:', e.message?.substring(0, 150))
   }
 
   // =========================================================================
