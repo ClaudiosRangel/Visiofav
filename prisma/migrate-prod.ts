@@ -724,8 +724,22 @@ async function main() {
     )
   `)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_refresh_token_token" ON "refresh_token"("token")`)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_refresh_token_usuario_id" ON "refresh_token"("usuario_id")`)
   console.log('✅ Segurança: tabela refresh_token criada')
+
+  // Bug real da expiração de sessão: o código sempre fez `upsert({ where: { usuarioId } })`,
+  // mas usuario_id nunca teve constraint UNIQUE — o upsert falhava silenciosamente (catch vazio)
+  // e o refresh token NUNCA era salvo, quebrando a renovação automática de sessão.
+  // Antes de criar o índice único, remover duplicados (manter só o mais recente por usuário).
+  await prisma.$executeRawUnsafe(`
+    DELETE FROM "refresh_token" rt
+    WHERE rt.id NOT IN (
+      SELECT DISTINCT ON (usuario_id) id
+      FROM "refresh_token"
+      ORDER BY usuario_id, criado_em DESC
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "refresh_token_usuario_id_key" ON "refresh_token"("usuario_id")`)
+  console.log('✅ Segurança: refresh_token.usuario_id agora é UNIQUE (corrige upsert silenciosamente ignorado — causa raiz da expiração de sessão)')
 
   // Limpar tokens expirados (manutenção automática)
   try {
@@ -1779,7 +1793,6 @@ async function main() {
     ['idx_documento_saida_transferencia_empresa_id', 'documento_saida_transferencia_empresa_id_idx'],
     ['idx_mercadoria_transito_empresa_id', 'mercadoria_transito_empresa_id_idx'],
     ['idx_refresh_token_token', 'refresh_token_token_idx'],
-    ['idx_refresh_token_usuario_id', 'refresh_token_usuario_id_idx'],
     ['idx_security_audit_log_ip', 'security_audit_log_ip_idx'],
     ['idx_security_audit_log_tipo_criado_em', 'security_audit_log_tipo_criado_em_idx'],
     ['idx_security_audit_log_usuario_id', 'security_audit_log_usuario_id_idx'],

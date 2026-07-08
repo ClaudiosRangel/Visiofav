@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { coordenadasOptionalSchema } from '../geolocalizacao/coord-validation'
+import { generateAccessToken, generateRefreshToken, setAuthCookies, TokenPayload } from '../../lib/auth-tokens'
 
 const ALL_MODULOS = ['COMPRAS', 'VENDAS', 'FINANCEIRO', 'WMS', 'CTE', 'PCP', 'FISCAL'] as const
 
@@ -243,17 +244,37 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Empresa inativa' })
     }
 
-    const token = app.jwt.sign(
-      {
-        id: user.id,
-        nome: user.nome,
-        perfil: user.perfil,
-        empresaId,
-      },
-      { expiresIn: '15m' },
-    )
+    const usuarioDb = await prisma.usuario.findUnique({
+      where: { id: user.id },
+      select: { senhaAlterada: true },
+    })
 
-    return { token }
+    const payload: TokenPayload = {
+      id: user.id,
+      nome: user.nome,
+      perfil: user.perfil,
+      empresaId,
+      primeiroLogin: !usuarioDb?.senhaAlterada,
+    }
+
+    // Gerar access token (curta duração) e refresh token (longa duração),
+    // seguindo o mesmo padrão do /auth/login — necessário para o keep-alive
+    // automático e o refresh de token do frontend funcionarem após troca de empresa.
+    const accessToken = generateAccessToken(app, payload)
+    const refreshToken = generateRefreshToken()
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    await prisma.refreshToken.upsert({
+      where: { usuarioId: user.id },
+      update: { token: refreshToken, expiresAt, revoked: false },
+      create: { usuarioId: user.id, token: refreshToken, expiresAt },
+    }).catch(() => {
+      // Tabela pode não existir ainda — fallback: funciona sem refresh token
+    })
+
+    setAuthCookies(reply, accessToken, refreshToken)
+
+    return { token: accessToken, refreshToken }
   })
 
   /**
