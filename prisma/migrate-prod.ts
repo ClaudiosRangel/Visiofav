@@ -1890,6 +1890,24 @@ async function main() {
   }
   console.log('✅ Normalização final: foreign keys recriadas com a definição exata do schema.prisma')
 
+  // mapa_carregamento_nf.nfe_id — dívida técnica antiga: vínculos órfãos que
+  // já apontavam para nenhuma NF válida mesmo antes da tabela legada "nfe"
+  // ser removida (confirmado: nfe tinha 0 registros). Sem a NF original em
+  // lugar nenhum, não há como recriar a associação — remove apenas o vínculo
+  // órfão na tabela de junção (não afeta o mapa_carregamento em si).
+  try {
+    const orfaos = await prisma.$executeRawUnsafe(`
+      DELETE FROM "mapa_carregamento_nf" mcn
+      WHERE NOT EXISTS (SELECT 1 FROM "documento_fiscal" df WHERE df.id = mcn.nfe_id)
+    `)
+    console.log('✅ mapa_carregamento_nf: vínculos órfãos removidos:', orfaos)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mapa_carregamento_nf" DROP CONSTRAINT IF EXISTS "mapa_carregamento_nf_nfe_id_fkey"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mapa_carregamento_nf" ADD CONSTRAINT "mapa_carregamento_nf_nfe_id_fkey" FOREIGN KEY ("nfe_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+    console.log('✅ mapa_carregamento_nf: FK nfe_id recriada')
+  } catch (e: any) {
+    console.log('⚠️ mapa_carregamento_nf FK skipped:', e.message?.substring(0, 150))
+  }
+
   console.log('✅ Normalização final: schema.prisma e produção alinhados (prisma migrate diff)')
 
   console.log('✅ All migrations applied successfully')
