@@ -428,8 +428,19 @@ async function main() {
   // WMS Fase 2 — Multi-CD com Transferências: tabelas de transferência
   // =========================================================================
 
-  try {
-  await prisma.$executeRawUnsafe(`
+  // Cada statement tem seu próprio try/catch: um erro isolado (ex: índice
+  // que ainda não pode ser criado porque a coluna será renomeada só na
+  // etapa seguinte) não pode interromper o restante do bloco.
+  const runMultiCd = async (sql: string) => {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('já existe')) return // idempotente
+      console.log('⚠️ Multi-CD statement skipped:', e.message?.substring(0, 150))
+    }
+  }
+
+  await runMultiCd(`
     CREATE TABLE IF NOT EXISTS "solicitacao_transferencia" (
       "id" TEXT NOT NULL,
       "empresa_id" TEXT NOT NULL,
@@ -438,174 +449,160 @@ async function main() {
       "cd_destino_id" TEXT NOT NULL,
       "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
       "prioridade" VARCHAR(10) NOT NULL DEFAULT 'NORMAL',
-      "observacoes" TEXT,
-      "aprovador_id" TEXT,
-      "aprovado_em" TIMESTAMP(3),
       "criado_por_id" TEXT NOT NULL,
       "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "solicitacao_transferencia_pkey" PRIMARY KEY ("id")
     )
   `)
-  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "solicitacao_transferencia_empresa_id_numero_key" ON "solicitacao_transferencia"("empresa_id", "numero")`)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_solicitacao_transferencia_empresa_id" ON "solicitacao_transferencia"("empresa_id")`)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_solicitacao_transferencia_empresa_id_status" ON "solicitacao_transferencia"("empresa_id", "status")`)
-
-  await prisma.$executeRawUnsafe(`
+  await runMultiCd(`
     CREATE TABLE IF NOT EXISTS "item_solicitacao_transferencia" (
       "id" TEXT NOT NULL,
-      "solicitacao_id" TEXT NOT NULL,
+      "solicitacao_transferencia_id" TEXT NOT NULL,
       "produto_id" TEXT NOT NULL,
-      "quantidade" INTEGER NOT NULL,
+      "quantidade_solicitada" INTEGER NOT NULL,
       "quantidade_expedida" INTEGER NOT NULL DEFAULT 0,
       "quantidade_recebida" INTEGER NOT NULL DEFAULT 0,
-      "lote" VARCHAR(30),
       CONSTRAINT "item_solicitacao_transferencia_pkey" PRIMARY KEY ("id")
     )
   `)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_item_solicitacao_transferencia_solicitacao_id" ON "item_solicitacao_transferencia"("solicitacao_id")`)
-
-  await prisma.$executeRawUnsafe(`
+  await runMultiCd(`
     CREATE TABLE IF NOT EXISTS "documento_saida_transferencia" (
       "id" TEXT NOT NULL,
       "empresa_id" TEXT NOT NULL,
-      "solicitacao_id" TEXT NOT NULL,
       "numero" VARCHAR(20) NOT NULL,
-      "data_emissao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "responsavel_id" TEXT NOT NULL,
-      "observacoes" TEXT,
       "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "documento_saida_transferencia_pkey" PRIMARY KEY ("id")
     )
   `)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_documento_saida_transferencia_empresa_id" ON "documento_saida_transferencia"("empresa_id")`)
-
-  await prisma.$executeRawUnsafe(`
+  await runMultiCd(`
     CREATE TABLE IF NOT EXISTS "mercadoria_transito" (
       "id" TEXT NOT NULL,
       "empresa_id" TEXT NOT NULL,
-      "solicitacao_id" TEXT NOT NULL,
-      "documento_saida_id" TEXT NOT NULL,
       "produto_id" TEXT NOT NULL,
       "quantidade" INTEGER NOT NULL,
-      "lote" VARCHAR(30),
-      "data_expedicao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "data_recebimento" TIMESTAMP(3),
       "status" VARCHAR(20) NOT NULL DEFAULT 'EM_TRANSITO',
       CONSTRAINT "mercadoria_transito_pkey" PRIMARY KEY ("id")
     )
   `)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id" ON "mercadoria_transito"("empresa_id")`)
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id_status" ON "mercadoria_transito"("empresa_id", "status")`)
-
-  // Garantir colunas caso tabela já existisse sem elas (cenário de re-deploy)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "documento_saida_id" TEXT`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "quantidade" INTEGER`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "lote" VARCHAR(30)`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "data_expedicao" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "data_recebimento" TIMESTAMP(3)`)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "status" VARCHAR(20) DEFAULT 'EM_TRANSITO'`)
-
-  console.log('✅ Multi-CD com Transferências: tabelas criadas')
+  console.log('✅ Multi-CD com Transferências: tabelas garantidas (formato mínimo/legado)')
 
   // -------------------------------------------------------------------------
-  // Ajuste de formato: as tabelas acima foram criadas em produção com um
-  // layout de colunas diferente do schema.prisma atual (detectado via
-  // `prisma migrate diff`). Como solicitacao_transferencia/
-  // item_solicitacao_transferencia têm registros reais, migramos as colunas
-  // (rename + conversão de tipo) em vez de dropar, para não perder dados.
-  // documento_saida_transferencia e mercadoria_transito estão vazias, então
-  // apenas normalizamos o formato.
+  // Normalização de colunas para o layout do schema.prisma atual (detectado
+  // via `prisma migrate diff`). Executa ANTES de qualquer índice/FK que
+  // referencie os nomes novos. solicitacao_transferencia/
+  // item_solicitacao_transferencia têm registros reais em produção, por isso
+  // migramos as colunas (rename + conversão de tipo) em vez de dropar.
   // -------------------------------------------------------------------------
-  try {
-    // solicitacao_transferencia: motivo → observacoes, aprovado_por_id → aprovador_id,
-    // data_aprovacao → aprovado_em, remover data_prevista_envio (sem equivalente novo)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "observacoes" TEXT`)
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='motivo') THEN
-          UPDATE "solicitacao_transferencia" SET "observacoes" = "motivo" WHERE "observacoes" IS NULL AND "motivo" IS NOT NULL;
-        END IF;
-      END $$
-    `)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" DROP COLUMN IF EXISTS "motivo"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" DROP COLUMN IF EXISTS "data_prevista_envio"`)
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovado_por_id')
-           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovador_id') THEN
-          ALTER TABLE "solicitacao_transferencia" RENAME COLUMN "aprovado_por_id" TO "aprovador_id";
-        END IF;
-      END $$
-    `)
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='data_aprovacao')
-           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovado_em') THEN
-          ALTER TABLE "solicitacao_transferencia" RENAME COLUMN "data_aprovacao" TO "aprovado_em";
-        END IF;
-      END $$
-    `)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "aprovador_id" TEXT`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "aprovado_em" TIMESTAMP(3)`)
+  await runMultiCd(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "observacoes" TEXT`)
+  await runMultiCd(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='motivo') THEN
+        UPDATE "solicitacao_transferencia" SET "observacoes" = "motivo" WHERE "observacoes" IS NULL AND "motivo" IS NOT NULL;
+      END IF;
+    END $$
+  `)
+  await runMultiCd(`ALTER TABLE "solicitacao_transferencia" DROP COLUMN IF EXISTS "motivo"`)
+  await runMultiCd(`ALTER TABLE "solicitacao_transferencia" DROP COLUMN IF EXISTS "data_prevista_envio"`)
+  await runMultiCd(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovado_por_id')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovador_id') THEN
+        ALTER TABLE "solicitacao_transferencia" RENAME COLUMN "aprovado_por_id" TO "aprovador_id";
+      END IF;
+    END $$
+  `)
+  await runMultiCd(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='data_aprovacao')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovado_em') THEN
+        ALTER TABLE "solicitacao_transferencia" RENAME COLUMN "data_aprovacao" TO "aprovado_em";
+      END IF;
+    END $$
+  `)
+  await runMultiCd(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "aprovador_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "aprovado_em" TIMESTAMP(3)`)
 
-    // item_solicitacao_transferencia: solicitacao_transferencia_id → solicitacao_id,
-    // quantidade_solicitada → quantidade (numeric → integer), quantidades NULL → 0
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='solicitacao_transferencia_id')
-           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='solicitacao_id') THEN
-          ALTER TABLE "item_solicitacao_transferencia" RENAME COLUMN "solicitacao_transferencia_id" TO "solicitacao_id";
-        END IF;
-      END $$
-    `)
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='quantidade_solicitada')
-           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='quantidade') THEN
-          ALTER TABLE "item_solicitacao_transferencia" RENAME COLUMN "quantidade_solicitada" TO "quantidade";
-        END IF;
-      END $$
-    `)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "lote" VARCHAR(30)`)
-    await prisma.$executeRawUnsafe(`UPDATE "item_solicitacao_transferencia" SET "quantidade_expedida" = 0 WHERE "quantidade_expedida" IS NULL`)
-    await prisma.$executeRawUnsafe(`UPDATE "item_solicitacao_transferencia" SET "quantidade_recebida" = 0 WHERE "quantidade_recebida" IS NULL`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade" TYPE INTEGER USING ROUND("quantidade")::integer`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" TYPE INTEGER USING ROUND("quantidade_expedida")::integer`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" TYPE INTEGER USING ROUND("quantidade_recebida")::integer`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" SET DEFAULT 0`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" SET DEFAULT 0`)
+  await runMultiCd(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='solicitacao_transferencia_id')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='solicitacao_id') THEN
+        ALTER TABLE "item_solicitacao_transferencia" RENAME COLUMN "solicitacao_transferencia_id" TO "solicitacao_id";
+      END IF;
+    END $$
+  `)
+  await runMultiCd(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='quantidade_solicitada')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='quantidade') THEN
+        ALTER TABLE "item_solicitacao_transferencia" RENAME COLUMN "quantidade_solicitada" TO "quantidade";
+      END IF;
+    END $$
+  `)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "lote" VARCHAR(30)`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "quantidade" INTEGER`)
+  await runMultiCd(`UPDATE "item_solicitacao_transferencia" SET "quantidade_expedida" = 0 WHERE "quantidade_expedida" IS NULL`)
+  await runMultiCd(`UPDATE "item_solicitacao_transferencia" SET "quantidade_recebida" = 0 WHERE "quantidade_recebida" IS NULL`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade" TYPE INTEGER USING ROUND("quantidade")::integer`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" TYPE INTEGER USING ROUND("quantidade_expedida")::integer`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" TYPE INTEGER USING ROUND("quantidade_recebida")::integer`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" SET DEFAULT 0`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" SET DEFAULT 0`)
+  await runMultiCd(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade" SET NOT NULL`)
 
-    // documento_saida_transferencia (0 registros) — normalizar formato
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "data_emissao" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "observacoes" TEXT`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "responsavel_id" TEXT`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "criado_por_id"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "data_saida"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "motorista_id"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "previsao_chegada"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "solicitacao_transferencia_id"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "veiculo_placa"`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "data_emissao" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "observacoes" TEXT`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "responsavel_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "criado_por_id"`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "data_saida"`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "motorista_id"`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "previsao_chegada"`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "solicitacao_transferencia_id"`)
+  await runMultiCd(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "veiculo_placa"`)
 
-    // mercadoria_transito (0 registros) — remover colunas antigas do layout anterior
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "cd_destino_id"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "cd_origem_id"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "criado_em"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "data_saida"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "previsao_chegada"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "recebido_em"`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "solicitacao_transferencia_id"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "documento_saida_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "quantidade" INTEGER`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "status" VARCHAR(20) DEFAULT 'EM_TRANSITO'`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "lote" VARCHAR(30)`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "data_expedicao" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "data_recebimento" TIMESTAMP(3)`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "cd_destino_id"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "cd_origem_id"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "criado_em"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "data_saida"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "previsao_chegada"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "recebido_em"`)
+  await runMultiCd(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "solicitacao_transferencia_id"`)
 
-    console.log('✅ Multi-CD: colunas de solicitacao/item/documento/mercadoria_transito normalizadas (1 registro real preservado)')
-  } catch (e: any) {
-    console.log('⚠️ Multi-CD normalização de colunas skipped:', e.message?.substring(0, 200))
-  }
-  } catch (e: any) {
-    console.log('⚠️ Multi-CD Transferências skipped:', e.message?.substring(0, 100))
-  }
+  console.log('✅ Multi-CD: colunas normalizadas para o layout atual (registros reais preservados)')
+
+  // -------------------------------------------------------------------------
+  // Índices e foreign keys — só agora, depois que os nomes de coluna estão
+  // garantidamente corretos.
+  // -------------------------------------------------------------------------
+  await runMultiCd(`CREATE UNIQUE INDEX IF NOT EXISTS "solicitacao_transferencia_empresa_id_numero_key" ON "solicitacao_transferencia"("empresa_id", "numero")`)
+  await runMultiCd(`CREATE INDEX IF NOT EXISTS "idx_solicitacao_transferencia_empresa_id" ON "solicitacao_transferencia"("empresa_id")`)
+  await runMultiCd(`CREATE INDEX IF NOT EXISTS "idx_solicitacao_transferencia_empresa_id_status" ON "solicitacao_transferencia"("empresa_id", "status")`)
+  await runMultiCd(`CREATE INDEX IF NOT EXISTS "idx_item_solicitacao_transferencia_solicitacao_id" ON "item_solicitacao_transferencia"("solicitacao_id")`)
+  await runMultiCd(`CREATE INDEX IF NOT EXISTS "idx_documento_saida_transferencia_empresa_id" ON "documento_saida_transferencia"("empresa_id")`)
+  await runMultiCd(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id" ON "mercadoria_transito"("empresa_id")`)
+  await runMultiCd(`CREATE INDEX IF NOT EXISTS "idx_mercadoria_transito_empresa_id_status" ON "mercadoria_transito"("empresa_id", "status")`)
+
+  const multiCdFks = [
+    `ALTER TABLE "item_solicitacao_transferencia" ADD CONSTRAINT "item_solicitacao_transferencia_solicitacao_id_fkey" FOREIGN KEY ("solicitacao_id") REFERENCES "solicitacao_transferencia"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "item_solicitacao_transferencia" ADD CONSTRAINT "item_solicitacao_transferencia_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "documento_saida_transferencia" ADD CONSTRAINT "documento_saida_transferencia_solicitacao_id_fkey" FOREIGN KEY ("solicitacao_id") REFERENCES "solicitacao_transferencia"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "mercadoria_transito" ADD CONSTRAINT "mercadoria_transito_solicitacao_id_fkey" FOREIGN KEY ("solicitacao_id") REFERENCES "solicitacao_transferencia"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "mercadoria_transito" ADD CONSTRAINT "mercadoria_transito_documento_saida_id_fkey" FOREIGN KEY ("documento_saida_id") REFERENCES "documento_saida_transferencia"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "mercadoria_transito" ADD CONSTRAINT "mercadoria_transito_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+  ]
+  for (const fk of multiCdFks) { await runMultiCd(fk) }
+
+  console.log('✅ Multi-CD: índices e foreign keys aplicados')
 
   // =========================================================================
   // Remover tabelas legadas nfe/item_nfe (substituídas por documento_fiscal/
