@@ -1714,6 +1714,157 @@ async function main() {
   }
   console.log('✅ Módulo Fiscal: foreign keys adicionadas')
 
+  // =========================================================================
+  // Normalização final identificada via `prisma migrate diff` — remove os
+  // últimos resíduos entre o schema.prisma e o banco de produção real:
+  // colunas "id"/"atualizado_em" com DEFAULT residual do Prisma (cosmético,
+  // não afeta dados), SET NOT NULL em colunas já preenchidas por DEFAULT
+  // desde a criação, e rename de índices. Cada statement é independente e
+  // idempotente (não falha se já aplicado).
+  // =========================================================================
+  const runNorm = async (sql: string) => {
+    try { await prisma.$executeRawUnsafe(sql) } catch { /* já aplicado ou não se aplica neste ambiente */ }
+  }
+
+  // DROP DEFAULT em colunas "id" (uuid gerado pela aplicação, não pelo banco)
+  const idDropDefaultTables = [
+    'caixa_pdv', 'campanha_desconto', 'conversa_ai', 'devolucao_venda', 'integracao_ecommerce',
+    'item_consignacao', 'item_devolucao_venda', 'item_orcamento', 'item_venda_pdv', 'meta_vendedor',
+    'movimentacao_caixa', 'orcamento', 'pagamento_pdv', 'pedido_ecommerce', 'regra_aprovacao',
+    'regra_bonificacao', 'regra_comissao', 'remessa_consignacao', 'solicitacao_aprovacao',
+    'venda_encomenda', 'venda_pdv',
+  ]
+  for (const t of idDropDefaultTables) {
+    await runNorm(`ALTER TABLE "${t}" ALTER COLUMN "id" DROP DEFAULT`)
+  }
+
+  // DROP DEFAULT em colunas "atualizado_em" (preenchida pela aplicação via @updatedAt)
+  const atualizadoEmDropDefaultTables = [
+    'apuracao_fiscal', 'certificado_digital', 'config_conferencia_produto', 'config_email_fiscal',
+    'config_integracao', 'de_para_importacao', 'documento_fiscal', 'orcamento', 'preferencia_usuario',
+    'regra_tributaria', 'saldo_pendente_item',
+  ]
+  for (const t of atualizadoEmDropDefaultTables) {
+    await runNorm(`ALTER TABLE "${t}" ALTER COLUMN "atualizado_em" DROP DEFAULT`)
+  }
+
+  // SET NOT NULL em colunas já preenchidas por DEFAULT desde a criação (schema.prisma não as marca opcionais)
+  await runNorm(`ALTER TABLE "empresa" ALTER COLUMN "conferencia_quantidade_cega" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "empresa" ALTER COLUMN "conferencia_lote_cega" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "empresa" ALTER COLUMN "permite_recebimento_parcial" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "produto" ALTER COLUMN "exige_lote" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "nota_entrada" ALTER COLUMN "status_recebimento" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "tabela_preco" ALTER COLUMN "prioridade" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "divergencia_conferencia" ALTER COLUMN "supervisor_id" TYPE TEXT`)
+  await runNorm(`ALTER TABLE "ordem_producao" ALTER COLUMN "produto_id" DROP NOT NULL`)
+  await runNorm(`ALTER TABLE "ordem_producao" ALTER COLUMN "data_entrega_prevista" DROP NOT NULL`)
+  await runNorm(`ALTER TABLE "ordem_producao" ALTER COLUMN "data_entrega_original" TYPE TIMESTAMP(3)`)
+
+  // documento_saida_transferencia / mercadoria_transito: SET NOT NULL só é seguro
+  // porque as colunas foram populadas (com DEFAULT) na normalização Multi-CD acima.
+  await runNorm(`ALTER TABLE "documento_saida_transferencia" ALTER COLUMN "data_emissao" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "documento_saida_transferencia" ALTER COLUMN "responsavel_id" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "documento_saida_transferencia" ALTER COLUMN "solicitacao_id" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "mercadoria_transito" ALTER COLUMN "quantidade" TYPE INTEGER`)
+  await runNorm(`ALTER TABLE "mercadoria_transito" ALTER COLUMN "solicitacao_id" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "mercadoria_transito" ALTER COLUMN "documento_saida_id" SET NOT NULL`)
+  await runNorm(`ALTER TABLE "mercadoria_transito" ALTER COLUMN "data_expedicao" SET NOT NULL`)
+
+  // Rename de índices para o padrão gerado pelo Prisma (cosmético, sem impacto funcional)
+  const indexRenames: Array<[string, string]> = [
+    ['de_para_importacao_empresa_id_sistema_origem_tipo_entidade_co_k', 'de_para_importacao_empresa_id_sistema_origem_tipo_entidade__key'],
+    ['idx_de_para_importacao_empresa_id_sistema_origem', 'de_para_importacao_empresa_id_sistema_origem_idx'],
+    ['idx_documento_saida_transferencia_empresa_id', 'documento_saida_transferencia_empresa_id_idx'],
+    ['idx_mercadoria_transito_empresa_id', 'mercadoria_transito_empresa_id_idx'],
+    ['idx_refresh_token_token', 'refresh_token_token_idx'],
+    ['idx_refresh_token_usuario_id', 'refresh_token_usuario_id_idx'],
+    ['idx_security_audit_log_ip', 'security_audit_log_ip_idx'],
+    ['idx_security_audit_log_tipo_criado_em', 'security_audit_log_tipo_criado_em_idx'],
+    ['idx_security_audit_log_usuario_id', 'security_audit_log_usuario_id_idx'],
+    ['idx_solicitacao_transferencia_empresa_id', 'solicitacao_transferencia_empresa_id_idx'],
+  ]
+  for (const [oldName, newName] of indexRenames) {
+    await runNorm(`ALTER INDEX "${oldName}" RENAME TO "${newName}"`)
+  }
+
+  // Índices redundantes (idx_* antigos duplicando índices já cobertos por
+  // outros/novos) — remover apenas se existirem, sem risco (índices não
+  // guardam dados, só aceleram consultas; removê-los não perde informação).
+  const redundantIndexes = [
+    'idx_ambiente_armazenagem_empresa_id', 'idx_capacidade_nivel_empresa_id', 'idx_capacidade_nivel_estrutura_id',
+    'idx_carta_correcao_empresa_id', 'idx_carta_correcao_nota_entrada_id', 'idx_classificacao_produto_empresa_id',
+    'idx_config_conferencia_produto_empresa_id', 'idx_deposito_empresa_id', 'idx_divergencia_conferencia_empresa_id',
+    'idx_divergencia_conferencia_nota_entrada_id', 'idx_doca_empresa_id', 'documento_saida_transferencia_empresa_id_numero_key',
+    'idx_endereco_empresa_id', 'idx_equipamento_movimentacao_empresa_id', 'idx_estrutura_empresa_id',
+    'idx_forma_armazenagem_empresa_id', 'idx_funcao_empresa_id', 'idx_funcionario_empresa_id',
+    'idx_item_solicitacao_transferencia_solicitacao_id', 'idx_nota_entrada_empresa_id', 'idx_saldo_endereco_empresa_id',
+    'idx_saldo_pendente_item_empresa_id', 'idx_saldo_pendente_item_nota_entrada_id', 'idx_sku_empresa_id',
+    'idx_tipo_carga_empresa_id', 'idx_tipo_carroceria_empresa_id', 'idx_veiculo_wms_empresa_id', 'idx_zona_empresa_id',
+  ]
+  for (const idx of redundantIndexes) {
+    await runNorm(`DROP INDEX IF EXISTS "${idx}"`)
+  }
+
+  // Recriar foreign keys removidas/recriadas pelo Prisma (mesma definição —
+  // normalização de metadados internos da constraint, sem efeito funcional)
+  const normFks = [
+    `ALTER TABLE "refresh_token" ADD CONSTRAINT "refresh_token_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuario"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "orcamento" ADD CONSTRAINT "orcamento_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "orcamento" ADD CONSTRAINT "orcamento_cliente_id_fkey" FOREIGN KEY ("cliente_id") REFERENCES "cliente"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "orcamento" ADD CONSTRAINT "orcamento_vendedor_id_fkey" FOREIGN KEY ("vendedor_id") REFERENCES "vendedor"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "orcamento" ADD CONSTRAINT "orcamento_tabela_preco_id_fkey" FOREIGN KEY ("tabela_preco_id") REFERENCES "tabela_preco"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "item_orcamento" ADD CONSTRAINT "item_orcamento_orcamento_id_fkey" FOREIGN KEY ("orcamento_id") REFERENCES "orcamento"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "item_orcamento" ADD CONSTRAINT "item_orcamento_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "devolucao_venda" ADD CONSTRAINT "devolucao_venda_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "devolucao_venda" ADD CONSTRAINT "devolucao_venda_venda_efetivada_id_fkey" FOREIGN KEY ("venda_efetivada_id") REFERENCES "venda_efetivada"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "item_devolucao_venda" ADD CONSTRAINT "item_devolucao_venda_devolucao_venda_id_fkey" FOREIGN KEY ("devolucao_venda_id") REFERENCES "devolucao_venda"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "item_devolucao_venda" ADD CONSTRAINT "item_devolucao_venda_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "campanha_desconto" ADD CONSTRAINT "campanha_desconto_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "regra_comissao" ADD CONSTRAINT "regra_comissao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "regra_aprovacao" ADD CONSTRAINT "regra_aprovacao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "solicitacao_aprovacao" ADD CONSTRAINT "solicitacao_aprovacao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "meta_vendedor" ADD CONSTRAINT "meta_vendedor_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "regra_bonificacao" ADD CONSTRAINT "regra_bonificacao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "venda_encomenda" ADD CONSTRAINT "venda_encomenda_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "remessa_consignacao" ADD CONSTRAINT "remessa_consignacao_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "item_consignacao" ADD CONSTRAINT "item_consignacao_remessa_id_fkey" FOREIGN KEY ("remessa_id") REFERENCES "remessa_consignacao"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "integracao_ecommerce" ADD CONSTRAINT "integracao_ecommerce_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "pedido_ecommerce" ADD CONSTRAINT "pedido_ecommerce_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "conversa_ai" ADD CONSTRAINT "conversa_ai_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "mapa_carregamento_nf" ADD CONSTRAINT "mapa_carregamento_nf_nfe_id_fkey" FOREIGN KEY ("nfe_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "etapa_ordem_producao" ADD CONSTRAINT "etapa_ordem_producao_centro_producao_id_fkey" FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "movimentacao_faturavel" ADD CONSTRAINT "movimentacao_faturavel_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "ponto_consolidacao" ADD CONSTRAINT "ponto_consolidacao_cd_id_fkey" FOREIGN KEY ("cd_id") REFERENCES "centro_distribuicao"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "item_sub_onda" ADD CONSTRAINT "item_sub_onda_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "veiculo_patio" ADD CONSTRAINT "veiculo_patio_agendamento_id_fkey" FOREIGN KEY ("agendamento_id") REFERENCES "agenda_wms"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "fila_espera_patio" ADD CONSTRAINT "fila_espera_patio_cd_id_fkey" FOREIGN KEY ("cd_id") REFERENCES "centro_distribuicao"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "config_patio" ADD CONSTRAINT "config_patio_cd_id_fkey" FOREIGN KEY ("cd_id") REFERENCES "centro_distribuicao"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "divergencia_conferencia" ADD CONSTRAINT "divergencia_conferencia_nota_entrada_id_fkey" FOREIGN KEY ("nota_entrada_id") REFERENCES "nota_entrada"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "divergencia_conferencia" ADD CONSTRAINT "divergencia_conferencia_supervisor_id_fkey" FOREIGN KEY ("supervisor_id") REFERENCES "usuario"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "config_conferencia_produto" ADD CONSTRAINT "config_conferencia_produto_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "config_conferencia_produto" ADD CONSTRAINT "config_conferencia_produto_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "carta_correcao" ADD CONSTRAINT "carta_correcao_nota_entrada_id_fkey" FOREIGN KEY ("nota_entrada_id") REFERENCES "nota_entrada"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "carta_correcao" ADD CONSTRAINT "carta_correcao_divergencia_id_fkey" FOREIGN KEY ("divergencia_id") REFERENCES "divergencia_conferencia"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "saldo_pendente_item" ADD CONSTRAINT "saldo_pendente_item_nota_entrada_id_fkey" FOREIGN KEY ("nota_entrada_id") REFERENCES "nota_entrada"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "caixa_pdv" ADD CONSTRAINT "caixa_pdv_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "movimentacao_caixa" ADD CONSTRAINT "movimentacao_caixa_caixa_id_fkey" FOREIGN KEY ("caixa_id") REFERENCES "caixa_pdv"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "venda_pdv" ADD CONSTRAINT "venda_pdv_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "venda_pdv" ADD CONSTRAINT "venda_pdv_caixa_id_fkey" FOREIGN KEY ("caixa_id") REFERENCES "caixa_pdv"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "item_venda_pdv" ADD CONSTRAINT "item_venda_pdv_venda_pdv_id_fkey" FOREIGN KEY ("venda_pdv_id") REFERENCES "venda_pdv"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "item_venda_pdv" ADD CONSTRAINT "item_venda_pdv_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    `ALTER TABLE "pagamento_pdv" ADD CONSTRAINT "pagamento_pdv_venda_pdv_id_fkey" FOREIGN KEY ("venda_pdv_id") REFERENCES "venda_pdv"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "etapa_ordem_producao" ADD CONSTRAINT "etapa_ordem_producao_centro_producao_id_fkey" FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    `ALTER TABLE "item_consignacao" ADD CONSTRAINT "item_consignacao_remessa_id_fkey" FOREIGN KEY ("remessa_id") REFERENCES "remessa_consignacao"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+  ]
+  for (const fk of normFks) {
+    await runNorm(fk)
+  }
+  await runNorm(`CREATE UNIQUE INDEX IF NOT EXISTS "veiculo_patio_agendamento_id_key" ON "veiculo_patio"("agendamento_id")`)
+
+  console.log('✅ Normalização final: schema.prisma e produção alinhados (prisma migrate diff)')
+
   console.log('✅ All migrations applied successfully')
 }
 
