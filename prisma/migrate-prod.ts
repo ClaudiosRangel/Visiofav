@@ -1093,6 +1093,12 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "config_conferencia_produto" ADD COLUMN IF NOT EXISTS "aceitar_senha" BOOLEAN NOT NULL DEFAULT false`)
   console.log('✅ ConfigConferenciaProduto: colunas aceitar_senha e aceitar_cce_pendente adicionadas')
 
+  // ItemNotaEntrada — status_conferencia (mesma migration 20250627000000,
+  // nunca migrada para produção). Erro real: portaria falhava ao autorizar
+  // entrada e criar nota via tx.notaEntrada.create() com itens.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_nota_entrada" ADD COLUMN IF NOT EXISTS "status_conferencia" VARCHAR(30) NOT NULL DEFAULT 'PENDENTE'`)
+  console.log('✅ ItemNotaEntrada: coluna status_conferencia adicionada')
+
   // =========================================================================
   // Módulo Fiscal — presente no schema.prisma (DocumentoFiscal, Gnre,
   // RegraTributaria, etc.) mas nunca migrado para produção. Erro real:
