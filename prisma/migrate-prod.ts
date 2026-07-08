@@ -502,6 +502,100 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" ADD COLUMN IF NOT EXISTS "status" VARCHAR(20) DEFAULT 'EM_TRANSITO'`)
 
   console.log('✅ Multi-CD com Transferências: tabelas criadas')
+
+  // -------------------------------------------------------------------------
+  // Ajuste de formato: as tabelas acima foram criadas em produção com um
+  // layout de colunas diferente do schema.prisma atual (detectado via
+  // `prisma migrate diff`). Como solicitacao_transferencia/
+  // item_solicitacao_transferencia têm registros reais, migramos as colunas
+  // (rename + conversão de tipo) em vez de dropar, para não perder dados.
+  // documento_saida_transferencia e mercadoria_transito estão vazias, então
+  // apenas normalizamos o formato.
+  // -------------------------------------------------------------------------
+  try {
+    // solicitacao_transferencia: motivo → observacoes, aprovado_por_id → aprovador_id,
+    // data_aprovacao → aprovado_em, remover data_prevista_envio (sem equivalente novo)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "observacoes" TEXT`)
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='motivo') THEN
+          UPDATE "solicitacao_transferencia" SET "observacoes" = "motivo" WHERE "observacoes" IS NULL AND "motivo" IS NOT NULL;
+        END IF;
+      END $$
+    `)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" DROP COLUMN IF EXISTS "motivo"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" DROP COLUMN IF EXISTS "data_prevista_envio"`)
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovado_por_id')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovador_id') THEN
+          ALTER TABLE "solicitacao_transferencia" RENAME COLUMN "aprovado_por_id" TO "aprovador_id";
+        END IF;
+      END $$
+    `)
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='data_aprovacao')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='solicitacao_transferencia' AND column_name='aprovado_em') THEN
+          ALTER TABLE "solicitacao_transferencia" RENAME COLUMN "data_aprovacao" TO "aprovado_em";
+        END IF;
+      END $$
+    `)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "aprovador_id" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "aprovado_em" TIMESTAMP(3)`)
+
+    // item_solicitacao_transferencia: solicitacao_transferencia_id → solicitacao_id,
+    // quantidade_solicitada → quantidade (numeric → integer), quantidades NULL → 0
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='solicitacao_transferencia_id')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='solicitacao_id') THEN
+          ALTER TABLE "item_solicitacao_transferencia" RENAME COLUMN "solicitacao_transferencia_id" TO "solicitacao_id";
+        END IF;
+      END $$
+    `)
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='quantidade_solicitada')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_solicitacao_transferencia' AND column_name='quantidade') THEN
+          ALTER TABLE "item_solicitacao_transferencia" RENAME COLUMN "quantidade_solicitada" TO "quantidade";
+        END IF;
+      END $$
+    `)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ADD COLUMN IF NOT EXISTS "lote" VARCHAR(30)`)
+    await prisma.$executeRawUnsafe(`UPDATE "item_solicitacao_transferencia" SET "quantidade_expedida" = 0 WHERE "quantidade_expedida" IS NULL`)
+    await prisma.$executeRawUnsafe(`UPDATE "item_solicitacao_transferencia" SET "quantidade_recebida" = 0 WHERE "quantidade_recebida" IS NULL`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade" TYPE INTEGER USING ROUND("quantidade")::integer`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" TYPE INTEGER USING ROUND("quantidade_expedida")::integer`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" TYPE INTEGER USING ROUND("quantidade_recebida")::integer`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_expedida" SET DEFAULT 0`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_solicitacao_transferencia" ALTER COLUMN "quantidade_recebida" SET DEFAULT 0`)
+
+    // documento_saida_transferencia (0 registros) — normalizar formato
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "data_emissao" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "observacoes" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "responsavel_id" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" ADD COLUMN IF NOT EXISTS "solicitacao_id" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "criado_por_id"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "data_saida"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "motorista_id"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "previsao_chegada"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "solicitacao_transferencia_id"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_saida_transferencia" DROP COLUMN IF EXISTS "veiculo_placa"`)
+
+    // mercadoria_transito (0 registros) — remover colunas antigas do layout anterior
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "cd_destino_id"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "cd_origem_id"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "criado_em"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "data_saida"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "previsao_chegada"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "recebido_em"`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "mercadoria_transito" DROP COLUMN IF EXISTS "solicitacao_transferencia_id"`)
+
+    console.log('✅ Multi-CD: colunas de solicitacao/item/documento/mercadoria_transito normalizadas (1 registro real preservado)')
+  } catch (e: any) {
+    console.log('⚠️ Multi-CD normalização de colunas skipped:', e.message?.substring(0, 200))
+  }
   } catch (e: any) {
     console.log('⚠️ Multi-CD Transferências skipped:', e.message?.substring(0, 100))
   }
