@@ -1863,6 +1863,33 @@ async function main() {
   }
   await runNorm(`CREATE UNIQUE INDEX IF NOT EXISTS "veiculo_patio_agendamento_id_key" ON "veiculo_patio"("agendamento_id")`)
 
+  // Estas 12 FKs já existiam em produção com definição diferente da esperada
+  // pelo schema.prisma (ex: ON DELETE/ON UPDATE diferente) — ADD CONSTRAINT
+  // simples falha silenciosamente com "já existe" sem atualizar a regra.
+  // Precisa DROP + ADD para substituir pela definição correta. Seguro: não
+  // apaga dados, só a regra de integridade referencial (dados existentes já
+  // satisfazem a nova regra, pois a relação conceitual não mudou).
+  const fkReplace: Array<[string, string, string]> = [
+    ['refresh_token', 'refresh_token_usuario_id_fkey', `ALTER TABLE "refresh_token" ADD CONSTRAINT "refresh_token_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuario"("id") ON DELETE CASCADE ON UPDATE CASCADE`],
+    ['item_orcamento', 'item_orcamento_orcamento_id_fkey', `ALTER TABLE "item_orcamento" ADD CONSTRAINT "item_orcamento_orcamento_id_fkey" FOREIGN KEY ("orcamento_id") REFERENCES "orcamento"("id") ON DELETE CASCADE ON UPDATE CASCADE`],
+    ['item_devolucao_venda', 'item_devolucao_venda_devolucao_venda_id_fkey', `ALTER TABLE "item_devolucao_venda" ADD CONSTRAINT "item_devolucao_venda_devolucao_venda_id_fkey" FOREIGN KEY ("devolucao_venda_id") REFERENCES "devolucao_venda"("id") ON DELETE CASCADE ON UPDATE CASCADE`],
+    ['item_consignacao', 'item_consignacao_remessa_id_fkey', `ALTER TABLE "item_consignacao" ADD CONSTRAINT "item_consignacao_remessa_id_fkey" FOREIGN KEY ("remessa_id") REFERENCES "remessa_consignacao"("id") ON DELETE CASCADE ON UPDATE CASCADE`],
+    ['mapa_carregamento_nf', 'mapa_carregamento_nf_nfe_id_fkey', `ALTER TABLE "mapa_carregamento_nf" ADD CONSTRAINT "mapa_carregamento_nf_nfe_id_fkey" FOREIGN KEY ("nfe_id") REFERENCES "documento_fiscal"("id") ON DELETE RESTRICT ON UPDATE CASCADE`],
+    ['etapa_ordem_producao', 'etapa_ordem_producao_centro_producao_id_fkey', `ALTER TABLE "etapa_ordem_producao" ADD CONSTRAINT "etapa_ordem_producao_centro_producao_id_fkey" FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`],
+    ['caixa_pdv', 'caixa_pdv_empresa_id_fkey', `ALTER TABLE "caixa_pdv" ADD CONSTRAINT "caixa_pdv_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`],
+    ['movimentacao_caixa', 'movimentacao_caixa_caixa_id_fkey', `ALTER TABLE "movimentacao_caixa" ADD CONSTRAINT "movimentacao_caixa_caixa_id_fkey" FOREIGN KEY ("caixa_id") REFERENCES "caixa_pdv"("id") ON DELETE RESTRICT ON UPDATE CASCADE`],
+    ['venda_pdv', 'venda_pdv_empresa_id_fkey', `ALTER TABLE "venda_pdv" ADD CONSTRAINT "venda_pdv_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`],
+    ['venda_pdv', 'venda_pdv_caixa_id_fkey', `ALTER TABLE "venda_pdv" ADD CONSTRAINT "venda_pdv_caixa_id_fkey" FOREIGN KEY ("caixa_id") REFERENCES "caixa_pdv"("id") ON DELETE RESTRICT ON UPDATE CASCADE`],
+    ['item_venda_pdv', 'item_venda_pdv_venda_pdv_id_fkey', `ALTER TABLE "item_venda_pdv" ADD CONSTRAINT "item_venda_pdv_venda_pdv_id_fkey" FOREIGN KEY ("venda_pdv_id") REFERENCES "venda_pdv"("id") ON DELETE CASCADE ON UPDATE CASCADE`],
+    ['item_venda_pdv', 'item_venda_pdv_produto_id_fkey', `ALTER TABLE "item_venda_pdv" ADD CONSTRAINT "item_venda_pdv_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`],
+    ['pagamento_pdv', 'pagamento_pdv_venda_pdv_id_fkey', `ALTER TABLE "pagamento_pdv" ADD CONSTRAINT "pagamento_pdv_venda_pdv_id_fkey" FOREIGN KEY ("venda_pdv_id") REFERENCES "venda_pdv"("id") ON DELETE CASCADE ON UPDATE CASCADE`],
+  ]
+  for (const [table, constraintName, addSql] of fkReplace) {
+    await runNorm(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${constraintName}"`)
+    await runNorm(addSql)
+  }
+  console.log('✅ Normalização final: foreign keys recriadas com a definição exata do schema.prisma')
+
   console.log('✅ Normalização final: schema.prisma e produção alinhados (prisma migrate diff)')
 
   console.log('✅ All migrations applied successfully')
