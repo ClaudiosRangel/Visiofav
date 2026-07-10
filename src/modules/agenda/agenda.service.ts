@@ -14,6 +14,8 @@ import { prisma } from '../../lib/prisma'
 import { validacaoService } from './validacao.service'
 import { autoSchedulerService } from './auto-scheduler.service'
 import { calcularPermanencia } from './agenda.utils'
+import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
+import { sincronizarDadosTransporte } from '../agenda-wms/transporte-sync.service'
 import {
   CriarAgendamentoInput,
   EditarAgendamentoInput,
@@ -141,22 +143,34 @@ export class AgendaService {
     }
 
     // 7. Persistir
-    const agenda = await prisma.agendaWms.create({
-      data: {
-        empresaId,
-        fornecedorId: resolvedFornecedorId,
-        pedidoCompraId: pedidoCompraId || null,
-        docaId: docaId || null,
-        dataPrevista: new Date(dataStr + 'T00:00:00'),
-        horaInicio,
-        horaFim,
-        motorista: motorista || null,
-        placa: placa || null,
-        tipoVeiculo: tipoVeiculo || null,
-        qtdCaixas: qtdCaixas ?? null,
-        qtdPaletes: qtdPaletes ?? null,
-        observacao: observacao || null,
-      },
+    const agenda = await prisma.$transaction(async (tx) => {
+      const criado = await tx.agendaWms.create({
+        data: {
+          empresaId,
+          fornecedorId: resolvedFornecedorId,
+          pedidoCompraId: pedidoCompraId || null,
+          docaId: docaId || null,
+          dataPrevista: new Date(dataStr + 'T00:00:00'),
+          horaInicio,
+          horaFim,
+          motorista: motorista || null,
+          placa: placa || null,
+          tipoVeiculo: tipoVeiculo || null,
+          qtdCaixas: qtdCaixas ?? null,
+          qtdPaletes: qtdPaletes ?? null,
+          observacao: observacao || null,
+        },
+      })
+
+      // Sincronização bidirecional (Requirement 1.4): se já existe uma
+      // NotaEntrada com dados de transporte para o pedido/fornecedor vinculado,
+      // aplica-os na Agenda recém-criada agora.
+      await sincronizarDadosTransporte(tx, empresaId, {
+        pedidoCompraId: criado.pedidoCompraId,
+        fornecedorId: criado.fornecedorId,
+      })
+
+      return criado
     })
 
     return agenda
@@ -589,33 +603,37 @@ export class AgendaService {
 
       // Helper: criar NotaEntrada a partir de XML
       const criarNotaEntradaDoXml = async (xml: string) => {
-        const matchNNF = xml.match(/<nNF>(\d+)<\/nNF>/)
-        const matchSerie = xml.match(/<serie>(\d+)<\/serie>/)
-        const matchEmit = xml.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/)
-        const matchCNPJ = xml.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/)
+        const parsed = parseNfeXml(xml)
 
-        const detMatches = xml.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
-        const itensXml = detMatches.map((det, idx) => {
-          const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
-          const cProd = prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || ''
-          const xProd = prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || ''
-          const uCom = prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN'
-          const qCom = parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0')
-          return { item: idx + 1, descricao: xProd, codigoProduto: cProd, unidade: uCom, quantidade: qCom }
-        })
+        const itensXml = parsed.itens.map((i) => ({
+          item: i.item,
+          descricao: i.descricao,
+          codigoProduto: i.codigoProduto,
+          unidade: i.unidade || 'UN',
+          quantidade: i.quantidade,
+        }))
 
         if (itensXml.length > 0) {
-          return tx.notaEntrada.create({
+          const nota = await tx.notaEntrada.create({
             data: {
-              numero: matchNNF ? parseInt(matchNNF[1]) : 0,
-              serie: matchSerie ? matchSerie[1] : null,
-              fornecedor: matchEmit ? matchEmit[1] : null,
-              fornecedorDoc: matchCNPJ ? matchCNPJ[1] : fornecedorDoc,
+              numero: parsed.numero,
+              serie: parsed.serie || null,
+              fornecedor: parsed.fornecedor || null,
+              fornecedorDoc: parsed.fornecedorDocRaw || fornecedorDoc,
+              transportadoraUf: parsed.transporte.ufVeiculo,
+              transportadoraRntc: parsed.transporte.rntc,
               dataEntrada: new Date(),
               status: 'PENDENTE',
               itens: { create: itensXml },
             },
           })
+
+          await sincronizarDadosTransporte(tx, empresaId, {
+            pedidoCompraId: ag.pedidoCompraId,
+            fornecedorId: ag.fornecedorId,
+          })
+
+          return nota
         }
         return null
       }

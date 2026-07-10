@@ -5,6 +5,9 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { compraFiscalService } from '../fiscal/integracao/compra-fiscal.service'
 import { ErroFiscal } from '../fiscal/erros'
+import { resolverOuCriarProduto } from '../produto/produto-import.service'
+import { CodigoSequencialEsgotadoError } from '../produto/codigo-sequencial.service'
+import { registrarMovimentacao } from '../estoque/movimentacao-estoque.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -174,6 +177,19 @@ export async function compraRoutes(app: FastifyInstance) {
       })
 
       await tx.contaPagar.createMany({ data: contasData })
+
+      // Kardex — baixa/entrada automática de Estoque para empresas sem WMS (Requirement 4.4)
+      if (!empresa?.usaWms) {
+        for (const item of pedido.itens) {
+          await registrarMovimentacao(tx, {
+            empresaId: user.empresaId,
+            produtoId: item.produtoId,
+            tipo: 'ENTRADA_COMPRA',
+            quantidade: Number(item.quantidade),
+            origemId: pedido.id,
+          })
+        }
+      }
 
       // Agenda WMS se empresa usa WMS
       if (empresa?.usaWms && pedido.dataEntrega) {
@@ -401,6 +417,11 @@ export async function compraRoutes(app: FastifyInstance) {
 
     const valorDevolucao = body.itens.reduce((sum, i) => sum + Number((i.quantidade * i.precoUnitario).toFixed(2)), 0)
 
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId },
+      select: { usaWms: true },
+    })
+
     const result = await prisma.$transaction(async (tx) => {
       const devolucao = await tx.devolucaoCompra.create({
         data: {
@@ -417,6 +438,19 @@ export async function compraRoutes(app: FastifyInstance) {
         },
         include: { itens: true },
       })
+
+      // Kardex — saída de estorno de compra para empresas sem WMS (Requirement 4.8)
+      if (!empresa?.usaWms) {
+        for (const item of body.itens) {
+          await registrarMovimentacao(tx, {
+            empresaId: user.empresaId,
+            produtoId: item.produtoId,
+            tipo: 'SAIDA_ESTORNO_COMPRA',
+            quantidade: item.quantidade,
+            origemId: compra.id,
+          })
+        }
+      }
 
       // Criar estorno como conta a pagar com valor negativo (crédito)
       await tx.contaPagar.create({
@@ -481,6 +515,8 @@ export async function compraRoutes(app: FastifyInstance) {
         qCom: parseFloat(getTag(prod, 'qCom')) || 0,
         vUnCom: parseFloat(getTag(prod, 'vUnCom')) || 0,
         vProd: parseFloat(getTag(prod, 'vProd')) || 0,
+        cEAN: getTag(prod, 'cEAN') || null,
+        cEANTrib: getTag(prod, 'cEANTrib') || null,
       }
     })
 
@@ -633,6 +669,11 @@ export async function compraRoutes(app: FastifyInstance) {
       }
     }
 
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId },
+      select: { usaWms: true },
+    })
+
     const result = await prisma.$transaction(async (tx) => {
       // Auto-criar fornecedor se necessário
       let fornecedor = await tx.fornecedor.findUnique({
@@ -650,26 +691,45 @@ export async function compraRoutes(app: FastifyInstance) {
         })
       }
 
-      // Auto-criar produtos se necessário
-      const produtoIds: string[] = []
-      for (const item of itensXml) {
-        let produto = await tx.produto.findUnique({
-          where: { empresaId_codigo: { empresaId: user.empresaId, codigo: item.cProd } },
-        })
+      // Auto-criar produtos se necessário (via resolverOuCriarProduto — código
+      // sequencial interno, De-Para e enriquecimento de SKU por GTIN quando usaWms)
+      // Requirements: 2.1, 2.10
+      const produtoIdsPorIndice = new Map<number, string>()
+      const itensPendentes: Array<{ cProd: string; xProd: string; motivo: string }> = []
 
-        if (!produto) {
-          produto = await tx.produto.create({
-            data: {
-              empresaId: user.empresaId,
-              codigo: item.cProd,
-              nome: item.xProd || `Produto ${item.cProd}`,
+      for (let idx = 0; idx < itensXml.length; idx++) {
+        const item = itensXml[idx]
+        try {
+          const resultado = await resolverOuCriarProduto(tx, {
+            item: {
+              codigoProduto: item.cProd,
+              descricao: item.xProd,
               unidade: item.uCom || 'UN',
-              ncm: item.ncm || undefined,
+              ncm: item.ncm,
+              cEAN: item.cEAN,
+              cEANTrib: item.cEANTrib,
             },
+            fornecedorId: fornecedor.id,
+            empresaId: user.empresaId,
+            usaWms: !!empresa?.usaWms,
           })
+          produtoIdsPorIndice.set(idx, resultado.produtoId)
+        } catch (err) {
+          if (err instanceof CodigoSequencialEsgotadoError) {
+            itensPendentes.push({
+              cProd: item.cProd,
+              xProd: item.xProd,
+              motivo: err.message,
+            })
+            continue
+          }
+          throw err
         }
-        produtoIds.push(produto.id)
       }
+
+      const itensResolvidos = itensXml
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ idx }) => produtoIdsPorIndice.has(idx))
 
       // Número sequencial
       const ultimo = await tx.pedidoCompra.findFirst({
@@ -690,8 +750,8 @@ export async function compraRoutes(app: FastifyInstance) {
           status: 'CONFIRMADO',
           dataEntrega: dataEntregaStr ? new Date(dataEntregaStr) : undefined,
           itens: {
-            create: itensXml.map((item, idx) => ({
-              produtoId: produtoIds[idx],
+            create: itensResolvidos.map(({ item, idx }) => ({
+              produtoId: produtoIdsPorIndice.get(idx)!,
               quantidade: item.qCom,
               precoUnitario: item.vUnCom,
               unidade: item.uCom || 'UN',
@@ -735,8 +795,9 @@ export async function compraRoutes(app: FastifyInstance) {
         pedido,
         compra,
         fornecedorCriado: !fornecedor,
-        produtosCriados: produtoIds.length,
+        produtosCriados: produtoIdsPorIndice.size,
         documentoFiscalId: documentoFiscal?.id || null,
+        itensPendentes,
       }
     })
 

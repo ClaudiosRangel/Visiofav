@@ -3,6 +3,8 @@
  * Extrai dados do cabeçalho e itens incluindo cEAN, cEANTrib, uTrib, qTrib.
  */
 
+import { extrairBlocoTransporte, DadosTransporteXml } from './transporte-xml-parser'
+
 function getTag(tag: string, source: string): string {
   const regex = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, 'i')
   const match = source.match(regex)
@@ -52,6 +54,9 @@ export function parseNfeXml(xml: string) {
   const transportadoraBlock = getBlock('transporta', transp)
   const transportadora = getTag('xNome', transportadoraBlock)
 
+  // Bloco de transporte (placa, UF, RNTC, motorista) — implementação única compartilhada
+  const transporte: DadosTransporteXml = extrairBlocoTransporte(xml)
+
   // Itens
   const dets = getAllBlocks('det', xml)
   const itens = dets.map((det, index) => {
@@ -100,6 +105,7 @@ export function parseNfeXml(xml: string) {
     fornecedorDoc: formatCnpj(fornecedorDoc),
     fornecedorDocRaw: fornecedorDoc,
     transportadora,
+    transporte,
     tipo: 'COMPRA',
     itens,
   }

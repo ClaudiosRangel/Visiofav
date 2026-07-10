@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { vendaFiscalService } from '../fiscal/integracao/venda-fiscal.service'
 import { CodigoErroFiscal, ErroFiscal } from '../fiscal/erros'
+import { registrarMovimentacao } from '../estoque/movimentacao-estoque.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -207,6 +208,25 @@ export async function vendaRoutes(app: FastifyInstance) {
 
       await tx.contaReceber.createMany({ data: contasData })
 
+      // Kardex — saída automática de Estoque para empresas sem WMS (Requirement 4.5)
+      const produtosComSaldoNegativo: string[] = []
+      if (!empresa.usaWms) {
+        for (const item of pedido.itens) {
+          const resultado = await registrarMovimentacao(tx, {
+            empresaId: user.empresaId,
+            produtoId: item.produtoId,
+            tipo: 'SAIDA_VENDA',
+            quantidade: Number(item.quantidade),
+            origemId: pedido.id,
+          })
+
+          // Requirement 4.7: saldo negativo não bloqueia a venda, apenas é sinalizado na resposta
+          if (resultado.saldoNegativo) {
+            produtosComSaldoNegativo.push(item.produtoId)
+          }
+        }
+      }
+
       // Atualizar status do pedido
       await tx.pedidoVenda.update({
         where: { id: pedido.id },
@@ -219,6 +239,7 @@ export async function vendaRoutes(app: FastifyInstance) {
         chaveAcesso: emissaoResult.chaveAcesso,
         protocolo: emissaoResult.protocolo,
         contingencia: isContingencia,
+        produtosComSaldoNegativo,
       }
     })
 

@@ -12,6 +12,7 @@ import { cstCsosnRoutes } from './cadastros/cst-csosn.routes'
 import { naturezaOperacaoRoutes } from './cadastros/natureza-operacao.routes'
 import { cfopRoutes } from './cadastros/cfop.routes'
 import { cestRoutes } from './cadastros/cest.routes'
+import { seedFiscalRoutes } from './seed-fiscal/seed-fiscal.routes'
 import { gnreRoutes } from './gnre/gnre.routes'
 import { importacaoXmlRoutes } from './importacao/importacao-xml.routes'
 import { distribuicaoDfeRoutes } from './distribuicao-dfe/distribuicao-dfe.routes'
@@ -51,6 +52,9 @@ export async function fiscalRoutes(app: FastifyInstance) {
   app.register(naturezaOperacaoRoutes, { prefix: '/cadastros' })
   app.register(cfopRoutes, { prefix: '/cadastros' })
   app.register(cestRoutes, { prefix: '/cadastros' })
+
+  // Seed administrativo de Cadastros Fiscais (NCM/CFOP/CEST), restrito a ADMIN (Req 3.1)
+  app.register(seedFiscalRoutes, { prefix: '/cadastros/seed' })
 
   // GNRE (Guia Nacional de Recolhimento de Tributos Estaduais)
   app.register(gnreRoutes, { prefix: '/' })

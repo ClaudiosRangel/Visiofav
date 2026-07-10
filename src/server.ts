@@ -100,6 +100,7 @@ import { fichaOperacionalRoutes } from './modules/ficha-operacional/ficha-operac
 import { ocrRoutes } from './modules/ocr/ocr.routes'
 import { scannerRoutes } from './modules/scanner/scanner.routes'
 import { stockViewRoutes } from './modules/estoque/stock-view.routes'
+import { kardexRoutes } from './modules/estoque/kardex.routes'
 import { mapaCarregamentoRoutes } from './modules/mapa-carregamento/mapa-carregamento.routes'
 import { relatorioExpedicaoRoutes } from './modules/relatorio-expedicao/relatorio-expedicao.routes'
 import { deparaFornecedorRoutes } from './modules/depara-fornecedor/depara-fornecedor.routes'
@@ -380,6 +381,7 @@ async function bootstrap() {
 
   // Estoque — Visão de Saldo
   await app.register(stockViewRoutes, { prefix: '/api/estoque' })
+  await app.register(kardexRoutes, { prefix: '/api/estoque' })
 
   // Configuração de Integração (Conferência)
   await app.register(configIntegracaoRoutes, { prefix: '/api/config-integracao' })
