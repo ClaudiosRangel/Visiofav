@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma'
+import { registrarMovimentacao } from '../estoque/movimentacao-estoque.service'
 import { devolucaoFiscalService } from './devolucao-fiscal.service'
 import type { CriarDevolucaoVendaInput } from './devolucao-venda.schemas'
 
@@ -87,6 +88,8 @@ export const devolucaoVendaService = {
 
     // Transação atômica: cria devolução + estorna financeiro + reentrada estoque
     const devolucao = await prisma.$transaction(async (tx) => {
+      const empresa = await tx.empresa.findUnique({ where: { id: empresaId }, select: { usaWms: true } })
+
       // 1. Criar devolução
       const dev = await tx.devolucaoVenda.create({
         data: {
@@ -115,12 +118,17 @@ export const devolucaoVendaService = {
         },
       })
 
-      // 3. Reentrada de estoque
-      for (const itemDev of itensDevolucao) {
-        await tx.estoque.updateMany({
-          where: { empresaId, produtoId: itemDev.produtoId },
-          data: { quantidade: { increment: itemDev.quantidade } },
-        })
+      // 3. Reentrada de estoque (apenas para empresas que não usam WMS — Requirement 4.6)
+      if (!empresa?.usaWms) {
+        for (const itemDev of itensDevolucao) {
+          await registrarMovimentacao(tx, {
+            empresaId,
+            produtoId: itemDev.produtoId,
+            tipo: 'ENTRADA_ESTORNO_VENDA',
+            quantidade: itemDev.quantidade,
+            origemId: input.vendaEfetivadaId,
+          })
+        }
       }
 
       return dev

@@ -43,7 +43,10 @@ export async function notaEntradaRoutes(app: FastifyInstance) {
     const body = z.object({
       numero: z.number(), serie: z.string().optional(), documento: z.string().optional(),
       fornecedor: z.string().optional(), fornecedorDoc: z.string().optional(),
-      transportadora: z.string().optional(), dataEmissao: z.string().optional(),
+      transportadora: z.string().optional(),
+      transportadoraUf: z.string().max(2).nullish(),
+      transportadoraRntc: z.string().max(20).nullish(),
+      dataEmissao: z.string().optional(),
       tipo: z.string().default('COMPRA'),
       itens: z.array(z.object({
         item: z.number(), descricao: z.string(), codigoProduto: z.string().optional(),

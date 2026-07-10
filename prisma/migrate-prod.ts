@@ -1923,6 +1923,70 @@ async function main() {
 
   console.log('✅ Normalização final: schema.prisma e produção alinhados (prisma migrate diff)')
 
+  // =========================================================================
+  // Melhorias Compras, WMS e Fiscal — Transporte XML, Código Sequencial de
+  // Produto, Kardex de Estoque e Liberação de Conferência por Supervisor
+  // =========================================================================
+
+  // NotaEntrada — dados de transporte extraídos do XML da NFe
+  await prisma.$executeRawUnsafe(`ALTER TABLE "nota_entrada" ADD COLUMN IF NOT EXISTS "transportadora_uf" VARCHAR(2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "nota_entrada" ADD COLUMN IF NOT EXISTS "transportadora_rntc" VARCHAR(20)`)
+
+  // AgendaWms — divergência de transporte e liberação por supervisor
+  await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "divergencia_transporte" VARCHAR(500)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "supervisor_liberacao_id" TEXT`)
+
+  // Produto — motivo de falha do enriquecimento de SKU via catálogo externo
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "motivo_falha_enriquecimento_sku" TEXT`)
+
+  console.log('✅ Transporte XML: colunas de nota_entrada, agenda_wms e produto adicionadas')
+
+  // SequenciaProduto — contador atômico de código sequencial por Empresa
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "sequencia_produto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "proximo_valor" INTEGER NOT NULL DEFAULT 1,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "sequencia_produto_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "sequencia_produto_empresa_id_key" UNIQUE ("empresa_id")
+    )
+  `)
+
+  // MovimentacaoEstoque — Kardex de estoque para empresas sem WMS
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "movimentacao_estoque" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "tipo" VARCHAR(30) NOT NULL,
+      "quantidade" DECIMAL(12,4) NOT NULL,
+      "saldo_anterior" DECIMAL(12,4) NOT NULL,
+      "saldo_posterior" DECIMAL(12,4) NOT NULL,
+      "origem_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "movimentacao_estoque_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "movimentacao_estoque_empresa_id_produto_id_criado_em_idx" ON "movimentacao_estoque"("empresa_id", "produto_id", "criado_em")`)
+
+  console.log('✅ Código Sequencial + Kardex: tabelas sequencia_produto e movimentacao_estoque criadas')
+
+  // Foreign keys de sequencia_produto e movimentacao_estoque (idempotentes via catch individual)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "sequencia_produto" ADD CONSTRAINT "sequencia_produto_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch { /* constraint já existe */ }
+
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "movimentacao_estoque" ADD CONSTRAINT "movimentacao_estoque_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch { /* constraint já existe */ }
+
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "movimentacao_estoque" ADD CONSTRAINT "movimentacao_estoque_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch { /* constraint já existe */ }
+
+  console.log('✅ Código Sequencial + Kardex: foreign keys criadas')
+
   console.log('✅ All migrations applied successfully')
 }
 

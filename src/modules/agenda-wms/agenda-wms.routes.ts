@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
+import { sincronizarDadosTransporte } from './transporte-sync.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -404,22 +406,34 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
       if (forn) resolvedFornecedorId = forn.id
     }
 
-    const agenda = await prisma.agendaWms.create({
-      data: {
-        empresaId: user.empresaId,
-        fornecedorId: resolvedFornecedorId,
-        pedidoCompraId: body.pedidoCompraId,
-        docaId: body.docaId,
-        dataPrevista: dia,
-        horaInicio,
-        horaFim,
-        motorista: body.motorista,
-        placa: body.placa,
-        tipoVeiculo: body.tipoVeiculo,
-        qtdCaixas: body.qtdCaixas,
-        qtdPaletes: body.qtdPaletes,
-        observacao: body.observacao,
-      },
+    const agenda = await prisma.$transaction(async (tx) => {
+      const criado = await tx.agendaWms.create({
+        data: {
+          empresaId: user.empresaId,
+          fornecedorId: resolvedFornecedorId,
+          pedidoCompraId: body.pedidoCompraId,
+          docaId: body.docaId,
+          dataPrevista: dia,
+          horaInicio,
+          horaFim,
+          motorista: body.motorista,
+          placa: body.placa,
+          tipoVeiculo: body.tipoVeiculo,
+          qtdCaixas: body.qtdCaixas,
+          qtdPaletes: body.qtdPaletes,
+          observacao: body.observacao,
+        },
+      })
+
+      // Sincronização bidirecional (Requirement 1.4): se já existe uma
+      // NotaEntrada com dados de transporte para o pedido/fornecedor vinculado,
+      // aplica-os na Agenda recém-criada agora.
+      await sincronizarDadosTransporte(tx, user.empresaId, {
+        pedidoCompraId: criado.pedidoCompraId,
+        fornecedorId: criado.fornecedorId,
+      })
+
+      return criado
     })
 
     return reply.status(201).send(agenda)
@@ -566,32 +580,34 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
         if (!notaExistente) {
           const compraXml = await buscarXmlCompra()
           if (compraXml) {
-            const matchNNF = compraXml.match(/<nNF>(\d+)<\/nNF>/)
-            const matchSerie = compraXml.match(/<serie>(\d+)<\/serie>/)
-            const matchEmit = compraXml.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/)
-            const matchCNPJ = compraXml.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/)
+            const parsed = parseNfeXml(compraXml)
 
-            const detMatches = compraXml.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
-            const itensXml = detMatches.map((det, idx) => {
-              const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
-              const cProd = prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || ''
-              const xProd = prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || ''
-              const uCom = prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN'
-              const qCom = parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0')
-              return { item: idx + 1, descricao: xProd, codigoProduto: cProd, unidade: uCom, quantidade: qCom }
-            })
+            const itensXml = parsed.itens.map((i) => ({
+              item: i.item,
+              descricao: i.descricao,
+              codigoProduto: i.codigoProduto,
+              unidade: i.unidade || 'UN',
+              quantidade: i.quantidade,
+            }))
 
             if (itensXml.length > 0) {
               await tx.notaEntrada.create({
                 data: {
-                  numero: matchNNF ? parseInt(matchNNF[1]) : 0,
-                  serie: matchSerie ? matchSerie[1] : null,
-                  fornecedor: matchEmit ? matchEmit[1] : null,
-                  fornecedorDoc: matchCNPJ ? matchCNPJ[1] : fornecedorDoc,
+                  numero: parsed.numero,
+                  serie: parsed.serie || null,
+                  fornecedor: parsed.fornecedor || null,
+                  fornecedorDoc: parsed.fornecedorDocRaw || fornecedorDoc,
+                  transportadoraUf: parsed.transporte.ufVeiculo,
+                  transportadoraRntc: parsed.transporte.rntc,
                   dataEntrada: new Date(),
                   status: 'PENDENTE',
                   itens: { create: itensXml },
                 },
+              })
+
+              await sincronizarDadosTransporte(tx, user.empresaId, {
+                pedidoCompraId: ag.pedidoCompraId,
+                fornecedorId: ag.fornecedorId,
               })
             }
           }
@@ -610,32 +626,34 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
         if (!nota) {
           const compraXml = await buscarXmlCompra()
           if (compraXml) {
-            const matchNNF = compraXml.match(/<nNF>(\d+)<\/nNF>/)
-            const matchSerie = compraXml.match(/<serie>(\d+)<\/serie>/)
-            const matchEmit = compraXml.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/)
-            const matchCNPJ = compraXml.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/)
+            const parsed = parseNfeXml(compraXml)
 
-            const detMatches = compraXml.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
-            const itensXml = detMatches.map((det, idx) => {
-              const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
-              const cProd = prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || ''
-              const xProd = prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || ''
-              const uCom = prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN'
-              const qCom = parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0')
-              return { item: idx + 1, descricao: xProd, codigoProduto: cProd, unidade: uCom, quantidade: qCom }
-            })
+            const itensXml = parsed.itens.map((i) => ({
+              item: i.item,
+              descricao: i.descricao,
+              codigoProduto: i.codigoProduto,
+              unidade: i.unidade || 'UN',
+              quantidade: i.quantidade,
+            }))
 
             if (itensXml.length > 0) {
               nota = await tx.notaEntrada.create({
                 data: {
-                  numero: matchNNF ? parseInt(matchNNF[1]) : 0,
-                  serie: matchSerie ? matchSerie[1] : null,
-                  fornecedor: matchEmit ? matchEmit[1] : null,
-                  fornecedorDoc: matchCNPJ ? matchCNPJ[1] : fornecedorDoc,
+                  numero: parsed.numero,
+                  serie: parsed.serie || null,
+                  fornecedor: parsed.fornecedor || null,
+                  fornecedorDoc: parsed.fornecedorDocRaw || fornecedorDoc,
+                  transportadoraUf: parsed.transporte.ufVeiculo,
+                  transportadoraRntc: parsed.transporte.rntc,
                   dataEntrada: new Date(),
                   status: 'PENDENTE',
                   itens: { create: itensXml },
                 },
+              })
+
+              await sincronizarDadosTransporte(tx, user.empresaId, {
+                pedidoCompraId: ag.pedidoCompraId,
+                fornecedorId: ag.fornecedorId,
               })
             }
           }

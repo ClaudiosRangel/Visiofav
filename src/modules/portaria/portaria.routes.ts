@@ -7,6 +7,19 @@ import { analisarPendenciasLogisticas } from '../pendencia-logistica/pendencia-l
 import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
 import { filaService } from '../patio/fila.service'
 import { portariaService } from './portaria.service'
+import { autorizarEntradaBodySchema, decidirLiberacaoConferencia } from './liberacao-conferencia.service'
+
+/**
+ * Erro lançado dentro da transação de `POST /autorizar-entrada/:id` quando a
+ * Liberação_de_Conferência é rejeitada (credenciais de Supervisor ausentes/inválidas).
+ * Capturado fora do `$transaction` para responder com o `statusCode` correto,
+ * sem que nenhuma alteração de status/OS tenha sido persistida (rollback automático).
+ */
+class LiberacaoRejeitadaError extends Error {
+  constructor(public statusCode: 401 | 422, message: string) {
+    super(message)
+  }
+}
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -69,6 +82,8 @@ async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise
   // Buscar itens do pedido de compra OU da compra efetivada do fornecedor
   let itensNota: any[] = []
   let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
+  let transportadoraUf: string | null = null
+  let transportadoraRntc: string | null = null
 
   // Buscar XML da compra efetivada (por pedidoCompraId ou fallback por fornecedorId)
   let compra: { xmlNfe: string | null; pedidoCompraId: string } | null = null
@@ -86,7 +101,7 @@ async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise
     })
   }
 
-  // Extrair lote/validade do XML
+  // Extrair lote/validade e dados de transporte do XML
   if (compra?.xmlNfe) {
     try {
       const parsed = parseNfeXml(compra.xmlNfe)
@@ -95,7 +110,9 @@ async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise
         lote: i.lote || '',
         validade: (i as any).validade || null,
       }))
-    } catch { /* XML inválido, seguir sem lote/validade */ }
+      transportadoraUf = parsed.transporte.ufVeiculo
+      transportadoraRntc = parsed.transporte.rntc
+    } catch { /* XML inválido, seguir sem lote/validade/transporte */ }
   }
 
   // Buscar itens do pedido de compra
@@ -134,6 +151,8 @@ async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise
       numero: proximoNumero,
       fornecedor: fornecedorNome,
       fornecedorDoc,
+      transportadoraUf,
+      transportadoraRntc,
       tipo: 'COMPRA',
       status: 'PENDENTE',
       dataEntrada: new Date(),
@@ -293,6 +312,7 @@ export async function portariaRoutes(app: FastifyInstance) {
   app.post('/autorizar-entrada/:id', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = idParamsSchema.parse(request.params)
+    const body = autorizarEntradaBodySchema.parse(request.body ?? {})
 
     const ag = await prisma.agendaWms.findFirst({ where: { id, empresaId: user.empresaId } })
     if (!ag) return reply.status(404).send({ message: 'Agendamento não encontrado' })
@@ -301,100 +321,116 @@ export async function portariaRoutes(app: FastifyInstance) {
       return reply.status(422).send({ message: `Veículo não está CONFIRMADO. Status atual: ${ag.status}. Aguarde confirmação na agenda.` })
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const atualizado = await tx.agendaWms.update({
-        where: { id },
-        data: { status: 'NA_DOCA' },
-      })
+    let result: { atualizado: any; os: any }
+    try {
+      result = await prisma.$transaction(async (tx) => {
+        // Decidir se a liberação exige credenciais de Supervisor (Requirement 5.1-5.7).
+        // Reavaliado a cada requisição, consultando o estado atual do banco dentro
+        // da transação — sem cache do resultado (Requirement 5.6).
+        const decisao = await decidirLiberacaoConferencia(tx, ag, user.empresaId, body)
+        if (!decisao.efetivar) {
+          throw new LiberacaoRejeitadaError(decisao.erro!.statusCode, decisao.erro!.message)
+        }
 
-      // Buscar nota de entrada vinculada
-      let notaEntradaId: string | null = null
-      if (ag.fornecedorId) {
-        const { hojeUtc, amanhaUtc } = getHojeRange()
-        const forn = await tx.fornecedor.findUnique({ where: { id: ag.fornecedorId }, select: { cnpj: true, razaoSocial: true } })
-        if (forn) {
-          const nota = await tx.notaEntrada.findFirst({
-            where: { fornecedorDoc: forn.cnpj, status: { in: ['PENDENTE', 'EM_CONFERENCIA'] }, dataEntrada: { gte: hojeUtc, lt: amanhaUtc } },
-            orderBy: { criadoEm: 'desc' },
-          })
-          if (nota) {
-            notaEntradaId = nota.id
-          } else {
-            // Nota não existe — criar a partir do XML da compra efetivada
-            let compraXml: string | null = null
-            if (ag.pedidoCompraId) {
-              const compra = await tx.compraEfetivada.findFirst({
-                where: { pedidoCompraId: ag.pedidoCompraId },
-                select: { xmlNfe: true },
-              })
-              compraXml = compra?.xmlNfe ?? null
-            }
-            if (!compraXml) {
-              const compra = await tx.compraEfetivada.findFirst({
-                where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
-                orderBy: { criadoEm: 'desc' },
-                select: { xmlNfe: true },
-              })
-              compraXml = compra?.xmlNfe ?? null
-            }
+        const atualizado = await tx.agendaWms.update({
+          where: { id },
+          data: { status: 'NA_DOCA', supervisorLiberacaoId: decisao.supervisorLiberacaoId },
+        })
 
-            if (compraXml) {
-              const matchNNF = compraXml.match(/<nNF>(\d+)<\/nNF>/)
-              const matchSerie = compraXml.match(/<serie>(\d+)<\/serie>/)
-              const matchEmit = compraXml.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/)
-              const matchCNPJ = compraXml.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/)
-
-              const detMatches = compraXml.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
-              const itensXml = detMatches.map((det, idx) => {
-                const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
-                const cProd = prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || ''
-                const xProd = prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || ''
-                const uCom = prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN'
-                const qCom = parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0')
-                return { item: idx + 1, descricao: xProd, codigoProduto: cProd, unidade: uCom, quantidade: qCom }
-              })
-
-              if (itensXml.length > 0) {
-                const novaNota = await tx.notaEntrada.create({
-                  data: {
-                    numero: matchNNF ? parseInt(matchNNF[1]) : 0,
-                    serie: matchSerie ? matchSerie[1] : null,
-                    fornecedor: matchEmit ? matchEmit[1] : (forn.razaoSocial || null),
-                    fornecedorDoc: matchCNPJ ? matchCNPJ[1] : forn.cnpj,
-                    dataEntrada: new Date(),
-                    status: 'PENDENTE',
-                    itens: { create: itensXml },
-                  },
+        // Buscar nota de entrada vinculada
+        let notaEntradaId: string | null = null
+        if (ag.fornecedorId) {
+          const { hojeUtc, amanhaUtc } = getHojeRange()
+          const forn = await tx.fornecedor.findUnique({ where: { id: ag.fornecedorId }, select: { cnpj: true, razaoSocial: true } })
+          if (forn) {
+            const nota = await tx.notaEntrada.findFirst({
+              where: { fornecedorDoc: forn.cnpj, status: { in: ['PENDENTE', 'EM_CONFERENCIA'] }, dataEntrada: { gte: hojeUtc, lt: amanhaUtc } },
+              orderBy: { criadoEm: 'desc' },
+            })
+            if (nota) {
+              notaEntradaId = nota.id
+            } else {
+              // Nota não existe — criar a partir do XML da compra efetivada
+              let compraXml: string | null = null
+              if (ag.pedidoCompraId) {
+                const compra = await tx.compraEfetivada.findFirst({
+                  where: { pedidoCompraId: ag.pedidoCompraId },
+                  select: { xmlNfe: true },
                 })
-                notaEntradaId = novaNota.id
+                compraXml = compra?.xmlNfe ?? null
+              }
+              if (!compraXml) {
+                const compra = await tx.compraEfetivada.findFirst({
+                  where: { pedidoCompra: { fornecedorId: ag.fornecedorId }, xmlNfe: { not: null } },
+                  orderBy: { criadoEm: 'desc' },
+                  select: { xmlNfe: true },
+                })
+                compraXml = compra?.xmlNfe ?? null
+              }
+
+              if (compraXml) {
+                const matchNNF = compraXml.match(/<nNF>(\d+)<\/nNF>/)
+                const matchSerie = compraXml.match(/<serie>(\d+)<\/serie>/)
+                const matchEmit = compraXml.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/)
+                const matchCNPJ = compraXml.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/)
+
+                const detMatches = compraXml.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
+                const itensXml = detMatches.map((det, idx) => {
+                  const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
+                  const cProd = prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || ''
+                  const xProd = prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || ''
+                  const uCom = prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN'
+                  const qCom = parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0')
+                  return { item: idx + 1, descricao: xProd, codigoProduto: cProd, unidade: uCom, quantidade: qCom }
+                })
+
+                if (itensXml.length > 0) {
+                  const novaNota = await tx.notaEntrada.create({
+                    data: {
+                      numero: matchNNF ? parseInt(matchNNF[1]) : 0,
+                      serie: matchSerie ? matchSerie[1] : null,
+                      fornecedor: matchEmit ? matchEmit[1] : (forn.razaoSocial || null),
+                      fornecedorDoc: matchCNPJ ? matchCNPJ[1] : forn.cnpj,
+                      dataEntrada: new Date(),
+                      status: 'PENDENTE',
+                      itens: { create: itensXml },
+                    },
+                  })
+                  notaEntradaId = novaNota.id
+                }
               }
             }
           }
         }
+
+        // Criar OS de Conferência
+        const ultimaOs = await tx.ordemServicoWms.findFirst({
+          where: { empresaId: user.empresaId },
+          orderBy: { numero: 'desc' },
+          select: { numero: true },
+        })
+        const numOs = (ultimaOs?.numero ?? 0) + 1
+
+        const os = await tx.ordemServicoWms.create({
+          data: {
+            empresaId: user.empresaId,
+            numero: numOs,
+            tipo: 'ENTRADA',
+            operacao: 'CONFERENCIA',
+            status: 'ABERTO',
+            notaEntradaId,
+            agendaWmsId: ag.id,
+          },
+        })
+
+        return { atualizado, os }
+      })
+    } catch (err) {
+      if (err instanceof LiberacaoRejeitadaError) {
+        return reply.status(err.statusCode).send({ message: err.message })
       }
-
-      // Criar OS de Conferência
-      const ultimaOs = await tx.ordemServicoWms.findFirst({
-        where: { empresaId: user.empresaId },
-        orderBy: { numero: 'desc' },
-        select: { numero: true },
-      })
-      const numOs = (ultimaOs?.numero ?? 0) + 1
-
-      const os = await tx.ordemServicoWms.create({
-        data: {
-          empresaId: user.empresaId,
-          numero: numOs,
-          tipo: 'ENTRADA',
-          operacao: 'CONFERENCIA',
-          status: 'ABERTO',
-          notaEntradaId,
-          agendaWmsId: ag.id,
-        },
-      })
-
-      return { atualizado, os }
-    })
+      throw err
+    }
 
     // Analisar pendências logísticas (SKU e dados logísticos) dos itens da nota
     let pendenciasLogisticas = { pendenciasCriadas: 0, itensAnalisados: 0 }

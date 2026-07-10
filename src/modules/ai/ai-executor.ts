@@ -5,6 +5,9 @@
  */
 
 import { prisma } from '../../lib/prisma'
+import { extrairBlocoTransporte } from '../nota-entrada/transporte-xml-parser'
+import { resolverOuCriarProduto } from '../produto/produto-import.service'
+import { CodigoSequencialEsgotadoError } from '../produto/codigo-sequencial.service'
 
 export interface ToolResult {
   resposta: string
@@ -481,12 +484,24 @@ async function executarImportarXmlComprasReal(
       qCom: parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0'),
       vUnCom: parseFloat(prod.match(/<vUnCom>([^<]*)<\/vUnCom>/)?.[1] || '0'),
       vProd: parseFloat(prod.match(/<vProd>([^<]*)<\/vProd>/)?.[1] || '0'),
+      cEAN: prod.match(/<cEAN>([^<]*)<\/cEAN>/)?.[1] || null,
+      cEANTrib: prod.match(/<cEANTrib>([^<]*)<\/cEANTrib>/)?.[1] || null,
     }
   })
 
   if (itensXml.length === 0) {
     return { resposta: `❌ Não encontrei itens no XML. Verifique se o arquivo está completo.` }
   }
+
+  // Requirement 1.7: extração de transporte via implementação única compartilhada
+  // (extrairBlocoTransporte), reutilizada por todos os pontos de importação de XML.
+  // NOTA DE ESCOPO: `executarImportarXmlComprasReal` não cria `NotaEntrada`
+  // diretamente — ela é criada depois, quando o agendamento é processado, em
+  // `agenda-wms.routes.ts`/`agenda.service.ts` (que já usam o parser compartilhado
+  // desde as tasks 2.3/2.7). Aqui apenas garantimos que a extração esteja disponível
+  // de forma consistente com os demais pontos de importação; nenhuma persistência é
+  // feita neste fluxo pois não há `NotaEntrada` para vincular ainda.
+  const dadosTransporte = extrairBlocoTransporte(xmlContent)
 
   const cnpjLimpo = parsedFiscal.emitente.cnpj.replace(/\D/g, '')
   const vNF = parsedFiscal.totais.valorTotal || itensXml.reduce((s, i) => s + i.vProd, 0)
@@ -508,28 +523,47 @@ async function executarImportarXmlComprasReal(
         })
       }
 
-      // Produtos: buscar ou criar
-      const produtoIds: string[] = []
+      // Empresa.usaWms — necessário para decidir enriquecimento de SKU em resolverOuCriarProduto
+      const empresaParaProdutos = await tx.empresa.findUnique({ where: { id: empresaId }, select: { usaWms: true } })
+      const usaWms = !!empresaParaProdutos?.usaWms
+
+      // Produtos: resolver via De-Para/EAN existentes ou criar via código sequencial
+      // interno + enriquecimento de SKU por GTIN (resolverOuCriarProduto), mesmo padrão
+      // aplicado em `compra.routes.ts` (POST /importar-xml). Requirements: 2.1, 2.3
+      const produtoIdsPorIndice = new Map<number, string>()
       let produtosCriados = 0
-      for (const item of itensXml) {
-        let produto = await tx.produto.findFirst({
-          where: { empresaId, codigo: item.cProd },
-        })
-        if (!produto) {
-          produto = await tx.produto.create({
-            data: {
-              empresaId,
-              codigo: item.cProd || `XML-${Date.now()}`,
-              nome: item.xProd || `Produto ${item.cProd}`,
+      const itensPendentes: Array<{ cProd: string; xProd: string; motivo: string }> = []
+
+      for (let idx = 0; idx < itensXml.length; idx++) {
+        const item = itensXml[idx]
+        try {
+          const resultado = await resolverOuCriarProduto(tx, {
+            item: {
+              codigoProduto: item.cProd,
+              descricao: item.xProd,
               unidade: item.uCom || 'UN',
-              ncm: item.ncm || undefined,
-              precoBase: item.vUnCom,
+              ncm: item.ncm,
+              cEAN: item.cEAN,
+              cEANTrib: item.cEANTrib,
             },
+            fornecedorId: fornecedor.id,
+            empresaId,
+            usaWms,
           })
-          produtosCriados++
+          produtoIdsPorIndice.set(idx, resultado.produtoId)
+          if (resultado.criado) produtosCriados++
+        } catch (err) {
+          if (err instanceof CodigoSequencialEsgotadoError) {
+            itensPendentes.push({ cProd: item.cProd, xProd: item.xProd, motivo: err.message })
+            continue
+          }
+          throw err
         }
-        produtoIds.push(produto.id)
       }
+
+      const itensResolvidos = itensXml
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ idx }) => produtoIdsPorIndice.has(idx))
 
       // Número sequencial do pedido
       const ultimo = await tx.pedidoCompra.findFirst({
@@ -547,8 +581,8 @@ async function executarImportarXmlComprasReal(
           valorTotal: vNF,
           status: 'CONFIRMADO',
           itens: {
-            create: itensXml.map((item, idx) => ({
-              produtoId: produtoIds[idx],
+            create: itensResolvidos.map(({ item, idx }) => ({
+              produtoId: produtoIdsPorIndice.get(idx)!,
               quantidade: item.qCom,
               precoUnitario: item.vUnCom,
               unidade: item.uCom || 'UN',
@@ -599,12 +633,19 @@ async function executarImportarXmlComprasReal(
       await tx.contaPagar.createMany({ data: contasData })
 
       // Atualizar status do pedido para RECEBIDO (mesma regra do fluxo manual quando não usa WMS)
-      const empresaInfo = await tx.empresa.findUnique({ where: { id: empresaId }, select: { usaWms: true } })
-      if (!empresaInfo?.usaWms) {
+      if (!usaWms) {
         await tx.pedidoCompra.update({ where: { id: pedido.id }, data: { status: 'RECEBIDO' } })
       }
 
-      return { pedido, compra, fornecedorCriado, produtosCriados, documentoFiscalId: documentoFiscal.id, usaWms: !!empresaInfo?.usaWms }
+      return {
+        pedido,
+        compra,
+        fornecedorCriado,
+        produtosCriados,
+        documentoFiscalId: documentoFiscal.id,
+        usaWms,
+        itensPendentes,
+      }
     })
 
     limparXmlPendente(empresaId)
@@ -616,6 +657,13 @@ async function executarImportarXmlComprasReal(
     resposta += `• Itens: ${itensXml.length}${result.produtosCriados > 0 ? ` (${result.produtosCriados} produto(s) novo(s) cadastrado(s))` : ''}\n`
     resposta += `• Documento fiscal de entrada gerado ✅\n`
     resposta += `• Conta(s) a pagar geradas: ${input.parcelas || 1}\n`
+
+    if (result.itensPendentes.length > 0) {
+      resposta += `\n⚠️ **${result.itensPendentes.length} item(ns) ficaram pendentes de resolução manual** (faixa de código sequencial esgotada):\n`
+      for (const pendente of result.itensPendentes) {
+        resposta += `  - ${pendente.cProd} — ${pendente.xProd}\n`
+      }
+    }
 
     if (result.usaWms) {
       resposta += `\n📦 A empresa usa WMS. Deseja agendar o recebimento na doca agora?`
