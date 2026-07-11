@@ -2,12 +2,22 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import bcrypt from 'bcryptjs'
+import { authenticate } from '../../middleware/authenticate'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+// Segurança: filtro explícito por empresaId como camada extra além do
+// tenant-context (ver zona.routes.ts para o histórico completo do bug).
+function getEmpresaId(request: any): string | undefined {
+  return (request.user as { empresaId?: string } | undefined)?.empresaId
+}
+
 export async function funcionarioRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
   app.get('/', async (request) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const q = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(20),
@@ -19,6 +29,7 @@ export async function funcionarioRoutes(app: FastifyInstance) {
     const where: any = {
       ...(q.search ? { nome: { contains: q.search, mode: 'insensitive' as const } } : {}),
       ...(q.centroDistribuicaoId ? { centroDistribuicaoId: q.centroDistribuicaoId } : {}),
+      ...(empresaId ? { empresaId } : {}),
     }
 
     // Filtrar funcionários que NÃO estão em OS ativa (ABERTO ou EXECUTANDO) com horaFim null
@@ -51,14 +62,18 @@ export async function funcionarioRoutes(app: FastifyInstance) {
 
   app.get('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const item = await db.funcionario.findUnique({ where: { id } })
+    const item = empresaId
+      ? await db.funcionario.findFirst({ where: { id, empresaId } })
+      : await db.funcionario.findUnique({ where: { id } })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item
   })
 
   app.post('/', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const body = z.object({
       nome: z.string().min(1),
       matricula: z.string().optional(),
@@ -68,7 +83,8 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       senha: z.string().min(6).optional(),
     }).parse(request.body)
 
-    const { email, senha, ...data } = body
+    const { email, senha, ...rest } = body
+    const data = empresaId ? { ...rest, empresaId } : rest
     const funcionario = await db.funcionario.create({ data })
 
     // Create user account if email and senha provided (uses global prisma for non-isolated models)
@@ -94,9 +110,14 @@ export async function funcionarioRoutes(app: FastifyInstance) {
     return reply.status(201).send(funcionario)
   })
 
-  app.put('/:id', async (request) => {
+  app.put('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.funcionario.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     const body = z.object({
       nome: z.string().optional(),
       matricula: z.string().optional(),
@@ -129,7 +150,12 @@ export async function funcionarioRoutes(app: FastifyInstance) {
 
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.funcionario.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     await db.funcionario.delete({ where: { id } })
     return reply.status(204).send()
   })

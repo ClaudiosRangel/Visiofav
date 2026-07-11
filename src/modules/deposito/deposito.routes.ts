@@ -1,12 +1,22 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { authenticate } from '../../middleware/authenticate'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+// Segurança: filtro explícito por empresaId como camada extra além do
+// tenant-context (ver zona.routes.ts para o histórico completo do bug).
+function getEmpresaId(request: any): string | undefined {
+  return (request.user as { empresaId?: string } | undefined)?.empresaId
+}
+
 export async function depositoRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
   app.get('/', async (request) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const querySchema = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(20),
@@ -15,9 +25,10 @@ export async function depositoRoutes(app: FastifyInstance) {
     })
     const { page, limit, search, centroDistribuicaoId } = querySchema.parse(request.query)
 
-    const where = {
+    const where: any = {
       ...(search ? { descricao: { contains: search, mode: 'insensitive' as const } } : {}),
       ...(centroDistribuicaoId ? { centroDistribuicaoId } : {}),
+      ...(empresaId ? { empresaId } : {}),
     }
 
     const [data, total] = await Promise.all([
@@ -52,16 +63,18 @@ export async function depositoRoutes(app: FastifyInstance) {
 
   app.get('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const item = await db.deposito.findUnique({
-      where: { id },
-    })
+    const item = empresaId
+      ? await db.deposito.findFirst({ where: { id, empresaId } })
+      : await db.deposito.findUnique({ where: { id } })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item
   })
 
   app.post('/', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const bodySchema = z.object({
       descricao: z.string().min(1),
       centroDistribuicaoId: z.string().uuid(),
@@ -76,14 +89,20 @@ export async function depositoRoutes(app: FastifyInstance) {
       telefone2: z.string().optional(),
     })
 
-    const data = bodySchema.parse(request.body)
+    const body = bodySchema.parse(request.body)
+    const data = empresaId ? { ...body, empresaId } : body
     const item = await db.deposito.create({ data })
     return reply.status(201).send(item)
   })
 
   app.put('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.deposito.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     const bodySchema = z.object({
       descricao: z.string().min(1).optional(),
       status: z.boolean().optional(),
@@ -107,6 +126,7 @@ export async function depositoRoutes(app: FastifyInstance) {
 
   app.patch('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const bodySchema = z.object({
       formatoEnderecoId: z.string().uuid().nullable().optional(),
@@ -114,17 +134,19 @@ export async function depositoRoutes(app: FastifyInstance) {
 
     const data = bodySchema.parse(request.body)
 
-    // Validate that the deposito exists
-    const deposito = await db.deposito.findUnique({ where: { id } })
+    // Validate that the deposito exists (e pertence à empresa do usuário)
+    const deposito = empresaId
+      ? await db.deposito.findFirst({ where: { id, empresaId } })
+      : await db.deposito.findUnique({ where: { id } })
     if (!deposito) {
       return reply.status(404).send({ message: 'Depósito não encontrado' })
     }
 
     // Validate that formatoEnderecoId references an existing formato from the same empresa
     if (data.formatoEnderecoId) {
-      const formato = await db.formatoEndereco.findUnique({
-        where: { id: data.formatoEnderecoId },
-      })
+      const formato = empresaId
+        ? await db.formatoEndereco.findFirst({ where: { id: data.formatoEnderecoId, empresaId } })
+        : await db.formatoEndereco.findUnique({ where: { id: data.formatoEnderecoId } })
       if (!formato) {
         return reply.status(400).send({ message: 'Formato de endereço não encontrado' })
       }
@@ -144,7 +166,12 @@ export async function depositoRoutes(app: FastifyInstance) {
 
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.deposito.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     await db.deposito.delete({ where: { id } })
     return reply.status(204).send()
   })

@@ -2,16 +2,28 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { resolverPendenciasAutomaticamente } from '../pendencia-logistica/pendencia-logistica.routes'
+import { authenticate } from '../../middleware/authenticate'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+// Segurança: filtro explícito por empresaId como camada extra além do
+// tenant-context (ver zona.routes.ts para o histórico completo do bug).
+function getEmpresaId(request: any): string | undefined {
+  return (request.user as { empresaId?: string } | undefined)?.empresaId
+}
+
 export async function skuRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
   // Listar SKUs de um produto
   app.get('/', async (request) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { produtoId } = z.object({ produtoId: z.string().uuid() }).parse(request.query)
+    const where: any = { produtoId }
+    if (empresaId) where.empresaId = empresaId
     const data = await db.sku.findMany({
-      where: { produtoId },
+      where,
       orderBy: { sequencia: 'asc' },
     })
     return { data }
@@ -20,6 +32,7 @@ export async function skuRoutes(app: FastifyInstance) {
   // Criar SKU
   app.post('/', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const body = z.object({
       produtoId: z.string().uuid(),
       sequencia: z.number().min(1),
@@ -44,7 +57,7 @@ export async function skuRoutes(app: FastifyInstance) {
       (body as any).volume = (body.largura * body.altura * body.comprimento) / 1000000
     }
 
-    const item = await db.sku.create({ data: body })
+    const item = await db.sku.create({ data: empresaId ? { ...body, empresaId } : body })
 
     // Resolver pendências logísticas automaticamente
     try {
@@ -56,9 +69,14 @@ export async function skuRoutes(app: FastifyInstance) {
   })
 
   // Atualizar SKU
-  app.put('/:id', async (request) => {
+  app.put('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.sku.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     const body = z.object({
       descricao: z.string().optional(),
       codigoBarra: z.string().optional(),
@@ -83,7 +101,12 @@ export async function skuRoutes(app: FastifyInstance) {
   // Excluir SKU
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.sku.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     await db.sku.delete({ where: { id } })
     return reply.status(204).send()
   })

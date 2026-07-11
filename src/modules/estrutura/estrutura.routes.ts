@@ -1,14 +1,25 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
+import { authenticate } from '../../middleware/authenticate'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+// Segurança: filtro explícito por empresaId como camada extra além do
+// tenant-context (ver zona.routes.ts para o histórico completo do bug).
+function getEmpresaId(request: any): string | undefined {
+  return (request.user as { empresaId?: string } | undefined)?.empresaId
+}
+
 export async function estruturaRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
   app.get('/', async (request) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const q = z.object({ page: z.coerce.number().default(1), limit: z.coerce.number().default(20), search: z.string().optional() }).parse(request.query)
-    const where = q.search ? { descricao: { contains: q.search, mode: 'insensitive' as const } } : {}
+    const where: any = q.search ? { descricao: { contains: q.search, mode: 'insensitive' as const } } : {}
+    if (empresaId) where.empresaId = empresaId
     const [data, total] = await Promise.all([
       db.estrutura.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { descricao: 'asc' } }),
       db.estrutura.count({ where }),
@@ -18,14 +29,18 @@ export async function estruturaRoutes(app: FastifyInstance) {
 
   app.get('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const item = await db.estrutura.findUnique({ where: { id } })
+    const item = empresaId
+      ? await db.estrutura.findFirst({ where: { id, empresaId } })
+      : await db.estrutura.findUnique({ where: { id } })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item
   })
 
   app.post('/', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const body = z.object({
       descricao: z.string().min(1),
       tipo: z.string().min(1),
@@ -40,13 +55,18 @@ export async function estruturaRoutes(app: FastifyInstance) {
       ? largura * altura * comprimento
       : undefined
 
-    const data = { ...rest, largura, altura, comprimento, cubagem }
+    const data = { ...rest, largura, altura, comprimento, cubagem, ...(empresaId ? { empresaId } : {}) }
     return reply.status(201).send(await db.estrutura.create({ data }))
   })
 
-  app.put('/:id', async (request) => {
+  app.put('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.estrutura.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     const body = z.object({
       descricao: z.string().optional(),
       tipo: z.string().optional(),
@@ -80,7 +100,12 @@ export async function estruturaRoutes(app: FastifyInstance) {
 
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.estrutura.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     await db.estrutura.delete({ where: { id } })
     return reply.status(204).send()
   })

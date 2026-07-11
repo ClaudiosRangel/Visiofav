@@ -6,23 +6,34 @@ import { ValidadorCapacidade } from './validador-capacidade.service'
 import { resolverFormato } from '../formato-endereco/formato-endereco.service'
 import { AddressCompositionService } from '../formato-endereco/address-composition.service'
 import { validarEndereco } from '../formato-endereco/address-validation.service'
+import { authenticate } from '../../middleware/authenticate'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+// Segurança: filtro explícito por empresaId como camada extra além do
+// tenant-context (ver zona.routes.ts para o histórico completo do bug).
+function getEmpresaId(request: any): string | undefined {
+  return (request.user as { empresaId?: string } | undefined)?.empresaId
+}
+
 export async function enderecoRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
   app.get('/', async (request) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const q = z.object({
       page: z.coerce.number().default(1), limit: z.coerce.number().default(50),
       search: z.string().optional(), centroDistribuicaoId: z.string().uuid().optional(),
       depositoId: z.string().uuid().optional(), estado: z.string().optional(),
     }).parse(request.query)
 
-    const where = {
+    const where: any = {
       ...(q.search ? { enderecoCompleto: { contains: q.search } } : {}),
       ...(q.centroDistribuicaoId ? { centroDistribuicaoId: q.centroDistribuicaoId } : {}),
       ...(q.depositoId ? { depositoId: q.depositoId } : {}),
       ...(q.estado ? { estado: q.estado } : {}),
+      ...(empresaId ? { empresaId } : {}),
     }
 
     const [data, total] = await Promise.all([
@@ -58,6 +69,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
 
   app.post('/', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const data = z.object({
       codigoDeposito: z.string().optional().default(''), codigoZona: z.string().optional().default(''),
       codigoRua: z.string().optional().default(''), codigoPredio: z.string().optional().default(''),
@@ -101,7 +113,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }
     const enderecoCompleto = compositionService.compor(formato, valores)
 
-    return reply.status(201).send(await db.endereco.create({ data: { ...data, enderecoCompleto } }))
+    return reply.status(201).send(await db.endereco.create({ data: { ...data, enderecoCompleto, ...(empresaId ? { empresaId } : {}) } }))
   })
 
   // Geração automática de endereços
@@ -155,9 +167,12 @@ export async function enderecoRoutes(app: FastifyInstance) {
   // Capacity utilization for an address
   app.get('/:id/capacidade', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
 
-    const endereco = await db.endereco.findUnique({ where: { id } })
+    const endereco = empresaId
+      ? await db.endereco.findFirst({ where: { id, empresaId } })
+      : await db.endereco.findUnique({ where: { id } })
     if (!endereco) {
       return reply.status(404).send({ message: 'Endereço não encontrado' })
     }
@@ -192,7 +207,12 @@ export async function enderecoRoutes(app: FastifyInstance) {
 
   app.put('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.endereco.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     const data = z.object({
       tipo: z.string().optional(), estado: z.string().optional(), status: z.boolean().optional(),
       codigoDeposito: z.string().optional(), codigoZona: z.string().optional(),
@@ -234,7 +254,12 @@ export async function enderecoRoutes(app: FastifyInstance) {
 
   app.delete('/:id', async (request, reply) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (empresaId) {
+      const existente = await db.endereco.findFirst({ where: { id, empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     await db.endereco.delete({ where: { id } })
     return reply.status(204).send()
   })
