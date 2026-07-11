@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { coordenadasOptionalSchema } from '../geolocalizacao/coord-validation'
 import { generateAccessToken, generateRefreshToken, setAuthCookies, TokenPayload } from '../../lib/auth-tokens'
+import { decidirPersistenciaLogo, filtrarEMapearEmpresasAtivas, mensagemErroLogo } from './logo-validator'
 
 const ALL_MODULOS = ['COMPRAS', 'VENDAS', 'FINANCEIRO', 'WMS', 'CTE', 'PCP', 'FISCAL'] as const
 
@@ -33,6 +34,7 @@ const empresaBodySchema = z.object({
   conferenciaQuantidadeCega: z.boolean().optional().default(false),
   conferenciaLoteCega: z.boolean().optional().default(false),
   permiteRecebimentoParcial: z.boolean().optional().default(false),
+  logo: z.string().nullable().optional(),
 })
 
 export async function empresaSelectorRoutes(app: FastifyInstance) {
@@ -88,13 +90,19 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
 
     const body = empresaBodySchema.parse(request.body)
 
+    const decisao = decidirPersistenciaLogo(body.logo)
+    if (decisao.acao === 'rejeitar') {
+      return reply.status(400).send({ message: mensagemErroLogo(decisao.motivo) })
+    }
+    const logoParaPersistir = decisao.acao === 'persistir' ? decisao.conteudoNormalizado : null
+
     // Verificar CNPJ duplicado
     const existe = await prisma.empresa.findUnique({ where: { cnpj: body.cnpj } })
     if (existe) {
       return reply.status(409).send({ message: 'Já existe uma empresa com este CNPJ' })
     }
 
-    const empresa = await prisma.empresa.create({ data: body })
+    const empresa = await prisma.empresa.create({ data: { ...body, logo: logoParaPersistir } })
 
     // Vincular o usuário criador à nova empresa
     await prisma.usuarioEmpresa.create({
@@ -121,6 +129,11 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
     const { id } = paramsSchema.parse(request.params)
     const body = empresaBodySchema.partial().parse(request.body)
 
+    const decisao = decidirPersistenciaLogo(body.logo)
+    if (decisao.acao === 'rejeitar') {
+      return reply.status(400).send({ message: mensagemErroLogo(decisao.motivo) })
+    }
+
     // Se cnpj alterado, verificar duplicidade
     if (body.cnpj) {
       const existe = await prisma.empresa.findFirst({
@@ -131,9 +144,18 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       }
     }
 
+    const data: typeof body = { ...body }
+    if (decisao.acao === 'remover') {
+      data.logo = null
+    } else if (decisao.acao === 'persistir') {
+      data.logo = decisao.conteudoNormalizado
+    } else {
+      delete data.logo
+    }
+
     const empresa = await prisma.empresa.update({
       where: { id },
-      data: body,
+      data,
     })
 
     return empresa
@@ -175,22 +197,14 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
             razaoSocial: true,
             nomeFantasia: true,
             cnpj: true,
+            logo: true,
             status: true,
           },
         },
       },
     })
 
-    const empresasAtivas = vinculos
-      .filter((v) => v.empresa.status === true)
-      .map((v) => ({
-        id: v.empresa.id,
-        razaoSocial: v.empresa.razaoSocial,
-        nomeFantasia: v.empresa.nomeFantasia,
-        cnpj: v.empresa.cnpj,
-      }))
-
-    return empresasAtivas
+    return filtrarEMapearEmpresasAtivas(vinculos)
   })
 
   /**
@@ -366,6 +380,7 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       conferenciaQuantidadeCega: z.boolean().optional(),
       conferenciaLoteCega: z.boolean().optional(),
       permiteRecebimentoParcial: z.boolean().optional(),
+      logo: z.string().nullable().optional(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(
@@ -378,6 +393,19 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
     )
 
     const data = schema.parse(request.body)
+
+    const decisao = decidirPersistenciaLogo(data.logo)
+    if (decisao.acao === 'rejeitar') {
+      return reply.status(400).send({ message: mensagemErroLogo(decisao.motivo) })
+    }
+
+    if (decisao.acao === 'remover') {
+      data.logo = null
+    } else if (decisao.acao === 'persistir') {
+      data.logo = decisao.conteudoNormalizado
+    } else {
+      delete data.logo
+    }
 
     const empresa = await prisma.empresa.update({
       where: { id: user.empresaId },
