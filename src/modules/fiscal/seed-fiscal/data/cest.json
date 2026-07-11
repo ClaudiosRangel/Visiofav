@@ -40,8 +40,633 @@
     "segmento": "Autopeças"
   },
   {
+    "codigo": "0100900",
+    "descricao": "Tapetes, revestimentos, mesmo confeccionados, batentes, buchas e coxins",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101000",
+    "descricao": "Tecidos impregnados, revestidos, recobertos ou estratificados, com plástico",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101100",
+    "descricao": "Mangueiras e tubos semelhantes, de matérias têxteis, mesmo com reforço ou acessórios de outras matérias",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101200",
+    "descricao": "Encerados e toldos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101300",
+    "descricao": "Capacetes e artefatos de uso semelhante, de proteção, para uso em motocicletas, incluídos ciclomotores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101400",
+    "descricao": "Guarnições de fricção (por exemplo, placas, rolos, tiras, segmentos, discos, anéis, pastilhas), não montadas, para freios, embreagens ou qualquer outro mecanismo de fricção, à base de amianto, de outras substâncias minerais ou de celulose, mesmo combinadas com têxteis ou outras matérias",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101500",
+    "descricao": "Vidros de dimensões e formatos que permitam aplicação automotiva",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101600",
+    "descricao": "Espelhos retrovisores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101700",
+    "descricao": "Lentes de faróis, lanternas e outros utensílios",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101800",
+    "descricao": "Cilindro de aço para GNV (gás natural veicular)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0101900",
+    "descricao": "Recipientes para gases comprimidos ou liquefeitos, de ferro fundido, ferro ou aço, exceto o descrito no item 18.0",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102000",
+    "descricao": "Molas e folhas de molas, de ferro ou aço",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102100",
+    "descricao": "Obras moldadas, de ferro fundido, ferro ou aço, exceto as do código 7325.91.00",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102200",
+    "descricao": "Peso de chumbo para balanceamento de roda",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102300",
+    "descricao": "Peso para balanceamento de roda e outros utensílios de estanho",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102400",
+    "descricao": "Fechaduras e partes de fechaduras",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102500",
+    "descricao": "Chaves apresentadas isoladamente",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102600",
+    "descricao": "Dobradiças, guarnições, ferragens e artigos semelhantes de metais comuns",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102700",
+    "descricao": "Triângulo de segurança",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102800",
+    "descricao": "Motores de pistão alternativo dos tipos utilizados para propulsão de veículos do Capítulo 87",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0102900",
+    "descricao": "Motores dos tipos utilizados para propulsão de veículos automotores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103000",
+    "descricao": "Partes reconhecíveis como exclusiva ou principalmente destinadas aos motores das posições 8407 ou 8408",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103100",
+    "descricao": "Motores hidráulicos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103200",
+    "descricao": "Bombas para combustíveis, lubrificantes ou líquidos de arrefecimento, próprias para motores de ignição por centelha ou por compressão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103300",
+    "descricao": "Bombas de vácuo",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103400",
+    "descricao": "Compressores e turbocompressores de ar",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103500",
+    "descricao": "Partes das bombas, compressores e turbocompressores dos CEST 01.032.00, 01.033.00 e 01.034.00",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103600",
+    "descricao": "Máquinas e aparelhos de ar condicionado",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103700",
+    "descricao": "Aparelhos para filtrar óleos minerais nos motores de ignição por centelha ou por compressão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103800",
+    "descricao": "Filtros a vácuo",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0103900",
+    "descricao": "Partes dos aparelhos para filtrar ou depurar líquidos ou gases",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104000",
+    "descricao": "Extintores, mesmo carregados",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104100",
+    "descricao": "Filtros de entrada de ar para motores de ignição por centelha ou por compressão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104200",
+    "descricao": "Depuradores por conversão catalítica de gases de escape",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104300",
+    "descricao": "Macacos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104400",
+    "descricao": "Partes para macacos do CEST 01.043.00",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104500",
+    "descricao": "Partes reconhecíveis como exclusiva ou principalmente destinadas às máquinas agrícolas ou rodoviárias",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104501",
+    "descricao": "Partes reconhecíveis como exclusiva ou principalmente destinadas às máquinas agrícolas ou rodoviárias",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104600",
+    "descricao": "Válvulas redutoras de pressão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104700",
+    "descricao": "Válvulas para transmissão óleo-hidráulicas ou pneumáticas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104800",
+    "descricao": "Válvulas solenoides",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0104900",
+    "descricao": "Rolamentos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105000",
+    "descricao": "Árvores de transmissão (incluídas as árvores de “cames” e virabrequins) e manivelas; mancais e “bronzes”; engrenagens e rodas de fricção; eixos de esferas ou de roletes; redutores, multiplicadores, caixas de transmissão e variadores de velocidade, incluídos os conversores de torque; volantes e polias, incluídas as polias para cadernais; embreagens e dispositivos de acoplamento, incluídas as juntas de articulação",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105100",
+    "descricao": "Juntas metaloplásticas; jogos ou sortidos de juntas de composições diferentes, apresentados em bolsas, envelopes ou embalagens semelhantes; juntas de vedação mecânicas (selos mecânicos)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105200",
+    "descricao": "Acoplamentos, embreagens, variadores de velocidade e freios, eletromagnéticos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105300",
+    "descricao": "Acumuladores elétricos de chumbo, do tipo utilizado para o arranque dos motores de pistão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105400",
+    "descricao": "Aparelhos e dispositivos elétricos de ignição ou de arranque para motores de ignição por centelha ou por compressão (por exemplo, magnetos, dínamos- magnetos, bobinas de ignição, velas de ignição ou de aquecimento, motores de arranque); geradores (dínamos e alternadores, por exemplo) e conjuntores- disjuntores utilizados com estes motores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105500",
+    "descricao": "Aparelhos elétricos de iluminação ou de sinalização (exceto os da posição 8539), limpadores de para-brisas, degeladores e desembaçadores (desembaciadores) elétricos e suas partes",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105600",
+    "descricao": "Telefones móveis do tipo dos utilizados em veículos automóveis.",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105700",
+    "descricao": "Alto-falantes, amplificadores elétricos de audiofrequência e partes",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105800",
+    "descricao": "Aparelhos elétricos de amplificação de som para veículos automotores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0105900",
+    "descricao": "Aparelhos de reprodução de som",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106000",
+    "descricao": "Aparelhos transmissores (emissores) de radiotelefonia ou radiotelegrafia (rádio receptor/transmissor)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106100",
+    "descricao": "Aparelhos receptores de radiodifusão que só funcionem com fonte externa de energia combinados com um aparelho de gravação ou de reprodução de som, do tipo utilizado em veículos automóveis",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106200",
+    "descricao": "Outros aparelhos receptores de radiodifusão que só funcionem com fonte externa de energia, do tipo utilizado em veículos automóveis",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106201",
+    "descricao": "Outros aparelhos videofônicos de gravação ou de reprodução, mesmo incorporando um receptor de sinais videofônicos, dos tipos utilizados exclusivamente em veículos automotores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106300",
+    "descricao": "Antenas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106400",
+    "descricao": "Circuitos impressos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106500",
+    "descricao": "Interruptores e seccionadores e comutadores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106600",
+    "descricao": "Fusíveis e corta-circuitos de fusíveis",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106700",
+    "descricao": "Disjuntores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106800",
+    "descricao": "Relés",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0106900",
+    "descricao": "Partes reconhecíveis como exclusivas ou principalmente destinados aos aparelhos dos CEST 01.065.00, 01.066.00, 01.067.00 e 01.068.00",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107000",
+    "descricao": "Faróis e projetores, em unidades seladas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107100",
+    "descricao": "Lâmpadas e tubos de incandescência, exceto de raios ultravioleta ou infravermelhos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107200",
+    "descricao": "Cabos coaxiais e outros condutores elétricos coaxiais",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107300",
+    "descricao": "Jogos de fios para velas de ignição e outros jogos de fios",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107400",
+    "descricao": "Carroçarias para os veículos automóveis das posições 8701 a 8705, incluídas as cabinas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107500",
+    "descricao": "Partes e acessórios dos veículos automóveis das posições 8701 a 8705",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107600",
+    "descricao": "Parte e acessórios de motocicletas (incluídos os ciclomotores)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107700",
+    "descricao": "Engates para reboques e semirreboques",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107800",
+    "descricao": "Medidores de nível; Medidores de vazão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0107900",
+    "descricao": "Aparelhos para medida ou controle da pressão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108000",
+    "descricao": "Contadores, indicadores de velocidade e tacômetros, suas partes e acessórios",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108100",
+    "descricao": "Amperímetros",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108200",
+    "descricao": "Aparelhos digitais, de uso em veículos automóveis, para medida e indicação de múltiplas grandezas tais como: velocidade média, consumos instantâneo e médio e autonomia (computador de bordo)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108300",
+    "descricao": "Controladores eletrônicos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108400",
+    "descricao": "Relógios para painéis de instrumentos e relógios semelhantes",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108500",
+    "descricao": "Assentos e partes de assentos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108600",
+    "descricao": "Acendedores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108700",
+    "descricao": "Tubos de borracha vulcanizada não endurecida, mesmo providos de seus acessórios",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108800",
+    "descricao": "Juntas de vedação de cortiça natural e de amianto",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0108900",
+    "descricao": "Papel-diagrama para tacógrafo, em disco",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109000",
+    "descricao": "Fitas, tiras, adesivos, autocolantes, de plástico, refletores, mesmo em rolos; placas metálicas com película de plástico refletora, próprias para colocação em carrocerias, para-choques de veículos de carga, motocicletas, ciclomotores, capacetes, bonés de agentes de trânsito e de condutores de veículos, atuando como dispositivos refletivos de segurança rodoviários",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109100",
+    "descricao": "Cilindros pneumáticos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109200",
+    "descricao": "Bomba elétrica de lavador de para-brisa",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109300",
+    "descricao": "Bomba de assistência de direção hidráulica",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109400",
+    "descricao": "Motoventiladores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109500",
+    "descricao": "Filtros de pólen do ar-condicionado",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109600",
+    "descricao": "“Máquina” de vidro elétrico de porta",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109700",
+    "descricao": "Motor de limpador de para-brisa",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109800",
+    "descricao": "Bobinas de reatância e de autoindução",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0109900",
+    "descricao": "Baterias de chumbo e de níquel-cádmio",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110000",
+    "descricao": "Aparelhos de sinalização acústica (buzina)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110100",
+    "descricao": "Instrumentos para regulação de grandezas não elétricas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110200",
+    "descricao": "Analisadores de gases ou de fumaça (sonda lambda)",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110300",
+    "descricao": "Perfilados de borracha vulcanizada não endurecida",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110400",
+    "descricao": "Artefatos de pasta de fibra de uso automotivo",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110500",
+    "descricao": "Tapetes/carpetes - nailón",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110600",
+    "descricao": "Tapetes de matérias têxteis sintéticas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110700",
+    "descricao": "Forração interior capacete",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110800",
+    "descricao": "Outros para-brisas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0110900",
+    "descricao": "Moldura com espelho",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111000",
+    "descricao": "Corrente de transmissão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111100",
+    "descricao": "Corrente transmissão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111200",
+    "descricao": "Outras correntes de transmissão",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111300",
+    "descricao": "Condensador tubular metálico",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111400",
+    "descricao": "Trocadores de calor",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111500",
+    "descricao": "Partes de aparelhos mecânicos de pulverizar ou dispersar",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111600",
+    "descricao": "Macacos manuais para veículos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111700",
+    "descricao": "Caçambas, pás, ganchos e tenazes para máquinas rodoviárias",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111800",
+    "descricao": "Geradores de corrente alternada de potência não superior a 75 kva",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0111900",
+    "descricao": "Aparelhos elétricos para alarme de uso automotivo",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112000",
+    "descricao": "Bússolas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112100",
+    "descricao": "Indicadores de temperatura",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112200",
+    "descricao": "Partes de indicadores de temperatura",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112300",
+    "descricao": "Partes de aparelhos de medida ou controle",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112400",
+    "descricao": "Termostatos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112500",
+    "descricao": "Instrumentos e aparelhos para regulação",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112600",
+    "descricao": "Pressostatos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112700",
+    "descricao": "Peças para reboques e semirreboques, exceto os itens classificados no CEST",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0112800",
+    "descricao": "Geradores de ar quente a combustível líquido, com capacidade superior ou igual a kcal/h, mas inferior ou igual a 10.400 kcal/h, do tipo dos utilizados em veículos automóveis",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0199900",
+    "descricao": "Outras peças, partes e acessórios para veículos automotores não relacionados nos demais itens deste anexo",
+    "segmento": "Autopeças"
+  },
+  {
     "codigo": "0200100",
     "descricao": "Aperitivos, amargos, bitter e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200200",
+    "descricao": "Batida e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200300",
+    "descricao": "Bebida ice",
     "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
   },
   {
@@ -50,8 +675,183 @@
     "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
   },
   {
+    "codigo": "0200500",
+    "descricao": "Catuaba e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200600",
+    "descricao": "Conhaque, brandy e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200700",
+    "descricao": "Cooler",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200800",
+    "descricao": "Gim (gin) e genebra",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200900",
+    "descricao": "Jurubeba e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201000",
+    "descricao": "Licores e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201100",
+    "descricao": "Pisco",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201200",
+    "descricao": "Rum",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201300",
+    "descricao": "Saquê",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201400",
+    "descricao": "Steinhaeger",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201500",
+    "descricao": "Tequila",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201600",
+    "descricao": "Uísque",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201700",
+    "descricao": "Vermute e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201800",
+    "descricao": "Vodka",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0201900",
+    "descricao": "Derivados de vodka",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0202000",
+    "descricao": "Arak",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0202100",
+    "descricao": "Aguardente vínica / grappa",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0202200",
+    "descricao": "Sidra e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0202300",
+    "descricao": "Sangrias e coquetéis",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0202400",
+    "descricao": "Vinhos de uvas frescas, incluindo os vinhos enriquecidos com álcool; mostos de uvas.",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0299900",
+    "descricao": "Outras bebidas alcoólicas não especificadas nos itens anteriores",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
     "codigo": "0300100",
     "descricao": "Água mineral, gasosa ou não, ou potável, naturais, em garrafa de vidro, retornável ou não, com capacidade de até 500 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300200",
+    "descricao": "Água mineral, gasosa ou não, ou potável, naturais, em embalagem com capacidade igual ou superior a 5.000 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300300",
+    "descricao": "Água mineral, gasosa ou não, ou potável, naturais, em embalagem de vidro, não retornável, com capacidade de até 300 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300400",
+    "descricao": "Água mineral, gasosa ou não, ou potável, naturais, em garrafa plástica de 1.500 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300500",
+    "descricao": "Água mineral, gasosa ou não, ou potável, naturais, em copos plásticos e embalagem plástica com capacidade de até 500 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300600",
+    "descricao": "Outras águas minerais, potáveis ou naturais, gasosas ou não, inclusive gaseificadas",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300700",
+    "descricao": "Águas minerais, potáveis ou naturais, gasosas ou não, inclusive gaseificadas ou aromatizadas artificialmente, exceto os refrescos e refrigerantes",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0300800",
+    "descricao": "Outras águas minerais, potáveis ou naturais, gasosas ou não, inclusive gaseificadas ou aromatizadas artificialmente",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301000",
+    "descricao": "Refrigerante em garrafa com capacidade igual ou superior a 600 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301100",
+    "descricao": "Demais refrigerantes",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301200",
+    "descricao": "Xarope ou extrato concentrado destinados ao preparo de refrigerante em máquina “pré-mix” ou “post-mix”",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301300",
+    "descricao": "Bebidas energéticas em embalagem com capacidade inferior a 600ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301400",
+    "descricao": "Bebidas energéticas em embalagem com capacidade igual ou superior a 600ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301500",
+    "descricao": "Bebidas hidroeletrolíticas (isotônicas) em embalagem com capacidade inferior a 600ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0301600",
+    "descricao": "Bebidas hidroeletrolíticas (isotônicas) em embalagem com capacidade igual ou superior a 600ml",
     "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
   },
   {
@@ -60,13 +860,38 @@
     "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
   },
   {
+    "codigo": "0302200",
+    "descricao": "Cerveja sem álcool",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0302300",
+    "descricao": "Chope",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0400100",
+    "descricao": "Charutos, cigarrilhas e cigarros, de tabaco ou dos seus sucedâneos",
+    "segmento": "Cigarros e outros produtos derivados do fumo"
+  },
+  {
+    "codigo": "0400200",
+    "descricao": "Tabaco para fumar, mesmo contendo sucedâneos de tabaco em qualquer proporção",
+    "segmento": "Cigarros e outros produtos derivados do fumo"
+  },
+  {
     "codigo": "0500100",
     "descricao": "Cimento",
     "segmento": "Cimentos"
   },
   {
     "codigo": "0600100",
-    "descricao": "Álcool etílico não desnaturado, com um teor alcoólico em volume igual ou superior a 80% vol - Com um teor de água igual ou inferior a 1% vol (álcool etílico anidro combustível)",
+    "descricao": "Álcool etílico não desnaturado, com um teor alcoólico em volume igual ou superior a 80% vol - Com um teor de água igual ou inferior a 1 % vol (álcool etílico anidro combustível)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600101",
+    "descricao": "Álcool etílico não desnaturado, com um teor alcoólico em volume igual ou superior a 80% vol - Outros (álcool etílico hidratado combustível)",
     "segmento": "Combustíveis e lubrificantes"
   },
   {
@@ -75,8 +900,3888 @@
     "segmento": "Combustíveis e lubrificantes"
   },
   {
+    "codigo": "0600201",
+    "descricao": "Gasolina automotiva C, exceto Premium",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600202",
+    "descricao": "Gasolina automotiva A Premium",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600203",
+    "descricao": "Gasolina automotiva C Premium",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600300",
+    "descricao": "Gasolina de aviação",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600400",
+    "descricao": "Querosenes, exceto de aviação",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600500",
+    "descricao": "Querosene de aviação",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600600",
+    "descricao": "Óleo diesel A, exceto S10 e Marítimo",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600601",
+    "descricao": "Óleo diesel B, exceto S10 (mistura obrigatória)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600602",
+    "descricao": "Óleo diesel B, exceto S10 (misturas autorizativas)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600603",
+    "descricao": "Óleo diesel B, exceto S10 (misturas experimentais)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600604",
+    "descricao": "Óleo diesel A S10",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600605",
+    "descricao": "Óleo diesel B S10 (mistura obrigatória)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600606",
+    "descricao": "Óleo diesel B S10 (misturas autorizativas)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600607",
+    "descricao": "Óleo diesel B S10 (misturas experimentais)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600608",
+    "descricao": "Óleo Diesel Marítimo",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600609",
+    "descricao": "Outros óleos combustíveis",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600610",
+    "descricao": "Óleo combustível derivado de xisto",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600611",
+    "descricao": "Óleo combustível pesado",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600700",
+    "descricao": "Óleos lubrificantes",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600800",
+    "descricao": "Outros óleos de petróleo ou de minerais betuminosos (exceto óleos brutos) e preparações não especificadas nem compreendidas noutras posições, que contenham, como constituintes básicos, 70% ou mais, em peso, de óleos de petróleo ou de inerais betuminosos, exceto os que contenham biodiesel e exceto os resíduos de óleos",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600900",
+    "descricao": "Resíduos de óleos",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601000",
+    "descricao": "Gás de petróleo e outros hidrocarbonetos gasosos, exceto GLP, GLGN, Gás Natural e Gás de xisto.",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
     "codigo": "0601100",
     "descricao": "Gás liquefeito de petróleo em botijão de 13 Kg (GLP)",
     "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601101",
+    "descricao": "Gás liquefeito de petróleo (GLP), exceto em botijão de 13 Kg",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601102",
+    "descricao": "Gás liquefeito de petróleo em botijão de 13 Kg (GLGNn)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601103",
+    "descricao": "Gás liquefeito de petróleo (GLGNn), exceto em botijão de 13 Kg",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601104",
+    "descricao": "Gás liquefeito de petróleo em botijão de 13 Kg (GLGNi)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601105",
+    "descricao": "Gás liquefeito de petróleo (GLGNi), exceto em botijão de 13 Kg",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601106",
+    "descricao": "Gás liquefeito de petróleo em botijão de 13 kg (Misturas)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601107",
+    "descricao": "Gás liquefeito de petróleo (Misturas), exceto em botijão de 13 Kg",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601200",
+    "descricao": "Gás Natural Liquefeito",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601300",
+    "descricao": "Gás Natural Gasoso",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601400",
+    "descricao": "Gás de xisto",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601500",
+    "descricao": "Coque de petróleo e outros resíduos de óleo de petróleo ou de minerais betuminosos",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601600",
+    "descricao": "Biodiesel e suas misturas, que não contenham ou que contenham menos de 70%, em peso, de óleos de petróleo ou de óleos minerais betuminosos",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601700",
+    "descricao": "Preparações lubrificantes, exceto as contendo, como constituintes de base, 70% ou mais, em peso, de óleos de petróleo ou de minerais betuminosos",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601800",
+    "descricao": "Óleos de petróleo ou de minerais betuminosos (exceto óleos brutos) e preparações não especificadas nem compreendidas noutras posições, que contenham, como constituintes básicos, 70% ou mais, em peso, de óleos de petróleo ou de minerais betuminosos, que contenham biodiesel, exceto os resíduos de óleos",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0700100",
+    "descricao": "Energia elétrica",
+    "segmento": "Energia elétrica"
+  },
+  {
+    "codigo": "0800100",
+    "descricao": "Ferramentas de borracha vulcanizada não endurecida",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800200",
+    "descricao": "Ferramentas, armações e cabos de ferramentas, de madeira",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800300",
+    "descricao": "Mós e artefatos semelhantes, sem armação, para moer, desfibrar, triturar, amolar, polir, retificar ou cortar; pedras para amolar ou para polir, manualmente, e suas partes, de pedras naturais, de abrasivos naturais ou artificiais aglomerados ou de cerâmica, mesmo com partes de outras matérias",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800400",
+    "descricao": "Pás, alviões, picaretas, enxadas, sachos, forcados e forquilhas, ancinhos e raspadeiras; machados, podões e ferramentas semelhantes com gume; tesouras de podar de todos os tipos; foices e foicinhas, facas para feno ou para palha, tesouras para sebes, cunhas e outras ferramentas manuais para agricultura, horticultura ou silvicultura",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800500",
+    "descricao": "Folhas de serras de fita",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800600",
+    "descricao": "Lâminas de serras máquinas",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800700",
+    "descricao": "Serras manuais e outras folhas de serras (incluídas as fresas-serras e as folhas não dentadas para serrar), exceto as classificadas nos CEST 08.005.00 e 08.006.00",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800800",
+    "descricao": "Limas, grosas, alicates (mesmo cortantes), tenazes, pinças, cisalhas para metais, corta-tubos, corta-pinos, saca-bocados e ferramentas semelhantes, manuais, exceto as pinças para sobrancelhas classificadas na posição 8203.20.90",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0800900",
+    "descricao": "Chaves de porcas, manuais (incluídas as chaves dinamométricas); chaves de caixa intercambiáveis, mesmo com cabos",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801000",
+    "descricao": "Ferramentas manuais (incluídos os diamantes de vidraceiro) não especificadas nem compreendidas em outras posições, lamparinas ou lâmpadas de soldar (maçaricos) e semelhantes; tornos de apertar, sargentos e semelhantes, exceto os acessórios ou partes de máquinas-ferramentas; bigornas; forjas-portáteis; mós com armação, manuais ou de pedal",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801100",
+    "descricao": "Ferramentas de pelo menos duas das posições 8202 a 8205, acondicionadas em sortidos para venda a retalho",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801200",
+    "descricao": "Ferramentas de roscar interior ou exteriormente; de mandrilar ou de brochar; e de fresar",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801300",
+    "descricao": "Outras ferramentas intercambiáveis para ferramentas manuais, mesmo mecânicas, ou para máquinas-ferramentas (por exemplo, de embutir, estampar, puncionar, furar, tornear, aparafusar), incluídas as fieiras de estiragem ou de extrusão, para metais, e as ferramentas de perfuração ou de sondagem, exceto forma ou gabarito de produtos em epoxy e as classificadas no CEST 08.012.00",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801400",
+    "descricao": "Facas e lâminas cortantes, para máquinas ou para aparelhos mecânicos",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801500",
+    "descricao": "Plaquetas ou pastilhas intercambiáveis",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801600",
+    "descricao": "Outras plaquetas, varetas, pontas e objetos semelhantes para ferramentas, não montados, de ceramais (“cermets”), exceto as classificadas no CEST 08.015.00",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801700",
+    "descricao": "Facas de lâmina cortante ou serrilhada, incluídas as podadeiras de lâmina móvel, e suas lâminas, exceto as de uso doméstico",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801800",
+    "descricao": "Tesouras e suas lâminas",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801900",
+    "descricao": "Ferramentas pneumáticas, hidráulicas ou com motor (elétrico ou não elétrico) incorporado, de uso manual, exceto o descrito no CEST 08.019.01",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0801901",
+    "descricao": "Moto-serras portáteis de corrente, com motor incorporado, não elétrico, de uso agrícola",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0802000",
+    "descricao": "Instrumentos e aparelhos de geodesia, topografia, agrimensura, nivelamento, fotogrametria, hidrografia, oceanografia, hidrologia, meteorologia ou de geofísica, exceto bussolas; telêmetros",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0802100",
+    "descricao": "Instrumentos de desenho, de traçado ou de cálculo; metros, micrômetros, paquímetros, calibres e semelhantes; partes e acessórios",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0802200",
+    "descricao": "Termômetros, suas partes e acessórios",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0802300",
+    "descricao": "Pirômetros, suas partes e acessórios",
+    "segmento": "Ferramentas"
+  },
+  {
+    "codigo": "0900100",
+    "descricao": "Lâmpadas elétricas",
+    "segmento": "Lâmpadas, reatores e “starter”"
+  },
+  {
+    "codigo": "0900200",
+    "descricao": "Lâmpadas eletrônicas",
+    "segmento": "Lâmpadas, reatores e “starter”"
+  },
+  {
+    "codigo": "0900300",
+    "descricao": "Reatores para lâmpadas ou tubos de descargas",
+    "segmento": "Lâmpadas, reatores e “starter”"
+  },
+  {
+    "codigo": "0900400",
+    "descricao": "“Starter”",
+    "segmento": "Lâmpadas, reatores e “starter”"
+  },
+  {
+    "codigo": "0900500",
+    "descricao": "Lâmpadas de LED (Diodos Emissores de Luz)",
+    "segmento": "Lâmpadas, reatores e “starter”"
+  },
+  {
+    "codigo": "1000100",
+    "descricao": "Cal",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000200",
+    "descricao": "Argamassas",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000300",
+    "descricao": "Outras argamassas",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000400",
+    "descricao": "Silicones em formas primárias, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000500",
+    "descricao": "Revestimentos de PVC e outros plásticos; forro, sancas e afins de PVC, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000600",
+    "descricao": "Tubos, e seus acessórios (por exemplo, juntas, cotovelos, flanges, uniões), de plásticos, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000700",
+    "descricao": "Revestimento de pavimento de PVC e outros plásticos",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000800",
+    "descricao": "Chapas, folhas, tiras, fitas, películas e outras formas planas, autoadesivas, de plásticos, mesmo em rolos, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1000900",
+    "descricao": "Veda rosca, lona plástica para uso na construção, fitas isolantes e afins",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001000",
+    "descricao": "Telha de plástico, mesmo reforçada com fibra de vidro",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001100",
+    "descricao": "Cumeeira de plástico, mesmo reforçada com fibra de vidro",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001200",
+    "descricao": "Chapas, laminados plásticos em bobina, para uso na construção, exceto os descritos no CEST 10.010.00 e 10.011.00",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001300",
+    "descricao": "Banheiras, boxes para chuveiros, pias, lavatórios, bidês, sanitários e seus assentos e tampas, caixas de descarga e artigos semelhantes para usos sanitários ou higiênicos, de plásticos",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001400",
+    "descricao": "Artefatos de higiene/toucador de plástico, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001500",
+    "descricao": "Caixa d’água, inclusive sua tampa, de plástico, mesmo reforçadas com fibra de vidro",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001600",
+    "descricao": "Outras telhas, cumeeira e caixa d’água, inclusive sua tampa, de plástico, mesmo reforçadas com fibra de vidro",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001700",
+    "descricao": "Artefatos para apetrechamento de construções, de plásticos, não especificados nem compreendidos em outras posições, incluindo persianas, sancas, molduras, apliques e rosetas, caixilhos de polietileno e outros plásticos, exceto os descritos nos CEST e 10.016.00",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001800",
+    "descricao": "Portas, janelas e seus caixilhos, alizares e soleiras",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1001900",
+    "descricao": "Postigos, estores (incluídas as venezianas) e artefatos semelhantes e suas partes",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002000",
+    "descricao": "Outras obras de plástico, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002100",
+    "descricao": "Papel de parede e revestimentos de parede semelhantes; papel para vitrais",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002200",
+    "descricao": "Telhas de concreto",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002300",
+    "descricao": "Telha, cumeeira e caixa d’água, inclusive sua tampa, de fibrocimento, cimento- celulose",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002400",
+    "descricao": "Caixas d’água, tanques e reservatórios e suas tampas, telhas, calhas, cumeeiras e afins, de fibrocimento, cimento-celulose ou semelhantes, contendo ou não amianto, exceto os descritos no item 23.0",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002500",
+    "descricao": "Tijolos, placas (lajes), ladrilhos e outras peças cerâmicas de farinhas siliciosas fósseis (“kieselghur”, tripolita, diatomita, por exemplo) ou de terras siliciosas semelhantes",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002600",
+    "descricao": "Tijolos, placas (lajes), ladrilhos e peças cerâmicas semelhantes, para uso na construção, refratários, que não sejam de farinhas siliciosas fósseis nem de terras siliciosas semelhantes",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002700",
+    "descricao": "Tijolos para construção, tijoleiras, tapa-vigas e produtos semelhantes, de cerâmica",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002800",
+    "descricao": "Telhas, elementos de chaminés, condutores de fumaça, ornamentos arquitetônicos, de cerâmica, e outros produtos cerâmicos para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1002900",
+    "descricao": "Tubos, calhas ou algerozes e acessórios para canalizações, de cerâmica",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003000",
+    "descricao": "Ladrilhos e placas de cerâmica, exclusivamente para pavimentação ou revestimento",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003001",
+    "descricao": "Cubos, pastilhas e artigos semelhantes de cerâmica, mesmo com suporte.",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003100",
+    "descricao": "Pias, lavatórios, colunas para lavatórios, banheiras, bidês, sanitários, caixas de descarga, mictórios e aparelhos fixos semelhantes para usos sanitários, de cerâmica",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003200",
+    "descricao": "Artefatos de higiene/toucador de cerâmica",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003300",
+    "descricao": "Vidro vazado ou laminado, em chapas, folhas ou perfis, mesmo com camada absorvente, refletora ou não, mas sem qualquer outro trabalho",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003400",
+    "descricao": "Vidro estirado ou soprado, em folhas, mesmo com camada absorvente, refletora ou não, mas sem qualquer outro trabalho",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003500",
+    "descricao": "Vidro flotado e vidro desbastado ou polido em uma ou em ambas as faces, em chapas ou em folhas, mesmo com camada absorvente, refletora ou não, mas sem qualquer outro trabalho",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003600",
+    "descricao": "Vidros temperados",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003700",
+    "descricao": "Vidros laminados",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003800",
+    "descricao": "Vidros isolantes de paredes múltiplas",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1003900",
+    "descricao": "Blocos, placas, tijolos, ladrilhos, telhas e outros artefatos, de vidro prensado ou moldado, mesmo armado, para uso na construção; cubos, pastilhas e outros artigos semelhantes",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004000",
+    "descricao": "Barras próprias para construções, exceto vergalhões",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004100",
+    "descricao": "Outras barras próprias para construções, exceto vergalhões",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004200",
+    "descricao": "Vergalhões",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004300",
+    "descricao": "Outros vergalhões",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004400",
+    "descricao": "Fios de ferro ou aço não ligados, não revestidos, mesmo polidos; cordas, cabos, tranças (entrançados), lingas e artefatos semelhantes, de ferro ou aço, não isolados para usos elétricos",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004500",
+    "descricao": "Outros fios de ferro ou aço, não ligados, galvanizados com teor de carbono superior ou igual a 0,6%, em peso",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004501",
+    "descricao": "Outros fios de ferro ou aço, não ligados, galvanizados",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004600",
+    "descricao": "Acessórios para tubos (inclusive uniões, cotovelos, luvas ou mangas), de ferro fundido, ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004700",
+    "descricao": "Portas e janelas, e seus caixilhos, alizares e soleiras de ferro fundido, ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004800",
+    "descricao": "Material para andaimes, para armações (cofragens) e para escoramentos, (inclusive armações prontas, para estruturas de concreto armado ou argamassa armada), eletrocalhas e perfilados de ferro fundido, ferro ou aço, próprios para construção, exceto treliças de aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1004900",
+    "descricao": "Treliças de aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005000",
+    "descricao": "Telhas metálicas",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005100",
+    "descricao": "Caixas diversas (tais como caixa de correio, de entrada de água, de energia, de instalação) de ferro fundido, ferro ou aço; próprias para a construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005200",
+    "descricao": "Arame farpado, de ferro ou aço, arames ou tiras, retorcidos, mesmo farpados, de ferro ou aço, dos tipos utilizados em cercas",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005300",
+    "descricao": "Telas metálicas, grades e redes, de fios de ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005400",
+    "descricao": "Correntes de rolos, de ferro fundido, ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005500",
+    "descricao": "Outras correntes de elos articulados, de ferro fundido, ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005600",
+    "descricao": "Correntes de elos soldados, de ferro fundido, de ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005700",
+    "descricao": "Tachas, pregos, percevejos, escápulas, grampos ondulados ou biselados e artefatos semelhantes, de ferro fundido, ferro ou aço, mesmo com a cabeça de outra matéria, exceto cobre",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005800",
+    "descricao": "Parafusos, pinos ou pernos, roscados, porcas, tira-fundos, ganchos roscados, rebites, chavetas, cavilhas, contrapinos, arruelas (incluídas as de pressão) e artefatos semelhantes, de ferro fundido, ferro ou aço",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005900",
+    "descricao": "Palha de ferro ou aço, exceto os de uso doméstico classificados na posição NCM",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1005901",
+    "descricao": "Esponjas, esfregões, luvas e artefatos semelhantes para limpeza, polimento e usos semelhantes, de ferro ou aço, exceto os de uso doméstico classificados na posição NCM 7323.10.00",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006000",
+    "descricao": "Artefatos de higiene ou de toucador, e suas partes, de ferro fundido, ferro ou aço, incluídas as pias, banheiras, lavatórios, cubas, mictórios, tanques e afins de ferro fundido, ferro ou aço, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006100",
+    "descricao": "Outras obras moldadas, de ferro fundido, ferro ou aço, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006200",
+    "descricao": "Abraçadeiras",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006300",
+    "descricao": "Barras de cobre",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006400",
+    "descricao": "Tubos de cobre e suas ligas, para instalações de água quente e gás, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006500",
+    "descricao": "Acessórios para tubos (por exemplo, uniões, cotovelos, luvas ou mangas) de cobre e suas ligas, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006600",
+    "descricao": "Tachas, pregos, percevejos, escápulas e artefatos semelhantes, de cobre, ou de ferro ou aço com cabeça de cobre, parafusos, pinos ou pernos, roscados, porcas, ganchos roscados, rebites, chavetas, cavilhas, contrapinos, arruelas (incluídas as de pressão), e artefatos semelhantes, de cobre",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006700",
+    "descricao": "Artefatos de higiene/toucador de cobre, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006800",
+    "descricao": "Manta de subcobertura aluminizada",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1006900",
+    "descricao": "Tubos de alumínio e suas ligas, para refrigeração e ar condicionado, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007000",
+    "descricao": "Acessórios para tubos (por exemplo, uniões, cotovelos, luvas ou mangas), de alumínio, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007100",
+    "descricao": "Construções e suas partes (por exemplo, pontes e elementos de pontes, torres, pórticos ou pilones, pilares, colunas, armações, estruturas para telhados, portas e janelas, e seus caixilhos, alizares e soleiras, balaustradas), de alumínio, exceto as construções pré-fabricadas da posição 9406; chapas, barras, perfis, tubos e semelhantes, de alumínio, próprios para construções",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007200",
+    "descricao": "Artefatos de higiene/toucador de alumínio, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007300",
+    "descricao": "Outras obras de alumínio, próprias para construções, incluídas as persianas",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007400",
+    "descricao": "Outras guarnições, ferragens e artigos semelhantes de metais comuns, para construções, inclusive puxadores.",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007500",
+    "descricao": "Fechaduras e ferrolhos (de chave, de segredo ou elétricos), de metais comuns, incluídas as suas partes fechos e armações com fecho, com fechadura, de metais comuns chaves para estes artigos, de metais comuns; exceto os de uso automotivo",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007600",
+    "descricao": "Dobradiças de metais comuns, de qualquer tipo",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007700",
+    "descricao": "Tubos flexíveis de metais comuns, mesmo com acessórios, para uso na construção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007800",
+    "descricao": "Fios, varetas, tubos, chapas, eletrodos e artefatos semelhantes, de metais comuns ou de carbonetos metálicos, revestidos exterior ou interiormente de decapantes ou de fundentes, para soldagem (soldadura) ou depósito de metal ou de carbonetos metálicos fios e varetas de pós de metais comuns aglomerados, para metalização por projeção",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1007900",
+    "descricao": "Torneiras, válvulas (incluídas as redutoras de pressão e as termostáticas) e dispositivos semelhantes, para canalizações, caldeiras, reservatórios, cubas e outros recipientes",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1008000",
+    "descricao": "Espelhos de vidro, mesmo emoldurados, exceto os de uso automotivo",
+    "segmento": "Materiais de construção e congêneres"
+  },
+  {
+    "codigo": "1100100",
+    "descricao": "Água sanitária, branqueador e outros alvejantes",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100200",
+    "descricao": "Sabões em pó, flocos, palhetas, grânulos ou outras formas semelhantes, para lavar roupas",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100300",
+    "descricao": "Sabões líquidos para lavar roupas",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100400",
+    "descricao": "Detergentes em pó, flocos, palhetas, grânulos ou outras formas semelhantes",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100500",
+    "descricao": "Detergentes líquidos, exceto para lavar roupa",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100600",
+    "descricao": "Detergente líquido para lavar roupa",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100700",
+    "descricao": "Outros agentes orgânicos de superfície (exceto sabões); preparações tensoativas, preparações para lavagem (incluídas as preparações auxiliares para lavagem) e preparações para limpeza (inclusive multiuso e limpadores), mesmo contendo sabão, exceto os produtos descritos nos CEST 11.001.00, 11.004.00, 11.005.00 e 11.006.00; em embalagem de conteúdo inferior ou igual a 50 litros ou 50 kg",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100800",
+    "descricao": "Amaciante/suavizante",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1100900",
+    "descricao": "Esponjas para limpeza",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1101000",
+    "descricao": "Álcool etílico para limpeza",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1101100",
+    "descricao": "Esponjas e palhas de aço; esponjas para limpeza, polimento ou uso semelhantes; todas de uso doméstico",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1101200",
+    "descricao": "Sacos de lixo de conteúdo igual ou inferior a 100 litros",
+    "segmento": "Materiais de limpeza"
+  },
+  {
+    "codigo": "1200100",
+    "descricao": "Transformadores, bobinas de reatância e de auto indução, inclusive os transformadores de potência superior a 16 KVA, classificados nas posições e 8504.34.00; exceto os demais transformadores da subposição 8504.3, os reatores para lâmpadas elétricas de descarga classificados no código 8504.10.00, os carregadores de acumuladores do código 8504.40.10, os equipamentos de alimentação ininterrupta de energia (UPS ou “no break”), no código e os de uso automotivo",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200200",
+    "descricao": "Aquecedores elétricos de água, incluídos os de imersão, chuveiros ou duchas elétricos, torneiras elétricas, resistências de aquecimento, inclusive as de duchas e chuveiros elétricos e suas partes; exceto outros fornos, fogareiros (incluídas as chapas de cocção), grelhas e assadeiras, classificados na posição 8516.60.00",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200300",
+    "descricao": "Aparelhos para interrupção, seccionamento, proteção, derivação, ligação ou conexão de circuitos elétricos (por exemplo, interruptores, comutadores, corta- circuitos, para-raios, limitadores de tensão, eliminadores de onda, tomadas de corrente e outros conectores, caixas de junção), para tensão superior a 1.000V, exceto os de uso automotivo",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200400",
+    "descricao": "Aparelhos para interrupção, seccionamento, proteção, derivação, ligação ou conexão de circuitos elétricos (por exemplo, interruptores, comutadores, relés, corta- circuitos, eliminadores de onda, plugues e tomadas de corrente, suportes para lâmpadas e outros conectores, caixas de junção), para uma tensão não superior a 1.000V; conectores para fibras ópticas, feixes ou cabos de fibras ópticas; exceto “starter” classificado na subposição 8536.50 e os de uso automotivo",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200500",
+    "descricao": "Partes reconhecíveis como exclusiva ou principalmente destinadas aos aparelhos das posições 8535 e 8536",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200600",
+    "descricao": "Cabos, tranças e semelhantes, de cobre, não isolados para usos elétricos, exceto os de uso automotivo",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200700",
+    "descricao": "Fios, cabos (incluídos os cabos coaxiais) e outros condutores, isolados ou não, para usos elétricos (incluídos os de cobre ou alumínio, envernizados ou oxidados anodicamente), mesmo com peças de conexão, inclusive fios e cabos elétricos, para tensão não superior a 1000V, para uso na construção; fios e cabos telefônicos e para transmissão de dados; cabos de fibras ópticas, constituídos de fibras embainhadas individualmente, mesmo com condutores elétricos ou munidos de peças de conexão; cordas, ca",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200800",
+    "descricao": "Isoladores de qualquer matéria, para usos elétricos",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1200900",
+    "descricao": "Peças isolantes inteiramente de matérias isolantes, ou com simples peças metálicas de montagem (suportes roscados, por exemplo) incorporadas na massa, para máquinas, aparelhos e instalações elétricas; tubos isoladores e suas peças de ligação, de metais comuns, isolados interiormente",
+    "segmento": "Materiais elétricos"
+  },
+  {
+    "codigo": "1300100",
+    "descricao": "Medicamentos de referência - positiva, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300101",
+    "descricao": "Medicamentos de referência - negativa, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300102",
+    "descricao": "Medicamentos de referência - neutra, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300200",
+    "descricao": "Medicamentos genérico - positiva, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300201",
+    "descricao": "Medicamentos genérico - negativa, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300202",
+    "descricao": "Medicamentos genérico - neutra, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300300",
+    "descricao": "Medicamentos similar - positiva, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300301",
+    "descricao": "Medicamentos similar - negativa, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300302",
+    "descricao": "Medicamentos similar - neutra, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300400",
+    "descricao": "Outros tipos de medicamentos - positiva, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300401",
+    "descricao": "Outros tipos de medicamentos - negativa, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300402",
+    "descricao": "Outros tipos de medicamentos - neutra, exceto para uso veterinário",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300500",
+    "descricao": "Preparações químicas contraceptivas à base de hormônios, de outros produtos da posição 29.37 ou de espermicidas - positiva",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300501",
+    "descricao": "Preparações químicas contraceptivas à base de hormônios, de outros produtos da posição 29.37 ou de espermicidas - negativa",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300600",
+    "descricao": "Provitaminas e vitaminas, naturais ou reproduzidas por síntese (incluídos os concentrados naturais), bem como os seus derivados utilizados principalmente como vitaminas, misturados ou não entre si, mesmo em quaisquer soluções - neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300700",
+    "descricao": "Preparações opacificantes (contrastantes) para exames radiográficos e reagentes de diagnóstico concebidos para serem administrados ao paciente - positiva",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300701",
+    "descricao": "Preparações opacificantes (contrastantes) para exames radiográficos e reagentes de diagnóstico concebidos para serem administrados ao paciente - negativa",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300800",
+    "descricao": "Antissoro, outras frações do sangue, produtos imunológicos modificados, mesmo obtidos por via biotecnológica, exceto para uso veterinário - positiva",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300801",
+    "descricao": "Antissoro, outras frações do sangue, produtos imunológicos modificados, mesmo obtidos por via biotecnológica, exceto para uso veterinário - negativa",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300900",
+    "descricao": "Vacinas e produtos semelhantes, exceto para uso veterinário - positiva;",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1300901",
+    "descricao": "Vacinas e produtos semelhantes, exceto para uso veterinário - negativa;",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301000",
+    "descricao": "Curativos (pensos) adesivos e outros artigos com uma camada adesiva, impregnados ou recobertos de substâncias farmacêuticas - Lista Positiva",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301001",
+    "descricao": "Curativos (pensos) adesivos e outros artigos com uma camada adesiva, impregnados ou recobertos de substâncias farmacêuticas - Lista Negativa",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301100",
+    "descricao": "Algodão, atadura, esparadrapo, gazes, pensos, sinapismos, e outros, acondicionados para venda a retalho para usos medicinais, cirúrgicos ou dentários, não impregnados ou recobertos de substâncias farmacêuticas - Lista Neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301200",
+    "descricao": "Luvas cirúrgicas e luvas de procedimento - neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301300",
+    "descricao": "Preservativo – neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301400",
+    "descricao": "Seringas, mesmo com agulhas - neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301500",
+    "descricao": "Agulhas para seringas - neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1301600",
+    "descricao": "Contraceptivos (dispositivos intrauterinos - DIU) - neutra",
+    "segmento": "Medicamentos de uso humano e outros produtos farmacêuticos para uso humano ou"
+  },
+  {
+    "codigo": "1400100",
+    "descricao": "Objetos de vidro para serviço de mesa ou de cozinha",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400200",
+    "descricao": "Outros copos, exceto de vitrocerâmica",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400300",
+    "descricao": "Objetos para serviço de mesa (exceto copos) ou de cozinha, exceto de vitrocerâmica",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400400",
+    "descricao": "Lonas plásticas, exceto as para uso na construção",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400500",
+    "descricao": "Artefatos de higiene/toucador de plástico, exceto os para uso na construção",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400600",
+    "descricao": "Serviços de mesa e outros utensílios de mesa ou de cozinha, de plástico, inclusive os descartáveis",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400700",
+    "descricao": "Artigos para serviço de mesa ou de cozinha, de porcelana, inclusive os descartáveis – estojos",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400800",
+    "descricao": "Artigos para serviço de mesa ou de cozinha, de porcelana, inclusive os descartáveis – avulsos",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1400900",
+    "descricao": "Artigos para serviço de mesa ou de cozinha, de cerâmica",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1401000",
+    "descricao": "Velas para filtros",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1401100",
+    "descricao": "Filtros descartáveis para coar café ou chá",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1401200",
+    "descricao": "Bandejas, travessas, pratos, xícaras ou chávenas, taças, copos e artigos semelhantes, de papel ou cartão",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1401300",
+    "descricao": "Papel para cigarro",
+    "segmento": "Papéis, plásticos, produtos cerâmicos e vidros"
+  },
+  {
+    "codigo": "1600100",
+    "descricao": "Pneus novos, dos tipos utilizados em automóveis de passageiros (incluídos os veículos de uso misto - camionetas e os automóveis de corrida)",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600200",
+    "descricao": "Pneus novos, dos tipos utilizados em caminhões (inclusive para os fora-de-estrada), ônibus, aviões, máquinas de terraplenagem, de construção e conservação de estradas, máquinas e tratores agrícolas, pá-carregadeira",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600300",
+    "descricao": "Pneus novos para motocicletas",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600400",
+    "descricao": "Outros tipos de pneus novos, exceto os itens classificados no CEST 16.005.00",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600500",
+    "descricao": "Pneus novos de borracha dos tipos utilizados em bicicletas",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600600",
+    "descricao": "Pneus recauchutados",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600700",
+    "descricao": "Protetores de borracha, exceto os itens classificados no CEST 16.007.01",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600701",
+    "descricao": "Protetores de borracha para bicicletas",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600800",
+    "descricao": "Câmaras de ar de borracha, exceto os itens classificados no CEST 16.009.00",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1600900",
+    "descricao": "Câmaras de ar de borracha dos tipos utilizados em bicicletas",
+    "segmento": "Pneumáticos, câmaras de ar e protetores de borracha"
+  },
+  {
+    "codigo": "1700100",
+    "descricao": "Chocolate branco, em embalagens de conteúdo inferior ou igual a 1 kg, excluídos os ovos de páscoa de chocolate.",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700200",
+    "descricao": "Chocolates contendo cacau, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700300",
+    "descricao": "Chocolate em barras, tabletes ou blocos ou no estado líquido, em pasta, em pó, grânulos ou formas semelhantes, em recipientes ou embalagens imediatas de conteúdo inferior ou igual a 2 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700400",
+    "descricao": "Chocolates e outras preparações alimentícias contendo cacau, em embalagens de conteúdo inferior ou igual a 1 kg, excluídos os achocolatados em pó e ovos de páscoa de chocolate.",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700500",
+    "descricao": "Ovos de páscoa de chocolate branco",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700501",
+    "descricao": "Ovos de páscoa de chocolate",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700600",
+    "descricao": "Achocolatados em pó, em embalagens de conteúdo inferior ou igual a 1 kg, exceto os classificados no CEST 17.006.02",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700601",
+    "descricao": "Cacau em pó, com adição de açúcar ou de outros edulcorantes, em embalagens de conteúdo inferior ou igual a 1kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700602",
+    "descricao": "Achocolatados em pó, em cápsulas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700700",
+    "descricao": "Caixas de bombons contendo cacau, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700800",
+    "descricao": "Bombons, inclusive à base de chocolate branco sem cacau",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1700900",
+    "descricao": "Bombons, balas, caramelos, confeitos, pastilhas e outros produtos de confeitaria, contendo cacau",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701000",
+    "descricao": "Sucos de frutas ou de produtos hortícolas; mistura de sucos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701100",
+    "descricao": "Água de coco",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701200",
+    "descricao": "Leite em pó, blocos ou grânulos, exceto creme de leite",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701300",
+    "descricao": "Farinha láctea",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701400",
+    "descricao": "Leite modificado para alimentação de crianças",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701500",
+    "descricao": "Preparações para alimentação infantil à base de farinhas, grumos, sêmolas ou amidos e outros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701600",
+    "descricao": "Leite “longa vida” (UHT - “Ultra High Temperature”), em recipiente de conteúdo inferior ou igual a 2 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701601",
+    "descricao": "Leite “longa vida” (UHT - “Ultra High Temperature”), em recipiente de conteúdo superior a 2 litros e inferior ou igual a 5 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701700",
+    "descricao": "Leite em recipiente de conteúdo inferior ou igual a 1 litro",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701701",
+    "descricao": "Leite em recipiente de conteúdo superior a 1 litro e inferior ou igual a 5 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701800",
+    "descricao": "Leite do tipo pasteurizado em recipiente de conteúdo inferior ou igual a 1 litro",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701801",
+    "descricao": "Leite do tipo pasteurizado em recipiente de conteúdo superior a 1 litro e inferior ou igual a 5 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701900",
+    "descricao": "Creme de leite, em recipiente de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701901",
+    "descricao": "Creme de leite, em recipiente de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1701902",
+    "descricao": "Outros cremes de leite, em recipiente de conteúdo inferior ou igual a 1kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702000",
+    "descricao": "Leite condensado, em recipiente de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702001",
+    "descricao": "Leite condensado, em recipiente de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702100",
+    "descricao": "Iogurte e leite fermentado em recipiente de conteúdo inferior ou igual a 2 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702101",
+    "descricao": "Iogurte e leite fermentado em recipiente de conteúdo superior a 2 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702200",
+    "descricao": "Coalhada",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702300",
+    "descricao": "Requeijão e similares, em recipiente de conteúdo inferior ou igual a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702301",
+    "descricao": "Requeijão e similares, em recipiente de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702400",
+    "descricao": "Queijos, exceto os dos CEST 17.024.01, 17.024.02, 17.024.03 e 17.024.04",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702401",
+    "descricao": "Queijo muçarela",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702402",
+    "descricao": "Queijo minas frescal",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702403",
+    "descricao": "Queijo ricota",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702404",
+    "descricao": "Queijo petit suisse",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702500",
+    "descricao": "Manteiga, em embalagem de conteúdo inferior ou igual a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702501",
+    "descricao": "Manteiga, em embalagem de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702502",
+    "descricao": "Manteiga de garrafa",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702600",
+    "descricao": "Margarina e creme vegetal em recipiente de conteúdo inferior ou igual a 500 g, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702700",
+    "descricao": "Margarina e creme vegetal, em recipiente de conteúdo superior a 500 g e inferior ou igual a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702701",
+    "descricao": "Margarina e creme vegetal, em recipiente de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702702",
+    "descricao": "Outras margarinas e cremes vegetais em recipiente de conteúdo inferior a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702800",
+    "descricao": "Gorduras e óleos vegetais e respectivas frações, parcial ou totalmente hidrogenados, interesterificados, reesterificados ou elaidinizados, mesmo refinados, mas não preparados de outro modo, em recipiente de conteúdo inferior ou igual a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702801",
+    "descricao": "Gorduras e óleos vegetais e respectivas frações, parcial ou totalmente hidrogenados, interesterificados, reesterificados ou elaidinizados, mesmo refinados, mas não preparados de outro modo, em recipiente de conteúdo superior a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1702900",
+    "descricao": "Doces de leite",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703000",
+    "descricao": "Produtos à base de cereais, obtidos por expansão ou torrefação",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703100",
+    "descricao": "Salgadinhos diversos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703200",
+    "descricao": "Batata frita, inhame e mandioca fritos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703300",
+    "descricao": "Amendoim e castanhas tipo aperitivo, em embalagem de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703301",
+    "descricao": "Amendoim e castanhas tipo aperitivo, em embalagem de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703400",
+    "descricao": "Catchup em embalagens imediatas de conteúdo inferior ou igual a 650 g, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703500",
+    "descricao": "Condimentos e temperos compostos, incluindo molho de pimenta e outros molhos, em embalagens imediatas de conteúdo inferior ou igual a 1 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 3 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703600",
+    "descricao": "Molhos de soja preparados em embalagens imediatas de conteúdo inferior ou igual a 650 g, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703700",
+    "descricao": "Farinha de mostarda em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703800",
+    "descricao": "Mostarda preparada em embalagens imediatas de conteúdo inferior ou igual a 650 g, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1703900",
+    "descricao": "Maionese em embalagens imediatas de conteúdo inferior ou igual a 650 g, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704000",
+    "descricao": "Tomates preparados ou conservados, exceto em vinagre ou em ácido acético, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704100",
+    "descricao": "Molhos de tomate em embalagens imediatas de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704200",
+    "descricao": "Barra de cereais",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704300",
+    "descricao": "Barra de cereais contendo cacau",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704400",
+    "descricao": "Farinha de trigo especial, em embalagem inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704401",
+    "descricao": "Farinha de trigo especial, em embalagem superior a 1 kg e inferior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704402",
+    "descricao": "Farinha de trigo especial, em embalagem igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704403",
+    "descricao": "Farinha de trigo especial, em embalagem superior a 5 kg e inferior ou igual a 25 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704404",
+    "descricao": "Farinha de trigo especial, em embalagem superior a 25 kg e inferior ou igual a 50 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704405",
+    "descricao": "Farinha de trigo comum, em embalagem igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704406",
+    "descricao": "Farinha de trigo comum, em embalagem superior a 5 kg e inferior ou igual a 25 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704407",
+    "descricao": "Farinha de trigo comum, em embalagem superior a 25 kg e inferior ou igual a 50 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704408",
+    "descricao": "Farinha de trigo doméstica especial, em embalagem superior a 5 kg e inferior e igual a 10 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704409",
+    "descricao": "Farinha de trigo doméstica com fermento, em embalagem superior a 5 kg e inferior e igual a 10 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704410",
+    "descricao": "Farinha de trigo especial, em embalagem superior a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704411",
+    "descricao": "Farinha de trigo comum, em embalagem inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704412",
+    "descricao": "Farinha de trigo comum, em embalagem superior a 1 kg e inferior a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704413",
+    "descricao": "Farinha de trigo comum, em embalagem superior a 50 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704414",
+    "descricao": "Farinha de trigo doméstica especial, em embalagem inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704415",
+    "descricao": "Farinha de trigo doméstica especial, em embalagem superior a 1 kg e inferior a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704416",
+    "descricao": "Farinha de trigo doméstica especial, em embalagem igual a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704417",
+    "descricao": "Farinha de trigo doméstica especial, em embalagem superior a 10 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704418",
+    "descricao": "Farinha de trigo doméstica com fermento, em embalagem inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704419",
+    "descricao": "Farinha de trigo doméstica com fermento, em embalagem superior a 1 kg e inferior a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704420",
+    "descricao": "Farinha de trigo doméstica com fermento, em embalagem igual a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704421",
+    "descricao": "Farinha de trigo doméstica com fermento, em embalagem superior a 10 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704422",
+    "descricao": "Outras farinhas de trigo, em embalagem inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704423",
+    "descricao": "Outras farinhas de trigo, em embalagem superior a 1 kg e inferior a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704424",
+    "descricao": "Outras farinhas de trigo, em embalagem igual a 5 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704425",
+    "descricao": "Outras farinhas de trigo, em embalagem superior a 5 Kg e inferior ou igual a 25 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704426",
+    "descricao": "Outras farinhas de trigo, em embalagem superior a 25 Kg e inferior ou igual a 50 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704427",
+    "descricao": "Outras farinhas de trigo, em embalagem superior a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704500",
+    "descricao": "Farinha de mistura de trigo com centeio (méteil)",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704600",
+    "descricao": "Misturas e preparações para bolos, em embalagem inferior 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704601",
+    "descricao": "Misturas e preparações para bolos, em embalagem igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704602",
+    "descricao": "Misturas e preparações para bolos, em embalagem superior a 5 kg e inferior ou igual a 25 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704603",
+    "descricao": "Misturas e preparações para bolos, em embalagem superior a 25 kg e inferior ou igual a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704604",
+    "descricao": "Misturas e preparações para bolos, em embalagem superior a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704605",
+    "descricao": "Misturas e preparações para pães com menos de 80% de farinha de trigo na sua composição final, em embalagem inferior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704606",
+    "descricao": "Misturas e preparações para pães com menos de 80% de farinha de trigo na sua composição final, em embalagem igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704607",
+    "descricao": "Misturas e preparações para pães com menos de 80% de farinha de trigo na sua composição final, em embalagem superior a 5 kg e inferior ou igual a 25 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704608",
+    "descricao": "Misturas e preparações para pães com menos de 80% de farinha de trigo na sua composição final, em embalagem superior a 25 kg e inferior ou igual a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704609",
+    "descricao": "Misturas e preparações para pães com menos de 80% de farinha de trigo na sua composição final, em embalagem superior a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704610",
+    "descricao": "Misturas e preparações para pães com, no mínimo, 80% de farinha de trigo na sua composição final, em embalagem inferior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704611",
+    "descricao": "Misturas e preparações para pães com, no mínimo, 80% de farinha de trigo na sua composição final, em embalagem igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704612",
+    "descricao": "Misturas e preparações para pães com, no mínimo, 80% de farinha de trigo na sua composição final, em embalagem superior a 5 kg e inferior ou igual a 25 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704613",
+    "descricao": "Misturas e preparações para pães com, no mínimo, 80% de farinha de trigo na sua composição final, em embalagem superior a 25 kg e inferior ou igual a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704614",
+    "descricao": "Misturas e preparações para pães com, no mínimo, 80% de farinha de trigo na sua composição final, em embalagem superior a 50 Kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704700",
+    "descricao": "Massas alimentícias tipo instantânea",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704800",
+    "descricao": "Massas alimentícias, cozidas ou recheadas (de carne ou de outras substâncias) ou preparadas de outro modo, exceto as descritas nos CEST 17.047.00, 17.048.01, e",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704801",
+    "descricao": "Cuscuz",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704802",
+    "descricao": "Massas alimentícias recheadas (mesmo cozidas ou preparadas de outro modo)",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704900",
+    "descricao": "Massas alimentícias do tipo comum, não cozidas, nem recheadas, nem preparadas de outro modo, exceto a descrita no CEST 17.049.03",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704901",
+    "descricao": "Massas alimentícias do tipo sêmola, não cozidas, nem recheadas, nem preparadas de outro modo, exceto a descrita no CEST 17.049.04",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704902",
+    "descricao": "Massas alimentícias do tipo granoduro, não cozidas, nem recheadas, nem preparadas de outro modo, exceto a descrita no CEST 17.049.05",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704903",
+    "descricao": "Massas alimentícias do tipo comum, não cozidas, nem recheadas, nem preparadas de outro modo, que não contenham ovos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704904",
+    "descricao": "Massas alimentícias do tipo sêmola, não cozidas, nem recheadas, nem preparadas de outro modo, que não contenham ovos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1704905",
+    "descricao": "Massas alimentícias do tipo granoduro, não cozidas, nem recheadas, nem preparadas de outro modo, que não contenham ovos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705000",
+    "descricao": "Pães industrializados, inclusive de especiarias, exceto panetones e bolo de forma",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705100",
+    "descricao": "Bolo de forma, inclusive de especiarias",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705200",
+    "descricao": "Panetones",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705300",
+    "descricao": "Biscoitos e bolachas derivados de farinha de trigo; (exceto dos tipos “cream cracker”, “água e sal”, “maisena”, “maria” e outros de consumo popular que não sejam adicionados de cacau, nem recheados, cobertos ou amanteigados, independentemente de sua denominação comercial)",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705301",
+    "descricao": "Biscoitos e bolachas derivados de farinha de trigo dos tipos “maisena” e “maria” e outros de consumo popular que não sejam adicionados de cacau, nem recheados, cobertos ou amanteigados, independentemente de sua denominação comercial, exceto o CEST 17.053.02",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705302",
+    "descricao": "Biscoitos e bolachas derivados de farinha de trigo dos tipos \"cream cracker\" e \"água e sal\" de consumo popular",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705400",
+    "descricao": "Biscoitos e bolachas não derivados de farinha de trigo; (exceto dos tipos \"cream cracker\", \"água e sal\", \"maisena\" e \"maria\" e outros de consumo popular que não sejam adicionados de cacau, nem recheados, cobertos ou amanteigados, independentemente de sua denominação comercial)",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705401",
+    "descricao": "Biscoitos e bolachas não derivados de farinha de trigo dos tipos \"maisena\" e \"maria\" e outros de consumo popular que não sejam adicionados de cacau, nem recheados, cobertos ou amanteigados, independentemente de sua denominação comercial, exceto o CEST 17.054.02",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705402",
+    "descricao": "Biscoitos e bolachas não derivados de farinha de trigo dos tipos \"cream cracker\" e \"água e sal\" de consumo popular",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705600",
+    "descricao": "Biscoitos e bolachas derivados de farinha de trigo dos tipos “cream cracker” e “água e sal”",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705601",
+    "descricao": "Biscoitos e bolachas não derivados de farinha de trigo dos tipos “cream cracker” e “água e sal”",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705602",
+    "descricao": "Outras bolachas, exceto casquinhas para sorvete e os biscoitos e bolachas relacionados nos CEST 17.056.00 e 17.056.01",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705700",
+    "descricao": "“Waffles” e “wafers” - sem cobertura",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705800",
+    "descricao": "“Waffles” e “wafers” - com cobertura",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1705900",
+    "descricao": "Torradas, pão torrado e produtos semelhantes torrados",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706000",
+    "descricao": "Outros pães de forma",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706200",
+    "descricao": "Outros pães e bolos industrializados e produtos de panificação não especificados anteriormente; exceto casquinhas para sorvete e pão francês de até 200 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706300",
+    "descricao": "Pão denominado knackebrot",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706400",
+    "descricao": "Demais pães industrializados",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706500",
+    "descricao": "Óleo de soja refinado, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706600",
+    "descricao": "Óleo de amendoim refinado, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706700",
+    "descricao": "Azeites de oliva, em recipientes com capacidade inferior a 2 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 20 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706701",
+    "descricao": "Azeites de oliva, em recipientes com capacidade igual ou superior a 2 litros e inferior ou igual a 5 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706702",
+    "descricao": "Azeites de oliva, em recipientes com capacidade superior a 5 litros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706800",
+    "descricao": "Outros óleos e respectivas frações, obtidos exclusivamente a partir de azeitonas, mesmo refinados, mas não quimicamente modificados, e misturas desses óleos ou frações com óleos ou frações da posição 15.09, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1706900",
+    "descricao": "Óleo de girassol ou de algodão refinado, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707000",
+    "descricao": "Óleo de canola, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707100",
+    "descricao": "Óleo de linhaça refinado, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707200",
+    "descricao": "Óleo de milho refinado, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707300",
+    "descricao": "Outros óleos refinados, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707400",
+    "descricao": "Misturas de óleos refinados, para consumo humano, em recipientes com capacidade inferior ou igual a 5 litros, exceto as embalagens individuais de conteúdo inferior ou igual a 15 mililitros",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707500",
+    "descricao": "Outros óleos vegetais comestíveis não especificados anteriormente",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707600",
+    "descricao": "Enchidos (embutidos) e produtos semelhantes, de carne, miudezas ou sangue; exceto salsicha, linguiça e mortadela",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707700",
+    "descricao": "Salsicha e linguiça",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707800",
+    "descricao": "Mortadela",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707900",
+    "descricao": "Outras preparações e conservas de carne, miudezas ou de sangue, exceto as descritas nos CEST 17.079.01, 17.079.02, 17.079.03, 17.079.04, 17.079.05,",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707901",
+    "descricao": "Outras preparações e conservas de carne, de miudezas ou de sangue, de aves da posição 01.05: de peruas e de perus.",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707902",
+    "descricao": "Outras preparações e conservas de carne, de miudezas ou de sangue, de aves da posição 01.05: de galos e de galinhas, com conteúdo de carne ou de miudezas superior ou igual a 57 %, em peso, não cozidas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707903",
+    "descricao": "Outras preparações e conservas de carne, de miudezas ou de sangue, todas de aves da posição 01.05: de galos e de galinhas, com conteúdo de carne ou de miudezas superior ou igual a 57 %, em peso, cozidas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707904",
+    "descricao": "Outras preparações e conservas de carne, de miudezas ou de sangue, da espécie suína: pernas e respectivos pedaços",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707905",
+    "descricao": "Outras preparações e conservas de carne, de miudezas ou de sangue, da espécie suína: outras, incluindo as misturas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1707906",
+    "descricao": "Outras preparações e conservas de carne, de miudezas ou de sangue, da espécie bovina",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708000",
+    "descricao": "Preparações e conservas de peixes; caviar e seus sucedâneos preparados a partir de ovas de peixe; exceto os descritos nos CEST 17.080.01 e 17.081.00",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708001",
+    "descricao": "Outras preparações e conservas de atuns",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708100",
+    "descricao": "Sardinha em conserva",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708200",
+    "descricao": "Crustáceos, moluscos e outros invertebrados aquáticos, preparados ou em conservas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708300",
+    "descricao": "Carne de gado bovino, ovino e bufalino e produtos comestíveis resultantes da matança desse gado submetidos à salga, secagem ou desidratação",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708400",
+    "descricao": "Carne de gado bovino, ovino e bufalino e demais produtos comestíveis resultantes da matança desse gado frescos, refrigerados ou congelados",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708500",
+    "descricao": "Carnes de animais das espécies caprina, frescas, refrigeradas ou congeladas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708600",
+    "descricao": "Carnes e demais produtos comestíveis frescos, resfriados, congelados, salgados ou salmourados resultantes do abate de caprinos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708700",
+    "descricao": "Carnes e demais produtos comestíveis frescos, resfriados, congelados, salgados, em salmoura, simplesmente temperados, secos ou defumados, resultantes do abate de aves",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708701",
+    "descricao": "Carnes e demais produtos comestíveis frescos, resfriados, congelados, salgados, em salmoura, simplesmente temperados, secos ou defumados, resultantes do abate de suínos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708800",
+    "descricao": "Produtos hortícolas, cozidos em água ou vapor, congelados, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708801",
+    "descricao": "Produtos hortícolas, cozidos em água ou vapor, congelados, em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708900",
+    "descricao": "Frutas, não cozidas ou cozidas em água ou vapor, congeladas, mesmo adicionadas de açúcar ou de outros edulcorantes, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1708901",
+    "descricao": "Frutas, não cozidas ou cozidas em água ou vapor, congeladas, mesmo adicionadas de açúcar ou de outros edulcorantes, em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709000",
+    "descricao": "Produtos hortícolas, frutas e outras partes comestíveis de plantas, preparados ou conservados em vinagre ou em ácido acético, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709001",
+    "descricao": "Produtos hortícolas, frutas e outras partes comestíveis de plantas, preparados ou conservados em vinagre ou em ácido acético, em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709100",
+    "descricao": "Outros produtos hortícolas preparados ou conservados, exceto em vinagre ou em ácido acético, congelados, com exceção dos produtos da posição 20.06, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709101",
+    "descricao": "Outros produtos hortícolas preparados ou conservados, exceto em vinagre ou em ácido acético, congelados, com exceção dos produtos da posição 20.06, em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709200",
+    "descricao": "Outros produtos hortícolas preparados ou conservados, exceto em vinagre ou em ácido acético, não congelados, com exceção dos produtos da posição 20.06, excluídos batata, inhame e mandioca fritos, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709201",
+    "descricao": "Outros produtos hortícolas preparados ou conservados, exceto em vinagre ou em ácido acético, não congelados, com exceção dos produtos da posição 20.06, excluídos batata, inhame e mandioca fritos, em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709300",
+    "descricao": "Produtos hortícolas, frutas, cascas de frutas e outras partes de plantas, conservados com açúcar (passados por calda, glaceados ou cristalizados), em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709301",
+    "descricao": "Produtos hortícolas, frutas, cascas de frutas e outras partes de plantas, conservados com açúcar (passados por calda, glaceados ou cristalizados), em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709400",
+    "descricao": "Doces, geleias, “marmelades”, purês e pastas de frutas, obtidos por cozimento, com ou sem adição de açúcar ou de outros edulcorantes, em embalagens de conteúdo inferior ou igual a 1 kg, exceto as embalagens individuais de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709401",
+    "descricao": "Doces, geleias, “marmelades”, purês e pastas de frutas, obtidos por cozimento, com ou sem adição de açúcar ou de outros edulcorantes, em embalagens de conteúdo superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709500",
+    "descricao": "Frutas e outras partes comestíveis de plantas, preparadas ou conservadas de outro modo, com ou sem adição de açúcar ou de outros edulcorantes ou de álcool, não especificadas nem compreendidas em outras posições, excluídos os amendoins e castanhas tipo aperitivo, da posição 2008.1, em embalagens de conteúdo inferior ou igual a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709501",
+    "descricao": "Frutas e outras partes comestíveis de plantas, preparadas ou conservadas de outro modo, com ou sem adição de açúcar ou de outros edulcorantes ou de álcool, não especificadas nem compreendidas em outras posições, excluídos os amendoins e castanhas tipo aperitivo, da posição 2008.1, em embalagens superior a 1 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709600",
+    "descricao": "Café torrado e moído, em embalagens de conteúdo inferior ou igual a 2 kg, exceto os classificados no CEST 17.096.04",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709601",
+    "descricao": "Café torrado e moído, em embalagens de conteúdo superior a 2 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709602",
+    "descricao": "Café torrado em grão, em embalagens de conteúdo inferior ou igual a 2 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709603",
+    "descricao": "Café torrado em grão, em embalagens de conteúdo superior a 2 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709604",
+    "descricao": "Café torrado e moído, em cápsulas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709700",
+    "descricao": "Chá, mesmo aromatizado",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709800",
+    "descricao": "Mate",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709900",
+    "descricao": "Açúcar refinado, em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709901",
+    "descricao": "Açúcar refinado, em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1709902",
+    "descricao": "Açúcar refinado, em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710000",
+    "descricao": "Açúcar refinado adicionado de aromatizante ou de corante em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710001",
+    "descricao": "Açúcar refinado adicionado de aromatizante ou de corante em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710002",
+    "descricao": "Açúcar refinado adicionado de aromatizante ou de corante em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710100",
+    "descricao": "Açúcar cristal, em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710101",
+    "descricao": "Açúcar cristal, em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710102",
+    "descricao": "Açúcar cristal, em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710200",
+    "descricao": "Açúcar cristal adicionado de aromatizante ou de corante, em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710201",
+    "descricao": "Açúcar cristal adicionado de aromatizante ou de corante, em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710202",
+    "descricao": "Açúcar cristal adicionado de aromatizante ou de corante, em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710300",
+    "descricao": "Outros tipos de açúcar, em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710301",
+    "descricao": "Outros tipos de açúcar, em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710302",
+    "descricao": "Outros tipos de açúcar, em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710400",
+    "descricao": "Outros tipos de açúcar adicionado de aromatizante ou de corante, em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710401",
+    "descricao": "Outros tipos de açúcar adicionado de aromatizante ou de corante, em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710402",
+    "descricao": "Outros tipos de açúcar adicionado de aromatizante ou de corante, em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710500",
+    "descricao": "Outros açúcares em embalagens de conteúdo inferior ou igual a 2 kg, exceto as embalagens contendo envelopes individualizados (sachês) de conteúdo inferior ou igual a 10 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710501",
+    "descricao": "Outros açúcares, em embalagens de conteúdo superior a 2 kg e inferior ou igual a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710502",
+    "descricao": "Outros açúcares, em embalagens de conteúdo superior a 5 kg",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710600",
+    "descricao": "Milho para pipoca (micro-ondas)",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710700",
+    "descricao": "Extratos, essências e concentrados de café e preparações à base destes extratos, essências ou concentrados ou à base de café, em embalagens de conteúdo inferior ou igual a 500 g, exceto os classificados no CEST 17.107.01",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710701",
+    "descricao": "Extratos, essências e concentrados de café e preparações à base destes extratos, essências ou concentrados ou à base de café, em cápsulas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710800",
+    "descricao": "Extratos, essências e concentrados de chá ou de mate e preparações à base destes extratos, essências ou concentrados ou à base de chá ou de mate, em embalagens de conteúdo inferior ou igual a 500 g, exceto as bebidas prontas à base de mate ou chá e os itens classificados no CEST 17.108.01",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710801",
+    "descricao": "Extratos, essências e concentrados de chá ou de mate e preparações à base destes extratos, essências ou concentrados ou à base de chá ou de mate, em cápsulas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1710900",
+    "descricao": "Preparações em pó para cappuccino e similares, em embalagens de conteúdo inferior ou igual a 500 g",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1711000",
+    "descricao": "Refrescos e outras bebidas prontas para beber à base de chá e mate",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1711100",
+    "descricao": "Refrescos e outras bebidas não alcoólicas, exceto os refrigerantes e as demais bebidas nos CEST 03.007.00 e 17.110.00",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1711200",
+    "descricao": "Néctares de frutas e outras bebidas não alcoólicas prontas para beber, exceto isotônicos e energéticos",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1711300",
+    "descricao": "Bebidas prontas à base de mate ou chá",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1711400",
+    "descricao": "Bebidas prontas à base de café",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1711500",
+    "descricao": "Bebidas alimentares prontas à base de soja, leite ou cacau, inclusive os produtos denominados bebidas lácteas",
+    "segmento": "Produtos alimentícios"
+  },
+  {
+    "codigo": "1900100",
+    "descricao": "Tinta guache",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900200",
+    "descricao": "Espiral - perfil para encadernação, de plástico e outros materiais classificados nas posições 3901 a 3914",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900300",
+    "descricao": "Outros espirais - perfil para encadernação, de plástico e outros materiais classificados nas posições 3901 a 3914",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900400",
+    "descricao": "Artigos de escritório e artigos escolares de plástico e outros materiais classificados nas posições 3901 a 3914, exceto estojos",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900500",
+    "descricao": "Maletas e pastas para documentos e de estudante, e artefatos semelhantes",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900501",
+    "descricao": "Baús, malas e maletas para viagem",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900600",
+    "descricao": "Prancheta de plástico",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900700",
+    "descricao": "Bobina para fax",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900800",
+    "descricao": "Papel seda",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1900900",
+    "descricao": "Bobina para máquina de calcular, PDV ou equipamentos similares",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901000",
+    "descricao": "Cartolina escolar e papel cartão, brancos e coloridos; recados auto adesivos (LP note); papéis de presente, todos cortados em tamanho pronto para uso escolar e doméstico",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901100",
+    "descricao": "Papel fotográfico, exceto: (i) os papéis fotográficos emulsionados com haleto de prata tipo brilhante, matte ou lustre, em rolo e, com largura igual ou superior a 102 mm e comprimento inferior ou igual a 350 m, (ii) os papéis fotográficos emulsionados com haleto de prata tipo brilhante ou fosco, em folha e com largura igual ou superior a 152 mm e comprimento inferior ou igual a 307 mm, (iii) papel de qualidade fotográfica com tecnologia “Thermo-autochrome”, que submetido a um processo de aquecim",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901200",
+    "descricao": "Papel almaço",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901300",
+    "descricao": "Papel hectográfico",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901400",
+    "descricao": "Papel celofane e tipo celofane",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901500",
+    "descricao": "Papel impermeável",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901600",
+    "descricao": "Papel crepon",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901700",
+    "descricao": "Papel fantasia",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901800",
+    "descricao": "Papel-carbono, papel autocopiativo (exceto os vendidos em rolos de diâmetro igual ou superior a 60 cm e os vendidos em folhas de formato igual ou superior a 60 cm de altura e igual ou superior a 90 cm de largura) e outros papéis para cópia ou duplicação (incluídos os papéis para estênceis ou para chapas ofsete), estênceis completos e chapas ofsete, de papel, em folhas, mesmo acondicionados em caixas",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1901900",
+    "descricao": "Envelopes, aerogramas, bilhetes-postais não ilustrados e cartões para correspondência, de papel ou cartão, caixas, sacos e semelhantes, de papel ou cartão, contendo um sortido de artigos para correspondência",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902000",
+    "descricao": "Livros de registro e de contabilidade, blocos de notas, de encomendas, de recibos, de apontamentos, de papel para cartas, agendas e artigos semelhantes",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902100",
+    "descricao": "Cadernos",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902200",
+    "descricao": "Classificadores, capas para encadernação (exceto as capas para livros) e capas de processos",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902300",
+    "descricao": "Formulários em blocos tipo “manifold”, mesmo com folhas intercaladas de papel- carbono",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902400",
+    "descricao": "Álbuns para amostras ou para coleções",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902500",
+    "descricao": "Pastas para documentos, outros artigos escolares, de escritório ou de papelaria, de papel ou cartão e capas para livros, de papel ou cartão",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902600",
+    "descricao": "Cartões postais impressos ou ilustrados, cartões impressos com votos ou mensagens pessoais, mesmo ilustrados, com ou sem envelopes, guarnições ou aplicações (conhecidos como cartões de expressão social - de época/sentimento)",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902700",
+    "descricao": "Canetas esferográficas",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902800",
+    "descricao": "Canetas e marcadores, com ponta de feltro ou com outras pontas porosas",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1902900",
+    "descricao": "Canetas tinteiro",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1903000",
+    "descricao": "Outras canetas; sortidos de canetas",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1903100",
+    "descricao": "Papel cortado “cutsize” (tipo A3, A4, ofício I e II, carta e outros)",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1903200",
+    "descricao": "Papel camurça",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "1903300",
+    "descricao": "Papel laminado e papel espelho",
+    "segmento": "Produtos de papelaria"
+  },
+  {
+    "codigo": "2000100",
+    "descricao": "Henna (embalagens de conteúdo inferior ou igual a 200 g)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000101",
+    "descricao": "Henna (embalagens de conteúdo superior a 200 g)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000200",
+    "descricao": "Vaselina",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000300",
+    "descricao": "Amoníaco em solução aquosa (amônia)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000400",
+    "descricao": "Peróxido de hidrogênio, em embalagens de conteúdo inferior ou igual a 500 ml",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000500",
+    "descricao": "Lubrificação íntima",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000600",
+    "descricao": "Óleos essenciais (desterpenados ou não), incluídos os chamados “concretos” ou “absolutos”; resinoides; oleorresinas de extração; soluções concentradas de óleos essenciais em gorduras, em óleos fixos, em ceras ou em matérias análogas, obtidas por tratamento de flores através de substâncias gordas ou por maceração; subprodutos terpênicos residuais da desterpenação dos óleos essenciais; águas destiladas aromáticas e soluções aquosas de óleos essenciais, em embalagens de conteúdo inferior ou igual a",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000700",
+    "descricao": "Perfumes (extratos)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000800",
+    "descricao": "Águas-de-colônia",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2000900",
+    "descricao": "Produtos de maquilagem para os lábios",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001000",
+    "descricao": "Sombra, delineador, lápis para sobrancelhas e rímel",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001100",
+    "descricao": "Outros produtos de maquilagem para os olhos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001200",
+    "descricao": "Preparações para manicuros e pedicuros, incluindo removedores de esmalte à base de acetona",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001300",
+    "descricao": "Pós, incluídos os compactos, para maquilagem",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001400",
+    "descricao": "Cremes de beleza, cremes nutritivos e loções tônicas",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001500",
+    "descricao": "Outros produtos de beleza ou de maquilagem preparados e preparações para conservação ou cuidados da pele, exceto as preparações solares e antissolares",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001600",
+    "descricao": "Preparações solares e antissolares",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001700",
+    "descricao": "Xampus para o cabelo",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001800",
+    "descricao": "Preparações para ondulação ou alisamento, permanentes, dos cabelos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2001900",
+    "descricao": "Laquês para o cabelo",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002000",
+    "descricao": "Outras preparações capilares, incluindo máscaras e finalizadores",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002100",
+    "descricao": "Condicionadores",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002200",
+    "descricao": "Tintura para o cabelo",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002300",
+    "descricao": "Dentifrícios",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002400",
+    "descricao": "Fios utilizados para limpar os espaços interdentais (fios dentais)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002500",
+    "descricao": "Outras preparações para higiene bucal ou dentária",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002600",
+    "descricao": "Preparações para barbear (antes, durante ou após)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002700",
+    "descricao": "Desodorantes (desodorizantes) corporais líquidos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002800",
+    "descricao": "Antiperspirantes líquidos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2002900",
+    "descricao": "Outros desodorantes (desodorizantes) corporais",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003000",
+    "descricao": "Outros antiperspirantes",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003100",
+    "descricao": "Sais perfumados e outras preparações para banhos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003200",
+    "descricao": "Outros produtos de perfumaria preparados",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003201",
+    "descricao": "Outros produtos de toucador preparados",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003300",
+    "descricao": "Soluções para lentes de contato ou para olhos artificiais",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003400",
+    "descricao": "Sabões de toucador em barras, pedaços ou figuras moldados",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003500",
+    "descricao": "Outros sabões, produtos e preparações, em barras, pedaços ou figuras moldados, inclusive lenços umedecidos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003600",
+    "descricao": "Sabões de toucador sob outras formas",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003700",
+    "descricao": "Produtos e preparações orgânicos tensoativos para lavagem da pele, na forma de líquido ou de creme, acondicionados para venda a retalho, mesmo contendo sabão",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003800",
+    "descricao": "Bolsa para gelo ou para água quente",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2003900",
+    "descricao": "Chupetas e bicos para mamadeiras e para chupetas, de borracha",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004000",
+    "descricao": "Chupetas e bicos para mamadeiras e para chupetas, de silicone",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004100",
+    "descricao": "Malas e maletas de toucador",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004200",
+    "descricao": "Papel higiênico - folha simples",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004300",
+    "descricao": "Papel higiênico - folha dupla e tripla",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004400",
+    "descricao": "Lenços (incluídos os de maquilagem) e toalhas de mão",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004500",
+    "descricao": "Papel toalha de uso institucional do tipo comercializado em rolos igual ou superior a 80 metros e do tipo comercializado em folhas intercaladas",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004600",
+    "descricao": "Toalhas e guardanapos de mesa",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004700",
+    "descricao": "Toalhas de cozinha (papel toalha de uso doméstico)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004800",
+    "descricao": "Fraldas",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2004900",
+    "descricao": "Tampões higiênicos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005000",
+    "descricao": "Absorventes higiênicos externos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005100",
+    "descricao": "Hastes flexíveis (uso não medicinal)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005200",
+    "descricao": "Sutiã descartável, assemelhados e papel para depilação",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005300",
+    "descricao": "Pinças para sobrancelhas",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005400",
+    "descricao": "Espátulas (artigos de cutelaria)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005500",
+    "descricao": "Utensílios e sortidos de utensílios de manicuros ou de pedicuros (incluídas as limas para unhas)",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005600",
+    "descricao": "Termômetros, inclusive o digital",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005700",
+    "descricao": "Escovas e pincéis de barba, escovas para cabelos, para cílios ou para unhas e outras escovas de toucador de pessoas, incluídas as que sejam partes de aparelhos, exceto escovas de dentes",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005800",
+    "descricao": "Escovas de dentes, incluídas as escovas para dentaduras",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2005900",
+    "descricao": "Pincéis para aplicação de produtos cosméticos",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2006000",
+    "descricao": "Sortidos de viagem, para toucador de pessoas para costura ou para limpeza de calçado ou de roupas",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2006100",
+    "descricao": "Pentes, travessas para cabelo e artigos semelhantes; grampos (alfinetes) para cabelo; pinças (pinceguiches), onduladores, bobes (rolos) e artefatos semelhantes para penteados, e suas partes, exceto os classificados na posição 8516 e suas partes",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2006200",
+    "descricao": "Borlas ou esponjas para pós ou para aplicação de outros cosméticos ou de produtos de toucador",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2006300",
+    "descricao": "Mamadeiras",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2006400",
+    "descricao": "Aparelhos e lâminas de barbear",
+    "segmento": "Produtos de perfumaria e de higiene pessoal e cosméticos"
+  },
+  {
+    "codigo": "2100100",
+    "descricao": "Fogões de cozinha de uso doméstico e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100200",
+    "descricao": "Combinações de refrigeradores e congeladores (“freezers”), munidos de portas exteriores separadas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100300",
+    "descricao": "Refrigeradores do tipo doméstico, de compressão",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100400",
+    "descricao": "Outros refrigeradores do tipo doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100500",
+    "descricao": "Congeladores (“freezers”) horizontais tipo arca, de capacidade não superior a 800 litros",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100600",
+    "descricao": "Congeladores (“freezers”) verticais tipo armário, de capacidade não superior a 900 litros",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100700",
+    "descricao": "Outros móveis (arcas, armários, vitrines, balcões e móveis semelhantes) para a conservação e exposição de produtos, que incorporem um equipamento para a produção de frio",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100800",
+    "descricao": "Mini adega e similares",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2100900",
+    "descricao": "Máquinas para produção de gelo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101000",
+    "descricao": "Partes dos refrigeradores, congeladores, mini adegas e similares, máquinas para produção de gelo e bebedouros descritos nos CEST 21.002.00, 21.003.00, 21.004.00, 21.005.00, 21.006.00, 21.007.00, 21.008.00, 21.009.00 e 21.013.00",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101100",
+    "descricao": "Secadoras de roupa de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101200",
+    "descricao": "Outras secadoras de roupas e centrífugas de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101300",
+    "descricao": "Bebedouros refrigerados para água",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101400",
+    "descricao": "Partes das secadoras de roupas e centrífugas de uso doméstico e dos aparelhos para filtrar ou depurar água, descritos nos CEST 21.011.00 e 21.012.00 e 21.098.00",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101500",
+    "descricao": "Máquinas de lavar louça do tipo doméstico e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101600",
+    "descricao": "Máquinas que executem pelo menos duas das seguintes funções: impressão, cópia ou transmissão de telecópia (fax), capazes de ser conectadas a uma máquina automática para processamento de dados ou a uma rede",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101700",
+    "descricao": "Outras impressoras, máquinas copiadoras e telecopiadores (fax), mesmo combinados entre si, capazes de ser conectados a uma máquina automática para processamento de dados ou a uma rede",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101800",
+    "descricao": "Partes e acessórios de máquinas e aparelhos de impressão por meio de blocos, cilindros e outros elementos de impressão da posição 8442; e de outras impressoras, máquinas copiadoras e telecopiadores (fax), mesmo combinados entre si",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2101900",
+    "descricao": "Máquinas de lavar roupa, mesmo com dispositivos de secagem, de uso doméstico, de capacidade não superior a 10 kg, em peso de roupa seca, inteiramente automáticas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102000",
+    "descricao": "Outras máquinas de lavar roupa, mesmo com dispositivos de secagem, de uso doméstico, com secador centrífugo incorporado",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102100",
+    "descricao": "Outras máquinas de lavar roupa, mesmo com dispositivos de secagem, de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102200",
+    "descricao": "Máquinas de lavar roupa, mesmo com dispositivos de secagem, de uso doméstico, de capacidade superior a 10 kg, em peso de roupa seca",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102300",
+    "descricao": "Partes de máquinas de lavar roupa, mesmo com dispositivos de secagem, de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102400",
+    "descricao": "Máquinas de secar de uso doméstico de capacidade não superior a 10 kg, em peso de roupa seca",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102500",
+    "descricao": "Outras máquinas de secar de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102600",
+    "descricao": "Partes de máquinas de secar de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102700",
+    "descricao": "Máquinas de costura de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102800",
+    "descricao": "Máquinas automáticas para processamento de dados, portáteis, de peso não superior a 10 kg, contendo pelo menos uma unidade central de processamento, um teclado e uma tela",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2102900",
+    "descricao": "Outras máquinas automáticas para processamento de dados",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103000",
+    "descricao": "Unidades de processamento, de pequena capacidade, exceto as das subposições ou 8471.49, podendo conter, no mesmo corpo, um ou dois dos seguintes tipos de unidades: unidade de memória, unidade de entrada e unidade de saída; baseadas em microprocessadores, com capacidade de instalação, dentro do mesmo gabinete, de unidades de memória da subposição 8471.70, podendo conter múltiplos conectores de expansão (“slots”), e valor FOB inferior ou igual a US$ 12.500,00, por unidade",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103100",
+    "descricao": "Unidades de entrada, exceto as classificadas no código 8471.60.54",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103200",
+    "descricao": "Outras unidades de entrada ou de saída, podendo conter, no mesmo corpo, unidades de memória",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103300",
+    "descricao": "Unidades de memória",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103400",
+    "descricao": "Outras máquinas automáticas para processamento de dados e suas unidades; leitores magnéticos ou ópticos, máquinas para registrar dados em suporte sob forma codificada, e máquinas para processamento desses dados, não especificadas nem compreendidas em outras posições",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103500",
+    "descricao": "Partes e acessórios das máquinas da posição 84.71",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103600",
+    "descricao": "Outros transformadores, exceto os classificados nos códigos 8504.33.00 e",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103700",
+    "descricao": "Carregadores de acumuladores",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103800",
+    "descricao": "Equipamentos de alimentação ininterrupta de energia (UPS ou “no break”)",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2103900",
+    "descricao": "Outros acumuladores",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104000",
+    "descricao": "Aspiradores",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104100",
+    "descricao": "Aparelhos eletromecânicos de motor elétrico incorporado, de uso doméstico e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104200",
+    "descricao": "Enceradeiras",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104300",
+    "descricao": "Chaleiras elétricas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104400",
+    "descricao": "Ferros elétricos de passar",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104500",
+    "descricao": "Fornos de micro-ondas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104600",
+    "descricao": "Outros fornos; fogareiros (incluídas as chapas de cocção), grelhas e assadeiras, exceto os portáteis",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104700",
+    "descricao": "Outros fornos; fogareiros (incluídas as chapas de cocção), grelhas e assadeiras, portáteis",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104800",
+    "descricao": "Outros aparelhos eletrotérmicos de uso doméstico - Cafeteiras",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2104900",
+    "descricao": "Outros aparelhos eletrotérmicos de uso doméstico - Torradeiras",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105000",
+    "descricao": "Outros aparelhos eletrotérmicos de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105100",
+    "descricao": "Partes das chaleiras, ferros, fornos e outros aparelhos eletrotérmicos da posição 85.16, descritos nos CEST 21.043.00, 21.044.00, 21.045.00, 21.046.00, 21.047.00, 21.048.00, 21.049.00 e 21.050.00",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105200",
+    "descricao": "Aparelhos telefônicos por fio com unidade auscultador - microfone sem fio",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105300",
+    "descricao": "Telefones para redes celulares, exceto por satélite, os de uso automotivo e os classificados no CEST 21.053.01",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105301",
+    "descricao": "Telefones para redes celulares portáteis, exceto por satélite",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105400",
+    "descricao": "Outros telefones para outras redes sem fio, exceto para redes de celulares e os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105500",
+    "descricao": "Outros aparelhos telefônicos não combinados com outros aparelhos",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105501",
+    "descricao": "Outros aparelhos telefônicos",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105600",
+    "descricao": "Aparelhos para transmissão ou recepção de voz, imagem ou outros dados em rede com fio, exceto os classificados nos códigos 8517.62.51, 8517.62.52 e 8517.62.53",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105700",
+    "descricao": "Microfones e seus suportes; alto-falantes, mesmo montados nos seus receptáculos, fones de ouvido (auscultadores), mesmo combinados com microfone e conjuntos ou sortidos constituídos por um microfone e um ou mais alto-falantes, amplificadores elétricos de audiofrequência, aparelhos elétricos de amplificação de som; suas partes e acessórios; exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105800",
+    "descricao": "Aparelhos de radiodifusão suscetíveis de funcionarem sem fonte externa de energia. Aparelhos de gravação de som; aparelhos de reprodução de som; aparelhos de gravação e de reprodução de som; partes e acessórios; exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2105900",
+    "descricao": "Outros aparelhos de gravação de som; aparelhos de reprodução de som; aparelhos de gravação e de reprodução de som; partes e acessórios; exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106000",
+    "descricao": "Gravador-reprodutor e editor de imagem e som, em discos, por meio magnético, óptico ou optomagnético, exceto de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106100",
+    "descricao": "Outros aparelhos videofônicos de gravação ou reprodução, mesmo incorporando um receptor de sinais videofônicos, exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106200",
+    "descricao": "Cartões de memória (\"memory cards\")",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106300",
+    "descricao": "Cartões inteligentes (\"smart cards\")",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106400",
+    "descricao": "Cartões inteligentes (\"sim cards\")",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106500",
+    "descricao": "Câmeras fotográficas digitais e câmeras de vídeo e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106600",
+    "descricao": "Outros aparelhos receptores para radiodifusão, mesmo combinados num invólucro, com um aparelho de gravação ou de reprodução de som, ou com um relógio, inclusive caixa acústica para Home Theaters classificados na posição 8518",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106700",
+    "descricao": "Monitores e projetores que não incorporem aparelhos receptores de televisão, policromáticos",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106701",
+    "descricao": "Projetores capazes de serem conectados diretamente a uma máquina automática para processamento de dados da posição 84.71 e concebidos para serem utilizados com esta máquina",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106800",
+    "descricao": "Outros monitores capazes de serem conectados diretamente a uma máquina automática para processamento de dados da posição 84.71 e concebidos para serem utilizados com esta máquina, policromáticos",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2106900",
+    "descricao": "Aparelhos receptores de televisão, mesmo que incorporem um aparelho receptor de radiodifusão ou um aparelho de gravação ou reprodução de som ou de imagens - Televisores de CRT (tubo de raios catódicos)",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107000",
+    "descricao": "Aparelhos receptores de televisão, mesmo que incorporem um aparelho receptor de radiodifusão ou um aparelho de gravação ou reprodução de som ou de imagens - Televisores de LCD (Display de Cristal Líquido)",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107100",
+    "descricao": "Aparelhos receptores de televisão, mesmo que incorporem um aparelho receptor de radiodifusão ou um aparelho de gravação ou reprodução de som ou de imagens - Televisores de Plasma",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107200",
+    "descricao": "Outros aparelhos receptores de televisão não dotados de monitores ou display de vídeo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107300",
+    "descricao": "Outros aparelhos receptores de televisão não relacionados nos CEST 21.069.00, 21.070.00, 21.071.00 e 21.072.00",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107400",
+    "descricao": "Câmeras fotográficas dos tipos utilizadas para preparação de clichês ou cilindros de impressão",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107500",
+    "descricao": "Câmeras fotográficas para filmes de revelação e copiagem instantâneas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107600",
+    "descricao": "Aparelhos de diatermia",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107700",
+    "descricao": "Aparelhos de massagem",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107800",
+    "descricao": "Reguladores de voltagem eletrônicos",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2107900",
+    "descricao": "Consoles e máquinas de jogos de vídeo, exceto os classificados na subposição",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108000",
+    "descricao": "Multiplexadores e concentradores",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108100",
+    "descricao": "Centrais automáticas privadas, de capacidade inferior ou igual a 25 ramais",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108200",
+    "descricao": "Outros aparelhos para comutação",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108300",
+    "descricao": "Roteadores digitais, em redes com ou sem fio",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108400",
+    "descricao": "Aparelhos emissores com receptor incorporado de sistema troncalizado (“trunking”), de tecnologia celular",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108500",
+    "descricao": "Outros aparelhos de recepção, conversão e transmissão ou regeneração de voz, imagens ou outros dados, incluindo os aparelhos de comutação e roteamento",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108600",
+    "descricao": "Antenas próprias para telefones celulares portáteis, exceto as telescópicas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108700",
+    "descricao": "Aparelhos ou máquinas de barbear, máquinas de cortar o cabelo ou de tosquiar e aparelhos de depilar, e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108800",
+    "descricao": "Ventiladores, exceto os de uso agrícola",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2108900",
+    "descricao": "Ventiladores de uso agrícola",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109000",
+    "descricao": "Coifas com dimensão horizontal máxima não superior a 120 cm",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109100",
+    "descricao": "Partes de ventiladores ou coifas aspirantes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109200",
+    "descricao": "Máquinas e aparelhos de ar condicionado contendo um ventilador motorizado e dispositivos próprios para modificar a temperatura e a umidade, incluídos as máquinas e aparelhos em que a umidade não seja regulável separadamente",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109300",
+    "descricao": "Aparelhos de ar-condicionado tipo Split System (sistema com elementos separados) com unidade externa e interna",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109400",
+    "descricao": "Aparelhos de ar-condicionado com capacidade inferior ou igual a 30.000 frigorias/hora",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109500",
+    "descricao": "Aparelhos de ar-condicionado com capacidade acima de 30.000 frigorias/hora",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109600",
+    "descricao": "Unidades evaporadoras (internas) de aparelho de ar-condicionado do tipo Split System (sistema com elementos separados), com capacidade inferior ou igual a frigorias/hora",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109700",
+    "descricao": "Unidades condensadoras (externas) de aparelho de ar-condicionado do tipo Split System (sistema com elementos separados), com capacidade inferior ou igual a frigorias/hora",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109800",
+    "descricao": "Aparelhos elétricos para filtrar ou depurar água (purificadores de água refrigerados), exceto os itens classificados no CEST 21.098.01",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109801",
+    "descricao": "Outros aparelhos elétricos para filtrar ou depurar água",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2109900",
+    "descricao": "Lavadora de alta pressão e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110000",
+    "descricao": "Furadeiras elétricas",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110100",
+    "descricao": "Aparelhos elétricos para aquecimento de ambientes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110200",
+    "descricao": "Secadores de cabelo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110300",
+    "descricao": "Outros aparelhos para arranjos do cabelo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110400",
+    "descricao": "Aparelhos receptores para radiodifusão, mesmo combinados num mesmo invólucro, com um aparelho de gravação ou de reprodução de som, ou com um relógio, exceto os classificados na posição 8527.1, 8527.2 e 8527.9 que sejam de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110500",
+    "descricao": "Climatizadores de ar",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110600",
+    "descricao": "Outras partes para máquinas e aparelhos de ar-condicionado que contenham um ventilador motorizado e dispositivos próprios para modificar a temperatura e a umidade, incluindo as máquinas e aparelhos em que a umidade não seja regulável separadamente",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110700",
+    "descricao": "Câmeras de televisão e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110800",
+    "descricao": "Balanças de uso doméstico",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2110900",
+    "descricao": "Tubos e válvulas, eletrônicos, de cátodo quente, cátodo frio ou fotocátodo (por exemplo, tubos e válvulas, de vácuo, de vapor ou de gás, ampolas retificadoras de vapor de mercúrio, tubos catódicos, tubos e válvulas para câmeras de televisão)",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111000",
+    "descricao": "Aparelhos elétricos para telefonia; outros aparelhos para transmissão ou recepção de voz, imagens ou outros dados, incluídos os aparelhos para comunicação em redes por fio ou redes sem fio (tal como uma rede local (LAN) ou uma rede de área estendida (WAN), incluídas suas partes, exceto os de uso automotivo e os classificados nos códigos 8517.62.51, 8517.62.52 e 8517.62.53",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111100",
+    "descricao": "Interfones, seus acessórios, tomadas e “plugs”",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111200",
+    "descricao": "Partes reconhecíveis como exclusiva ou principalmente destinadas aos aparelhos das posições 8525 a 8528; exceto as de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111300",
+    "descricao": "Aparelhos elétricos de sinalização acústica ou visual (por exemplo, campainhas, sirenes, quadros indicadores, aparelhos de alarme para proteção contra roubo ou incêndio); exceto os de uso automotivo e os classificados nas posições 8531.10 e",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111400",
+    "descricao": "Aparelhos elétricos de alarme, para proteção contra roubo ou incêndio e aparelhos semelhantes, exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111500",
+    "descricao": "Outros aparelhos de sinalização acústica ou visual, exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111600",
+    "descricao": "Circuitos impressos, exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111700",
+    "descricao": "Diodos emissores de luz (LED), exceto diodos “laser”",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111800",
+    "descricao": "Eletrificadores de cercas eletrônicos",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2111900",
+    "descricao": "Aparelhos e instrumentos para medida ou controle da tensão, intensidade, resistência ou da potência, sem dispositivo registrador; exceto os de uso automotivo",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112000",
+    "descricao": "Analisadores lógicos de circuitos digitais, de espectro de frequência, frequencímetros, fasímetros, e outros instrumentos e aparelhos de controle de grandezas elétricas e detecção",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112100",
+    "descricao": "Interruptores horários e outros aparelhos que permitam acionar um mecanismo em tempo determinado, munidos de maquinismo de aparelhos de relojoaria ou de motor síncrono",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112200",
+    "descricao": "Aparelhos de iluminação (incluídos os projetores) e suas partes, não especificados nem compreendidos em outras posições; anúncios, cartazes ou tabuletas e placas indicadoras luminosos, e artigos semelhantes, contendo uma fonte luminosa fixa permanente, e suas partes não especificadas nem compreendidas em outras posições, com exceção dos itens classificados nos CEST 21.123.00, 21.124.00 e",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112300",
+    "descricao": "Lustres e outros aparelhos elétricos de iluminação, próprios para serem suspensos ou fixados no teto ou na parede, exceto os dos tipos utilizados na iluminação pública; e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112400",
+    "descricao": "Abajures de cabeceiras, de escritório e lampadários de interior, elétricos e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112500",
+    "descricao": "Outros aparelhos elétricos de iluminação e suas partes",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2112600",
+    "descricao": "Microprocessador",
+    "segmento": "Produtos eletrônicos, eletroeletrônicos e eletrodomésticos"
+  },
+  {
+    "codigo": "2200100",
+    "descricao": "Ração tipo “pet” para animais domésticos",
+    "segmento": "Rações para animais domésticos"
+  },
+  {
+    "codigo": "2300100",
+    "descricao": "Sorvetes de qualquer espécie",
+    "segmento": "Sorvetes e preparados para fabricação de sorvetes em máquinas"
+  },
+  {
+    "codigo": "2300200",
+    "descricao": "Preparados para fabricação de sorvete em máquina",
+    "segmento": "Sorvetes e preparados para fabricação de sorvetes em máquinas"
+  },
+  {
+    "codigo": "2400100",
+    "descricao": "Tintas, vernizes",
+    "segmento": "Tintas e vernizes"
+  },
+  {
+    "codigo": "2400200",
+    "descricao": "Xadrez e pós assemelhados, exceto pigmentos à base de dióxido de titânio classificados no código 3206.11.19",
+    "segmento": "Tintas e vernizes"
+  },
+  {
+    "codigo": "2400300",
+    "descricao": "Corantes para aplicação em bases, tintas e vernizes",
+    "segmento": "Tintas e vernizes"
+  },
+  {
+    "codigo": "2500100",
+    "descricao": "Veículos automóveis para transporte de 10 pessoas ou mais, incluindo o motorista, com motor de pistão, de ignição por compressão (diesel ou semidiesel), com volume interno de habitáculo, destinado a passageiros e motorista, superior a 6 m³, mas inferior a 9 m³",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500200",
+    "descricao": "Outros veículos automóveis para transporte de 10 pessoas ou mais, incluindo o motorista, com volume interno de habitáculo, destinado a passageiros e motorista, superior a 6 m³, mas inferior a 9 m³",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500300",
+    "descricao": "Automóveis com motor explosão, de cilindrada não superior a 1000 cm³",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500400",
+    "descricao": "Automóveis com motor explosão, de cilindrada superior a 1000 cm³, mas não superior a 1500 cm³, com capacidade de transporte de pessoas sentadas inferior ou igual a 6, incluído o condutor, exceto carro celular",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500500",
+    "descricao": "Outros automóveis com motor explosão, de cilindrada superior a 1000 cm³, mas não superior a 1500 cm³, exceto carro celular",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500600",
+    "descricao": "Automóveis com motor explosão, de cilindrada superior a 1500 cm³, mas não superior a 3000 cm³, com capacidade de transporte de pessoas sentadas inferior ou igual a 6, incluído o condutor, exceto carro celular, carro funerário e automóveis de corrida",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500700",
+    "descricao": "Outros automóveis com motor explosão, de cilindrada superior a 1500 cm³, mas não superior a 3000 cm³, exceto carro celular, carro funerário e automóveis de corrida",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500800",
+    "descricao": "Automóveis com motor explosão, de cilindrada superior a 3000 cm³, com capacidade de transporte de pessoas sentadas inferior ou igual a 6, incluído o condutor, exceto carro celular, carro funerário e automóveis de corrida",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2500900",
+    "descricao": "Outros automóveis com motor explosão, de cilindrada superior a 3000 cm³, exceto carro celular, carro funerário e automóveis de corrida",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501000",
+    "descricao": "Automóveis com motor diesel ou semidiesel, de cilindrada superior a 1500 cm³, mas não superior a 2500 cm³, com capacidade de transporte de pessoas sentadas inferior ou igual a 6, incluído o condutor, exceto ambulância, carro celular e carro funerário",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501100",
+    "descricao": "Outros automóveis com motor diesel ou semidiesel, de cilindrada superior a 1500 cm³, mas não superior a 2500 cm³, exceto ambulância, carro celular e carro funerário",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501200",
+    "descricao": "Automóveis com motor diesel ou semidiesel, de cilindrada superior a 2500 cm³, com capacidade de transporte de pessoas sentadas inferior ou igual a 6, incluído o condutor, exceto carro celular e carro funerário",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501300",
+    "descricao": "Outros automóveis com motor diesel ou semidiesel, de cilindrada superior a 2500 cm³, exceto carro celular e carro funerário",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501400",
+    "descricao": "Veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, chassis com motor diesel ou semidiesel e cabina, exceto caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501500",
+    "descricao": "Veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, com motor diesel ou semidiesel, com caixa basculante, exceto caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501600",
+    "descricao": "Veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, frigoríficos ou isotérmicos, com motor diesel ou semidiesel, exceto caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501700",
+    "descricao": "Outros veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, com motor diesel ou semidiesel, exceto carro- forte para transporte de valores e caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501800",
+    "descricao": "Veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, com motor a explosão, chassis e cabina, exceto caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2501900",
+    "descricao": "Veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, com motor explosão com caixa basculante, exceto caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2502000",
+    "descricao": "Veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, frigoríficos ou isotérmicos com motor explosão, exceto caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2502100",
+    "descricao": "Outros veículos automóveis para transporte de mercadorias, de peso em carga máxima não superior a 5 toneladas, com motor a explosão, exceto carro-forte para transporte de valores e caminhão de peso em carga máxima superior a 3,9 toneladas",
+    "segmento": "Veículos automotores"
+  },
+  {
+    "codigo": "2600100",
+    "descricao": "Motocicletas (incluídos os ciclomotores) e outros ciclos equipados com motor auxiliar, mesmo com carro lateral; carros laterais",
+    "segmento": "Veículos de duas e três rodas motorizados"
+  },
+  {
+    "codigo": "2800100",
+    "descricao": "Perfumes (extratos) Águas-de-colônia",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800200",
+    "descricao": "Águas-de-colônia",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800300",
+    "descricao": "Produtos de maquiagem para os lábios",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800400",
+    "descricao": "Sombra, delineador, lápis para sobrancelhas e rímel",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800500",
+    "descricao": "Outros produtos de maquiagem para os olhos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800600",
+    "descricao": "Preparações para manicuros e pedicuros",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800700",
+    "descricao": "Pós para maquiagem, incluindo os compactos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800800",
+    "descricao": "Cremes de beleza, cremes nutritivos e loções tônicas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2800900",
+    "descricao": "Outros produtos de beleza ou de maquiagem preparados e preparações para conservação ou cuidados da pele, exceto as preparações antissolares e os bronzeadores",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801000",
+    "descricao": "Preparações antissolares e os bronzeadores",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801100",
+    "descricao": "Xampus para o cabelo",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801200",
+    "descricao": "Preparações para ondulação ou alisamento, permanentes, dos cabelos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801300",
+    "descricao": "Outras preparações capilares",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801400",
+    "descricao": "Tintura para o cabelo",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801500",
+    "descricao": "Preparações para barbear (antes, durante ou após)",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801600",
+    "descricao": "Desodorantes corporais e antiperspirantes, líquidos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801700",
+    "descricao": "Outros desodorantes corporais e antiperspirantes",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801800",
+    "descricao": "Outros produtos de perfumaria ou de toucador preparados",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2801900",
+    "descricao": "Outras preparações cosméticas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802000",
+    "descricao": "Sabões de toucador, em barras, pedaços ou figuras moldadas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802100",
+    "descricao": "Outros sabões, produtos e preparações orgânicos tensoativos, inclusive papel, pastas (ouates), feltros e falsos tecidos, impregnados, revestidos ou recobertos de sabão ou de detergentes",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802200",
+    "descricao": "Sabões de toucador sob outras formas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802300",
+    "descricao": "Produtos e preparações orgânicos tensoativos para lavagem da pele, em forma de líquido ou de creme, acondicionados para venda a retalho, mesmo contendo sabão",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802400",
+    "descricao": "Lenços de papel, incluindo os de desmaquiar",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802401",
+    "descricao": "Toalhas de mão",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802500",
+    "descricao": "Apontadores de lápis para maquiagem",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802501",
+    "descricao": "Espátulas, abre-cartas e raspadeiras",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802502",
+    "descricao": "Lâminas de espátulas, de abre-cartas, de raspadeiras e de apontadores de lápis",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802600",
+    "descricao": "Utensílios e sortidos de utensílios de manicuros ou de pedicuros (incluindo as limas para unhas)",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802700",
+    "descricao": "Escovas e pincéis de barba, escovas para cabelos, para cílios ou para unhas e outras escovas de toucador de pessoas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802701",
+    "descricao": "Vassouras e escovas, mesmo constituindo partes de máquinas, de aparelhos ou de veículos, vassouras mecânicas de uso manual não motorizadas, pincéis e espanadores; cabeças preparadas para escovas, pincéis e artigos semelhantes; bonecas e rolos para pintura; rodos de borracha ou de matérias flexíveis semelhantes, outros",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802800",
+    "descricao": "Pincéis para aplicação de produtos cosméticos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802801",
+    "descricao": "Pincéis e escovas, para artistas e pincéis de escrever",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2802900",
+    "descricao": "Vaporizadores de toucador, suas armações e cabeças de armações",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803000",
+    "descricao": "Borlas ou esponjas para pós ou para aplicação de outros cosméticos ou de produtos de toucador",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803100",
+    "descricao": "Malas e maletas de toucador",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803200",
+    "descricao": "Pentes, travessas para cabelo e artigos semelhantes; grampos (alfinetes) para cabelo; pinças (“pinceguiches”), onduladores, bobs (rolos) e artefatos semelhantes para penteados, e suas partes",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803300",
+    "descricao": "Mamadeiras",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803400",
+    "descricao": "Chupetas e bicos para mamadeiras e para chupetas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803500",
+    "descricao": "Outras plantas e partes, para perfumaria, medicina e semelhantes",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803600",
+    "descricao": "Vestuário e seus acessórios, de plásticos, inclusive luvas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803700",
+    "descricao": "Estatuetas e outros objetos de ornamentação, de plásticos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803800",
+    "descricao": "Outras obras de plásticos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2803900",
+    "descricao": "Bolsas de folhas de plástico",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804000",
+    "descricao": "Bolsas de matérias têxteis",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804100",
+    "descricao": "Bolsas de outras matérias",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804200",
+    "descricao": "Artigos de bolsos/bolsas, de outras matérias",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804300",
+    "descricao": "Outros artefatos, de folhas de plásticos ou matérias têxteis",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804400",
+    "descricao": "Outros artefatos, de outras matérias",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804500",
+    "descricao": "Caixas e cartonagens, dobráveis, de papel/cartão, não ondulados",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804600",
+    "descricao": "Outros sacos, bolsas e cartuchos, de papel ou cartão",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804700",
+    "descricao": "Etiquetas de papel ou cartão, impressas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804800",
+    "descricao": "Outros impressos publicitários, catálogos comerciais e semelhantes",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2804900",
+    "descricao": "Outras meias de malha de outras matérias têxteis",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805000",
+    "descricao": "Outros acessórios confeccionados, de vestuário",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805100",
+    "descricao": "Roupas de toucador/cozinha, de tecidos atoalhados de algodão",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805200",
+    "descricao": "Outros artefatos têxteis confeccionados",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805300",
+    "descricao": "Chapéus e outros artefatos de outras matérias, exceto de malha",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805400",
+    "descricao": "Artigos para outras festas, carnaval ou outros divertimentos",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805500",
+    "descricao": "Produtos destinados à higiene bucal",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805600",
+    "descricao": "Outros produtos cosméticos e de higiene pessoal não relacionados em outros itens deste anexo",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805700",
+    "descricao": "Outros artigos destinados a cuidados pessoais não relacionados em outros itens deste anexo",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805800",
+    "descricao": "Acessórios (por exemplo, bijuterias, relógios, óculos de sol, bolsas, mochilas, frasqueiras, carteiras, porta-cartões, porta-documentos, porta-celulares e embalagens presenteáveis (por exemplo, caixinhas de papel), entre outros itens assemelhados)",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2805900",
+    "descricao": "Vestuário e seus acessórios; calçados, polainas e artefatos semelhantes, e suas partes",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2806000",
+    "descricao": "Outros artigos de vestuário em geral, exceto os relacionados no item anterior",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2806100",
+    "descricao": "Artigos de casa",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2806200",
+    "descricao": "Produtos das indústrias alimentares e bebidas",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2806300",
+    "descricao": "Produtos de limpeza e conservação doméstica",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2806400",
+    "descricao": "Artigos infantis",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
+  },
+  {
+    "codigo": "2899900",
+    "descricao": "Outros produtos comercializados pelo sistema de marketing direto porta-a-porta a consumidor final não relacionados em outros itens deste anexo",
+    "segmento": "Venda de mercadorias pelo sistema porta a porta"
   }
 ]
