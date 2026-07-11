@@ -147,6 +147,11 @@ model RefreshToken {
   usuarioId String   @unique @map("usuario_id")
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   token     String   @unique @db.VarChar(200)
+  // Empresa selecionada no momento em que este refresh token foi emitido —
+  // usada por POST /auth/refresh para reemitir o access token com o MESMO
+  // empresaId (ver histórico do bug em auth.routes.ts). Sem esse campo, o
+  // refresh não tinha como saber qual empresa o usuário havia selecionado.
+  empresaId String?  @map("empresa_id")
   expiresAt DateTime @map("expires_at")
   revoked   Boolean  @default(false)
   criadoEm  DateTime @default(now()) @map("criado_em")

@@ -1987,6 +1987,19 @@ async function main() {
 
   console.log('✅ Código Sequencial + Kardex: foreign keys criadas')
 
+  // ── Fix: refresh_token.empresa_id — persiste a empresa selecionada ──
+  // Causa raiz do bug "empresa selecionada muda sozinha": POST /auth/refresh
+  // (chamado automaticamente pelo keep-alive a cada 4min e em qualquer 401)
+  // não sabia qual empresa o usuário havia selecionado, e reemitia o token
+  // com usuarioEmpresa.findFirst() — o "primeiro" vínculo do usuário no
+  // banco, arbitrário. Agora o refresh token guarda o empresaId no momento
+  // da seleção e o /auth/refresh reemite o access token com o MESMO empresaId.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "refresh_token" ADD COLUMN IF NOT EXISTS "empresa_id" TEXT`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "refresh_token" ADD CONSTRAINT "refresh_token_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+  } catch { /* constraint já existe */ }
+  console.log('✅ Fix troca de empresa: coluna refresh_token.empresa_id criada')
+
   console.log('✅ All migrations applied successfully')
 }
 

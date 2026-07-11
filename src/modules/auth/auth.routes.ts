@@ -54,8 +54,8 @@ export async function authRoutes(app: FastifyInstance) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     await prisma.refreshToken.upsert({
       where: { usuarioId: usuario.id },
-      update: { token: refreshToken, expiresAt, revoked: false },
-      create: { usuarioId: usuario.id, token: refreshToken, expiresAt },
+      update: { token: refreshToken, expiresAt, revoked: false, empresaId },
+      create: { usuarioId: usuario.id, token: refreshToken, expiresAt, empresaId },
     }).catch(() => {
       // Tabela pode não existir ainda — será criada na migration
       // Fallback: funciona sem refresh token (apenas access token)
@@ -122,28 +122,42 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ message: 'Conta desativada' })
     }
 
-    // Buscar empresa vinculada
-    const vinculo = await prisma.usuarioEmpresa.findFirst({
-      where: { usuarioId: storedToken.usuario.id },
-    })
+    // ── Segurança/consistência: preservar a empresa selecionada ──
+    // storedToken.empresaId guarda a empresa que estava selecionada no
+    // momento em que este refresh token foi emitido (login ou
+    // POST /empresas/:id/selecionar). Usar esse valor — em vez de
+    // usuarioEmpresa.findFirst() (arbitrário, "primeiro" vínculo do usuário)
+    // — é o que impede que o access token renovado troque de empresa sem o
+    // usuário ter feito nada (bug: renovação automática do keep-alive a
+    // cada 4min, ou qualquer 401, "voltava" para outra empresa vinculada).
+    // Fallback para o primeiro vínculo apenas quando o refresh token é de
+    // uma sessão antiga, criada antes desta coluna existir.
+    let empresaId = storedToken.empresaId
+    if (!empresaId) {
+      const vinculo = await prisma.usuarioEmpresa.findFirst({
+        where: { usuarioId: storedToken.usuario.id },
+      })
+      empresaId = vinculo?.empresaId || null
+    }
 
     const payload: TokenPayload = {
       id: storedToken.usuario.id,
       nome: storedToken.usuario.nome,
       perfil: storedToken.usuario.perfil,
-      empresaId: vinculo?.empresaId || null,
+      empresaId,
     }
 
     // Rotação de refresh token (novo token a cada refresh — mais seguro)
     const newAccessToken = generateAccessToken(app, payload)
     const newRefreshToken = generateRefreshToken()
 
-    // Atualizar no banco
+    // Atualizar no banco (preservando o mesmo empresaId)
     await prisma.refreshToken.update({
       where: { id: storedToken.id },
       data: {
         token: newRefreshToken,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        empresaId,
       },
     }).catch(() => {})
 

@@ -280,8 +280,8 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     await prisma.refreshToken.upsert({
       where: { usuarioId: user.id },
-      update: { token: refreshToken, expiresAt, revoked: false },
-      create: { usuarioId: user.id, token: refreshToken, expiresAt },
+      update: { token: refreshToken, expiresAt, revoked: false, empresaId },
+      create: { usuarioId: user.id, token: refreshToken, expiresAt, empresaId },
     }).catch(() => {
       // Tabela pode não existir ainda — fallback: funciona sem refresh token
     })
