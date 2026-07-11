@@ -18,8 +18,12 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
   // GET /mapa — retorna mapa visual do armazém (endereços com ocupação)
   app.get('/mapa', async (request) => {
     const query = querySchema.parse(request.query)
+    const user = request.user as { id: string; empresaId?: string }
 
+    // Segurança: isolar por tenant — sem isso, o mapa do armazém exibiria
+    // endereços/saldos de TODAS as empresas cadastradas no banco.
     const where: any = {}
+    if (user.empresaId) where.empresaId = user.empresaId
     if (query.depositoId) where.depositoId = query.depositoId
     if (query.zonaId) where.zonaId = query.zonaId
     if (query.rua) where.codigoRua = query.rua
@@ -137,9 +141,13 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
   // GET /saldo-enderecado — consulta saldo por endereço (tabela detalhada)
   app.get('/saldo-enderecado', async (request) => {
     const { produtoId } = z.object({ produtoId: z.string().uuid().optional() }).parse(request.query)
+    const user = request.user as { id: string; empresaId?: string }
 
+    // Segurança: isolar por tenant, via relação com o Endereco da empresa
+    // (SaldoEndereco não possui empresaId próprio no schema).
     const where: any = { quantidade: { gt: 0 } }
     if (produtoId) where.produtoId = produtoId
+    if (user.empresaId) where.endereco = { empresaId: user.empresaId }
 
     const saldos = await prisma.saldoEndereco.findMany({
       where,
@@ -155,7 +163,13 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
 
   // GET /estado-enderecos — resumo de estados dos endereços
   app.get('/estado-enderecos', async (request) => {
+    const user = request.user as { id: string; empresaId?: string }
+    // Segurança: isolar por tenant — sem isso, retornaria endereços de todas as empresas.
+    const where: any = {}
+    if (user.empresaId) where.empresaId = user.empresaId
+
     const enderecos = await prisma.endereco.findMany({
+      where,
       select: { id: true, enderecoCompleto: true, tipo: true, codigoRua: true, codigoPredio: true, codigoNivel: true, codigoApto: true },
       orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
     })
@@ -168,7 +182,11 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const { tipo } = z.object({ tipo: z.string() }).parse(request.body)
 
-    const endereco = await prisma.endereco.findUnique({ where: { id } })
+    const user = request.user as { id: string; empresaId?: string }
+    // Segurança: isolar por tenant — evita alterar Endereco de outra Empresa.
+    const endereco = user.empresaId
+      ? await prisma.endereco.findFirst({ where: { id, empresaId: user.empresaId } })
+      : await prisma.endereco.findUnique({ where: { id } })
     if (!endereco) return reply.status(404).send({ message: 'Endereço não encontrado' })
 
     const atualizado = await prisma.endereco.update({ where: { id }, data: { tipo } })

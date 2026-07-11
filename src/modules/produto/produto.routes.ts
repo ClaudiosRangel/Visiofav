@@ -37,7 +37,12 @@ export async function produtoRoutes(app: FastifyInstance) {
 
   app.get('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const produto = await prisma.produto.findUnique({ where: { id } })
+    const userForFind = request.user as { id: string; empresaId?: string }
+    // Segurança: isolar por tenant — sem isso, um usuário poderia acessar
+    // dados de Produto de outra Empresa apenas sabendo/adivinhando o id.
+    const produto = userForFind.empresaId
+      ? await prisma.produto.findFirst({ where: { id, empresaId: userForFind.empresaId } })
+      : await prisma.produto.findUnique({ where: { id } })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
 
     // Incluir ConfigConferenciaProduto se existir
@@ -88,6 +93,11 @@ export async function produtoRoutes(app: FastifyInstance) {
 
   app.put('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const userForUpdate = request.user as { id: string; empresaId?: string }
+    if (userForUpdate.empresaId) {
+      const existente = await prisma.produto.findFirst({ where: { id, empresaId: userForUpdate.empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Produto não encontrado' })
+    }
     const data = z.object({
       codigo: z.string().optional(),
       nome: z.string().optional(),
@@ -214,6 +224,11 @@ export async function produtoRoutes(app: FastifyInstance) {
 
   app.delete('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const userForDelete = request.user as { id: string; empresaId?: string }
+    if (userForDelete.empresaId) {
+      const existente = await prisma.produto.findFirst({ where: { id, empresaId: userForDelete.empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Produto não encontrado' })
+    }
     await prisma.produto.delete({ where: { id } })
     return reply.status(204).send()
   })

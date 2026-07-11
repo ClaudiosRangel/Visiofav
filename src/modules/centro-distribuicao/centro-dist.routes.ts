@@ -36,7 +36,11 @@ export async function centroDistRoutes(app: FastifyInstance) {
   // Buscar por ID
   app.get('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const item = await prisma.centroDistribuicao.findUnique({ where: { id } })
+    const user = request.user as { id: string; empresaId?: string }
+    // Segurança: isolar por tenant — evita acessar CentroDistribuicao de outra Empresa.
+    const item = user.empresaId
+      ? await prisma.centroDistribuicao.findFirst({ where: { id, empresaId: user.empresaId } })
+      : await prisma.centroDistribuicao.findUnique({ where: { id } })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item
   })
@@ -74,6 +78,11 @@ export async function centroDistRoutes(app: FastifyInstance) {
   // Atualizar
   app.put('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const user = request.user as { id: string; empresaId?: string }
+    if (user.empresaId) {
+      const existente = await prisma.centroDistribuicao.findFirst({ where: { id, empresaId: user.empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     const bodySchema = z.object({
       descricao: z.string().min(1).optional(),
       status: z.boolean().optional(),
@@ -95,6 +104,11 @@ export async function centroDistRoutes(app: FastifyInstance) {
   // Excluir
   app.delete('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const user = request.user as { id: string; empresaId?: string }
+    if (user.empresaId) {
+      const existente = await prisma.centroDistribuicao.findFirst({ where: { id, empresaId: user.empresaId } })
+      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
+    }
     await prisma.centroDistribuicao.delete({ where: { id } })
     return reply.status(204).send()
   })
