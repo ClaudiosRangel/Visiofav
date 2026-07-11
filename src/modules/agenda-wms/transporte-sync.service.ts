@@ -85,9 +85,21 @@ export function calcularAtualizacaoTransporte(
 export async function sincronizarDadosTransporte(
   tx: PrismaTransaction,
   empresaId: string,
-  opts: { pedidoCompraId?: string | null; fornecedorId?: string | null },
+  opts: {
+    pedidoCompraId?: string | null
+    fornecedorId?: string | null
+    /**
+     * Dados de transporte já extraídos do XML (via `extrairBlocoTransporte`),
+     * quando disponíveis no ponto de chamada (ex.: importação de XML em
+     * `compra.routes.ts`). Quando informado, tem prioridade sobre a busca
+     * por `NotaEntrada` abaixo — permite propagar `placa`/`motorista`, que
+     * não são persistidos em `NotaEntrada` (apenas `transportadoraUf`/
+     * `transportadoraRntc`).
+     */
+    transporteExtraido?: DadosTransporteXml
+  },
 ): Promise<void> {
-  const { pedidoCompraId, fornecedorId } = opts
+  const { pedidoCompraId, fornecedorId, transporteExtraido } = opts
   if (!pedidoCompraId && !fornecedorId) return
 
   const empresa = await tx.empresa.findUnique({
@@ -108,37 +120,43 @@ export async function sincronizarDadosTransporte(
   })
   if (!agenda) return
 
-  // Resolve o documento do fornecedor para localizar a NotaEntrada
-  // (NotaEntrada não tem empresaId confiável em todos os fluxos legados,
-  // por isso a busca é por fornecedorDoc/pedido).
-  let fornecedorDoc: string | null = null
-  const idFornecedor = fornecedorId ?? agenda.fornecedorId
-  if (idFornecedor) {
-    const forn = await tx.fornecedor.findUnique({
-      where: { id: idFornecedor },
-      select: { cnpj: true },
+  let extraido: DadosTransporteXml
+
+  if (transporteExtraido) {
+    extraido = transporteExtraido
+  } else {
+    // Resolve o documento do fornecedor para localizar a NotaEntrada
+    // (NotaEntrada não tem empresaId confiável em todos os fluxos legados,
+    // por isso a busca é por fornecedorDoc/pedido).
+    let fornecedorDoc: string | null = null
+    const idFornecedor = fornecedorId ?? agenda.fornecedorId
+    if (idFornecedor) {
+      const forn = await tx.fornecedor.findUnique({
+        where: { id: idFornecedor },
+        select: { cnpj: true },
+      })
+      fornecedorDoc = forn?.cnpj ?? null
+    }
+
+    // NotaEntrada não possui `pedidoCompraId` no schema — a única forma de
+    // vincular a uma Agenda é pelo documento do fornecedor.
+    if (!fornecedorDoc) return
+
+    const nota = await tx.notaEntrada.findFirst({
+      where: {
+        fornecedorDoc,
+        OR: [{ transportadoraUf: { not: null } }, { transportadoraRntc: { not: null } }],
+      },
+      orderBy: { criadoEm: 'desc' },
     })
-    fornecedorDoc = forn?.cnpj ?? null
-  }
+    if (!nota) return
 
-  // NotaEntrada não possui `pedidoCompraId` no schema — a única forma de
-  // vincular a uma Agenda é pelo documento do fornecedor.
-  if (!fornecedorDoc) return
-
-  const nota = await tx.notaEntrada.findFirst({
-    where: {
-      fornecedorDoc,
-      OR: [{ transportadoraUf: { not: null } }, { transportadoraRntc: { not: null } }],
-    },
-    orderBy: { criadoEm: 'desc' },
-  })
-  if (!nota) return
-
-  const extraido: DadosTransporteXml = {
-    placa: null,
-    ufVeiculo: nota.transportadoraUf ?? null,
-    rntc: nota.transportadoraRntc ?? null,
-    motorista: null,
+    extraido = {
+      placa: null,
+      ufVeiculo: nota.transportadoraUf ?? null,
+      rntc: nota.transportadoraRntc ?? null,
+      motorista: null,
+    }
   }
 
   const atual = {

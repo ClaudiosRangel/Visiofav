@@ -45,6 +45,10 @@ const TABELAS_POR_MODULO: Record<string, string[]> = {
     'nota_entrada',
     'pendencia_logistica',
     'ficha_operacional',
+    // Agenda de Recebimento (Docas/Portaria) — VeiculoPatio.agendamentoId usa
+    // onDelete: SetNull, então limpar agenda_wms não é bloqueado por FK (o
+    // Postgres apenas zera o vínculo em veiculo_patio automaticamente).
+    'agenda_wms',
   ],
   vendas: [
     'item_pedido_venda',

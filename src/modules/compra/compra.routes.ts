@@ -8,6 +8,8 @@ import { ErroFiscal } from '../fiscal/erros'
 import { resolverOuCriarProduto } from '../produto/produto-import.service'
 import { CodigoSequencialEsgotadoError } from '../produto/codigo-sequencial.service'
 import { registrarMovimentacao } from '../estoque/movimentacao-estoque.service'
+import { extrairBlocoTransporte } from '../nota-entrada/transporte-xml-parser'
+import { sincronizarDadosTransporte } from '../agenda-wms/transporte-sync.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -200,6 +202,17 @@ export async function compraRoutes(app: FastifyInstance) {
             fornecedorId: pedido.fornecedorId,
             dataPrevista: pedido.dataEntrega,
           },
+        })
+      }
+
+      // Transporte via XML → AgendaWms (Requirement 1.4, 1.5, 1.7): extrai
+      // placa/UF/RNTC/motorista do XML (implementação compartilhada) e
+      // sincroniza com a Agenda mais recente vinculada ao pedido/fornecedor.
+      if (xmlNfe) {
+        await sincronizarDadosTransporte(tx, user.empresaId, {
+          pedidoCompraId: pedido.id,
+          fornecedorId: pedido.fornecedorId,
+          transporteExtraido: extrairBlocoTransporte(xmlNfe),
         })
       }
 
@@ -770,6 +783,17 @@ export async function compraRoutes(app: FastifyInstance) {
           xmlNfe: xmlContent,
           dataEntrega: new Date(),
         },
+      })
+
+      // Transporte via XML → AgendaWms (Requirement 1.4, 1.5, 1.7): extrai
+      // placa/UF/RNTC/motorista do XML (implementação compartilhada) e
+      // sincroniza com a Agenda mais recente vinculada ao pedido/fornecedor,
+      // caso a empresa use WMS e já exista uma Agenda criada (ex.: agendamento
+      // manual antes da chegada da nota).
+      await sincronizarDadosTransporte(tx, user.empresaId, {
+        pedidoCompraId: pedido.id,
+        fornecedorId: fornecedor.id,
+        transporteExtraido: extrairBlocoTransporte(xmlContent),
       })
 
       // Integração fiscal: criar DocumentoFiscal de entrada dentro da mesma transação
