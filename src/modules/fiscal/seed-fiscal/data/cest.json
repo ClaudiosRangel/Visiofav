@@ -1,0 +1,82 @@
+[
+  {
+    "codigo": "0100100",
+    "descricao": "Catalisadores em colmeia cerâmica ou metálica para conversão catalítica de gases de escape de veículos e outros catalisadores",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100200",
+    "descricao": "Tubos e seus acessórios (por exemplo, juntas, cotovelos, flanges, uniões), de plásticos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100300",
+    "descricao": "Protetores de caçamba",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100400",
+    "descricao": "Reservatórios de óleo",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100500",
+    "descricao": "Frisos, decalques, molduras e acabamentos",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100600",
+    "descricao": "Correias de transmissão de borracha vulcanizada, de matérias têxteis, mesmo impregnadas, revestidas ou recobertas, de plástico, ou estratificadas com plástico ou reforçadas com metal ou com outras matérias",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100700",
+    "descricao": "Juntas, gaxetas e outros elementos com função semelhante de vedação",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0100800",
+    "descricao": "Partes de veículos automóveis, tratores e máquinas autopropulsadas",
+    "segmento": "Autopeças"
+  },
+  {
+    "codigo": "0200100",
+    "descricao": "Aperitivos, amargos, bitter e similares",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0200400",
+    "descricao": "Cachaça e aguardentes",
+    "segmento": "Bebidas alcoólicas, exceto cerveja e chope"
+  },
+  {
+    "codigo": "0300100",
+    "descricao": "Água mineral, gasosa ou não, ou potável, naturais, em garrafa de vidro, retornável ou não, com capacidade de até 500 ml",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0302100",
+    "descricao": "Cerveja",
+    "segmento": "Cervejas, chopes, refrigerantes, águas e outras bebidas"
+  },
+  {
+    "codigo": "0500100",
+    "descricao": "Cimento",
+    "segmento": "Cimentos"
+  },
+  {
+    "codigo": "0600100",
+    "descricao": "Álcool etílico não desnaturado, com um teor alcoólico em volume igual ou superior a 80% vol - Com um teor de água igual ou inferior a 1% vol (álcool etílico anidro combustível)",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0600200",
+    "descricao": "Gasolina automotiva A, exceto Premium",
+    "segmento": "Combustíveis e lubrificantes"
+  },
+  {
+    "codigo": "0601100",
+    "descricao": "Gás liquefeito de petróleo em botijão de 13 Kg (GLP)",
+    "segmento": "Combustíveis e lubrificantes"
+  }
+]

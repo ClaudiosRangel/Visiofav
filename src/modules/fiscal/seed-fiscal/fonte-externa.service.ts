@@ -6,7 +6,19 @@
  * Assumption (requirements.md, Requirement 3.3): a fonte oficial de referência é a
  * tabela TIPI/CFOP publicada pela Receita Federal, ou um dataset público espelhado
  * dela, consumido em lote único por execução de seed.
+ *
+ * Fallback de arquivo local: quando a variável de ambiente `SEED_FISCAL_<TABELA>_URL`
+ * não está configurada, `buscarDadosExternos` tenta carregar um arquivo JSON
+ * versionado em `./data/<tabela>.json` (ex.: `data/cfop.json`, convertido a partir
+ * da tabela oficial de CFOP da planilha `160314_Tabela_CFOP.xlsx`). Isso permite
+ * popular tabelas fiscais sem depender de uma URL externa de terceiros, mantendo
+ * o mesmo formato de resposta (`RegistroExterno[]`) e o mesmo tratamento de erro
+ * (`FonteExternaError`) do caminho HTTP. Se nem a URL nem o arquivo local
+ * existirem para a tabela, o comportamento permanece o mesmo de antes (erro
+ * `FONTE_INDISPONIVEL`).
  */
+import { readFile } from 'fs/promises'
+import path from 'path'
 
 /** Tabelas fiscais suportadas pelo seed. */
 export type TabelaFiscalSeed = 'NCM' | 'CFOP' | 'CEST'
@@ -81,12 +93,37 @@ const URL_FONTE_EXTERNA: Record<TabelaFiscalSeed, string | undefined> = {
   CEST: process.env.SEED_FISCAL_CEST_URL,
 }
 
+/** Caminho do arquivo JSON local de fallback para cada tabela (ver comentário acima). */
+const ARQUIVO_LOCAL_FONTE: Record<TabelaFiscalSeed, string> = {
+  NCM: path.join(__dirname, 'data', 'ncm.json'),
+  CFOP: path.join(__dirname, 'data', 'cfop.json'),
+  CEST: path.join(__dirname, 'data', 'cest.json'),
+}
+
+/**
+ * Tenta carregar o arquivo JSON local de fallback para a tabela. Retorna
+ * `null` se o arquivo não existir ou não puder ser lido/parseado — nesse
+ * caso, `buscarDadosExternos` cai no erro `FONTE_INDISPONIVEL` já existente.
+ */
+async function carregarArquivoLocal(tabela: TabelaFiscalSeed): Promise<RegistroExterno[] | null> {
+  try {
+    const conteudo = await readFile(ARQUIVO_LOCAL_FONTE[tabela], 'utf-8')
+    const dados = JSON.parse(conteudo)
+    if (!Array.isArray(dados) || dados.length === 0) return null
+    return dados as RegistroExterno[]
+  } catch {
+    return null
+  }
+}
+
 /**
  * Busca os registros oficiais de uma tabela fiscal (NCM, CFOP ou CEST) na fonte
- * externa configurada.
+ * externa configurada, ou no arquivo JSON local de fallback quando a URL não
+ * está configurada (ver comentário no topo do arquivo).
  *
  * Lança `FonteExternaError` (nunca retorna `null`/array vazio silencioso) quando:
- * - a URL da fonte não está configurada para a tabela (`FONTE_INDISPONIVEL`);
+ * - a URL da fonte não está configurada E não existe arquivo local de fallback
+ *   para a tabela (`FONTE_INDISPONIVEL`);
  * - a requisição falha por erro de rede, timeout (30s) ou status HTTP não-2xx
  *   (`FONTE_INDISPONIVEL`);
  * - o corpo da resposta não é uma lista de registros (`ESTRUTURA_INVALIDA`).
@@ -99,10 +136,13 @@ export async function buscarDadosExternos(tabela: TabelaFiscalSeed): Promise<Reg
   const url = URL_FONTE_EXTERNA[tabela]
 
   if (!url) {
+    const dadosLocais = await carregarArquivoLocal(tabela)
+    if (dadosLocais) return dadosLocais
+
     throw new FonteExternaError(
       'FONTE_INDISPONIVEL',
       tabela,
-      `URL da fonte externa para ${tabela} não configurada (defina a variável de ambiente SEED_FISCAL_${tabela}_URL)`
+      `URL da fonte externa para ${tabela} não configurada (defina a variável de ambiente SEED_FISCAL_${tabela}_URL) e nenhum arquivo local de fallback foi encontrado`
     )
   }
 
