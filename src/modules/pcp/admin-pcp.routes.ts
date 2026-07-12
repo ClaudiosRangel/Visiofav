@@ -69,11 +69,34 @@ const TABELAS_POR_MODULO: Record<string, string[]> = {
     'conta_receber',
   ],
   fiscal: [
-    'item_nfe',
-    'nfe',
+    // Importação de XML / NF-e definitiva — filhas antes do pai
+    // (documento_fiscal), pois as FKs são ON DELETE RESTRICT, não CASCADE.
+    // 'item_nfe'/'nfe' eram nomes de tabela obsoletos (nenhum model do
+    // schema.prisma mapeia para eles hoje) — substituídos pelos nomes reais.
+    'mapa_carregamento_nf',
+    'item_documento_fiscal',
+    'evento_documento_fiscal',
+    'gnre',
+    'fila_contingencia',
+    'xml_importado',
+    'documento_fiscal',
     'nfe_cte_referencia',
     'cte',
   ],
+}
+
+/**
+ * Tabelas cujo relacionamento com a empresa é indireto (não têm coluna
+ * "empresa_id" própria) e cuja FK para a tabela pai é ON DELETE RESTRICT
+ * (não CASCADE) — a limpeza por empresa precisa escopar via subquery no
+ * pai, em vez do DELETE direto por "empresa_id" usado para as demais tabelas.
+ * Sem isso, a exclusão da tabela pai (ex.: documento_fiscal) falharia por
+ * violação de FK quando existirem registros filhos.
+ */
+const DELETE_SCOPED_POR_PAI: Record<string, string> = {
+  item_documento_fiscal: `DELETE FROM "item_documento_fiscal" WHERE "documento_fiscal_id" IN (SELECT "id" FROM "documento_fiscal" WHERE "empresa_id" = $1)`,
+  evento_documento_fiscal: `DELETE FROM "evento_documento_fiscal" WHERE "documento_fiscal_id" IN (SELECT "id" FROM "documento_fiscal" WHERE "empresa_id" = $1)`,
+  mapa_carregamento_nf: `DELETE FROM "mapa_carregamento_nf" WHERE "mapa_carregamento_id" IN (SELECT "id" FROM "mapa_carregamento" WHERE "empresa_id" = $1)`,
 }
 
 const limparSchema = z.object({
@@ -117,11 +140,12 @@ export async function adminPcpRoutes(app: FastifyInstance) {
       const tabelas = TABELAS_POR_MODULO[modulo] || []
       for (const tabela of tabelas) {
         try {
-          // Primeiro tenta com empresa_id (tabelas multi-tenant)
-          const res = await prisma.$executeRawUnsafe(
-            `DELETE FROM "${tabela}" WHERE "empresa_id" = $1`,
-            empresaId
-          )
+          // Tabelas sem empresa_id própria (filhas com FK ON DELETE RESTRICT
+          // para o pai) usam a query escopada via subquery no pai.
+          const scopedQuery = DELETE_SCOPED_POR_PAI[tabela]
+          const res = scopedQuery
+            ? await prisma.$executeRawUnsafe(scopedQuery, empresaId)
+            : await prisma.$executeRawUnsafe(`DELETE FROM "${tabela}" WHERE "empresa_id" = $1`, empresaId)
           resultado.push({ modulo, tabela, status: 'ok', registros: res as number })
         } catch {
           // Se tabela não tem empresa_id (tabela filha), tenta sem filtro via CASCADE das FKs pai
