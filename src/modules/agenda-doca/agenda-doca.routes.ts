@@ -80,6 +80,19 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
         orderBy: { horaInicio: 'asc' },
       })
 
+      // Buscar nome dos fornecedores vinculados em lote — antes o campo
+      // "transportadora" era forçado para null sempre que havia fornecedorId
+      // (nunca buscava o nome), fazendo o card da Agenda Avançada mostrar só
+      // o horário/status quando o agendamento tinha fornecedor vinculado.
+      const fornecedorIds = [...new Set(agendamentos.map((ag) => ag.fornecedorId).filter((id): id is string => !!id))]
+      const fornecedores = fornecedorIds.length > 0
+        ? await prisma.fornecedor.findMany({
+            where: { id: { in: fornecedorIds } },
+            select: { id: true, razaoSocial: true, nomeFantasia: true },
+          })
+        : []
+      const fornecedorMap = new Map(fornecedores.map((f) => [f.id, f.nomeFantasia || f.razaoSocial]))
+
       // Map agendamentos to timeline slots — frontend expects dataHoraInicio/dataHoraFim as ISO datetime
       const slots = agendamentos.map((ag) => {
         const dateStr = ag.dataPrevista.toISOString().split('T')[0]
@@ -95,13 +108,16 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
           if (duracaoMinutos <= 0) duracaoMinutos = 60
         }
 
+        const nomeFornecedor = ag.fornecedorId ? fornecedorMap.get(ag.fornecedorId) : undefined
+
         return {
           id: ag.id,
           docaId: ag.docaId,
           dataHoraInicio,
           dataHoraFim,
           duracaoMinutos,
-          transportadora: ag.fornecedorId ? null : (ag.motorista || null),
+          transportadora: nomeFornecedor || ag.motorista || null,
+          fornecedor: nomeFornecedor || null,
           motorista: ag.motorista,
           placa: ag.placa,
           status: ag.status,

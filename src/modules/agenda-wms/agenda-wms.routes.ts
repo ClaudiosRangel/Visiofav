@@ -108,6 +108,18 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
           }
         }
       }
+      // Fallback: sem pedidoCompraId direto, mas com fornecedorId — buscar o
+      // pedido mais recente do fornecedor (mesmo comportamento já usado em
+      // portaria.routes.ts GET /agendamentos-hoje). Sem isso, a coluna
+      // "Pedido" ficava vazia na Agenda WMS mesmo quando a Portaria já
+      // conseguia exibir o número, para a mesma Agenda.
+      if (!pedido && ag.fornecedorId) {
+        pedido = await prisma.pedidoCompra.findFirst({
+          where: { fornecedorId: ag.fornecedorId, status: { notIn: ['CANCELADO'] } },
+          orderBy: { criadoEm: 'desc' },
+          select: { numero: true, valorTotal: true, itens: { include: { produto: { select: { nome: true, codigo: true } } } } },
+        })
+      }
       // Se não achou NF pelo XML, buscar nota de entrada pelo fornecedor
       if (!notaEntrada && ag.fornecedorId) {
         const forn = await prisma.fornecedor.findUnique({ where: { id: ag.fornecedorId }, select: { cnpj: true } })
