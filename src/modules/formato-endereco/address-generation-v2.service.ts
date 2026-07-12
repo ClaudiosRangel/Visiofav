@@ -26,6 +26,7 @@ export interface GenerationParamsV2 {
   tipo?: string
   lado?: 'PAR' | 'IMPAR' | 'AMBOS'
   nivelPicking?: number
+  empresaId?: string
 }
 
 export interface GenerationResultV2 {
@@ -241,6 +242,7 @@ export class AddressGenerationV2Service {
         ...(params.formaArmazenagemId ? { formaArmazenagemId: params.formaArmazenagemId } : {}),
         ...(params.ambienteArmazenagemId ? { ambienteArmazenagemId: params.ambienteArmazenagemId } : {}),
         ...(params.classificacaoProdutoId ? { classificacaoProdutoId: params.classificacaoProdutoId } : {}),
+        ...(params.empresaId ? { empresaId: params.empresaId } : {}),
       })
     }
 

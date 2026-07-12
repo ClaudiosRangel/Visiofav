@@ -86,10 +86,11 @@ export async function formatoEnderecoRoutes(app: FastifyInstance) {
     })
 
     const body = gerarSchema.parse(request.body)
+    const empresaId = (request.user as { empresaId?: string } | undefined)?.empresaId
 
     try {
       const generationService = new AddressGenerationV2Service()
-      const result = await generationService.gerarEnderecos(body)
+      const result = await generationService.gerarEnderecos({ ...body, ...(empresaId ? { empresaId } : {}) })
       return reply.status(201).send(result)
     } catch (err: any) {
       if (err.status === 400) {

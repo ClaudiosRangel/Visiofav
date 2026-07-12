@@ -1838,6 +1838,7 @@ async function executarGerarEnderecosWms(
       nivelFim: input.quantidadeNiveis,
       aptoInicio: 1,
       aptoFim: input.quantidadeAptos,
+      empresaId,
     })
 
     return {

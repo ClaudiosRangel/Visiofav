@@ -23,6 +23,7 @@ export interface GenerationParams {
   nivelFim: number
   aptoInicio: number
   aptoFim: number
+  empresaId?: string
 }
 
 export interface GenerationResult {
@@ -50,6 +51,7 @@ interface AddressCandidate {
   formaArmazenagemId?: string
   ambienteArmazenagemId?: string
   classificacaoProdutoId?: string
+  empresaId?: string
 }
 
 export class AddressGenerationService {
@@ -123,6 +125,7 @@ export class AddressGenerationService {
               ...(params.formaArmazenagemId ? { formaArmazenagemId: params.formaArmazenagemId } : {}),
               ...(params.ambienteArmazenagemId ? { ambienteArmazenagemId: params.ambienteArmazenagemId } : {}),
               ...(params.classificacaoProdutoId ? { classificacaoProdutoId: params.classificacaoProdutoId } : {}),
+              ...(params.empresaId ? { empresaId: params.empresaId } : {}),
             })
           }
         }

@@ -118,6 +118,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
 
   // Geração automática de endereços
   app.post('/gerar', async (request, reply) => {
+    const empresaId = getEmpresaId(request)
     const body = z.object({
       centroDistribuicaoId: z.string().uuid(),
       depositoId: z.string().uuid(),
@@ -147,7 +148,7 @@ export async function enderecoRoutes(app: FastifyInstance) {
       // Endpoint legado SEMPRE usa o serviço legado de geração
       // Para formatos customizados (< 6 segmentos), usar POST /formato-endereco/gerar
       const service = new AddressGenerationService()
-      const result = await service.generate(body)
+      const result = await service.generate({ ...body, ...(empresaId ? { empresaId } : {}) })
       return reply.status(201).send({
         criados: result.criados,
         ignorados: result.ignorados,
