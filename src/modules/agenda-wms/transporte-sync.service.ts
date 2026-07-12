@@ -8,7 +8,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client'
-import type { DadosTransporteXml } from '../nota-entrada/transporte-xml-parser'
+import { extrairBlocoTransporte, type DadosTransporteXml } from '../nota-entrada/transporte-xml-parser'
 
 type PrismaTransaction = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
 
@@ -120,44 +120,73 @@ export async function sincronizarDadosTransporte(
   })
   if (!agenda) return
 
-  let extraido: DadosTransporteXml
+  let extraido: DadosTransporteXml | null = null
 
   if (transporteExtraido) {
     extraido = transporteExtraido
   } else {
-    // Resolve o documento do fornecedor para localizar a NotaEntrada
-    // (NotaEntrada não tem empresaId confiável em todos os fluxos legados,
-    // por isso a busca é por fornecedorDoc/pedido).
-    let fornecedorDoc: string | null = null
-    const idFornecedor = fornecedorId ?? agenda.fornecedorId
-    if (idFornecedor) {
-      const forn = await tx.fornecedor.findUnique({
-        where: { id: idFornecedor },
-        select: { cnpj: true },
-      })
-      fornecedorDoc = forn?.cnpj ?? null
-    }
+    // Fallback 1: `CompraEfetivada.xmlNfe` — cobre o cenário em que a Agenda
+    // é criada (manualmente ou via `POST /agenda-wms`) ANTES de a NotaEntrada
+    // existir. `compra.routes.ts` nunca cria `NotaEntrada` diretamente (só
+    // persiste o XML em `CompraEfetivada.xmlNfe`); a `NotaEntrada` só passa a
+    // existir quando a Agenda atinge NA_DOCA/CONFERINDO (agenda-wms.routes.ts,
+    // agenda.service.ts, portaria.routes.ts). Sem este fallback, uma Agenda
+    // ainda em AGENDADO/CONFIRMADO nunca recebia placa/motorista do XML já
+    // importado, mesmo com o XML disponível em CompraEfetivada.
+    const pedidoIdBusca = pedidoCompraId ?? agenda.pedidoCompraId
+    const idFornecedorBusca = fornecedorId ?? agenda.fornecedorId
 
-    // NotaEntrada não possui `pedidoCompraId` no schema — a única forma de
-    // vincular a uma Agenda é pelo documento do fornecedor.
-    if (!fornecedorDoc) return
-
-    const nota = await tx.notaEntrada.findFirst({
+    const compra = await tx.compraEfetivada.findFirst({
       where: {
-        fornecedorDoc,
-        OR: [{ transportadoraUf: { not: null } }, { transportadoraRntc: { not: null } }],
+        xmlNfe: { not: null },
+        OR: [
+          ...(pedidoIdBusca ? [{ pedidoCompraId: pedidoIdBusca }] : []),
+          ...(idFornecedorBusca ? [{ pedidoCompra: { fornecedorId: idFornecedorBusca } }] : []),
+        ],
       },
       orderBy: { criadoEm: 'desc' },
+      select: { xmlNfe: true },
     })
-    if (!nota) return
 
-    extraido = {
-      placa: null,
-      ufVeiculo: nota.transportadoraUf ?? null,
-      rntc: nota.transportadoraRntc ?? null,
-      motorista: null,
+    if (compra?.xmlNfe) {
+      extraido = extrairBlocoTransporte(compra.xmlNfe)
+    } else {
+      // Fallback 2: `NotaEntrada.transportadoraUf`/`transportadoraRntc` — cobre
+      // o cenário inverso (Nota já criada, mas sem CompraEfetivada.xmlNfe
+      // acessível, ex. fluxos legados). NotaEntrada não armazena placa/motorista.
+      let fornecedorDoc: string | null = null
+      if (idFornecedorBusca) {
+        const forn = await tx.fornecedor.findUnique({
+          where: { id: idFornecedorBusca },
+          select: { cnpj: true },
+        })
+        fornecedorDoc = forn?.cnpj ?? null
+      }
+
+      // NotaEntrada não possui `pedidoCompraId` no schema — a única forma de
+      // vincular a uma Agenda é pelo documento do fornecedor.
+      if (fornecedorDoc) {
+        const nota = await tx.notaEntrada.findFirst({
+          where: {
+            fornecedorDoc,
+            OR: [{ transportadoraUf: { not: null } }, { transportadoraRntc: { not: null } }],
+          },
+          orderBy: { criadoEm: 'desc' },
+        })
+
+        if (nota) {
+          extraido = {
+            placa: null,
+            ufVeiculo: nota.transportadoraUf ?? null,
+            rntc: nota.transportadoraRntc ?? null,
+            motorista: null,
+          }
+        }
+      }
     }
   }
+
+  if (!extraido) return
 
   const atual = {
     placa: agenda.placa,
