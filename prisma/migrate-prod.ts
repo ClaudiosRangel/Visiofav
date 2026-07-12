@@ -2000,6 +2000,59 @@ async function main() {
   } catch { /* constraint já existe */ }
   console.log('✅ Fix troca de empresa: coluna refresh_token.empresa_id criada')
 
+  // ── Cadastro CST/CSOSN (tabela global, análoga a ncm/cfop/cest) ──
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "cst_csosn" (
+      "id" TEXT NOT NULL,
+      "codigo" VARCHAR(4) NOT NULL,
+      "tipo" VARCHAR(10) NOT NULL,
+      "descricao" VARCHAR(500) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "cst_csosn_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "cst_csosn_codigo_tipo_key" ON "cst_csosn"("codigo", "tipo")`)
+  console.log('✅ Tabela cst_csosn criada')
+
+  // Seed do cadastro CST/CSOSN (Tabela CST/CSOSN — Código da Situação
+  // Tributária do ICMS + CSOSN do Simples Nacional). Idempotente: só insere
+  // códigos ainda não cadastrados (mesmo padrão do seed fiscal NCM/CFOP/CEST).
+  const CST_CSOSN_SEED: Array<{ codigo: string; tipo: 'CST' | 'CSOSN'; descricao: string }> = [
+    { codigo: '00', tipo: 'CST', descricao: 'Tributada integralmente' },
+    { codigo: '10', tipo: 'CST', descricao: 'Tributada e com cobrança do ICMS por substituição tributária' },
+    { codigo: '20', tipo: 'CST', descricao: 'Com redução da BC' },
+    { codigo: '30', tipo: 'CST', descricao: 'Isenta / não tributada e com cobrança do ICMS por substituição tributária' },
+    { codigo: '40', tipo: 'CST', descricao: 'Isenta' },
+    { codigo: '41', tipo: 'CST', descricao: 'Não tributada' },
+    { codigo: '50', tipo: 'CST', descricao: 'Com suspensão' },
+    { codigo: '51', tipo: 'CST', descricao: 'Com diferimento' },
+    { codigo: '60', tipo: 'CST', descricao: 'ICMS cobrado anteriormente por substituição tributária' },
+    { codigo: '70', tipo: 'CST', descricao: 'Com redução da BC e cobrança do ICMS por substituição tributária' },
+    { codigo: '90', tipo: 'CST', descricao: 'Outras' },
+    { codigo: '101', tipo: 'CSOSN', descricao: 'Tributada pelo Simples Nacional com permissão de crédito' },
+    { codigo: '102', tipo: 'CSOSN', descricao: 'Tributada pelo Simples Nacional sem permissão de crédito' },
+    { codigo: '103', tipo: 'CSOSN', descricao: 'Isenção do ICMS no Simples Nacional para faixa de receita bruta' },
+    { codigo: '201', tipo: 'CSOSN', descricao: 'Tributada pelo Simples Nacional com permissão de crédito e com cobrança do ICMS por substituição tributária' },
+    { codigo: '202', tipo: 'CSOSN', descricao: 'Tributada pelo Simples Nacional sem permissão de crédito e com cobrança do ICMS por substituição tributária' },
+    { codigo: '203', tipo: 'CSOSN', descricao: 'Isenção do ICMS no Simples Nacional para faixa de receita bruta e com cobrança do ICMS por substituição tributária' },
+    { codigo: '300', tipo: 'CSOSN', descricao: 'Imune' },
+    { codigo: '400', tipo: 'CSOSN', descricao: 'Não tributada pelo Simples Nacional' },
+    { codigo: '500', tipo: 'CSOSN', descricao: 'ICMS cobrado anteriormente por substituição tributária (substituído) ou por antecipação' },
+    { codigo: '900', tipo: 'CSOSN', descricao: 'Outros' },
+  ]
+  try {
+    for (const item of CST_CSOSN_SEED) {
+      const existente = await prisma.cstCsosn.findFirst({ where: { codigo: item.codigo, tipo: item.tipo } })
+      if (!existente) {
+        await prisma.cstCsosn.create({ data: item })
+      }
+    }
+    console.log('✅ Seed CST/CSOSN aplicado (21 códigos verificados)')
+  } catch (e: any) {
+    console.log('⚠️ Seed CST/CSOSN skipped:', e.message)
+  }
+
   console.log('✅ All migrations applied successfully')
 }
 

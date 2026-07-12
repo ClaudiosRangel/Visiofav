@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { cstCsosnService, cstCsosnCodigoSchema } from './cst-csosn.service'
 
 // === Types ===
 
@@ -241,9 +242,120 @@ export function validarCstCsosn(
   return { valido: true, codigo, descricao: cst.descricao }
 }
 
+// === Schemas do cadastro persistido (tabela cst_csosn) ===
+
+const listCadastroQuerySchema = z.object({
+  search: z.string().optional(),
+  tipo: z.enum(['CST', 'CSOSN']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+const idParamsSchema = z.object({
+  id: z.string().uuid('ID deve ser um UUID válido'),
+})
+
+const cadastroBodySchema = z.object({
+  codigo: cstCsosnCodigoSchema,
+  tipo: z.enum(['CST', 'CSOSN']),
+  descricao: z.string().min(1, 'Descrição é obrigatória').max(500),
+})
+
+const cadastroUpdateSchema = z.object({
+  codigo: cstCsosnCodigoSchema.optional(),
+  tipo: z.enum(['CST', 'CSOSN']).optional(),
+  descricao: z.string().min(1).max(500).optional(),
+})
+
 // === Rotas ===
 
 export async function cstCsosnRoutes(app: FastifyInstance) {
+  // ==========================================================================
+  // GET /cst-csosn — Listagem paginada do cadastro persistido (CRUD)
+  // ==========================================================================
+  app.get('/cst-csosn', async (request, reply) => {
+    try {
+      const filtros = listCadastroQuerySchema.parse(request.query)
+      const resultado = await cstCsosnService.listar({
+        q: filtros.search,
+        tipo: filtros.tipo,
+        page: filtros.page,
+        pageSize: filtros.limit,
+      })
+      return resultado
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Parâmetros inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cst-csosn — Criar cadastro de CST/CSOSN
+  // ==========================================================================
+  app.post('/cst-csosn', async (request, reply) => {
+    try {
+      const body = cadastroBodySchema.parse(request.body)
+      const criado = await cstCsosnService.criar(body)
+      return reply.status(201).send(criado)
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      if (err.message?.includes('Já existe')) {
+        return reply.status(422).send({ message: err.message })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // PUT /cst-csosn/:id — Atualizar cadastro de CST/CSOSN
+  // ==========================================================================
+  app.put('/cst-csosn/:id', async (request, reply) => {
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+      const body = cadastroUpdateSchema.parse(request.body)
+      const atualizado = await cstCsosnService.atualizar(id, body)
+
+      if (!atualizado) {
+        return reply.status(404).send({ message: 'CST/CSOSN não encontrado' })
+      }
+
+      return atualizado
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      if (err.message?.includes('Já existe')) {
+        return reply.status(422).send({ message: err.message })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // DELETE /cst-csosn/:id — Excluir (soft delete) cadastro de CST/CSOSN
+  // ==========================================================================
+  app.delete('/cst-csosn/:id', async (request, reply) => {
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+      const excluido = await cstCsosnService.excluir(id)
+
+      if (!excluido) {
+        return reply.status(404).send({ message: 'CST/CSOSN não encontrado' })
+      }
+
+      return { message: 'CST/CSOSN excluído com sucesso' }
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Parâmetros inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
   // ==========================================================================
   // GET /cst — Lista CST filtrados por tipo de imposto e operação
   // Validates: Requirements 34.1

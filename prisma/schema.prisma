@@ -4010,6 +4010,18 @@ model CestNcm {
   @@map("cest_ncm")
 }
 
+model CstCsosn {
+  id        String   @id @default(uuid())
+  codigo    String   @db.VarChar(4)
+  tipo      String   @db.VarChar(10) // CST, CSOSN
+  descricao String   @db.VarChar(500)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@unique([codigo, tipo])
+  @@map("cst_csosn")
+}
+
 model NaturezaOperacao {
   id           String   @id @default(uuid())
   empresaId    String   @map("empresa_id")
