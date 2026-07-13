@@ -8,10 +8,12 @@ import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
 import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
 import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
-import { CceService } from '../cce/cce.service'
 import { validarCredenciaisSupervisor } from '../conferencia-entrada/validar-supervisor.service'
-import { obterConfigBloqueio, determinarDecisaoResolucao } from '../conferencia-entrada/config-conferencia-produto.service'
-import { gerarTextoCCeLoteValidade, notaTemItensPendenteSegundaConferencia } from '../conferencia-entrada/divergencia-lote-validade.service'
+import {
+  notaTemItensPendenteSegundaConferencia,
+  marcarPendenteSegundaConferencia,
+} from '../conferencia-entrada/divergencia-lote-validade.service'
+import { executarSegundaConferencia } from '../conferencia-entrada/segunda-conferencia.service'
 import { verificarPendenciasAbertas } from '../pendencia-cce/pendencia-cce.service'
 import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
 
@@ -401,9 +403,24 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     // Buscar configuração de conferência cega da empresa
     const empresa = await prisma.empresa.findUnique({
       where: { id: userConf2.empresaId },
-      select: { conferenciaLoteCega: true },
+      select: { conferenciaLoteCega: true, conferenciaQuantidadeCega: true },
     })
     const loteCegaAtiva = empresa?.conferenciaLoteCega ?? false
+    const quantidadeCegaAtiva = empresa?.conferenciaQuantidadeCega ?? false
+
+    // Buscar exigeLote de cada produto (pelo codigoProduto) — usado como obrigatoriedade
+    // de lote independente da config de conferência cega da empresa
+    const codigosProduto = nota.itens.map((i) => i.codigoProduto).filter(Boolean) as string[]
+    const exigeLoteMap = new Map<string, boolean>()
+    if (codigosProduto.length > 0) {
+      const produtosExigeLote = await prisma.produto.findMany({
+        where: { empresaId: userConf2.empresaId, codigo: { in: codigosProduto } },
+        select: { codigo: true, exigeLote: true },
+      })
+      for (const p of produtosExigeLote) {
+        exigeLoteMap.set(p.codigo, p.exigeLote)
+      }
+    }
 
     const resultados = []
     let temDivergencia = false
@@ -418,13 +435,32 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       modoResolucao: string
       status: 'PENDENTE'
     }> = []
+    const itensPendentesSegundaConferencia: Array<{ itemId: string; descricao: string; tipo: string }> = []
 
     for (const conferido of body.itens) {
       const item = nota.itens.find((i) => i.id === conferido.itemNotaEntradaId)
       if (!item) continue
 
+      const exigeLote = item.codigoProduto ? (exigeLoteMap.get(item.codigoProduto) ?? false) : false
+
+      // Validação: quantidade obrigatória quando conferência cega de quantidade está ativa
+      if (quantidadeCegaAtiva && (conferido.quantidadeConferida === null || conferido.quantidadeConferida === undefined)) {
+        resultados.push({
+          itemId: item.id,
+          descricao: item.descricao,
+          quantidadeNota: Number(item.quantidade),
+          quantidadeConferida: conferido.quantidadeConferida,
+          divergencia: 0,
+          status: 'DIVERGENTE',
+          tipoDivergencia: 'QUANTIDADE_NAO_INFORMADA',
+        })
+        temDivergencia = true
+        continue
+      }
+
       // Validação de lote/validade obrigatórios quando conferência cega de lote está ativa
-      if (loteCegaAtiva) {
+      // OU quando o produto exige lote (config de cadastro do produto)
+      if (loteCegaAtiva || exigeLote) {
         if (!conferido.lote || conferido.lote.trim() === '') {
           resultados.push({
             itemId: item.id,
@@ -438,6 +474,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           temDivergencia = true
           continue
         }
+      }
+      if (loteCegaAtiva) {
         if (!conferido.validade || conferido.validade.trim() === '') {
           resultados.push({
             itemId: item.id,
@@ -478,16 +516,14 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       }
 
       // ─── Detecção de divergência de lote/validade ────────────────────────────
+      // Requirement 2/3 do usuário: divergência de lote/validade na 1ª conferência
+      // SEMPRE exige uma 2ª conferência obrigatória — nunca oferece resolução direta
+      // (senha/CC-e) já na primeira contagem.
+      let itemTemDivergenciaLoteValidade = false
+
       // Comparar lote conferido vs lote da NF-e
       if (item.lote && conferido.lote && item.lote.trim() !== '' && conferido.lote.trim() !== '' && item.lote.trim() !== conferido.lote.trim()) {
-        // Buscar produto para obter produtoId
-        const produtoLote = await prisma.produto.findFirst({
-          where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto! },
-          select: { id: true },
-        })
-
-        // Criar registro de divergência
-        const divergenciaLote = await prisma.divergenciaConferencia.create({
+        await prisma.divergenciaConferencia.create({
           data: {
             empresaId: userConf2.empresaId,
             notaEntradaId: notaId,
@@ -498,23 +534,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           },
         })
 
-        // Obter modo de resolução do produto
-        const configResolucao = produtoLote
-          ? await obterConfigBloqueio(userConf2.empresaId, produtoLote.id)
-          : { aceitarSenha: false, aceitarCcePendente: false }
-
-        divergenciasLoteValidade.push({
-          divergenciaId: divergenciaLote.id,
-          itemId: item.id,
-          descricao: item.descricao,
-          tipo: 'LOTE_DIVERGENTE',
-          valorEsperado: item.lote,
-          valorConferido: conferido.lote,
-          modoResolucao: determinarDecisaoResolucao(configResolucao),
-          status: 'PENDENTE',
-        })
-
-        temDivergencia = true
+        itemTemDivergenciaLoteValidade = true
+        itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'LOTE_DIVERGENTE' })
       }
 
       // Comparar validade conferida vs validade da NF-e (ignorando horas)
@@ -526,14 +547,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         const confDia = new Date(validadeConferidaDate.getFullYear(), validadeConferidaDate.getMonth(), validadeConferidaDate.getDate()).getTime()
 
         if (nfDia !== confDia) {
-          // Buscar produto para obter produtoId
-          const produtoVal = await prisma.produto.findFirst({
-            where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto! },
-            select: { id: true },
-          })
-
-          // Criar registro de divergência
-          const divergenciaValidade = await prisma.divergenciaConferencia.create({
+          await prisma.divergenciaConferencia.create({
             data: {
               empresaId: userConf2.empresaId,
               notaEntradaId: notaId,
@@ -544,24 +558,14 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             },
           })
 
-          // Obter modo de resolução do produto
-          const configResolucao = produtoVal
-            ? await obterConfigBloqueio(userConf2.empresaId, produtoVal.id)
-            : { aceitarSenha: false, aceitarCcePendente: false }
-
-          divergenciasLoteValidade.push({
-            divergenciaId: divergenciaValidade.id,
-            itemId: item.id,
-            descricao: item.descricao,
-            tipo: 'VALIDADE_DIVERGENTE',
-            valorEsperado: validadeNfDate.toISOString(),
-            valorConferido: validadeConferidaDate.toISOString(),
-            modoResolucao: determinarDecisaoResolucao(configResolucao),
-            status: 'PENDENTE',
-          })
-
-          temDivergencia = true
+          itemTemDivergenciaLoteValidade = true
+          itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'VALIDADE_DIVERGENTE' })
         }
+      }
+
+      if (itemTemDivergenciaLoteValidade) {
+        await marcarPendenteSegundaConferencia(item.id)
+        temDivergencia = true
       }
 
       const quantidadeNota = Number(item.quantidade)
@@ -596,7 +600,109 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       divergentes: resultados.filter((r) => r.status === 'DIVERGENTE').length,
       itens: resultados,
       falhasShelfLife: falhasShelfLife.length > 0 ? falhasShelfLife : undefined,
-      divergenciasLoteValidade: divergenciasLoteValidade.length > 0 ? divergenciasLoteValidade : undefined,
+      // Itens com divergência de lote/validade: exigem segunda conferência obrigatória
+      // antes de qualquer resolução (senha supervisor / CC-e / bloqueio)
+      itensPendentesSegundaConferencia: itensPendentesSegundaConferencia.length > 0 ? itensPendentesSegundaConferencia : undefined,
+      requerSegundaConferencia: itensPendentesSegundaConferencia.length > 0,
+    }
+  })
+
+  // POST /segunda-conferencia/:notaId — submete a segunda conferência obrigatória
+  // de itens marcados PENDENTE_SEGUNDA_CONFERENCIA (divergência de lote/validade
+  // detectada na 1ª conferência). Se os valores da 2ª conferência coincidem com a
+  // NF-e, o item é auto-resolvido (CONFERIDO). Se divergem novamente, a divergência
+  // é confirmada e o sistema decide entre senha de supervisor, pendência CC-e ou
+  // e-mail fiscal (conforme ConfigConferenciaProduto e ConfigIntegracao).
+  const segundaConferenciaSchema = z.object({
+    itens: z.array(z.object({
+      itemNotaEntradaId: z.string().uuid(),
+      quantidadeConferida: z.number().min(0),
+      lote: z.string().optional(),
+      validade: z.string().optional(),
+    })),
+  })
+
+  app.post('/segunda-conferencia/:notaId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
+    const { itens } = segundaConferenciaSchema.parse(request.body)
+
+    const resultado = await executarSegundaConferencia(notaId, itens, user.empresaId, user.id)
+
+    const divergenciaResolvida = resultado.itens.some((i) => i.resultado.status === 'resolvido')
+    const pendenciaCriada = resultado.itens.some((i) => i.resultado.status === 'pendenciaCriada')
+    const emailEnviado = resultado.itens.some((i) => i.resultado.status === 'emailEnviado')
+    const requerSenha = resultado.itens.some((i) => i.resultado.status === 'requerSenha')
+    const bloqueado = resultado.itens.some((i) => i.resultado.status === 'bloqueado')
+
+    return {
+      divergenciaResolvida,
+      pendenciaCriada,
+      emailEnviado,
+      requerSenha,
+      bloqueado,
+      itens: resultado.itens,
+    }
+  })
+
+  // POST /segunda-conferencia/:notaId/autorizar-senha — libera item marcado
+  // "requerSenha" na segunda conferência mediante credenciais de supervisor.
+  const autorizarSenhaSchema = z.object({
+    itemNotaEntradaId: z.string().uuid(),
+    credenciaisSupervisor: z.object({
+      usuario: z.string().min(1),
+      senha: z.string().min(1),
+    }),
+  })
+
+  app.post('/segunda-conferencia/:notaId/autorizar-senha', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
+    const body = autorizarSenhaSchema.parse(request.body)
+
+    const itemNota = await prisma.itemNotaEntrada.findUnique({ where: { id: body.itemNotaEntradaId } })
+    if (!itemNota || itemNota.notaEntradaId !== notaId) {
+      return reply.status(404).send({ message: 'Item não pertence a esta nota' })
+    }
+    if (itemNota.statusConferencia !== 'PENDENTE_SEGUNDA_CONFERENCIA') {
+      return reply.status(422).send({ message: 'Item não está pendente de segunda conferência' })
+    }
+
+    const validacao = await validarCredenciaisSupervisor({
+      usuario: body.credenciaisSupervisor.usuario,
+      senha: body.credenciaisSupervisor.senha,
+      empresaId: user.empresaId,
+    })
+
+    if (!validacao.valido) {
+      if (validacao.erro === 'Perfil insuficiente para autorizar esta operação') {
+        return reply.status(403).send({ message: validacao.erro })
+      }
+      return reply.status(401).send({ message: validacao.erro || 'Credenciais inválidas' })
+    }
+
+    const divergenciaPendente = await prisma.divergenciaConferencia.findFirst({
+      where: { notaEntradaId: notaId, itemNotaEntradaId: body.itemNotaEntradaId, status: 'PENDENTE' },
+      orderBy: { criadoEm: 'desc' },
+    })
+
+    await prisma.$transaction(async (tx) => {
+      if (divergenciaPendente) {
+        await tx.divergenciaConferencia.update({
+          where: { id: divergenciaPendente.id },
+          data: { status: 'ACEITA', supervisorId: validacao.supervisorId },
+        })
+      }
+      await tx.itemNotaEntrada.update({
+        where: { id: body.itemNotaEntradaId },
+        data: { statusConferencia: 'CONFERIDO' },
+      })
+    })
+
+    return {
+      itemNotaEntradaId: body.itemNotaEntradaId,
+      status: 'ACEITA',
+      mensagem: 'Divergência liberada mediante autorização de supervisor',
     }
   })
 
@@ -1010,161 +1116,5 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }))
   })
 
-  // POST /resolver-divergencia-lv — resolver divergência de lote/validade
-  const resolverDivergenciaLvSchema = z.object({
-    divergenciaId: z.string().uuid(),
-    acao: z.enum(['ACEITAR', 'REJEITAR']),
-    credenciaisSupervisor: z.object({
-      usuario: z.string().min(1),
-      senha: z.string().min(1),
-    }).optional(),
-  })
-
-  app.post('/resolver-divergencia-lv', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
-    const body = resolverDivergenciaLvSchema.parse(request.body)
-
-    // 1. Buscar divergência por ID + empresaId (multi-tenancy)
-    const divergencia = await prisma.divergenciaConferencia.findFirst({
-      where: { id: body.divergenciaId, empresaId: user.empresaId },
-    })
-
-    if (!divergencia) {
-      return reply.status(404).send({ message: 'Divergência não encontrada' })
-    }
-
-    // 2. Se ação é REJEITAR, atualizar status e retornar
-    if (body.acao === 'REJEITAR') {
-      await prisma.divergenciaConferencia.update({
-        where: { id: divergencia.id },
-        data: { status: 'REJEITADA' },
-      })
-      return {
-        divergenciaId: divergencia.id,
-        status: 'REJEITADA' as const,
-        decisao: 'BLOQUEAR',
-        mensagem: 'Divergência rejeitada pelo operador',
-      }
-    }
-
-    // 3. Buscar produto via itemNotaEntrada → codigoProduto → Produto
-    const itemNota = await prisma.itemNotaEntrada.findUnique({
-      where: { id: divergencia.itemNotaEntradaId },
-    })
-
-    if (!itemNota || !itemNota.codigoProduto) {
-      return reply.status(404).send({ message: 'Divergência não encontrada' })
-    }
-
-    const produto = await prisma.produto.findFirst({
-      where: { empresaId: user.empresaId, codigo: itemNota.codigoProduto },
-    })
-
-    if (!produto) {
-      return reply.status(404).send({ message: 'Divergência não encontrada' })
-    }
-
-    // 4. Buscar ConfigConferenciaProduto (usar obterConfigBloqueio)
-    const configBloqueio = await obterConfigBloqueio(user.empresaId, produto.id)
-
-    // 5. Determinar decisão de resolução com base nos booleanos
-    const decisao = determinarDecisaoResolucao(configBloqueio)
-
-    // 6. Switch por decisão
-    // BLOQUEAR → 422
-    if (decisao === 'BLOQUEAR') {
-      return reply.status(422).send({
-        message: 'Produto não permite aceitação de divergência de lote/validade',
-        bloqueio: true,
-      })
-    }
-
-    // ACEITAR_SENHA → validar credenciais de supervisor
-    if (decisao === 'ACEITAR_SENHA') {
-      if (!body.credenciaisSupervisor) {
-        return reply.status(401).send({ message: 'Credenciais inválidas' })
-      }
-
-      const validacao = await validarCredenciaisSupervisor({
-        usuario: body.credenciaisSupervisor.usuario,
-        senha: body.credenciaisSupervisor.senha,
-        empresaId: user.empresaId,
-      })
-
-      if (!validacao.valido) {
-        if (validacao.erro === 'Perfil insuficiente para autorizar esta operação') {
-          return reply.status(403).send({ message: validacao.erro })
-        }
-        return reply.status(401).send({ message: validacao.erro || 'Credenciais inválidas' })
-      }
-
-      await prisma.divergenciaConferencia.update({
-        where: { id: divergencia.id },
-        data: { status: 'ACEITA', supervisorId: validacao.supervisorId },
-      })
-
-      return {
-        divergenciaId: divergencia.id,
-        status: 'ACEITA' as const,
-        decisao,
-        mensagem: 'Divergência aceita mediante autorização de supervisor',
-      }
-    }
-
-    // ACEITAR_CCE_PENDENTE → emitir CC-e
-    if (decisao === 'ACEITAR_CCE_PENDENTE') {
-      // Gerar texto de correção para lote/validade
-      const textoCorrecao = gerarTextoCCeLoteValidade({
-        tipo: divergencia.tipo as 'LOTE_DIVERGENTE' | 'VALIDADE_DIVERGENTE',
-        valorEsperado: divergencia.tipo === 'LOTE_DIVERGENTE'
-          ? divergencia.loteEsperado
-          : divergencia.validadeEsperada?.toISOString() ?? null,
-        valorConferido: divergencia.tipo === 'LOTE_DIVERGENTE'
-          ? divergencia.loteConferido
-          : divergencia.validadeConferida?.toISOString() ?? null,
-        descricaoProduto: produto.nome,
-      })
-
-      const cceService = new CceService()
-      const resultadoCCe = await cceService.emitirCCe({
-        empresaId: user.empresaId,
-        notaEntradaId: divergencia.notaEntradaId,
-        divergenciaId: divergencia.id,
-        item: String(itemNota.item),
-        textoCorrecao,
-      })
-
-      // Verificar se limite foi atingido
-      if (!resultadoCCe.sucesso && resultadoCCe.motivoRejeicao?.includes('Limite')) {
-        return reply.status(422).send({
-          message: 'Limite de CC-e por NF-e excedido (20/20)',
-          limiteCCe: true,
-        })
-      }
-
-      // CC-e rejeitada pela SEFAZ
-      if (!resultadoCCe.sucesso) {
-        return reply.status(422).send({
-          message: `CC-e rejeitada: ${resultadoCCe.motivoRejeicao}`,
-          cceRejeitada: true,
-        })
-      }
-
-      // CC-e autorizada
-      return {
-        divergenciaId: divergencia.id,
-        status: 'ACEITA' as const,
-        decisao,
-        cce: {
-          sucesso: resultadoCCe.sucesso,
-          protocolo: resultadoCCe.protocolo,
-        },
-        mensagem: 'Divergência aceita — CC-e emitida com sucesso',
-      }
-    }
-
-    // Fallback: decisão inválida (não deveria chegar aqui)
-    return reply.status(400).send({ message: 'Modo de resolução inválido' })
-  })
 }
 
