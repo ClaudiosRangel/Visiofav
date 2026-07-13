@@ -369,28 +369,29 @@ export async function portariaRoutes(app: FastifyInstance) {
               }
 
               if (compraXml) {
-                const matchNNF = compraXml.match(/<nNF>(\d+)<\/nNF>/)
-                const matchSerie = compraXml.match(/<serie>(\d+)<\/serie>/)
-                const matchEmit = compraXml.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/)
-                const matchCNPJ = compraXml.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/)
+                // Usar o parser compartilhado (mesmo usado em agenda.service.ts e
+                // agenda-wms.routes.ts) em vez de regex manual — garante extração
+                // consistente do bloco <rastro> (lote/validade), necessária para a
+                // detecção de divergência na conferência de entrada.
+                const parsed = parseNfeXml(compraXml)
 
-                const detMatches = compraXml.match(/<det\s[^>]*>[\s\S]*?<\/det>/g) || []
-                const itensXml = detMatches.map((det, idx) => {
-                  const prod = det.match(/<prod>([\s\S]*?)<\/prod>/)?.[1] || ''
-                  const cProd = prod.match(/<cProd>([^<]*)<\/cProd>/)?.[1] || ''
-                  const xProd = prod.match(/<xProd>([^<]*)<\/xProd>/)?.[1] || ''
-                  const uCom = prod.match(/<uCom>([^<]*)<\/uCom>/)?.[1] || 'UN'
-                  const qCom = parseFloat(prod.match(/<qCom>([^<]*)<\/qCom>/)?.[1] || '0')
-                  return { item: idx + 1, descricao: xProd, codigoProduto: cProd, unidade: uCom, quantidade: qCom }
-                })
+                const itensXml = parsed.itens.map((i) => ({
+                  item: i.item,
+                  descricao: i.descricao,
+                  codigoProduto: i.codigoProduto,
+                  unidade: i.unidade || 'UN',
+                  quantidade: i.quantidade,
+                  lote: i.lote || null,
+                  validade: i.validade ? new Date(i.validade) : null,
+                }))
 
                 if (itensXml.length > 0) {
                   const novaNota = await tx.notaEntrada.create({
                     data: {
-                      numero: matchNNF ? parseInt(matchNNF[1]) : 0,
-                      serie: matchSerie ? matchSerie[1] : null,
-                      fornecedor: matchEmit ? matchEmit[1] : (forn.razaoSocial || null),
-                      fornecedorDoc: matchCNPJ ? matchCNPJ[1] : forn.cnpj,
+                      numero: parsed.numero || 0,
+                      serie: parsed.serie || null,
+                      fornecedor: parsed.fornecedor || forn.razaoSocial || null,
+                      fornecedorDoc: parsed.fornecedorDocRaw || forn.cnpj,
                       dataEntrada: new Date(),
                       status: 'PENDENTE',
                       itens: { create: itensXml },

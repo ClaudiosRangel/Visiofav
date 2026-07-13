@@ -600,6 +600,8 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
               codigoProduto: i.codigoProduto,
               unidade: i.unidade || 'UN',
               quantidade: i.quantidade,
+              lote: i.lote || null,
+              validade: i.validade ? new Date(i.validade) : null,
             }))
 
             if (itensXml.length > 0) {
@@ -646,6 +648,8 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
               codigoProduto: i.codigoProduto,
               unidade: i.unidade || 'UN',
               quantidade: i.quantidade,
+              lote: i.lote || null,
+              validade: i.validade ? new Date(i.validade) : null,
             }))
 
             if (itensXml.length > 0) {

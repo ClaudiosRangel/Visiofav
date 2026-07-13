@@ -611,6 +611,8 @@ export class AgendaService {
           codigoProduto: i.codigoProduto,
           unidade: i.unidade || 'UN',
           quantidade: i.quantidade,
+          lote: i.lote || null,
+          validade: i.validade ? new Date(i.validade) : null,
         }))
 
         if (itensXml.length > 0) {
