@@ -73,10 +73,11 @@ export async function skuRoutes(app: FastifyInstance) {
     const db = getDb(request)
     const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    if (empresaId) {
-      const existente = await db.sku.findFirst({ where: { id, empresaId } })
-      if (!existente) return reply.status(404).send({ message: 'Não encontrado' })
-    }
+    const existente = empresaId
+      ? await db.sku.findFirst({ where: { id, empresaId } })
+      : await db.sku.findUnique({ where: { id } })
+    if (empresaId && !existente) return reply.status(404).send({ message: 'Não encontrado' })
+
     const body = z.object({
       descricao: z.string().optional(),
       codigoBarra: z.string().optional(),
@@ -95,7 +96,18 @@ export async function skuRoutes(app: FastifyInstance) {
       status: z.boolean().optional(),
     }).parse(request.body)
 
-    return db.sku.update({ where: { id }, data: body })
+    const updated = await db.sku.update({ where: { id }, data: body })
+
+    // Preenchimento manual do SKU resolve a falha de enriquecimento automático —
+    // limpar o motivo para o alerta não permanecer indefinidamente no produto.
+    if (existente?.produtoId) {
+      await db.produto.update({
+        where: { id: existente.produtoId },
+        data: { motivoFalhaEnriquecimentoSku: null },
+      })
+    }
+
+    return updated
   })
 
   // Excluir SKU
