@@ -179,9 +179,10 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
   })
 
   // GET /docas — lista docas disponíveis para o calendário
-  app.get('/docas', async () => {
+  app.get('/docas', async (request) => {
+    const user = request.user as { empresaId: string }
     const docas = await prisma.doca.findMany({
-      where: { status: true },
+      where: { status: true, empresaId: user.empresaId },
       orderBy: { descricao: 'asc' },
     })
     return docas
@@ -197,9 +198,10 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
     const diaFim = new Date(data + 'T00:00:00.000Z')
     diaFim.setUTCDate(diaFim.getUTCDate() + 1)
 
-    // Buscar docas ativas
+    // Buscar docas ativas — filtro explícito por empresaId para não trazer
+    // docas de outras empresas na grade de agendamento (bug de isolamento multi-tenant)
     const docas = await prisma.doca.findMany({
-      where: { status: true },
+      where: { status: true, empresaId: user.empresaId },
       orderBy: { descricao: 'asc' },
     })
 
