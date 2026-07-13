@@ -41,10 +41,24 @@ const TABELAS_POR_MODULO: Record<string, string[]> = {
     'inventario',
     'log_movimentacao',
     'saldo_endereco',
-    'item_nota_entrada',
-    'nota_entrada',
+    // Endereçamentos físicos (ruas/prédios/níveis/aptos gerados) — depende de
+    // saldo_endereco já limpo acima (FK RESTRICT saldo_endereco → endereco).
+    'endereco',
     'pendencia_logistica',
     'ficha_operacional',
+    // Cross-dock referencia nota_entrada com FK RESTRICT — precisa ser limpo
+    // antes de nota_entrada/item_nota_entrada.
+    'cross_dock_item',
+    // Segunda conferência / integração CC-e — todas com FK RESTRICT para
+    // nota_entrada (ou para divergencia_conferencia, que referencia
+    // nota_entrada). Ordem: carta_correcao antes de divergencia_conferencia
+    // (carta_correcao_divergencia_id_fkey), e ambas antes de nota_entrada.
+    'carta_correcao',
+    'divergencia_conferencia',
+    'saldo_pendente_item',
+    'pendencia_cce',
+    'item_nota_entrada',
+    'nota_entrada',
     // Agenda de Recebimento (Docas/Portaria) — VeiculoPatio.agendamentoId usa
     // onDelete: SetNull, então limpar agenda_wms não é bloqueado por FK (o
     // Postgres apenas zera o vínculo em veiculo_patio automaticamente).
