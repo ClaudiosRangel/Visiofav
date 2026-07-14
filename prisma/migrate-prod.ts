@@ -2053,6 +2053,17 @@ async function main() {
     console.log('⚠️ Seed CST/CSOSN skipped:', e.message)
   }
 
+  // =========================================================================
+  // Conferência — Tolerância de Quantidade e Fila de Exceções (Hold)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "tolerancia_quantidade_percentual" DECIMAL(5,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "tolerancia_quantidade_percentual_padrao" DECIMAL(5,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_nota_entrada" ADD COLUMN IF NOT EXISTS "hold_motivo" VARCHAR(40)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_nota_entrada" ADD COLUMN IF NOT EXISTS "hold_motivo_detalhe" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_nota_entrada" ADD COLUMN IF NOT EXISTS "hold_usuario_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_nota_entrada" ADD COLUMN IF NOT EXISTS "hold_criado_em" TIMESTAMP(3)`)
+  console.log('✅ Conferência — Tolerância de Quantidade e Fila de Exceções: colunas criadas')
+
   console.log('✅ All migrations applied successfully')
 }
 

@@ -81,6 +81,7 @@ import { posicionamentoRoutes } from './modules/posicionamento/posicionamento.ro
 import { portariaRoutes } from './modules/portaria/portaria.routes'
 import { manutencaoEstoqueRoutes } from './modules/manutencao-estoque/manutencao-estoque.routes'
 import { conferenciaEntradaRoutes } from './modules/conferencia/conferencia-entrada.routes'
+import { filaExcecoesRoutes } from './modules/fila-excecoes/fila-excecoes.routes'
 import { enderecamentoWmsRoutes } from './modules/enderecamento/enderecamento-wms.routes'
 import { etiquetaRoutes } from './modules/etiqueta/etiqueta.routes'
 import { ordemServicoWmsRoutes } from './modules/ordem-servico-wms/ordem-servico-wms.routes'
@@ -314,6 +315,7 @@ async function bootstrap() {
   await app.register(conferenciaEntradaRoutes, { prefix: '/api/conferencia-entrada' })
   await app.register(configEmailFiscalRoutes, { prefix: '/api/config-email-fiscal' })
   await app.register(pendenciaCceRoutes, { prefix: '/api/pendencias-cce' })
+  await app.register(filaExcecoesRoutes, { prefix: '/api/fila-excecoes' })
   await app.register(enderecamentoWmsRoutes, { prefix: '/api/enderecamento-wms' })
   await app.register(etiquetaRoutes, { prefix: '/api/etiquetas' })
   await app.register(ordemServicoWmsRoutes, { prefix: '/api/os-wms' })
