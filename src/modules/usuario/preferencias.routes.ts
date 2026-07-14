@@ -20,7 +20,7 @@ export async function preferenciasRoutes(app: FastifyInstance) {
 
   // GET /usuarios/me/preferencias
   app.get('/me/preferencias', async (request) => {
-    const userId = (request.user as any).sub
+    const userId = (request.user as any).id
 
     let prefs = await prisma.preferenciaUsuario.findUnique({
       where: { usuarioId: userId },
@@ -48,7 +48,7 @@ export async function preferenciasRoutes(app: FastifyInstance) {
 
   // PUT /usuarios/me/preferencias
   app.put('/me/preferencias', async (request) => {
-    const userId = (request.user as any).sub
+    const userId = (request.user as any).id
     const data = preferenciaSchema.parse(request.body)
 
     const prefs = await prisma.preferenciaUsuario.upsert({
