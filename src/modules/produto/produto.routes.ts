@@ -59,7 +59,12 @@ export async function produtoRoutes(app: FastifyInstance) {
       }
     }
 
-    return { ...produto, aceitarSenha, aceitarCcePendente }
+    return {
+      ...produto,
+      aceitarSenha,
+      aceitarCcePendente,
+      toleranciaQuantidadePercentual: produto.toleranciaQuantidadePercentual != null ? Number(produto.toleranciaQuantidadePercentual) : null,
+    }
   })
 
   app.post('/', async (request, reply) => {
@@ -84,6 +89,7 @@ export async function produtoRoutes(app: FastifyInstance) {
       cstCOFINS: z.string().optional(),
       aliqCOFINS: z.number().optional(),
       origemProd: z.number().optional(),
+      toleranciaQuantidadePercentual: z.number().min(0).max(100).nullable().optional(),
     }).parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
@@ -125,6 +131,7 @@ export async function produtoRoutes(app: FastifyInstance) {
       exigeLote: z.boolean().optional(),
       aceitarSenha: z.boolean().optional(),
       aceitarCcePendente: z.boolean().optional(),
+      toleranciaQuantidadePercentual: z.number().min(0).max(100).nullable().optional(),
     }).parse(request.body)
 
     // Separar campos de ConfigConferenciaProduto dos campos do Produto

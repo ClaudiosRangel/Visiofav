@@ -34,6 +34,7 @@ const empresaBodySchema = z.object({
   conferenciaQuantidadeCega: z.boolean().optional().default(false),
   conferenciaLoteCega: z.boolean().optional().default(false),
   permiteRecebimentoParcial: z.boolean().optional().default(false),
+  toleranciaQuantidadePercentualPadrao: z.number().min(0).max(100).nullable().optional(),
   logo: z.string().nullable().optional(),
 })
 
@@ -333,6 +334,7 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
         conferenciaQuantidadeCega: true,
         conferenciaLoteCega: true,
         permiteRecebimentoParcial: true,
+        toleranciaQuantidadePercentualPadrao: true,
       },
     })
 
@@ -340,7 +342,11 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Empresa não encontrada' })
     }
 
-    return empresa
+    return {
+      ...empresa,
+      toleranciaQuantidadePercentualPadrao: empresa.toleranciaQuantidadePercentualPadrao != null
+        ? Number(empresa.toleranciaQuantidadePercentualPadrao) : null,
+    }
   })
 
   /**
@@ -380,6 +386,7 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       conferenciaQuantidadeCega: z.boolean().optional(),
       conferenciaLoteCega: z.boolean().optional(),
       permiteRecebimentoParcial: z.boolean().optional(),
+      toleranciaQuantidadePercentualPadrao: z.number().min(0).max(100).nullable().optional(),
       logo: z.string().nullable().optional(),
     })
 
