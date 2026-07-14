@@ -17,6 +17,8 @@ import { executarSegundaConferencia } from '../conferencia-entrada/segunda-confe
 import { registrarSaldoPendente } from '../conferencia-entrada/recebimento-parcial.service'
 import { verificarPendenciasAbertas } from '../pendencia-cce/pendencia-cce.service'
 import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
+import { avaliarToleranciaQuantidade } from '../conferencia-entrada/tolerancia-quantidade.service'
+import { colocarEmHold, notaTemItensEmHold, MOTIVOS_DIVERGENCIA_VALUES } from '../conferencia-entrada/hold.service'
 
 /**
  * Parseia data no formato DD/MM/AAAA (brasileiro) ou ISO (AAAA-MM-DD).
@@ -417,21 +419,27 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     // sempre divergente, independente desta configuração.
     const empresa = await prisma.empresa.findUnique({
       where: { id: userConf2.empresaId },
-      select: { permiteRecebimentoParcial: true },
+      select: { permiteRecebimentoParcial: true, toleranciaQuantidadePercentualPadrao: true },
     })
     const permiteRecebimentoParcial = empresa?.permiteRecebimentoParcial ?? false
+    const toleranciaEmpresaPadrao = empresa?.toleranciaQuantidadePercentualPadrao != null
+      ? Number(empresa.toleranciaQuantidadePercentualPadrao) : null
 
-    // Buscar exigeLote de cada produto (pelo codigoProduto) — Regra 2: se o
-    // produto exige lote, lote E validade são obrigatórios juntos.
+    // Buscar exigeLote e tolerância de quantidade de cada produto (pelo
+    // codigoProduto) — Regra 2: se o produto exige lote, lote E validade são
+    // obrigatórios juntos. Tolerância: percentual de desvio de quantidade
+    // aceito automaticamente sem gerar divergência (Requirement 1).
     const codigosProduto = nota.itens.map((i) => i.codigoProduto).filter(Boolean) as string[]
     const exigeLoteMap = new Map<string, boolean>()
+    const toleranciaProdutoMap = new Map<string, number | null>()
     if (codigosProduto.length > 0) {
       const produtosExigeLote = await prisma.produto.findMany({
         where: { empresaId: userConf2.empresaId, codigo: { in: codigosProduto } },
-        select: { codigo: true, exigeLote: true },
+        select: { codigo: true, exigeLote: true, toleranciaQuantidadePercentual: true },
       })
       for (const p of produtosExigeLote) {
         exigeLoteMap.set(p.codigo, p.exigeLote)
+        toleranciaProdutoMap.set(p.codigo, p.toleranciaQuantidadePercentual != null ? Number(p.toleranciaQuantidadePercentual) : null)
       }
     }
 
@@ -522,6 +530,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       const divergenciaQtd = conferido.quantidadeConferida - quantidadeNota
       let itemDivergente = divergenciaQtd !== 0
       let tipoDivergenciaQtd: string | null = divergenciaQtd > 0 ? 'EXCESSO' : divergenciaQtd < 0 ? 'FALTA' : null
+      let toleranciaInfo: { percentualDesvio: number; percentualToleranciaAplicado: number } | undefined
 
       // Recebimento parcial: qtd conferida menor que a NF-e, com a config
       // ativa, é aceita sem exigir segunda conferência — gera saldo pendente
@@ -537,6 +546,25 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           quantidadeNf: quantidadeNota,
           quantidadeRecebida: conferido.quantidadeConferida,
         })
+      } else if (divergenciaQtd !== 0) {
+        // Tolerância de quantidade (Requirement 1): diferença dentro do
+        // percentual configurado (produto, com fallback para o padrão da
+        // empresa) é aceita automaticamente, sem exigir segunda conferência.
+        const toleranciaProduto = item.codigoProduto ? (toleranciaProdutoMap.get(item.codigoProduto) ?? null) : null
+        const avaliacao = avaliarToleranciaQuantidade(
+          conferido.quantidadeConferida,
+          quantidadeNota,
+          toleranciaProduto,
+          toleranciaEmpresaPadrao,
+        )
+        if (avaliacao.dentroTolerancia) {
+          itemDivergente = false
+          tipoDivergenciaQtd = 'TOLERANCIA_ACEITA'
+          toleranciaInfo = {
+            percentualDesvio: avaliacao.percentualDesvio,
+            percentualToleranciaAplicado: avaliacao.percentualToleranciaAplicado,
+          }
+        }
       }
 
       // Um único item pode divergir em mais de um campo (quantidade, lote,
@@ -567,7 +595,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         }
       }
 
-      if (divergenciaQtd !== 0 && !recebimentoParcialAceito) {
+      if (divergenciaQtd !== 0 && !recebimentoParcialAceito && !toleranciaInfo) {
         tiposDivergentes.push('QUANTIDADE_DIVERGENTE')
       }
 
@@ -605,6 +633,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         divergencia: divergenciaQtd,
         status: itemDivergente ? 'DIVERGENTE' : 'CONFORME',
         tipoDivergencia: tipoDivergenciaQtd,
+        ...(toleranciaInfo ? { tolerancia: toleranciaInfo } : {}),
       })
     }
 
@@ -752,6 +781,44 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
   })
 
+  // POST /segunda-conferencia/:notaId/hold — coloca um item com divergência
+  // confirmada em espera (Hold), com motivo padronizado, para resolução
+  // assíncrona na Fila de Exceções, sem decidir imediatamente entre aceitar
+  // e rejeitar.
+  const holdSchema = z.object({
+    itemNotaEntradaId: z.string().uuid(),
+    motivo: z.enum(MOTIVOS_DIVERGENCIA_VALUES),
+    motivoDetalhe: z.string().optional(),
+  })
+
+  app.post('/segunda-conferencia/:notaId/hold', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
+    const body = holdSchema.parse(request.body)
+
+    const itemNota = await prisma.itemNotaEntrada.findUnique({ where: { id: body.itemNotaEntradaId } })
+    if (!itemNota || itemNota.notaEntradaId !== notaId) {
+      return reply.status(404).send({ message: 'Item não pertence a esta nota' })
+    }
+
+    const resultado = await colocarEmHold({
+      itemNotaEntradaId: body.itemNotaEntradaId,
+      motivo: body.motivo,
+      motivoDetalhe: body.motivoDetalhe,
+      usuarioId: user.id,
+    })
+
+    if (!resultado.sucesso) {
+      return reply.status(resultado.erro!.status).send({ message: resultado.erro!.message })
+    }
+
+    return {
+      itemNotaEntradaId: body.itemNotaEntradaId,
+      status: 'HOLD',
+      mensagem: 'Item colocado em espera — disponível na Fila de Exceções',
+    }
+  })
+
   // POST /confirmar/:notaId — aprovar conferência (com ou sem divergência)
   // Body opcional: { acaoDivergencia: 'APROVAR' | 'GERAR_DEVOLUCAO', observacao: string }
   app.post('/confirmar/:notaId', async (request, reply) => {
@@ -785,6 +852,17 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         error: {
           code: 'ITENS_PENDENTES_SEGUNDA_CONFERENCIA',
           message: 'Existem itens pendentes de segunda conferência',
+        },
+      })
+    }
+
+    // Bloqueio: verificar itens em espera (Hold) aguardando resolução na Fila de Exceções
+    const temItensEmHold = await notaTemItensEmHold(notaId)
+    if (temItensEmHold) {
+      return reply.status(422).send({
+        error: {
+          code: 'ITENS_EM_HOLD',
+          message: 'Existem itens em espera (Hold) aguardando resolução na Fila de Exceções',
         },
       })
     }

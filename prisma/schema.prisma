@@ -101,6 +101,8 @@ model Empresa {
   conferenciaQuantidadeCega Boolean @default(false) @map("conferencia_quantidade_cega")
   conferenciaLoteCega       Boolean @default(false) @map("conferencia_lote_cega")
   permiteRecebimentoParcial Boolean @default(false) @map("permite_recebimento_parcial")
+  // Tolerância padrão de quantidade (%) aplicada a produtos sem configuração própria
+  toleranciaQuantidadePercentualPadrao Decimal? @map("tolerancia_quantidade_percentual_padrao") @db.Decimal(5, 2)
 
   // Módulo Vendas — Avançado
   campanhasDesconto     CampanhaDesconto[]
@@ -328,6 +330,9 @@ model Produto {
   classificacaoPcp String?  @map("classificacao_pcp") @db.VarChar(20) // MATERIA_PRIMA, INTERMEDIARIO, PRODUTO_ACABADO, EMBALAGEM, INSUMO
   tipoFisico       String?  @map("tipo_fisico") @db.VarChar(20) // UNIDADE_PADRAO, FISICO_LINEAR, FISICO_SUPERFICIAL, LIQUIDO, PESO
   exigeLote        Boolean  @default(false) @map("exige_lote")
+  // Tolerância de quantidade na conferência de entrada — percentual de desvio
+  // aceito automaticamente sem gerar divergência. Null usa o padrão da empresa.
+  toleranciaQuantidadePercentual Decimal? @map("tolerancia_quantidade_percentual") @db.Decimal(5, 2)
   criadoEm         DateTime @default(now()) @map("criado_em")
   atualizadoEm     DateTime @updatedAt @map("atualizado_em")
 
@@ -1645,7 +1650,15 @@ model ItemNotaEntrada {
   quantidade        Decimal     @db.Decimal(12, 4)
   lote              String?     @db.VarChar(30)
   validade          DateTime?
+  // Valores possíveis: PENDENTE, CONFERIDO, PENDENTE_SEGUNDA_CONFERENCIA, HOLD, REJEITADO
   statusConferencia String      @default("PENDENTE") @map("status_conferencia") @db.VarChar(30)
+
+  // Estado HOLD — divergência confirmada colocada em espera para resolução
+  // assíncrona na Fila de Exceções, com motivo padronizado
+  holdMotivo        String?     @map("hold_motivo") @db.VarChar(40)
+  holdMotivoDetalhe String?     @map("hold_motivo_detalhe") @db.Text
+  holdUsuarioId     String?     @map("hold_usuario_id")
+  holdCriadoEm      DateTime?   @map("hold_criado_em")
 
   @@map("item_nota_entrada")
 }
