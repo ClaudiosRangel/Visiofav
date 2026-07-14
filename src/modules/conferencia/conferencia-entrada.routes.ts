@@ -539,13 +539,19 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         })
       }
 
+      // Um único item pode divergir em mais de um campo (quantidade, lote,
+      // validade) simultaneamente — coletar todos os tipos e emitir UMA
+      // única entrada por item em itensPendentesSegundaConferencia (evita
+      // duplicar o card na tela de segunda conferência).
+      const tiposDivergentes: string[] = []
+
       if (exigeLote) {
         // Comparar lote conferido vs lote da NF-e (valor original, nunca sobrescrito)
         const loteNfNorm = item.lote?.trim().toLowerCase() ?? null
         const loteConfNorm = conferido.lote?.trim().toLowerCase() ?? null
         if (loteNfNorm !== null && loteConfNorm !== null && loteNfNorm !== loteConfNorm) {
           itemDivergente = true
-          itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'LOTE_DIVERGENTE' })
+          tiposDivergentes.push('LOTE_DIVERGENTE')
         }
 
         // Comparar validade conferida vs validade da NF-e (ignorando horas)
@@ -556,13 +562,21 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           const confDia = new Date(validadeConferidaDate.getFullYear(), validadeConferidaDate.getMonth(), validadeConferidaDate.getDate()).getTime()
           if (nfDia !== confDia) {
             itemDivergente = true
-            itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'VALIDADE_DIVERGENTE' })
+            tiposDivergentes.push('VALIDADE_DIVERGENTE')
           }
         }
       }
 
       if (divergenciaQtd !== 0 && !recebimentoParcialAceito) {
-        itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'QUANTIDADE_DIVERGENTE' })
+        tiposDivergentes.push('QUANTIDADE_DIVERGENTE')
+      }
+
+      if (tiposDivergentes.length > 0) {
+        itensPendentesSegundaConferencia.push({
+          itemId: item.id,
+          descricao: item.descricao,
+          tipo: tiposDivergentes.join('+'),
+        })
       }
 
       if (itemDivergente) {
