@@ -2,12 +2,23 @@
  * Segunda Conferência Service
  *
  * Lógica de execução da segunda conferência obrigatória.
- * Quando a 1ª conferência detecta divergência de lote/validade, o item é marcado
- * PENDENTE_SEGUNDA_CONFERENCIA. Este serviço processa a 2ª conferência:
- * - Se valores coincidem com NF-e → auto-resolve (CONFERIDO)
- * - Se divergem → divergência confirmada → decisão conforme config do produto
+ * Quando a 1ª conferência detecta divergência de quantidade, e/ou (se o produto
+ * exige lote) de lote/validade, o item é marcado PENDENTE_SEGUNDA_CONFERENCIA.
+ * Este serviço processa a 2ª (ou enésima, em caso de reconferência) conferência:
  *
- * Requirements: 8.3, 8.4, 8.5, 8.6, 8.7
+ * Regra de quantidade (aplicada sempre, independente de exigeLote):
+ * - Se a quantidade confere com a NF-e → segue para avaliação de lote/validade
+ * - Se diverge novamente e o operador NÃO sinalizou aceite explícito
+ *   (aceitarDivergenciaQuantidade) → retorna 'divergenciaQuantidade', habilitando
+ *   no frontend as ações Aceitar com divergência / Rejeitar / Corrigir Contagem
+ * - Se diverge e o operador aceitou explicitamente → segue para lote/validade
+ *
+ * Regra de lote/validade (só avaliada se Produto.exigeLote = true):
+ * - Se ambos coincidem com a NF-e → item CONFERIDO
+ * - Se algum diverge → decide conforme ConfigConferenciaProduto:
+ *   aceitarSenha → 'requerSenha' | aceitarCcePendente → pendência/e-mail conforme
+ *   ConfigIntegracao | ambos false → bloqueio total, reconferência obrigatória
+ *   (item permanece PENDENTE_SEGUNDA_CONFERENCIA para nova tentativa)
  */
 
 import { prisma } from '../../lib/prisma'
@@ -19,12 +30,16 @@ import { enviarEmailDivergencia } from '../email-fiscal/email-fiscal.service'
 
 export interface ItemSegundaConferenciaInput {
   itemNotaEntradaId: string
+  quantidadeConferida: number
   lote?: string | null
   validade?: string | null
+  /** Operador clicou em "Aceitar com divergência" para a quantidade desta rodada */
+  aceitarDivergenciaQuantidade?: boolean
 }
 
 export type ResultadoItem =
   | { status: 'resolvido' }
+  | { status: 'divergenciaQuantidade'; quantidadeNota: number; quantidadeConferida: number }
   | { status: 'pendenciaCriada'; pendenciaId: string }
   | { status: 'emailEnviado' }
   | { status: 'emailFalhou'; motivo: string }
@@ -116,15 +131,16 @@ function determinarTipoDivergencia(
 // ─── Serviço principal ─────────────────────────────────────────────────────────
 
 /**
- * Executa a segunda conferência para uma nota de entrada.
+ * Executa a segunda conferência (ou reconferência) para uma nota de entrada.
  *
- * Para cada item submetido:
- * 1. Verifica que está em PENDENTE_SEGUNDA_CONFERENCIA
- * 2. Compara lote/validade com NF-e (do ItemNotaEntrada)
- * 3. Se match → auto-resolve → CONFERIDO
- * 4. Se diverge → verifica ConfigConferenciaProduto → decide ação
- *
- * Requirements: 8.3, 8.4, 8.5, 8.6, 8.7
+ * Para cada item submetido, com status PENDENTE_SEGUNDA_CONFERENCIA:
+ * 1. Verifica quantidade vs NF-e (item.quantidade, imutável desde a importação):
+ *    - Diverge e sem aceite explícito → 'divergenciaQuantidade' (aguarda decisão)
+ *    - Diverge com aceite explícito, ou não diverge → segue para o passo 2
+ * 2. Se Produto.exigeLote=true, verifica lote/validade vs NF-e (item.lote/validade):
+ *    - Coincidem → CONFERIDO
+ *    - Divergem → decide conforme ConfigConferenciaProduto (senha/CC-e/bloqueio)
+ * 3. Se Produto.exigeLote=false e quantidade resolvida → CONFERIDO
  */
 export async function executarSegundaConferencia(
   notaId: string,
@@ -176,7 +192,44 @@ export async function executarSegundaConferencia(
       continue
     }
 
-    // 3a. Comparar valores da 2ª conferência com NF-e
+    // ─── Gate 1: Quantidade (sempre verificada, independente de exigeLote) ────
+    const quantidadeNota = Number(itemNota.quantidade)
+    const quantidadeConferida = itemInput.quantidadeConferida
+    const quantidadeDivergente = quantidadeConferida !== quantidadeNota
+
+    if (quantidadeDivergente && !itemInput.aceitarDivergenciaQuantidade) {
+      // Divergência de quantidade confirmada na 2ª (ou enésima) conferência —
+      // aguarda decisão do operador (aceitar/rejeitar/corrigir), sem avaliar
+      // lote/validade ainda. Item permanece PENDENTE_SEGUNDA_CONFERENCIA.
+      resultados.push({
+        itemNotaEntradaId: itemInput.itemNotaEntradaId,
+        resultado: { status: 'divergenciaQuantidade', quantidadeNota, quantidadeConferida },
+      })
+      continue
+    }
+
+    // ─── Gate 2: Lote/Validade — só se o produto exige lote ───────────────────
+    const produto = itemNota.codigoProduto
+      ? await prisma.produto.findFirst({
+          where: { empresaId, codigo: itemNota.codigoProduto },
+          select: { id: true, exigeLote: true },
+        })
+      : null
+
+    if (!produto?.exigeLote) {
+      // Produto não exige lote — quantidade resolvida é suficiente
+      await prisma.itemNotaEntrada.update({
+        where: { id: itemInput.itemNotaEntradaId },
+        data: { statusConferencia: 'CONFERIDO' },
+      })
+      resultados.push({
+        itemNotaEntradaId: itemInput.itemNotaEntradaId,
+        resultado: { status: 'resolvido' },
+      })
+      continue
+    }
+
+    // Comparar valores da 2ª conferência com NF-e
     const loteNfe = normalizarString(itemNota.lote)
     const loteConferido = normalizarString(itemInput.lote)
     const validadeNfe = itemNota.validade
@@ -185,7 +238,7 @@ export async function executarSegundaConferencia(
     const loteCoincide = loteNfe === loteConferido
     const validadeCoincide = mesmoDia(validadeNfe, validadeConferida)
 
-    // 3b. Se valores coincidem com NF-e → auto-resolve
+    // Se valores coincidem com NF-e → auto-resolve
     if (loteCoincide && validadeCoincide) {
       await prisma.itemNotaEntrada.update({
         where: { id: itemInput.itemNotaEntradaId },
@@ -199,7 +252,7 @@ export async function executarSegundaConferencia(
       continue
     }
 
-    // 3c. Divergência confirmada — determinar ação
+    // Divergência confirmada — determinar ação conforme config do produto
     const tipoDivergencia = determinarTipoDivergencia(
       itemNota.lote,
       itemInput.lote ?? null,
@@ -207,29 +260,13 @@ export async function executarSegundaConferencia(
       validadeConferida,
     )
 
-    // Obter config de bloqueio do produto
-    const produtoId = itemNota.codigoProduto
-    if (!produtoId) {
-      // Sem produtoId, não conseguimos buscar config — tratar como bloqueio total
-      await prisma.itemNotaEntrada.update({
-        where: { id: itemInput.itemNotaEntradaId },
-        data: { statusConferencia: 'DIVERGENCIA_CONFIRMADA' },
-      })
-
-      resultados.push({
-        itemNotaEntradaId: itemInput.itemNotaEntradaId,
-        resultado: { status: 'bloqueado' },
-      })
-      continue
-    }
-
-    const configBloqueio = await obterConfigBloqueio(empresaId, produtoId)
+    const configBloqueio = await obterConfigBloqueio(empresaId, produto.id)
     const decisao = determinarDecisaoResolucao(configBloqueio)
 
-    // 3d. Ação conforme decisão
     switch (decisao) {
       case 'ACEITAR_SENHA': {
-        // Sinalizar necessidade de senha de supervisor (antes de pendência/email)
+        // Sinalizar necessidade de senha de supervisor (item permanece
+        // PENDENTE_SEGUNDA_CONFERENCIA até a autorização ser confirmada)
         resultados.push({
           itemNotaEntradaId: itemInput.itemNotaEntradaId,
           resultado: { status: 'requerSenha' },
@@ -238,13 +275,7 @@ export async function executarSegundaConferencia(
       }
 
       case 'ACEITAR_CCE_PENDENTE': {
-        // Marcar item como divergência confirmada
-        await prisma.itemNotaEntrada.update({
-          where: { id: itemInput.itemNotaEntradaId },
-          data: { statusConferencia: 'DIVERGENCIA_CONFIRMADA' },
-        })
-
-        // Determinar valor esperado/conferido para e-mail
+        // Determinar valor esperado/conferido para e-mail/pendência
         const valorEsperado =
           tipoDivergencia === 'LOTE'
             ? itemNota.lote ?? ''
@@ -254,12 +285,19 @@ export async function executarSegundaConferencia(
             ? itemInput.lote ?? ''
             : itemInput.validade ?? ''
 
+        // Marca como conferido: a resolução procedural (pendência/e-mail) é
+        // o mecanismo de acompanhamento fiscal; o bloqueio de finalização da
+        // nota (caso integração ativa) é feito via verificarPendenciasAbertas.
+        await prisma.itemNotaEntrada.update({
+          where: { id: itemInput.itemNotaEntradaId },
+          data: { statusConferencia: 'CONFERIDO' },
+        })
+
         if (integracaoAtiva) {
-          // Criar pendência CC-e
           const pendencia = await criarPendencia({
             empresaId,
             notaEntradaId: notaId,
-            codigoProduto: produtoId,
+            codigoProduto: itemNota.codigoProduto ?? '',
             descricaoProduto: itemNota.descricao,
             fornecedor: nota.fornecedor ?? '',
             tipo: tipoDivergencia,
@@ -270,8 +308,7 @@ export async function executarSegundaConferencia(
             resultado: { status: 'pendenciaCriada', pendenciaId: pendencia.id },
           })
         } else {
-          // Enviar e-mail ao setor fiscal
-          // Primeiro, criar/buscar divergência para vincular ao e-mail
+          // Enviar e-mail ao setor fiscal — cria divergência para vincular ao e-mail
           const divergencia = await prisma.divergenciaConferencia.create({
             data: {
               empresaId,
@@ -314,12 +351,10 @@ export async function executarSegundaConferencia(
       }
 
       case 'BLOQUEAR': {
-        // Bloqueio total — reconferência obrigatória, sem ação além de marcar
-        await prisma.itemNotaEntrada.update({
-          where: { id: itemInput.itemNotaEntradaId },
-          data: { statusConferencia: 'DIVERGENCIA_CONFIRMADA' },
-        })
-
+        // Bloqueio total — reconferência obrigatória. O item permanece
+        // PENDENTE_SEGUNDA_CONFERENCIA (sem trilha de aceite) para que uma
+        // nova tentativa seja obrigatória; nunca fica em estado terminal
+        // bloqueado sem chance de correção.
         resultados.push({
           itemNotaEntradaId: itemInput.itemNotaEntradaId,
           resultado: { status: 'bloqueado' },

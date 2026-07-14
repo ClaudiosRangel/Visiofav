@@ -14,6 +14,7 @@ import {
   marcarPendenteSegundaConferencia,
 } from '../conferencia-entrada/divergencia-lote-validade.service'
 import { executarSegundaConferencia } from '../conferencia-entrada/segunda-conferencia.service'
+import { registrarSaldoPendente } from '../conferencia-entrada/recebimento-parcial.service'
 import { verificarPendenciasAbertas } from '../pendencia-cce/pendencia-cce.service'
 import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
 
@@ -286,16 +287,25 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       }
     }
 
-    // Retornar itens para conferência cega (sem mostrar qtd esperada)
-    // Buscar shelfLifeMinimo dos produtos para alerta no frontend
+    // Retornar itens respeitando a configuração de conferência cega da empresa
+    // (conferenciaLoteCega decide se lote/validade da NF-e são ocultados na
+    // tela — a obrigatoriedade em si é regra fixa, tratada em conferir-todos).
+    // Buscar shelfLifeMinimo e exigeLote dos produtos para o frontend.
+    const empresaConf = await prisma.empresa.findUnique({
+      where: { id: user.empresaId },
+      select: { conferenciaLoteCega: true },
+    })
+    const conferenciaLoteCega = empresaConf?.conferenciaLoteCega ?? false
+
     const codigosProduto = nota.itens.map(i => i.codigoProduto).filter(Boolean) as string[]
-    const produtosShelfLife = codigosProduto.length > 0
+    const produtosInfo = codigosProduto.length > 0
       ? await prisma.produto.findMany({
           where: { empresaId: user.empresaId, codigo: { in: codigosProduto } },
-          select: { codigo: true, shelfLifeMinimo: true },
+          select: { codigo: true, shelfLifeMinimo: true, exigeLote: true },
         })
       : []
-    const shelfLifeMap = new Map(produtosShelfLife.map(p => [p.codigo, p.shelfLifeMinimo]))
+    const shelfLifeMap = new Map(produtosInfo.map(p => [p.codigo, p.shelfLifeMinimo]))
+    const exigeLoteInfoMap = new Map(produtosInfo.map(p => [p.codigo, p.exigeLote]))
 
     return {
       nota: { id: nota.id, numero: nota.numero, serie: nota.serie, fornecedor: nota.fornecedor, fornecedorDoc: nota.fornecedorDoc, status: 'EM_CONFERENCIA' },
@@ -305,10 +315,11 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         descricao: item.descricao,
         codigoProduto: item.codigoProduto,
         unidade: item.unidade,
-        // Conferência cega: NÃO mostra quantidade esperada
-        lote: item.lote,
-        validade: item.validade,
+        // Conferência cega de lote: oculta lote/validade da NF-e na tela
+        lote: conferenciaLoteCega ? null : item.lote,
+        validade: conferenciaLoteCega ? null : item.validade,
         shelfLifeMinimo: item.codigoProduto ? shelfLifeMap.get(item.codigoProduto) ?? null : null,
+        exigeLote: item.codigoProduto ? exigeLoteInfoMap.get(item.codigoProduto) ?? false : false,
       })),
     }
   })
@@ -400,16 +411,18 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
-    // Buscar configuração de conferência cega da empresa
+    // Buscar configuração "Recebimento Parcial" da empresa — permite aceitar
+    // quantidade menor que a NF-e sem gerar divergência de quantidade,
+    // registrando saldo pendente para recebimento futuro. Excesso continua
+    // sempre divergente, independente desta configuração.
     const empresa = await prisma.empresa.findUnique({
       where: { id: userConf2.empresaId },
-      select: { conferenciaLoteCega: true, conferenciaQuantidadeCega: true },
+      select: { permiteRecebimentoParcial: true },
     })
-    const loteCegaAtiva = empresa?.conferenciaLoteCega ?? false
-    const quantidadeCegaAtiva = empresa?.conferenciaQuantidadeCega ?? false
+    const permiteRecebimentoParcial = empresa?.permiteRecebimentoParcial ?? false
 
-    // Buscar exigeLote de cada produto (pelo codigoProduto) — usado como obrigatoriedade
-    // de lote independente da config de conferência cega da empresa
+    // Buscar exigeLote de cada produto (pelo codigoProduto) — Regra 2: se o
+    // produto exige lote, lote E validade são obrigatórios juntos.
     const codigosProduto = nota.itens.map((i) => i.codigoProduto).filter(Boolean) as string[]
     const exigeLoteMap = new Map<string, boolean>()
     if (codigosProduto.length > 0) {
@@ -425,16 +438,6 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const resultados = []
     let temDivergencia = false
     const falhasShelfLife: Array<{ itemId: string; descricao: string; mensagem: string }> = []
-    const divergenciasLoteValidade: Array<{
-      divergenciaId: string
-      itemId: string
-      descricao: string
-      tipo: 'LOTE_DIVERGENTE' | 'VALIDADE_DIVERGENTE'
-      valorEsperado: string | null
-      valorConferido: string | null
-      modoResolucao: string
-      status: 'PENDENTE'
-    }> = []
     const itensPendentesSegundaConferencia: Array<{ itemId: string; descricao: string; tipo: string }> = []
 
     for (const conferido of body.itens) {
@@ -443,8 +446,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
       const exigeLote = item.codigoProduto ? (exigeLoteMap.get(item.codigoProduto) ?? false) : false
 
-      // Validação: quantidade obrigatória quando conferência cega de quantidade está ativa
-      if (quantidadeCegaAtiva && (conferido.quantidadeConferida === null || conferido.quantidadeConferida === undefined)) {
+      // ─── Regra 1: quantidade é SEMPRE obrigatória ao apertar Conferir ────────
+      if (conferido.quantidadeConferida === null || conferido.quantidadeConferida === undefined) {
         resultados.push({
           itemId: item.id,
           descricao: item.descricao,
@@ -458,9 +461,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         continue
       }
 
-      // Validação de lote/validade obrigatórios quando conferência cega de lote está ativa
-      // OU quando o produto exige lote (config de cadastro do produto)
-      if (loteCegaAtiva || exigeLote) {
+      // ─── Regra 2: se o produto exige lote, lote E validade são obrigatórios ──
+      if (exigeLote) {
         if (!conferido.lote || conferido.lote.trim() === '') {
           resultados.push({
             itemId: item.id,
@@ -474,8 +476,6 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           temDivergencia = true
           continue
         }
-      }
-      if (loteCegaAtiva) {
         if (!conferido.validade || conferido.validade.trim() === '') {
           resultados.push({
             itemId: item.id,
@@ -515,80 +515,82 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         }
       }
 
-      // ─── Detecção de divergência de lote/validade ────────────────────────────
-      // Requirement 2/3 do usuário: divergência de lote/validade na 1ª conferência
-      // SEMPRE exige uma 2ª conferência obrigatória — nunca oferece resolução direta
-      // (senha/CC-e) já na primeira contagem.
-      let itemTemDivergenciaLoteValidade = false
+      // ─── Regra 3: passou pela validação de dados — confere quantidade sempre,
+      // e (se exigeLote) confere lote/validade contra os valores do XML.
+      // Qualquer divergência (quantidade, lote ou validade) exige nova conferência.
+      const quantidadeNota = Number(item.quantidade)
+      const divergenciaQtd = conferido.quantidadeConferida - quantidadeNota
+      let itemDivergente = divergenciaQtd !== 0
+      let tipoDivergenciaQtd: string | null = divergenciaQtd > 0 ? 'EXCESSO' : divergenciaQtd < 0 ? 'FALTA' : null
 
-      // Comparar lote conferido vs lote da NF-e
-      if (item.lote && conferido.lote && item.lote.trim() !== '' && conferido.lote.trim() !== '' && item.lote.trim() !== conferido.lote.trim()) {
-        await prisma.divergenciaConferencia.create({
-          data: {
-            empresaId: userConf2.empresaId,
-            notaEntradaId: notaId,
-            itemNotaEntradaId: item.id,
-            tipo: 'LOTE_DIVERGENTE',
-            loteEsperado: item.lote,
-            loteConferido: conferido.lote,
-          },
+      // Recebimento parcial: qtd conferida menor que a NF-e, com a config
+      // ativa, é aceita sem exigir segunda conferência — gera saldo pendente
+      // em vez de divergência. Excesso continua sempre divergente.
+      const recebimentoParcialAceito = permiteRecebimentoParcial && divergenciaQtd < 0
+      if (recebimentoParcialAceito) {
+        itemDivergente = false
+        tipoDivergenciaQtd = 'RECEBIMENTO_PARCIAL'
+        await registrarSaldoPendente({
+          empresaId: userConf2.empresaId,
+          notaEntradaId: notaId,
+          itemNotaEntradaId: item.id,
+          quantidadeNf: quantidadeNota,
+          quantidadeRecebida: conferido.quantidadeConferida,
         })
-
-        itemTemDivergenciaLoteValidade = true
-        itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'LOTE_DIVERGENTE' })
       }
 
-      // Comparar validade conferida vs validade da NF-e (ignorando horas)
-      const validadeConferidaDate = conferido.validade ? parseDateBR(conferido.validade) : null
-      const validadeNfDate = item.validade
+      if (exigeLote) {
+        // Comparar lote conferido vs lote da NF-e (valor original, nunca sobrescrito)
+        const loteNfNorm = item.lote?.trim().toLowerCase() ?? null
+        const loteConfNorm = conferido.lote?.trim().toLowerCase() ?? null
+        if (loteNfNorm !== null && loteConfNorm !== null && loteNfNorm !== loteConfNorm) {
+          itemDivergente = true
+          itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'LOTE_DIVERGENTE' })
+        }
 
-      if (validadeNfDate && validadeConferidaDate) {
-        const nfDia = new Date(validadeNfDate.getFullYear(), validadeNfDate.getMonth(), validadeNfDate.getDate()).getTime()
-        const confDia = new Date(validadeConferidaDate.getFullYear(), validadeConferidaDate.getMonth(), validadeConferidaDate.getDate()).getTime()
-
-        if (nfDia !== confDia) {
-          await prisma.divergenciaConferencia.create({
-            data: {
-              empresaId: userConf2.empresaId,
-              notaEntradaId: notaId,
-              itemNotaEntradaId: item.id,
-              tipo: 'VALIDADE_DIVERGENTE',
-              validadeEsperada: validadeNfDate,
-              validadeConferida: validadeConferidaDate,
-            },
-          })
-
-          itemTemDivergenciaLoteValidade = true
-          itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'VALIDADE_DIVERGENTE' })
+        // Comparar validade conferida vs validade da NF-e (ignorando horas)
+        const validadeConferidaDate = conferido.validade ? parseDateBR(conferido.validade) : null
+        const validadeNfDate = item.validade
+        if (validadeNfDate && validadeConferidaDate) {
+          const nfDia = new Date(validadeNfDate.getFullYear(), validadeNfDate.getMonth(), validadeNfDate.getDate()).getTime()
+          const confDia = new Date(validadeConferidaDate.getFullYear(), validadeConferidaDate.getMonth(), validadeConferidaDate.getDate()).getTime()
+          if (nfDia !== confDia) {
+            itemDivergente = true
+            itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'VALIDADE_DIVERGENTE' })
+          }
         }
       }
 
-      if (itemTemDivergenciaLoteValidade) {
-        await marcarPendenteSegundaConferencia(item.id)
-        temDivergencia = true
+      if (divergenciaQtd !== 0 && !recebimentoParcialAceito) {
+        itensPendentesSegundaConferencia.push({ itemId: item.id, descricao: item.descricao, tipo: 'QUANTIDADE_DIVERGENTE' })
       }
 
-      const quantidadeNota = Number(item.quantidade)
-      const divergencia = conferido.quantidadeConferida - quantidadeNota
-      const status = divergencia === 0 ? 'CONFORME' : 'DIVERGENTE'
-      if (divergencia !== 0) temDivergencia = true
-
-      await prisma.itemNotaEntrada.update({
-        where: { id: item.id },
-        data: {
-          lote: conferido.lote || item.lote,
-          validade: conferido.validade ? parseDateBR(conferido.validade)! : item.validade,
-        },
-      })
+      if (itemDivergente) {
+        // Marca pendente de segunda conferência — NÃO sobrescreve item.lote/
+        // item.validade (valores originais do XML), pois a 2ª conferência
+        // precisa comparar contra a NF-e, nunca contra a tentativa divergente.
+        await marcarPendenteSegundaConferencia(item.id)
+        temDivergencia = true
+      } else if (conferido.lote || conferido.validade) {
+        // Sem divergência: persiste lote/validade digitados (preenchimento
+        // inicial quando a NF-e não trazia esses dados, ou confirmação).
+        await prisma.itemNotaEntrada.update({
+          where: { id: item.id },
+          data: {
+            lote: item.lote ?? conferido.lote,
+            validade: item.validade ?? (conferido.validade ? parseDateBR(conferido.validade) : null),
+          },
+        })
+      }
 
       resultados.push({
         itemId: item.id,
         descricao: item.descricao,
         quantidadeNota,
         quantidadeConferida: conferido.quantidadeConferida,
-        divergencia,
-        status,
-        tipoDivergencia: divergencia > 0 ? 'EXCESSO' : divergencia < 0 ? 'FALTA' : null,
+        divergencia: divergenciaQtd,
+        status: itemDivergente ? 'DIVERGENTE' : 'CONFORME',
+        tipoDivergencia: tipoDivergenciaQtd,
       })
     }
 
@@ -600,8 +602,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       divergentes: resultados.filter((r) => r.status === 'DIVERGENTE').length,
       itens: resultados,
       falhasShelfLife: falhasShelfLife.length > 0 ? falhasShelfLife : undefined,
-      // Itens com divergência de lote/validade: exigem segunda conferência obrigatória
-      // antes de qualquer resolução (senha supervisor / CC-e / bloqueio)
+      // Itens com qualquer divergência (quantidade e/ou lote/validade): exigem
+      // segunda conferência obrigatória antes de qualquer resolução
       itensPendentesSegundaConferencia: itensPendentesSegundaConferencia.length > 0 ? itensPendentesSegundaConferencia : undefined,
       requerSegundaConferencia: itensPendentesSegundaConferencia.length > 0,
     }
@@ -619,6 +621,8 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       quantidadeConferida: z.number().min(0),
       lote: z.string().optional(),
       validade: z.string().optional(),
+      // Operador clicou "Aceitar com divergência" para a quantidade desta rodada
+      aceitarDivergenciaQuantidade: z.boolean().optional(),
     })),
   })
 
@@ -630,6 +634,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const resultado = await executarSegundaConferencia(notaId, itens, user.empresaId, user.id)
 
     const divergenciaResolvida = resultado.itens.some((i) => i.resultado.status === 'resolvido')
+    const divergenciaQuantidade = resultado.itens.some((i) => i.resultado.status === 'divergenciaQuantidade')
     const pendenciaCriada = resultado.itens.some((i) => i.resultado.status === 'pendenciaCriada')
     const emailEnviado = resultado.itens.some((i) => i.resultado.status === 'emailEnviado')
     const requerSenha = resultado.itens.some((i) => i.resultado.status === 'requerSenha')
@@ -637,12 +642,39 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     return {
       divergenciaResolvida,
+      divergenciaQuantidade,
       pendenciaCriada,
       emailEnviado,
       requerSenha,
       bloqueado,
       itens: resultado.itens,
     }
+  })
+
+  // POST /segunda-conferencia/:notaId/rejeitar-item — "Rejeitar" um item com
+  // divergência de quantidade confirmada na 2ª conferência. Marca o item
+  // como rejeitado (não recebido) — a nota permanece bloqueada para
+  // confirmação final até que o item seja tratado (ex.: devolução).
+  const rejeitarItemSchema = z.object({ itemNotaEntradaId: z.string().uuid(), observacao: z.string().optional() })
+
+  app.post('/segunda-conferencia/:notaId/rejeitar-item', async (request, reply) => {
+    const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
+    const body = rejeitarItemSchema.parse(request.body)
+
+    const itemNota = await prisma.itemNotaEntrada.findUnique({ where: { id: body.itemNotaEntradaId } })
+    if (!itemNota || itemNota.notaEntradaId !== notaId) {
+      return reply.status(404).send({ message: 'Item não pertence a esta nota' })
+    }
+    if (itemNota.statusConferencia !== 'PENDENTE_SEGUNDA_CONFERENCIA') {
+      return reply.status(422).send({ message: 'Item não está pendente de segunda conferência' })
+    }
+
+    await prisma.itemNotaEntrada.update({
+      where: { id: body.itemNotaEntradaId },
+      data: { statusConferencia: 'REJEITADO' },
+    })
+
+    return { itemNotaEntradaId: body.itemNotaEntradaId, status: 'REJEITADO', mensagem: 'Item rejeitado — não recebido' }
   })
 
   // POST /segunda-conferencia/:notaId/autorizar-senha — libera item marcado
