@@ -22,9 +22,10 @@
  */
 
 import { prisma } from '../../lib/prisma'
-import { obterConfigBloqueio, determinarDecisaoResolucao } from './config-conferencia-produto.service'
+import { obterConfigBloqueio } from './config-conferencia-produto.service'
 import { criarPendencia } from '../pendencia-cce/pendencia-cce.service'
 import { enviarEmailDivergencia } from '../email-fiscal/email-fiscal.service'
+import { avaliarToleranciaQuantidade } from './tolerancia-quantidade.service'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -193,9 +194,35 @@ export async function executarSegundaConferencia(
     }
 
     // ─── Gate 1: Quantidade (sempre verificada, independente de exigeLote) ────
+    // Aplica a mesma tolerância percentual (produto, com fallback para o
+    // padrão da empresa) usada na 1ª conferência — evita reexigir decisão
+    // manual para um desvio já aceito automaticamente antes.
     const quantidadeNota = Number(itemNota.quantidade)
     const quantidadeConferida = itemInput.quantidadeConferida
-    const quantidadeDivergente = quantidadeConferida !== quantidadeNota
+
+    const [produtoTolerancia, empresaTolerancia] = await Promise.all([
+      itemNota.codigoProduto
+        ? prisma.produto.findFirst({
+            where: { empresaId, codigo: itemNota.codigoProduto },
+            select: { toleranciaQuantidadePercentual: true },
+          })
+        : null,
+      prisma.empresa.findUnique({
+        where: { id: empresaId },
+        select: { toleranciaQuantidadePercentualPadrao: true },
+      }),
+    ])
+
+    const toleranciaProduto = produtoTolerancia?.toleranciaQuantidadePercentual != null
+      ? Number(produtoTolerancia.toleranciaQuantidadePercentual) : null
+    const toleranciaEmpresa = empresaTolerancia?.toleranciaQuantidadePercentualPadrao != null
+      ? Number(empresaTolerancia.toleranciaQuantidadePercentualPadrao) : null
+
+    const avaliacaoTolerancia = avaliarToleranciaQuantidade(
+      quantidadeConferida, quantidadeNota, toleranciaProduto, toleranciaEmpresa,
+    )
+
+    const quantidadeDivergente = quantidadeConferida !== quantidadeNota && !avaliacaoTolerancia.dentroTolerancia
 
     if (quantidadeDivergente && !itemInput.aceitarDivergenciaQuantidade) {
       // Divergência de quantidade confirmada na 2ª (ou enésima) conferência —
@@ -261,108 +288,125 @@ export async function executarSegundaConferencia(
     )
 
     const configBloqueio = await obterConfigBloqueio(empresaId, produto.id)
-    const decisao = determinarDecisaoResolucao(configBloqueio)
 
-    switch (decisao) {
-      case 'ACEITAR_SENHA': {
-        // Sinalizar necessidade de senha de supervisor (item permanece
-        // PENDENTE_SEGUNDA_CONFERENCIA até a autorização ser confirmada)
-        resultados.push({
-          itemNotaEntradaId: itemInput.itemNotaEntradaId,
-          resultado: { status: 'requerSenha' },
+    // aceitarSenha e aceitarCcePendente são independentes: senha libera a
+    // operação (desbloqueia o item para CONFERIDO) e CC-e/e-mail é o
+    // rastreamento fiscal da divergência. Quando ambos estão marcados, os
+    // dois ocorrem — a pendência/e-mail é registrada como efeito colateral
+    // (sem gerar entrada própria no resultado, para não duplicar o item na
+    // tela) e a liberação do item ainda depende da autorização de
+    // supervisor (endpoint /autorizar-senha), que é o único resultado
+    // reportado ao frontend para este item.
+    if (configBloqueio.aceitarSenha) {
+      if (configBloqueio.aceitarCcePendente) {
+        await registrarPendenciaOuEmail({
+          empresaId, notaId, nota, itemNota, itemInput, tipoDivergencia, validadeConferida, integracaoAtiva,
+          marcarConferido: false, // liberação final depende da senha, feita em /autorizar-senha
         })
-        break
       }
+      resultados.push({
+        itemNotaEntradaId: itemInput.itemNotaEntradaId,
+        resultado: { status: 'requerSenha' },
+      })
+      continue
+    }
 
-      case 'ACEITAR_CCE_PENDENTE': {
-        // Determinar valor esperado/conferido para e-mail/pendência
-        const valorEsperado =
-          tipoDivergencia === 'LOTE'
-            ? itemNota.lote ?? ''
-            : itemNota.validade?.toISOString() ?? ''
-        const valorConferido =
-          tipoDivergencia === 'LOTE'
-            ? itemInput.lote ?? ''
-            : itemInput.validade ?? ''
+    if (configBloqueio.aceitarCcePendente) {
+      const resultadoPendencia = await registrarPendenciaOuEmail({
+        empresaId, notaId, nota, itemNota, itemInput, tipoDivergencia, validadeConferida, integracaoAtiva,
+        marcarConferido: true,
+      })
+      resultados.push({ itemNotaEntradaId: itemInput.itemNotaEntradaId, resultado: resultadoPendencia })
+    }
 
-        // Marca como conferido: a resolução procedural (pendência/e-mail) é
-        // o mecanismo de acompanhamento fiscal; o bloqueio de finalização da
-        // nota (caso integração ativa) é feito via verificarPendenciasAbertas.
-        await prisma.itemNotaEntrada.update({
-          where: { id: itemInput.itemNotaEntradaId },
-          data: { statusConferencia: 'CONFERIDO' },
-        })
-
-        if (integracaoAtiva) {
-          const pendencia = await criarPendencia({
-            empresaId,
-            notaEntradaId: notaId,
-            codigoProduto: itemNota.codigoProduto ?? '',
-            descricaoProduto: itemNota.descricao,
-            fornecedor: nota.fornecedor ?? '',
-            tipo: tipoDivergencia,
-          })
-
-          resultados.push({
-            itemNotaEntradaId: itemInput.itemNotaEntradaId,
-            resultado: { status: 'pendenciaCriada', pendenciaId: pendencia.id },
-          })
-        } else {
-          // Enviar e-mail ao setor fiscal — cria divergência para vincular ao e-mail
-          const divergencia = await prisma.divergenciaConferencia.create({
-            data: {
-              empresaId,
-              notaEntradaId: notaId,
-              itemNotaEntradaId: itemInput.itemNotaEntradaId,
-              tipo: tipoDivergencia === 'LOTE' ? 'LOTE_DIVERGENTE' : 'VALIDADE_DIVERGENTE',
-              loteEsperado: tipoDivergencia === 'LOTE' ? itemNota.lote : null,
-              loteConferido: tipoDivergencia === 'LOTE' ? itemInput.lote : null,
-              validadeEsperada: tipoDivergencia === 'VALIDADE' ? itemNota.validade : null,
-              validadeConferida: tipoDivergencia === 'VALIDADE' ? validadeConferida : null,
-              status: 'PENDENTE',
-            },
-          })
-
-          const resultadoEmail = await enviarEmailDivergencia({
-            divergenciaId: divergencia.id,
-            empresaId,
-            fornecedor: nota.fornecedor ?? '',
-            numeroNF: nota.numero,
-            dataEmissao: nota.dataEmissao ?? new Date(),
-            descricaoProduto: itemNota.descricao,
-            tipoDivergencia: tipoDivergencia,
-            valorEsperado,
-            valorConferido,
-          })
-
-          if (resultadoEmail.sucesso) {
-            resultados.push({
-              itemNotaEntradaId: itemInput.itemNotaEntradaId,
-              resultado: { status: 'emailEnviado' },
-            })
-          } else {
-            resultados.push({
-              itemNotaEntradaId: itemInput.itemNotaEntradaId,
-              resultado: { status: 'emailFalhou', motivo: resultadoEmail.motivo ?? 'ERRO_DESCONHECIDO' },
-            })
-          }
-        }
-        break
-      }
-
-      case 'BLOQUEAR': {
-        // Bloqueio total — reconferência obrigatória. O item permanece
-        // PENDENTE_SEGUNDA_CONFERENCIA (sem trilha de aceite) para que uma
-        // nova tentativa seja obrigatória; nunca fica em estado terminal
-        // bloqueado sem chance de correção.
-        resultados.push({
-          itemNotaEntradaId: itemInput.itemNotaEntradaId,
-          resultado: { status: 'bloqueado' },
-        })
-        break
-      }
+    if (!configBloqueio.aceitarCcePendente) {
+      // Nem senha nem CC-e/e-mail habilitados — bloqueio total, reconferência
+      // obrigatória. O item permanece PENDENTE_SEGUNDA_CONFERENCIA (sem
+      // trilha de aceite) para que uma nova tentativa seja obrigatória.
+      resultados.push({
+        itemNotaEntradaId: itemInput.itemNotaEntradaId,
+        resultado: { status: 'bloqueado' },
+      })
     }
   }
 
   return { itens: resultados }
+}
+
+// ─── Registro de pendência CC-e / e-mail fiscal ────────────────────────────────
+
+interface RegistrarPendenciaOuEmailInput {
+  empresaId: string
+  notaId: string
+  nota: { fornecedor: string | null; numero: number; dataEmissao: Date | null }
+  itemNota: { codigoProduto: string | null; descricao: string; lote: string | null; validade: Date | null }
+  itemInput: ItemSegundaConferenciaInput
+  tipoDivergencia: 'LOTE' | 'VALIDADE'
+  validadeConferida: Date | null
+  integracaoAtiva: boolean
+  /** Se true, marca o item como CONFERIDO após registrar a pendência/e-mail */
+  marcarConferido: boolean
+}
+
+/**
+ * Cria a PendenciaCce (integração ativa) ou envia e-mail fiscal (integração
+ * inativa) para uma divergência de lote/validade confirmada. Extraído como
+ * função própria pois é acionado tanto quando só `aceitarCcePendente` está
+ * ativo quanto quando `aceitarSenha` e `aceitarCcePendente` estão ativos
+ * simultaneamente.
+ */
+async function registrarPendenciaOuEmail(input: RegistrarPendenciaOuEmailInput): Promise<ResultadoItem> {
+  const { empresaId, notaId, nota, itemNota, itemInput, tipoDivergencia, validadeConferida, integracaoAtiva, marcarConferido } = input
+
+  const valorEsperado = tipoDivergencia === 'LOTE' ? itemNota.lote ?? '' : itemNota.validade?.toISOString() ?? ''
+  const valorConferido = tipoDivergencia === 'LOTE' ? itemInput.lote ?? '' : itemInput.validade ?? ''
+
+  if (marcarConferido) {
+    await prisma.itemNotaEntrada.update({
+      where: { id: itemInput.itemNotaEntradaId },
+      data: { statusConferencia: 'CONFERIDO' },
+    })
+  }
+
+  if (integracaoAtiva) {
+    const pendencia = await criarPendencia({
+      empresaId,
+      notaEntradaId: notaId,
+      codigoProduto: itemNota.codigoProduto ?? '',
+      descricaoProduto: itemNota.descricao,
+      fornecedor: nota.fornecedor ?? '',
+      tipo: tipoDivergencia,
+    })
+    return { status: 'pendenciaCriada', pendenciaId: pendencia.id }
+  }
+
+  // Enviar e-mail ao setor fiscal — cria divergência para vincular ao e-mail
+  const divergencia = await prisma.divergenciaConferencia.create({
+    data: {
+      empresaId,
+      notaEntradaId: notaId,
+      itemNotaEntradaId: itemInput.itemNotaEntradaId,
+      tipo: tipoDivergencia === 'LOTE' ? 'LOTE_DIVERGENTE' : 'VALIDADE_DIVERGENTE',
+      loteEsperado: tipoDivergencia === 'LOTE' ? itemNota.lote : null,
+      loteConferido: tipoDivergencia === 'LOTE' ? itemInput.lote : null,
+      validadeEsperada: tipoDivergencia === 'VALIDADE' ? itemNota.validade : null,
+      validadeConferida: tipoDivergencia === 'VALIDADE' ? validadeConferida : null,
+      status: 'PENDENTE',
+    },
+  })
+
+  const resultadoEmail = await enviarEmailDivergencia({
+    divergenciaId: divergencia.id,
+    empresaId,
+    fornecedor: nota.fornecedor ?? '',
+    numeroNF: nota.numero,
+    dataEmissao: nota.dataEmissao ?? new Date(),
+    descricaoProduto: itemNota.descricao,
+    tipoDivergencia,
+    valorEsperado,
+    valorConferido,
+  })
+
+  if (resultadoEmail.sucesso) return { status: 'emailEnviado' }
+  return { status: 'emailFalhou', motivo: resultadoEmail.motivo ?? 'ERRO_DESCONHECIDO' }
 }
