@@ -80,6 +80,45 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: { [query.orderBy]: query.orderDir },
+        // IMPORTANTE: usar `select` (não `omit`) para excluir pdfData (BYTEA).
+        // `select` é traduzido direto para a cláusula SQL SELECT — o campo nunca
+        // sai do banco. `omit` filtra só na serialização e já causou o backend
+        // materializar ~15MB de PDFs em memória numa única listagem paginada
+        // (limit=20), estourando o limite de memória da instância no Render.
+        select: {
+          id: true,
+          empresaId: true,
+          numero: true,
+          produtoId: true,
+          estruturaProdutoId: true,
+          quantidade: true,
+          unidadeMedida: true,
+          quantidadeProduzida: true,
+          quantidadeRejeitada: true,
+          status: true,
+          prioridade: true,
+          dataEmissao: true,
+          dataEntregaPrevista: true,
+          dataEntregaOriginal: true,
+          vezesPostergada: true,
+          dataInicioPrevista: true,
+          dataFimPrevista: true,
+          dataInicioReal: true,
+          dataFimReal: true,
+          pedidoVendaId: true,
+          clienteId: true,
+          lote: true,
+          cor: true,
+          grupoOpId: true,
+          quantidadeExcedente: true,
+          motivoCancelamento: true,
+          observacoes: true,
+          referenciaExterna: true,
+          origemImportacao: true,
+          criadoPorId: true,
+          criadoEm: true,
+          atualizadoEm: true,
+        },
       }),
       prisma.ordemProducao.count({ where }),
     ])
@@ -112,7 +151,40 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id, empresaId: user.empresaId },
-      include: {
+      select: {
+        id: true,
+        empresaId: true,
+        numero: true,
+        produtoId: true,
+        estruturaProdutoId: true,
+        quantidade: true,
+        unidadeMedida: true,
+        quantidadeProduzida: true,
+        quantidadeRejeitada: true,
+        status: true,
+        prioridade: true,
+        dataEmissao: true,
+        dataEntregaPrevista: true,
+        dataEntregaOriginal: true,
+        vezesPostergada: true,
+        dataInicioPrevista: true,
+        dataFimPrevista: true,
+        dataInicioReal: true,
+        dataFimReal: true,
+        pedidoVendaId: true,
+        clienteId: true,
+        lote: true,
+        cor: true,
+        grupoOpId: true,
+        quantidadeExcedente: true,
+        motivoCancelamento: true,
+        observacoes: true,
+        referenciaExterna: true,
+        origemImportacao: true,
+        criadoPorId: true,
+        criadoEm: true,
+        atualizadoEm: true,
+        // BYTEA pesado — omitido via select (usar rota dedicada de PDF), nunca sai do banco
         itens: { orderBy: { descricaoProduto: 'asc' } },
         etapas: {
           orderBy: { sequencia: 'asc' },
@@ -515,6 +587,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
         { prioridade: 'desc' },
         { dataEntregaPrevista: 'asc' },
       ],
+      omit: { pdfData: true }, // BYTEA pesado — não precisa no kanban
     })
 
     const colunas: Record<string, any[]> = {
