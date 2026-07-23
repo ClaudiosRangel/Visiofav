@@ -714,6 +714,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       centroProducaoId: z.string().uuid(),
       produtoId: z.string().uuid().optional().nullable(),
       clienteId: z.string().uuid().optional().nullable(),
+      // Nome de cliente sem cadastro formal (a maioria das OPs importadas via
+      // PDF só têm o nome extraído como texto, sem clienteId real) — vira tag
+      // [Cliente] nas observações, mesmo padrão usado na importação de PDF.
+      clienteNomeLivre: z.string().max(200).optional().nullable(),
       quantidade: z.number().positive('Quantidade deve ser maior que zero'),
       descricao: z.string().max(200).optional(),
     }).parse(request.body)
@@ -740,6 +744,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // tabela), mas ele nunca é exibido — a UI sempre usa referenciaExterna.
     const proximoNumero = await proximoNumeroOp(user.empresaId)
 
+    const tagsObs: string[] = []
+    if (body.clienteNomeLivre) tagsObs.push(`[Cliente] ${body.clienteNomeLivre.trim()}`)
+    if (body.descricao) tagsObs.push(`[Descricao] ${body.descricao}`)
+
     const op = await prisma.ordemProducao.create({
       data: {
         empresaId: user.empresaId,
@@ -754,7 +762,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         prioridade: 'NORMAL',
         dataEntregaPrevista: new Date(),
         dataEntregaOriginal: new Date(),
-        observacoes: body.descricao ? `[Descricao] ${body.descricao}` : undefined,
+        observacoes: tagsObs.length > 0 ? tagsObs.join('\n') : undefined,
         criadoPorId: user.id,
       },
     })
