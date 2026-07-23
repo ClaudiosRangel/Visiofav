@@ -493,57 +493,49 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
     })
   }
 
-  // Acabamentos — No PDF real, os nomes vêm primeiro em sequência,
-  // depois detalhes (/ ...), depois tempos fixos, depois tempos variáveis
+  // Acabamentos — cada etapa ocupa uma linha visual no PDF, no formato:
+  //   "NOME  / DETALHE  HH:MM  HH:MM"
+  // Quando o detalhe é longo, o PDF quebra em mais de uma linha visual (ex:
+  // "Cortadeira (Grande) (Impressos)  / 13.640 folhas 65,8 x 121,0 cm -  00:15  05:23"
+  // seguida de "entrando direto em máquina" na linha seguinte). Uma linha de
+  // continuação não termina em dois tempos HH:MM — é reanexada à linha anterior
+  // antes de extrair nome/detalhe/tempos.
   const secaoAcab = texto.match(/Acabamentos\s+Fixo\s+Vari[áa]vel([\s\S]*?)(?:Obs\.|Materiais)/i)
   if (secaoAcab) {
-    const conteudo = secaoAcab[1]
-    const partes = conteudo.split(/\s{2,}/).map(s => s.trim()).filter(s => s.length > 0)
+    const linhasBrutas = secaoAcab[1].split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
 
-    const nomes: string[] = []
-    const detalhesAcab: string[] = []
-    const todosTempos: number[] = []
+    // Índice, no array `etapas`, da última etapa criada dentro desta seção —
+    // usado para anexar linhas de continuação de detalhe (texto que quebrou
+    // em mais de uma linha visual no PDF e não casa no padrão "nome + tempos").
+    let ultimaEtapaIdx: number | null = null
 
-    for (const parte of partes) {
-      if (/^\d{2}:\d{2}$/.test(parte)) {
-        todosTempos.push(tempoParaMinutos(parte))
-        continue
-      }
-      if (parte.startsWith('/')) {
-        detalhesAcab.push(parte.substring(1).trim())
-        continue
-      }
-      if (/^Caixa\s*Padr/i.test(parte)) continue
-      // Fragmento "cola" isolado (parte de "Reserva na Aba de cola")
-      if (parte === 'cola' && detalhesAcab.length > 0) {
-        detalhesAcab[detalhesAcab.length - 1] += ' cola'
-        continue
-      }
-      if (/^(Obs|Embalagem)/i.test(parte)) continue
-      // Continuação de detalhe: gramatura/formato (ex: "E 245g - 59,0 x 90,0 cm", "245g - 59,0 x 90,0")
-      // Padrão: começa com letra(s)+gramatura, ou gramatura pura, ou dimensão (N x N)
-      if ((/^[A-Z]\s*\d+g\b/i.test(parte) || /^\d+g\s*[-–]/i.test(parte) || /^\d+[.,]\d+\s*x\s*\d+/i.test(parte)) && detalhesAcab.length > 0) {
-        detalhesAcab[detalhesAcab.length - 1] += ' ' + parte
-        continue
-      }
-      // Fragmentos entre parênteses são continuação do nome anterior (ex: "(Cartão)", "(M))")
-      if (/^\([^)]*\)?\)?$/.test(parte) && nomes.length > 0) {
-        nomes[nomes.length - 1] += ' ' + parte
-        continue
-      }
-      if (parte.length > 3 && !/^\d/.test(parte)) {
-        nomes.push(parte)
-      }
-    }
+    for (const linha of linhasBrutas) {
+      if (/^Caixa\s*Padr/i.test(linha)) continue
+      if (/^(Obs|Embalagem)/i.test(linha)) continue
 
-    // Tempos: primeira metade = fixos, segunda metade = variáveis
-    const metade = Math.floor(todosTempos.length / 2)
-    const temposFix = todosTempos.slice(0, metade)
-    const temposVariable = todosTempos.slice(metade)
+      // Tempos podem ter 2 ou 3 dígitos de hora (ex: "133:20" = 133 minutos e
+      // 20 segundos, ou "02:05"), então o padrão aceita \d{2,3} antes dos ":".
+      const matchLinha = linha.match(/^(.+?)\s{2,}(\d{2,3}:\d{2})\s+(\d{2,3}:\d{2})\s*$/)
+      if (!matchLinha) {
+        // Não bate no padrão de etapa (nome + 2 tempos) — é continuação do
+        // detalhe da última etapa já reconhecida nesta seção.
+        if (ultimaEtapaIdx !== null) {
+          const etapaAnterior = etapas[ultimaEtapaIdx]
+          etapaAnterior.detalhes = etapaAnterior.detalhes ? `${etapaAnterior.detalhes} ${linha}` : linha
+        }
+        continue
+      }
 
-    for (let i = 0; i < nomes.length; i++) {
-      const nome = nomes[i]
-      const detalhe = detalhesAcab[i] || null
+      const resto = matchLinha[1].trim()
+      const tempoFixoMin = tempoParaMinutos(matchLinha[2])
+      const tempoVariavelMin = tempoParaMinutos(matchLinha[3])
+
+      // Nome = tudo antes da primeira "/"; detalhe = restante (pode ter mais "/")
+      const partesBarra = resto.split(/\s*\/\s*/)
+      const nome = partesBarra[0].trim()
+      const detalhe = partesBarra.length > 1 ? partesBarra.slice(1).join(' / ').trim() : null
+
+      if (nome.length <= 3) continue
 
       let tipo: EtapaOp['tipo'] = 'ACABAMENTO'
       if (/cortadeira|corte/i.test(nome)) tipo = 'CORTADEIRA'
@@ -555,10 +547,11 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
         descricao: nome,
         tipo,
         maquina: extrairNomeMaquina(nome),
-        tempoFixoMin: temposFix[i] ?? 0,
-        tempoVariavelMin: temposVariable[i] ?? 0,
+        tempoFixoMin,
+        tempoVariavelMin,
         detalhes: detalhe,
       })
+      ultimaEtapaIdx = etapas.length - 1
     }
   }
 
