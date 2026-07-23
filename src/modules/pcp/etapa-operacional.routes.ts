@@ -573,13 +573,62 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       data: { observacoes: obsAtualizada.trim() },
     })
 
+    // Re-extrair materiais (papel, tintas/Pantone, verniz, cola, etc.) — corrige
+    // dados perdidos por bugs antigos de extração de PDF (ex: Pantone não
+    // reconhecido). Por segurança, só apaga/recria os itens se NENHUM material
+    // já teve liberação ou consumo registrado — nesse caso a OP já está em
+    // produção real e sobrescrever a lista mudaria histórico de rastreabilidade.
+    let materiaisAtualizados = false
+    let materiaisAvisos: string[] = []
+    if (dados.materiais.length > 0) {
+      const itensExistentes = await prisma.itemOrdemProducao.findMany({
+        where: { ordemProducaoId: op.id },
+        select: { id: true, produtoComponenteId: true, descricaoProduto: true, quantidadeLiberada: true, quantidadeConsumida: true },
+      })
+
+      const temMovimentacao = itensExistentes.some(
+        (i) => Number(i.quantidadeLiberada) > 0 || Number(i.quantidadeConsumida) > 0,
+      )
+
+      if (temMovimentacao) {
+        materiaisAvisos.push('Materiais não foram atualizados: já há liberação/consumo registrado para esta OP. Ajuste manualmente se necessário.')
+      } else {
+        // Preserva o vínculo com produto (produtoComponenteId) por descrição,
+        // já que o novo parse não sabe a qual produto cadastrado cada material
+        // corresponde — mantém o de/para já feito na importação original.
+        const vinculoPorDescricao = new Map(itensExistentes.map((i) => [i.descricaoProduto, i.produtoComponenteId]))
+
+        await prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: op.id } })
+
+        for (const mat of dados.materiais) {
+          await prisma.itemOrdemProducao.create({
+            data: {
+              ordemProducaoId: op.id,
+              empresaId: user.empresaId,
+              produtoComponenteId: vinculoPorDescricao.get(mat.descricao) ?? undefined,
+              descricaoProduto: mat.descricao,
+              descricaoExterna: mat.descricao,
+              quantidade: mat.quantidade,
+              unidadeMedida: mat.unidade,
+              tipoMaterial: mat.tipo,
+              status: 'PENDENTE',
+            },
+          })
+        }
+        materiaisAtualizados = true
+      }
+    }
+
     return {
       opNumero: op.referenciaExterna || op.numero,
       tipoOp: dados.observacoes.tipoOp || null,
       matriz: dados.observacoes.matriz || null,
       formato: dados.observacoes.formatoPlano || null,
       cores: dados.observacoes.coresPlano || null,
-      atualizado: novasTags.length > 0,
+      atualizado: novasTags.length > 0 || materiaisAtualizados,
+      materiaisAtualizados,
+      totalMateriais: dados.materiais.length,
+      avisos: materiaisAvisos,
     }
   })
 
