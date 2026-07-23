@@ -390,6 +390,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id, empresaId: user.empresaId },
+      select: { id: true, status: true, dataInicioReal: true },
     })
 
     if (!op) {
@@ -427,9 +428,23 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       dataUpdate.dataFimReal = new Date()
     }
 
+    // IMPORTANTE: usar `select` (não retornar tudo) para excluir pdfData
+    // (BYTEA) — sem isso, cada troca de status materializa o PDF completo da
+    // OP em memória e o serializa de volta na resposta sem necessidade,
+    // causando lentidão perceptível no botão de avançar status (mesma causa
+    // já corrigida antes na listagem e no detalhe da OP).
     const atualizada = await prisma.ordemProducao.update({
       where: { id },
       data: dataUpdate,
+      select: {
+        id: true, empresaId: true, numero: true, produtoId: true, estruturaProdutoId: true,
+        quantidade: true, unidadeMedida: true, quantidadeProduzida: true, quantidadeRejeitada: true,
+        status: true, prioridade: true, dataEmissao: true, dataEntregaPrevista: true,
+        dataEntregaOriginal: true, vezesPostergada: true, dataInicioPrevista: true, dataFimPrevista: true,
+        dataInicioReal: true, dataFimReal: true, pedidoVendaId: true, clienteId: true, lote: true, cor: true,
+        grupoOpId: true, quantidadeExcedente: true, motivoCancelamento: true, observacoes: true,
+        referenciaExterna: true, origemImportacao: true, criadoPorId: true, criadoEm: true, atualizadoEm: true,
+      },
     })
 
     // Log de transição
@@ -728,6 +743,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id, empresaId: user.empresaId },
+      select: { id: true, status: true },
     })
 
     if (!op) {
@@ -749,7 +765,21 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     if (body.dataInicioPrevista !== undefined) data.dataInicioPrevista = body.dataInicioPrevista ? new Date(body.dataInicioPrevista) : null
     if (body.dataFimPrevista !== undefined) data.dataFimPrevista = body.dataFimPrevista ? new Date(body.dataFimPrevista) : null
 
-    const atualizada = await prisma.ordemProducao.update({ where: { id }, data })
+    // select explícito para excluir pdfData (BYTEA) da resposta — ver comentário
+    // detalhado no handler PATCH /:id/status acima.
+    const atualizada = await prisma.ordemProducao.update({
+      where: { id },
+      data,
+      select: {
+        id: true, empresaId: true, numero: true, produtoId: true, estruturaProdutoId: true,
+        quantidade: true, unidadeMedida: true, quantidadeProduzida: true, quantidadeRejeitada: true,
+        status: true, prioridade: true, dataEmissao: true, dataEntregaPrevista: true,
+        dataEntregaOriginal: true, vezesPostergada: true, dataInicioPrevista: true, dataFimPrevista: true,
+        dataInicioReal: true, dataFimReal: true, pedidoVendaId: true, clienteId: true, lote: true, cor: true,
+        grupoOpId: true, quantidadeExcedente: true, motivoCancelamento: true, observacoes: true,
+        referenciaExterna: true, origemImportacao: true, criadoPorId: true, criadoEm: true, atualizadoEm: true,
+      },
+    })
 
     return atualizada
   })

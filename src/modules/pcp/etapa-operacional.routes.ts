@@ -713,6 +713,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     let body: {
       centroProducaoId: string
       produtoId?: string | null
+      produtoNomeLivre?: string | null
       clienteId?: string | null
       clienteNomeLivre?: string | null
       quantidade: number
@@ -722,6 +723,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       body = z.object({
         centroProducaoId: z.string().uuid(),
         produtoId: z.string().uuid().optional().nullable(),
+        // Descrição de produto sem cadastro formal — vira tag [Produto] nas
+        // observações, mesmo padrão usado para clienteNomeLivre e na importação de PDF.
+        produtoNomeLivre: z.string().max(200).optional().nullable(),
         clienteId: z.string().uuid().optional().nullable(),
         // Nome de cliente sem cadastro formal (a maioria das OPs importadas via
         // PDF só têm o nome extraído como texto, sem clienteId real) — vira tag
@@ -763,6 +767,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const tagsObs: string[] = []
     if (body.clienteNomeLivre) tagsObs.push(`[Cliente] ${body.clienteNomeLivre.trim()}`)
+    if (body.produtoNomeLivre) tagsObs.push(`[Produto] ${body.produtoNomeLivre.trim()}`)
     if (body.descricao) tagsObs.push(`[Descricao] ${body.descricao}`)
 
     const op = await prisma.ordemProducao.create({
