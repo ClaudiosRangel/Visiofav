@@ -6,6 +6,7 @@ import { moduloGuard } from '../../middleware/modulo-guard'
 import { extrairTextoPdf } from './importacao-op/pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-parser'
 import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
+import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -704,6 +705,107 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // POST /api/pcp/etapas/adicionar-avulsa — Cria uma OP avulsa (sem número de
+  // fábrica, apenas referência AV-1, AV-2...) e já a adiciona à fila do centro
+  // =========================================================================
+  app.post('/etapas/adicionar-avulsa', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      centroProducaoId: z.string().uuid(),
+      produtoId: z.string().uuid().optional().nullable(),
+      clienteId: z.string().uuid().optional().nullable(),
+      quantidade: z.number().positive('Quantidade deve ser maior que zero'),
+      descricao: z.string().max(200).optional(),
+    }).parse(request.body)
+
+    const centro = await prisma.centroProducao.findFirst({
+      where: { id: body.centroProducaoId, empresaId: user.empresaId },
+    })
+    if (!centro) return reply.status(404).send({ message: 'Centro de produção não encontrado' })
+
+    // Gera a próxima referência avulsa sequencial (AV-1, AV-2, ...) por empresa,
+    // olhando o maior sufixo numérico já usado em referenciaExterna com esse padrão.
+    const avulsasExistentes = await prisma.ordemProducao.findMany({
+      where: { empresaId: user.empresaId, origemImportacao: 'AVULSA' },
+      select: { referenciaExterna: true },
+    })
+    let maiorSeq = 0
+    for (const av of avulsasExistentes) {
+      const m = av.referenciaExterna?.match(/^AV-(\d+)$/)
+      if (m) maiorSeq = Math.max(maiorSeq, parseInt(m[1]))
+    }
+    const referenciaAvulsa = `AV-${maiorSeq + 1}`
+
+    // A OP avulsa ainda precisa de um `numero` interno (constraint única da
+    // tabela), mas ele nunca é exibido — a UI sempre usa referenciaExterna.
+    const proximoNumero = await proximoNumeroOp(user.empresaId)
+
+    const op = await prisma.ordemProducao.create({
+      data: {
+        empresaId: user.empresaId,
+        numero: proximoNumero,
+        referenciaExterna: referenciaAvulsa,
+        origemImportacao: 'AVULSA',
+        produtoId: body.produtoId ?? undefined,
+        clienteId: body.clienteId ?? undefined,
+        quantidade: body.quantidade,
+        unidadeMedida: 'UN',
+        status: 'PROGRAMADA',
+        prioridade: 'NORMAL',
+        dataEntregaPrevista: new Date(),
+        dataEntregaOriginal: new Date(),
+        observacoes: body.descricao ? `[Descricao] ${body.descricao}` : undefined,
+        criadoPorId: user.id,
+      },
+    })
+
+    // Get max posicaoFila for this centro
+    const maxPos = await prisma.etapaOrdemProducao.aggregate({
+      where: { centroProducaoId: body.centroProducaoId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+      _max: { posicaoFila: true },
+    })
+
+    const etapa = await prisma.etapaOrdemProducao.create({
+      data: {
+        ordemProducaoId: op.id,
+        sequencia: 1,
+        descricao: body.descricao || `Lançamento avulso ${referenciaAvulsa}`,
+        centroProducaoId: body.centroProducaoId,
+        status: 'PENDENTE',
+        posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
+      },
+    })
+
+    return reply.status(201).send({ op, etapa, referenciaAvulsa })
+  })
+
+  // =========================================================================
+  // DELETE /api/pcp/ordens-avulsas/:opId — Exclui uma OP avulsa (a qualquer momento)
+  // =========================================================================
+  app.delete('/ordens-avulsas/:opId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { opId } = z.object({ opId: z.string().uuid() }).parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: opId, empresaId: user.empresaId, origemImportacao: 'AVULSA' },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP avulsa não encontrada' })
+
+    // OP avulsa pode ser excluída a qualquer instante — remove dependências
+    // em cascata (etapas, apontamentos, itens, logs) e a própria OP.
+    await prisma.$transaction([
+      prisma.apontamentoEtapa.deleteMany({ where: { etapaOrdemProducao: { ordemProducaoId: opId } } }),
+      prisma.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId: opId } }),
+      prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: opId } }),
+      prisma.logOrdemProducao.deleteMany({ where: { ordemProducaoId: opId } }),
+      prisma.programacaoEntrega.deleteMany({ where: { ordemProducaoId: opId } }),
+      prisma.ordemProducao.delete({ where: { id: opId } }),
+    ])
+
+    return { message: `OP avulsa ${op.referenciaExterna} excluída` }
+  })
+
+  // =========================================================================
   // GET /api/pcp/programacao/painel — Painel operacional completo
   // =========================================================================
 
@@ -741,7 +843,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           select: {
             numero: true, produtoId: true, quantidade: true, unidadeMedida: true,
             prioridade: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true,
-            clienteId: true, observacoes: true, referenciaExterna: true,
+            clienteId: true, observacoes: true, referenciaExterna: true, origemImportacao: true,
             itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ'] } } },
           },
         },
@@ -883,6 +985,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             posicaoFila: e.posicaoFila,
             isDesmembramento: Number(e.quantidadePrevista) > 0,
             isManual: e.descricao.includes('[MANUAL]') || e.descricao.startsWith('Lançamento manual'),
+            isAvulsa: e.ordemProducao.origemImportacao === 'AVULSA',
             quantidade: Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
             unidade: e.ordemProducao.unidadeMedida,
             quantidadeProduzida: Number(e.quantidadeProduzida),
