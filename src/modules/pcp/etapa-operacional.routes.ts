@@ -710,17 +710,34 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // =========================================================================
   app.post('/etapas/adicionar-avulsa', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
-    const body = z.object({
-      centroProducaoId: z.string().uuid(),
-      produtoId: z.string().uuid().optional().nullable(),
-      clienteId: z.string().uuid().optional().nullable(),
-      // Nome de cliente sem cadastro formal (a maioria das OPs importadas via
-      // PDF só têm o nome extraído como texto, sem clienteId real) — vira tag
-      // [Cliente] nas observações, mesmo padrão usado na importação de PDF.
-      clienteNomeLivre: z.string().max(200).optional().nullable(),
-      quantidade: z.number().positive('Quantidade deve ser maior que zero'),
-      descricao: z.string().max(200).optional(),
-    }).parse(request.body)
+    let body: {
+      centroProducaoId: string
+      produtoId?: string | null
+      clienteId?: string | null
+      clienteNomeLivre?: string | null
+      quantidade: number
+      descricao?: string
+    }
+    try {
+      body = z.object({
+        centroProducaoId: z.string().uuid(),
+        produtoId: z.string().uuid().optional().nullable(),
+        clienteId: z.string().uuid().optional().nullable(),
+        // Nome de cliente sem cadastro formal (a maioria das OPs importadas via
+        // PDF só têm o nome extraído como texto, sem clienteId real) — vira tag
+        // [Cliente] nas observações, mesmo padrão usado na importação de PDF.
+        clienteNomeLivre: z.string().max(200).optional().nullable(),
+        // Coluna no banco é Decimal(12,4) — máximo 8 dígitos inteiros (99.999.999)
+        quantidade: z.number().positive('Quantidade deve ser maior que zero').max(99_999_999, 'Quantidade máxima permitida é 99.999.999'),
+        descricao: z.string().max(200).optional(),
+      }).parse(request.body)
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        const primeiraMsg = err.errors?.[0]?.message || 'Dados inválidos'
+        return reply.status(400).send({ message: primeiraMsg, erros: err.errors })
+      }
+      throw err
+    }
 
     const centro = await prisma.centroProducao.findFirst({
       where: { id: body.centroProducaoId, empresaId: user.empresaId },
