@@ -168,6 +168,52 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/ordens-producao/clientes-distintos — Lista nomes de clientes
+  // usados em Ordens de Produção, sem duplicar. Combina duas fontes:
+  // 1) Cadastro formal (tabela Cliente, vinculado via clienteId)
+  // 2) Nome extraído da tag [Cliente] das observações — a maioria das OPs
+  //    importadas via PDF não tem clienteId vinculado, só esse texto.
+  // Usado para autocomplete (ex: modal de OP Avulsa), onde "buscar cliente"
+  // deve considerar todos os nomes já vistos, não só os formalmente cadastrados.
+  // =========================================================================
+  app.get('/clientes-distintos', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+
+    const ops = await prisma.ordemProducao.findMany({
+      where: { empresaId: user.empresaId },
+      select: { clienteId: true, observacoes: true },
+    })
+
+    const clienteIds = [...new Set(ops.map((op) => op.clienteId).filter((id): id is string => id !== null))]
+    const clientesCadastrados = clienteIds.length > 0 ? await prisma.cliente.findMany({
+      where: { id: { in: clienteIds } },
+      select: { id: true, razaoSocial: true, nomeFantasia: true },
+    }) : []
+    const clienteMap = new Map(clientesCadastrados.map((c) => [c.id, c.nomeFantasia || c.razaoSocial]))
+
+    // Dedupe case-insensitive (ex: "Frescatto" e "FRESCATTO" contam como um só),
+    // preservando a primeira grafia encontrada. Cada entrada guarda também o
+    // clienteId real quando existe cadastro formal — nomes vindos só da tag
+    // [Cliente] do PDF (a maioria) não têm clienteId, apenas o nome em texto.
+    const vistos = new Map<string, { nome: string; clienteId: string | null }>()
+    for (const op of ops) {
+      const nomeTag = extrairClienteObs(op.observacoes)
+      const nomeCadastro = op.clienteId ? clienteMap.get(op.clienteId) : null
+      const nome = nomeTag || nomeCadastro
+      if (!nome) continue
+      const chave = nome.trim().toUpperCase()
+      if (!vistos.has(chave)) {
+        // Só associa clienteId se o nome vier do cadastro (nomeTag ausente) —
+        // evita associar um clienteId a um nome de tag que pode ser diferente.
+        vistos.set(chave, { nome: nome.trim(), clienteId: !nomeTag && op.clienteId ? op.clienteId : null })
+      }
+    }
+
+    const resultado = [...vistos.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    return { data: resultado, total: resultado.length }
+  })
+
+  // =========================================================================
   // GET /api/ordens-producao/:id — Detalhe completo
   // =========================================================================
   app.get('/:id', async (request, reply) => {
