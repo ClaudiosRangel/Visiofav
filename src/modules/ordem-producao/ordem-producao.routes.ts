@@ -123,7 +123,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       prisma.ordemProducao.count({ where }),
     ])
 
-    // Calcula percentual concluído e busca nomes dos produtos
+    // Calcula percentual concluído e busca nomes dos produtos e clientes
     const produtoIds = [...new Set(data.map((op) => op.produtoId).filter((id): id is string => id !== null))]
     const produtos = produtoIds.length > 0 ? await prisma.produto.findMany({
       where: { id: { in: produtoIds } },
@@ -131,9 +131,17 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     }) : []
     const produtoMap = new Map(produtos.map((p) => [p.id, `${p.codigo} - ${p.nome}`]))
 
+    const clienteIds = [...new Set(data.map((op) => op.clienteId).filter((id): id is string => id !== null))]
+    const clientes = clienteIds.length > 0 ? await prisma.cliente.findMany({
+      where: { id: { in: clienteIds } },
+      select: { id: true, razaoSocial: true, nomeFantasia: true },
+    }) : []
+    const clienteMap = new Map(clientes.map((c) => [c.id, c.nomeFantasia || c.razaoSocial]))
+
     const dataComPercentual = data.map((op) => ({
       ...op,
       produtoNome: (op.produtoId && produtoMap.get(op.produtoId)) || op.produtoId || 'Produto não vinculado',
+      clienteNome: (op.clienteId && clienteMap.get(op.clienteId)) || null,
       percentualConcluido: Number(op.quantidade) > 0
         ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
         : 0,
