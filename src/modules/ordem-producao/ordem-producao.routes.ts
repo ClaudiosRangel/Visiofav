@@ -13,6 +13,18 @@ import {
   calcularConsumoAutomatico,
 } from './ordem-producao.service'
 
+/**
+ * Extrai o nome do cliente salvo na tag [Cliente] das observações da OP.
+ * OPs importadas via PDF (GPrint/Calcograf) frequentemente não têm clienteId
+ * vinculado a um cadastro de Cliente — o nome real extraído do PDF fica salvo
+ * nessa tag. Mesmo padrão usado em etapa-operacional.routes.ts (painel de programação).
+ */
+function extrairClienteObs(obs: string | null): string | null {
+  if (!obs) return null
+  const m = obs.match(/\[Cliente\]\s*(.+?)(?:\n|$)/)
+  return m ? m[1].trim() : null
+}
+
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
 const criarOpSchema = z.object({
@@ -141,7 +153,12 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     const dataComPercentual = data.map((op) => ({
       ...op,
       produtoNome: (op.produtoId && produtoMap.get(op.produtoId)) || op.produtoId || 'Produto não vinculado',
-      clienteNome: (op.clienteId && clienteMap.get(op.clienteId)) || null,
+      // OPs importadas via PDF (PDF_GPRINT) muitas vezes não têm clienteId vinculado
+      // a um cadastro de Cliente — o nome real do cliente do PDF fica salvo na tag
+      // [Cliente] dentro de observacoes. Priorizar essa tag e só cair para o
+      // relacionamento clienteId como fallback (mesmo padrão usado no painel de
+      // programação, ver extrairClienteObs em etapa-operacional.routes.ts).
+      clienteNome: extrairClienteObs(op.observacoes) || (op.clienteId && clienteMap.get(op.clienteId)) || null,
       percentualConcluido: Number(op.quantidade) > 0
         ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
         : 0,
@@ -227,7 +244,13 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100))
       : 0
 
-    return { ...op, produtoNome: produto ? `${produto.codigo} - ${produto.nome}` : (op.produtoId || 'Produto não vinculado'), clienteNome: cliente ? (cliente.nomeFantasia || cliente.razaoSocial) : null, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
+    // OPs importadas via PDF muitas vezes não têm clienteId vinculado a um cadastro
+    // de Cliente — o nome real do cliente do PDF fica salvo na tag [Cliente] dentro
+    // de observacoes. Priorizar essa tag e só cair para o relacionamento clienteId
+    // como fallback (mesmo padrão usado no painel de programação).
+    const clienteNome = extrairClienteObs(op.observacoes) || (cliente ? (cliente.nomeFantasia || cliente.razaoSocial) : null)
+
+    return { ...op, produtoNome: produto ? `${produto.codigo} - ${produto.nome}` : (op.produtoId || 'Produto não vinculado'), clienteNome, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
   })
 
   // =========================================================================
