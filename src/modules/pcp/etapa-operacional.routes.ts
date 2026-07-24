@@ -198,6 +198,36 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const todasConcluidas = todasEtapas.every(e => e.status === 'CONCLUIDA')
 
     if (todasConcluidas) {
+      // Propaga a quantidade produzida (apontada na última etapa) para a OP —
+      // SEMPRE, independente de usar WMS ou não. Antes disso, a OP virava
+      // CONCLUIDA (via essa própria rota, quando usaWms=true, ou via
+      // PATCH /ordens-producao/:id/status manual) sem nunca atualizar
+      // `quantidadeProduzida`, deixando o %Concluído travado em 0% mesmo com
+      // a OP finalizada e material real apontado nas etapas.
+      try {
+        await prisma.ordemProducao.update({
+          where: { id: etapa.ordemProducaoId },
+          data: {
+            status: 'CONCLUIDA',
+            dataFimReal: agora,
+            quantidadeProduzida: atualizada.quantidadeProduzida,
+            quantidadeRejeitada: atualizada.quantidadePerda,
+          },
+        })
+
+        await prisma.logOrdemProducao.create({
+          data: {
+            ordemProducaoId: etapa.ordemProducaoId,
+            statusAnterior: 'EM_PRODUCAO',
+            statusNovo: 'CONCLUIDA',
+            usuarioId: user.id,
+            observacao: `Todas as etapas concluídas. Quantidade produzida: ${Number(atualizada.quantidadeProduzida)}.`,
+          },
+        })
+      } catch (err) {
+        console.error('[PCP] Erro ao atualizar quantidade produzida da OP na conclusão:', err)
+      }
+
       try {
         const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
 
@@ -231,7 +261,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
                   descricao: `${produto?.codigo || ''} - ${produto?.nome || 'Produto Acabado'}`,
                   codigoProduto: produto?.codigo || '',
                   unidade: produto?.unidade || 'UN',
-                  quantidade: Number(etapa.ordemProducao.quantidade),
+                  quantidade: Number(atualizada.quantidadeProduzida) > 0 ? Number(atualizada.quantidadeProduzida) : Number(etapa.ordemProducao.quantidade),
                   lote: etapa.ordemProducao.lote || null,
                 }],
               },
@@ -240,19 +270,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
           entradaWms = { notaEntradaId: nota.id, numero: nota.numero, status: 'PENDENTE' }
 
-          // Atualiza OP para CONCLUIDA
-          await prisma.ordemProducao.update({
-            where: { id: etapa.ordemProducaoId },
-            data: { status: 'CONCLUIDA', dataFimReal: agora },
-          })
-
           await prisma.logOrdemProducao.create({
             data: {
               ordemProducaoId: etapa.ordemProducaoId,
-              statusAnterior: 'EM_PRODUCAO',
+              statusAnterior: 'CONCLUIDA',
               statusNovo: 'CONCLUIDA',
               usuarioId: user.id,
-              observacao: `Todas as etapas concluídas. Nota de entrada #${nota.numero} criada no WMS.`,
+              observacao: `Nota de entrada #${nota.numero} criada no WMS.`,
             },
           })
         }
