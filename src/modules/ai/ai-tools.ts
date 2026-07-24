@@ -625,6 +625,154 @@ export const AI_TOOLS: AITool[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // PCP — Ordens de Produção, Programação e Apontamentos
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    name: 'consultar_ordem_producao',
+    description: 'Consulta os detalhes completos de uma Ordem de Produção (OP): produto, cliente, status, quantidade produzida, percentual concluído e lista de etapas com seus status. Aceita o número da OP ou a referência de OP avulsa (ex: AV-3).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string', description: 'Número da OP (ex: 2881) ou referência de OP avulsa (ex: AV-3)' },
+      },
+      required: ['numeroOp'],
+    },
+  },
+  {
+    name: 'listar_ordens_producao',
+    description: 'Lista Ordens de Produção com filtros. Use para perguntas como "quais OPs estão atrasadas", "quais OPs estão em produção", "OPs do cliente X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['RASCUNHO', 'PLANEJADA', 'PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO', 'CONCLUIDA', 'CANCELADA'], description: 'Filtrar por status específico' },
+        atrasadas: { type: 'boolean', description: 'Se true, lista apenas OPs com entrega prevista já vencida e não concluídas/canceladas' },
+        clienteNome: { type: 'string', description: 'Filtrar por nome do cliente (considera cadastro formal e tag [Cliente] das OPs importadas via PDF)' },
+      },
+    },
+  },
+  {
+    name: 'criar_ordem_producao',
+    description: 'Cria uma nova Ordem de Produção para um produto já cadastrado com Estrutura (BOM) ativa. Explode automaticamente os materiais e gera as etapas a partir do roteiro cadastrado. Use quando o usuário pedir para "criar uma OP", "lançar uma ordem de produção".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        produtoNome: { type: 'string', description: 'Nome ou código do produto' },
+        quantidade: { type: 'number', description: 'Quantidade a produzir' },
+        unidadeMedida: { type: 'string', description: 'Unidade de medida (default UN)' },
+        dataEntregaPrevista: { type: 'string', description: 'YYYY-MM-DD (default: 7 dias a partir de hoje)' },
+        clienteNome: { type: 'string', description: 'Nome do cliente, se houver (opcional)' },
+        prioridade: { type: 'string', enum: ['BAIXA', 'NORMAL', 'ALTA', 'URGENTE'], description: 'Default: NORMAL' },
+      },
+      required: ['produtoNome', 'quantidade'],
+    },
+  },
+  {
+    name: 'alterar_status_ordem_producao',
+    description: 'Altera o status de uma OP, respeitando a máquina de estados (RASCUNHO→PLANEJADA→PROGRAMADA→LIBERADA→EM_PRODUCAO→CONCLUIDA, ou CANCELADA a partir de qualquer status não-final). Use quando o usuário pedir para "planejar a OP X", "liberar a OP X", "cancelar a OP X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string', description: 'Número ou referência da OP' },
+        novoStatus: { type: 'string', enum: ['PLANEJADA', 'PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO', 'CONCLUIDA', 'CANCELADA'] },
+        motivoCancelamento: { type: 'string', description: 'Obrigatório (mín. 10 caracteres) se novoStatus for CANCELADA' },
+      },
+      required: ['numeroOp', 'novoStatus'],
+    },
+  },
+  {
+    name: 'consultar_programacao_centro',
+    description: 'Lista a fila de etapas pendentes/em andamento/pausadas de um centro de produção específico (ex: "Cortadeira Coin", "Impressão"). Use para perguntas como "o que tem pendente na Cortadeira Coin".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centroNome: { type: 'string', description: 'Nome ou parte do nome do centro de produção' },
+      },
+      required: ['centroNome'],
+    },
+  },
+  {
+    name: 'iniciar_etapa_producao',
+    description: 'Inicia (ou retoma, se estava pausada) a etapa pendente de uma OP. Use quando o usuário pedir para "iniciar a etapa da OP X", "começar a produção da OP X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string', description: 'Número ou referência da OP' },
+        centroNome: { type: 'string', description: 'Nome do centro de produção, se a OP tiver mais de uma etapa pendente em centros diferentes (opcional)' },
+      },
+      required: ['numeroOp'],
+    },
+  },
+  {
+    name: 'apontar_producao_etapa',
+    description: 'Registra produção parcial (e opcionalmente perda) em uma etapa que já está em andamento ou pausada, sem concluí-la. Use quando o usuário disser "aponta X produzidas na OP Y" sem pedir para finalizar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string' },
+        quantidadeProduzida: { type: 'number' },
+        quantidadePerda: { type: 'number', description: 'Default 0' },
+        motivoPerda: { type: 'string', enum: ['ACERTO', 'REFUGO', 'DEFEITO', 'APARA'] },
+        centroNome: { type: 'string', description: 'Opcional, para desambiguar se houver múltiplas etapas ativas' },
+      },
+      required: ['numeroOp', 'quantidadeProduzida'],
+    },
+  },
+  {
+    name: 'concluir_etapa_producao',
+    description: 'Conclui a etapa em andamento/pausada de uma OP, opcionalmente registrando a quantidade produzida final antes de concluir. Se for a última etapa pendente da OP, a OP inteira é marcada como CONCLUIDA automaticamente e a quantidade produzida é propagada. Use quando o usuário pedir para "finalizar a etapa da OP X", "concluir a produção da OP X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string' },
+        quantidadeProduzida: { type: 'number', description: 'Quantidade produzida a registrar antes de concluir (opcional — se omitido, conclui sem registrar apontamento novo)' },
+        centroNome: { type: 'string', description: 'Opcional, para desambiguar' },
+      },
+      required: ['numeroOp'],
+    },
+  },
+  {
+    name: 'pausar_etapa_producao',
+    description: 'Pausa a etapa em andamento de uma OP, registrando o motivo da parada. Use quando o usuário pedir para "parar a etapa da OP X", "pausar a produção da OP X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string' },
+        motivoParada: { type: 'string', enum: ['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO'] },
+        observacao: { type: 'string' },
+        centroNome: { type: 'string' },
+      },
+      required: ['numeroOp', 'motivoParada'],
+    },
+  },
+  {
+    name: 'postergar_entrega_op',
+    description: 'Altera a data de entrega prevista de uma OP, preservando a data original para histórico. Use quando o usuário pedir para "adiar a entrega da OP X", "postergar a OP X para o dia Y".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string' },
+        novaDataEntrega: { type: 'string', description: 'YYYY-MM-DD' },
+      },
+      required: ['numeroOp', 'novaDataEntrega'],
+    },
+  },
+  {
+    name: 'criar_op_avulsa',
+    description: 'Cria uma OP avulsa (sem número de fábrica, gera referência AV-1, AV-2... automaticamente) diretamente na fila de um centro de produção. Use quando o usuário pedir para "lançar um avulso", "criar uma OP avulsa" — para trabalhos sem OP formal do sistema de origem.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        centroNome: { type: 'string', description: 'Nome do centro de produção onde a etapa avulsa entrará na fila' },
+        quantidade: { type: 'number' },
+        produtoNomeLivre: { type: 'string', description: 'Descrição livre do produto (não precisa ser um produto cadastrado)' },
+        clienteNomeLivre: { type: 'string', description: 'Nome livre do cliente (não precisa ser um cliente cadastrado)' },
+        descricao: { type: 'string', description: 'Descrição da etapa/lançamento' },
+      },
+      required: ['centroNome', 'quantidade'],
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // DIAGNÓSTICO E PRÉ-REQUISITOS
   // ═══════════════════════════════════════════════════════════════════════════
   {

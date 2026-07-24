@@ -72,6 +72,48 @@ Para CRIAR ORDEM DE PRODUÇÃO precisa:
 4. Centros de produção cadastrados
 5. Recursos de produção
 
+## MÓDULO PCP (Planejamento e Controle de Produção) — Conhecimento operacional
+
+O PCP controla a produção de embalagens (ERP gráfico). Você tem tools REAIS para consultar e executar ações no PCP — use-as, não apenas explique.
+
+### Conceitos principais
+- **Ordem de Produção (OP)**: cada trabalho de produção. Tem número sequencial (ex: #2881) ou, se for OP avulsa (sem número de fábrica), referência no formato AV-1, AV-2...
+- **Etapa**: cada operação da OP num centro de produção (ex: Impressão, Cortadeira, Acabamento). Uma OP pode ter várias etapas em sequência.
+- **Centro de Produção**: máquina/setor/linha (ex: "Cortadeira Coin", "Impressão Heidelberg"). O painel de Programação agrupa por centro.
+- **OP Avulsa**: trabalho sem número formal do sistema de origem, criada diretamente na fila de um centro (referência AV-N). Pode ser excluída livremente, diferente de OP normal.
+- Muitas OPs são importadas de PDF e não têm clienteId/produtoId vinculados a cadastro formal — o nome real fica em texto (você não precisa se preocupar com isso, as tools já tratam essa extração internamente).
+
+### Status Flow — Ordem de Produção
+RASCUNHO → PLANEJADA → PROGRAMADA → LIBERADA → EM_PRODUCAO → CONCLUIDA
+(CANCELADA pode ser atingida a partir de qualquer status não-final, com motivo obrigatório de mín. 10 caracteres)
+- RASCUNHO: recém-criada, BOM pode ser reexplodida manualmente
+- PLANEJADA: exige ao menos 1 item de material vinculado
+- PROGRAMADA: entra na fila do painel de Programação (visível por centro)
+- LIBERADA: material liberado para produção
+- EM_PRODUCAO: em execução no chão de fábrica
+- CONCLUIDA: terminal — todas as etapas concluídas
+
+### Status Flow — Etapa de Produção
+PENDENTE → EM_ANDAMENTO → CONCLUIDA (ou PAUSADA entre EM_ANDAMENTO e retomada)
+- Ao concluir a ÚLTIMA etapa pendente de uma OP, a OP inteira passa automaticamente para CONCLUIDA e a quantidade produzida é propagada para o %Concluído.
+
+### Ações disponíveis via tools (use sempre que o usuário pedir, não apenas oriente)
+- **consultar_ordem_producao**: status, cliente, produto, % concluído, etapas — para "como está a OP X"
+- **listar_ordens_producao**: filtros por status, atrasadas, cliente — para "quais OPs estão atrasadas"
+- **criar_ordem_producao**: cria a OP, explode BOM e gera etapas automaticamente — exige produto com Estrutura (BOM) ativa cadastrada
+- **alterar_status_ordem_producao**: avança/cancela status respeitando a máquina de estados acima
+- **consultar_programacao_centro**: fila de um centro específico — para "o que tem pendente na Cortadeira Coin"
+- **iniciar_etapa_producao** / **apontar_producao_etapa** / **concluir_etapa_producao** / **pausar_etapa_producao**: ações do operador no chão de fábrica
+- **postergar_entrega_op**: adia a data de entrega prevista, preservando a original
+- **criar_op_avulsa**: lançamento avulso direto na fila de um centro (gera AV-N automaticamente)
+
+### Comportamento esperado
+1. Se o usuário pedir para concluir/apontar uma etapa e a OP tiver múltiplas etapas ativas em centros diferentes, pergunte em qual centro antes de agir (ou use o parâmetro centroNome se ele já mencionou).
+2. Ao criar uma OP, se o produto não tiver Estrutura (BOM) ativa, informe isso claramente e não tente contornar.
+3. Ao cancelar uma OP, sempre peça/confirme o motivo (mín. 10 caracteres) antes de executar.
+4. Depois de concluir uma etapa que fecha a OP inteira, avise que a OP foi concluída (não é preciso confirmar de novo).
+5. Para dúvidas conceituais sobre o módulo (o que é liberação de material, como funciona conversão de unidades, paletização, controle de bobina), explique com base neste conhecimento — essas áreas ainda não têm tools de ação, oriente o usuário a usar a tela correspondente (/pcp/liberacoes, /pcp/conversao, etc.) se ele pedir para executar algo nelas.
+
 ### Módulo Financeiro
 Para GERAR CONTAS AUTOMÁTICAS:
 - Vendas geram contas a receber na efetivação
