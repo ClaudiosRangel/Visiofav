@@ -57,7 +57,7 @@ export const aiService = {
     const msgNormalizada = mensagem.toLowerCase().trim()
     const temXmlPendente = !!obterXmlPendente(empresaId)
     if (temXmlPendente && FRASES_CONFIRMACAO_IMPORT_XML.some(f => msgNormalizada.includes(f))) {
-      const toolResult = await executarTool('importar_xml_compras_real', {}, empresaId)
+      const toolResult = await executarTool('importar_xml_compras_real', {}, empresaId, usuarioId)
       if (usuarioId) { try { await prisma.conversaAI.create({ data: { empresaId, usuarioId, mensagem, resposta: toolResult.resposta } }) } catch {} }
       return { resposta: toolResult.resposta, acao: toolResult.acao, sugestoes: toolResult.acao?.tipo === 'NAVEGAR' ? ['Importar outro XML', 'Ver compras'] : undefined }
     }
@@ -116,7 +116,7 @@ export const aiService = {
           resposta = block.text
         } else if (block.type === 'tool_use') {
           // Executar a tool
-          const toolResult = await executarTool(block.name, block.input, empresaId)
+          const toolResult = await executarTool(block.name, block.input, empresaId, usuarioId)
           resposta = toolResult.resposta
           acao = toolResult.acao
         }

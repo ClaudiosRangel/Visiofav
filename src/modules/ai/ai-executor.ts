@@ -27,7 +27,7 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString('pt-BR')
 }
 
-export async function executarTool(toolName: string, input: any, empresaId: string): Promise<ToolResult> {
+export async function executarTool(toolName: string, input: any, empresaId: string, usuarioId?: string): Promise<ToolResult> {
   try {
     switch (toolName) {
       case 'navegar': return executarNavegar(input)
@@ -77,6 +77,18 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'criar_funcionario': return await executarCriarFuncionario(input, empresaId)
       case 'diagnosticar_prerequisitos': return await executarDiagnostico(input, empresaId)
       case 'verificar_configuracao_empresa': return await executarVerificarConfiguracao(empresaId)
+      // PCP
+      case 'consultar_ordem_producao': return await executarConsultarOrdemProducao(input, empresaId)
+      case 'listar_ordens_producao': return await executarListarOrdensProducao(input, empresaId)
+      case 'criar_ordem_producao': return await executarCriarOrdemProducao(input, empresaId)
+      case 'alterar_status_ordem_producao': return await executarAlterarStatusOrdemProducao(input, empresaId, usuarioId)
+      case 'consultar_programacao_centro': return await executarConsultarProgramacaoCentro(input, empresaId)
+      case 'iniciar_etapa_producao': return await executarIniciarEtapaProducao(input, empresaId)
+      case 'apontar_producao_etapa': return await executarApontarProducaoEtapa(input, empresaId)
+      case 'concluir_etapa_producao': return await executarConcluirEtapaProducao(input, empresaId, usuarioId)
+      case 'pausar_etapa_producao': return await executarPausarEtapaProducao(input, empresaId)
+      case 'postergar_entrega_op': return await executarPostergarEntregaOp(input, empresaId)
+      case 'criar_op_avulsa': return await executarCriarOpAvulsa(input, empresaId)
       default:
         return { resposta: `⚠️ Ação **"${toolName}"** não reconhecida.` }
     }
@@ -2107,5 +2119,513 @@ async function executarVerificarConfiguracao(empresaId: string): Promise<ToolRes
   return {
     resposta,
     acao: { tipo: 'MOSTRAR_DADOS', resultado: { empresa, contadores: { produtos, clientes, fornecedores, vendedores, tabelas }, isEmpty } },
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PCP — Ordens de Produção, Programação e Apontamentos
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Extrai o nome do cliente salvo na tag [Cliente] das observações da OP —
+ * mesmo padrão usado em ordem-producao.routes.ts e etapa-operacional.routes.ts
+ * (OPs importadas via PDF geralmente não têm clienteId vinculado a cadastro). */
+function extrairClienteObsPcp(obs: string | null): string | null {
+  if (!obs) return null
+  const m = obs.match(/\[Cliente\]\s*(.+?)(?:\n|$)/)
+  return m ? m[1].trim() : null
+}
+
+function extrairProdutoObsPcp(obs: string | null): string | null {
+  if (!obs) return null
+  const m = obs.match(/\[Produto\]\s*(.+?)(?:\n|$)/)
+  return m ? m[1].trim() : null
+}
+
+/** Busca uma OP por número (aceita referenciaExterna tipo "AV-3" ou número interno). */
+async function buscarOpPorNumero(empresaId: string, numeroOuReferencia: string | number) {
+  const texto = String(numeroOuReferencia).trim()
+  const numeroInt = parseInt(texto, 10)
+
+  return prisma.ordemProducao.findFirst({
+    where: {
+      empresaId,
+      OR: [
+        { referenciaExterna: texto },
+        ...(Number.isFinite(numeroInt) ? [{ numero: numeroInt }] : []),
+      ],
+    },
+    select: {
+      id: true, numero: true, referenciaExterna: true, status: true, quantidade: true,
+      quantidadeProduzida: true, unidadeMedida: true, produtoId: true, clienteId: true,
+      observacoes: true, dataEntregaPrevista: true, dataEntregaOriginal: true, prioridade: true,
+    },
+  })
+}
+
+async function executarConsultarOrdemProducao(input: { numeroOp: string | number }, empresaId: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) {
+    return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+  }
+
+  const [produto, cliente, etapas] = await Promise.all([
+    op.produtoId ? prisma.produto.findFirst({ where: { id: op.produtoId }, select: { codigo: true, nome: true } }) : null,
+    op.clienteId ? prisma.cliente.findFirst({ where: { id: op.clienteId }, select: { razaoSocial: true, nomeFantasia: true } }) : null,
+    prisma.etapaOrdemProducao.findMany({
+      where: { ordemProducaoId: op.id },
+      orderBy: { sequencia: 'asc' },
+      select: { sequencia: true, descricao: true, status: true, centroProducao: { select: { descricao: true } } },
+    }),
+  ])
+
+  const nomeProduto = extrairProdutoObsPcp(op.observacoes) || (produto ? `${produto.codigo} - ${produto.nome}` : 'Produto não vinculado')
+  const nomeCliente = extrairClienteObsPcp(op.observacoes) || cliente?.nomeFantasia || cliente?.razaoSocial || '—'
+  const percentual = Number(op.quantidade) > 0 ? Math.min(100, Math.round((Number(op.quantidadeProduzida) / Number(op.quantidade)) * 100)) : 0
+
+  const etapasTexto = etapas.length > 0
+    ? etapas.map(e => `  ${e.sequencia}. ${e.descricao} — **${e.status}**${e.centroProducao ? ` (${e.centroProducao.descricao})` : ''}`).join('\n')
+    : '  _nenhuma etapa cadastrada_'
+
+  return {
+    resposta: `🏭 **OP #${op.referenciaExterna || op.numero}**\n• Produto: **${nomeProduto}**\n• Cliente: **${nomeCliente}**\n• Status: **${op.status}**\n• Quantidade: ${Number(op.quantidade).toLocaleString('pt-BR')} ${op.unidadeMedida} (produzido: ${Number(op.quantidadeProduzida).toLocaleString('pt-BR')} — **${percentual}%**)\n• Entrega prevista: ${op.dataEntregaPrevista ? formatDate(op.dataEntregaPrevista) : '—'}\n• Prioridade: ${op.prioridade}\n\n**Etapas:**\n${etapasTexto}`,
+    acao: { tipo: 'MOSTRAR_DADOS', resultado: { op, etapas } },
+  }
+}
+
+async function executarListarOrdensProducao(input: { status?: string; atrasadas?: boolean; clienteNome?: string }, empresaId: string): Promise<ToolResult> {
+  const where: any = { empresaId }
+  if (input.status) where.status = input.status
+  if (input.atrasadas) {
+    where.status = { notIn: ['CONCLUIDA', 'CANCELADA'] }
+    where.dataEntregaPrevista = { lt: new Date() }
+  }
+
+  let ops = await prisma.ordemProducao.findMany({
+    where,
+    orderBy: { dataEntregaPrevista: 'asc' },
+    take: 30,
+    select: {
+      numero: true, referenciaExterna: true, status: true, quantidade: true, quantidadeProduzida: true,
+      unidadeMedida: true, dataEntregaPrevista: true, observacoes: true, clienteId: true,
+    },
+  })
+
+  if (input.clienteNome) {
+    const termo = input.clienteNome.toLowerCase()
+    const clienteIds = ops.map(o => o.clienteId).filter((id): id is string => !!id)
+    const clientes = clienteIds.length > 0 ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } }) : []
+    const clienteMap = new Map(clientes.map(c => [c.id, (c.nomeFantasia || c.razaoSocial).toLowerCase()]))
+    ops = ops.filter(o => {
+      const nomeTag = extrairClienteObsPcp(o.observacoes)?.toLowerCase()
+      const nomeCadastro = o.clienteId ? clienteMap.get(o.clienteId) : undefined
+      return (nomeTag && nomeTag.includes(termo)) || (nomeCadastro && nomeCadastro.includes(termo))
+    })
+  }
+
+  if (ops.length === 0) {
+    return { resposta: `✅ Nenhuma OP encontrada com esse filtro.` }
+  }
+
+  const lista = ops.slice(0, 20).map(o => {
+    const cliente = extrairClienteObsPcp(o.observacoes)
+    const percentual = Number(o.quantidade) > 0 ? Math.round((Number(o.quantidadeProduzida) / Number(o.quantidade)) * 100) : 0
+    return `  • **#${o.referenciaExterna || o.numero}** — ${cliente || '—'} | ${o.status} | ${percentual}% | Entrega: ${o.dataEntregaPrevista ? formatDate(o.dataEntregaPrevista) : '—'}`
+  }).join('\n')
+
+  const titulo = input.atrasadas ? 'OPs atrasadas' : (input.status ? `OPs com status ${input.status}` : 'Ordens de Produção')
+
+  return {
+    resposta: `🏭 **${titulo}** (${ops.length}):\n${lista}${ops.length > 20 ? `\n  _...e mais ${ops.length - 20}_` : ''}`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/ordens-producao', params: input.status ? { status: input.status } : undefined },
+  }
+}
+
+async function executarCriarOrdemProducao(input: { produtoNome: string; quantidade: number; unidadeMedida?: string; dataEntregaPrevista?: string; clienteNome?: string; prioridade?: string }, empresaId: string): Promise<ToolResult> {
+  const produto = await prisma.produto.findFirst({
+    where: {
+      empresaId,
+      OR: [
+        { nome: { contains: input.produtoNome, mode: 'insensitive' } },
+        { codigo: { contains: input.produtoNome, mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true, nome: true, codigo: true },
+  })
+  if (!produto) {
+    return { resposta: `❌ Produto **"${input.produtoNome}"** não encontrado.` }
+  }
+
+  const estrutura = await prisma.estruturaProduto.findFirst({
+    where: { empresaId, produtoId: produto.id, status: 'ATIVA' },
+    select: { id: true },
+  })
+  if (!estrutura) {
+    return { resposta: `❌ O produto **${produto.nome}** não possui uma Estrutura (BOM) ativa cadastrada. Cadastre a estrutura em PCP > Cadastros > Estruturas antes de criar a OP.` }
+  }
+
+  let clienteId: string | undefined
+  if (input.clienteNome) {
+    const cliente = await prisma.cliente.findFirst({
+      where: {
+        empresaId,
+        OR: [
+          { razaoSocial: { contains: input.clienteNome, mode: 'insensitive' } },
+          { nomeFantasia: { contains: input.clienteNome, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    })
+    clienteId = cliente?.id
+  }
+
+  const { proximoNumeroOp, explodirBomParaOp, gerarEtapasOp, calcularConsumoAutomatico } = await import('../ordem-producao/ordem-producao.service')
+  const numero = await proximoNumeroOp(empresaId)
+  const dataEntrega = input.dataEntregaPrevista ? new Date(input.dataEntregaPrevista) : (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d })()
+
+  const op = await prisma.ordemProducao.create({
+    data: {
+      empresaId,
+      numero,
+      produtoId: produto.id,
+      estruturaProdutoId: estrutura.id,
+      quantidade: input.quantidade,
+      unidadeMedida: input.unidadeMedida || 'UN',
+      dataEntregaPrevista: dataEntrega,
+      prioridade: input.prioridade || 'NORMAL',
+      clienteId,
+      observacoes: !clienteId && input.clienteNome ? `[Cliente] ${input.clienteNome}` : undefined,
+    },
+  })
+
+  const [itensGerados, etapasGeradas] = await Promise.all([
+    explodirBomParaOp(op.id, estrutura.id, input.quantidade, empresaId),
+    gerarEtapasOp(op.id, produto.id, input.quantidade, empresaId),
+  ])
+  await calcularConsumoAutomatico(op.id, produto.id, input.quantidade, empresaId)
+
+  return {
+    resposta: `✅ **OP #${numero}** criada para **${produto.nome}**!\n• Quantidade: ${input.quantidade.toLocaleString('pt-BR')} ${input.unidadeMedida || 'UN'}\n• Entrega prevista: ${formatDate(dataEntrega)}\n• Materiais gerados: ${itensGerados.total}\n• Etapas geradas: ${etapasGeradas.total}\n• Status: RASCUNHO`,
+    acao: { tipo: 'NAVEGAR', rota: `/pcp/ordens-producao/${op.id}` },
+  }
+}
+
+const TRANSICOES_VALIDAS_OP: Record<string, string[]> = {
+  RASCUNHO: ['PLANEJADA', 'CANCELADA'],
+  PLANEJADA: ['PROGRAMADA', 'CANCELADA'],
+  PROGRAMADA: ['LIBERADA', 'CANCELADA'],
+  LIBERADA: ['EM_PRODUCAO', 'CANCELADA'],
+  EM_PRODUCAO: ['CONCLUIDA'],
+  CONCLUIDA: [],
+  CANCELADA: [],
+}
+
+async function executarAlterarStatusOrdemProducao(input: { numeroOp: string | number; novoStatus: string; motivoCancelamento?: string }, empresaId: string, usuarioId?: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) {
+    return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+  }
+
+  const permitidas = TRANSICOES_VALIDAS_OP[op.status] || []
+  if (!permitidas.includes(input.novoStatus)) {
+    return { resposta: `⚠️ Não é possível mudar a OP **#${op.referenciaExterna || op.numero}** de **${op.status}** para **${input.novoStatus}**. Transições válidas a partir de ${op.status}: ${permitidas.join(', ') || 'nenhuma (status final)'}.` }
+  }
+
+  if (input.novoStatus === 'CANCELADA' && (!input.motivoCancelamento || input.motivoCancelamento.length < 10)) {
+    return { resposta: `⚠️ Para cancelar, informe um motivo com pelo menos 10 caracteres.` }
+  }
+
+  if (input.novoStatus === 'PLANEJADA') {
+    const itensCount = await prisma.itemOrdemProducao.count({ where: { ordemProducaoId: op.id } })
+    if (itensCount === 0) {
+      return { resposta: `⚠️ A OP **#${op.referenciaExterna || op.numero}** precisa ter ao menos um item de material para ser planejada.` }
+    }
+  }
+
+  const dataUpdate: any = { status: input.novoStatus }
+  if (input.novoStatus === 'CANCELADA') dataUpdate.motivoCancelamento = input.motivoCancelamento
+  if (input.novoStatus === 'EM_PRODUCAO') dataUpdate.dataInicioReal = new Date()
+  if (input.novoStatus === 'CONCLUIDA') dataUpdate.dataFimReal = new Date()
+
+  await prisma.ordemProducao.update({ where: { id: op.id }, data: dataUpdate })
+
+  if (usuarioId) {
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: op.id,
+        statusAnterior: op.status,
+        statusNovo: input.novoStatus,
+        usuarioId,
+        observacao: input.motivoCancelamento || 'Alterado via Vizor AI',
+      },
+    }).catch(() => {})
+  }
+
+  return {
+    resposta: `✅ OP **#${op.referenciaExterna || op.numero}** alterada de **${op.status}** para **${input.novoStatus}**.`,
+    acao: { tipo: 'NAVEGAR', rota: `/pcp/ordens-producao/${op.id}` },
+  }
+}
+
+async function executarConsultarProgramacaoCentro(input: { centroNome: string }, empresaId: string): Promise<ToolResult> {
+  const centro = await prisma.centroProducao.findFirst({
+    where: { empresaId, descricao: { contains: input.centroNome, mode: 'insensitive' } },
+    select: { id: true, descricao: true, codigo: true },
+  })
+  if (!centro) {
+    return { resposta: `❌ Centro de produção **"${input.centroNome}"** não encontrado.` }
+  }
+
+  const etapas = await prisma.etapaOrdemProducao.findMany({
+    where: {
+      centroProducaoId: centro.id,
+      status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+      ordemProducao: { empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+    },
+    orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { sequencia: 'asc' }],
+    take: 20,
+    include: { ordemProducao: { select: { numero: true, referenciaExterna: true, observacoes: true, quantidade: true } } },
+  })
+
+  if (etapas.length === 0) {
+    return { resposta: `✅ Fila do centro **${centro.descricao}** está vazia.` }
+  }
+
+  const lista = etapas.map(e => {
+    const cliente = extrairClienteObsPcp(e.ordemProducao.observacoes)
+    return `  • **OP #${e.ordemProducao.referenciaExterna || e.ordemProducao.numero}** — ${cliente || '—'} | ${e.descricao} | **${e.status}**`
+  }).join('\n')
+
+  return {
+    resposta: `🏭 **Fila do centro ${centro.descricao}** (${etapas.length} etapa(s)):\n${lista}`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+async function executarIniciarEtapaProducao(input: { numeroOp: string | number; centroNome?: string }, empresaId: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  const etapa = await prisma.etapaOrdemProducao.findFirst({
+    where: {
+      ordemProducaoId: op.id,
+      status: { in: ['PENDENTE', 'PAUSADA'] },
+      ...(input.centroNome ? { centroProducao: { descricao: { contains: input.centroNome, mode: 'insensitive' } } } : {}),
+    },
+    orderBy: { sequencia: 'asc' },
+    include: { centroProducao: { select: { descricao: true } } },
+  })
+  if (!etapa) {
+    return { resposta: `⚠️ Não encontrei nenhuma etapa pendente/pausada para iniciar na OP **#${op.referenciaExterna || op.numero}**${input.centroNome ? ` no centro "${input.centroNome}"` : ''}.` }
+  }
+
+  const eraPausada = etapa.status === 'PAUSADA'
+  await prisma.etapaOrdemProducao.update({
+    where: { id: etapa.id },
+    data: { status: 'EM_ANDAMENTO', dataInicioReal: etapa.dataInicioReal || new Date() },
+  })
+  if (eraPausada) {
+    await prisma.apontamentoEtapa.create({ data: { etapaOrdemProducaoId: etapa.id, empresaId, tipo: 'RETOMADA' } }).catch(() => {})
+  }
+
+  return {
+    resposta: `✅ Etapa **${etapa.descricao}** (${etapa.centroProducao?.descricao || 'sem centro'}) da OP **#${op.referenciaExterna || op.numero}** ${eraPausada ? 'retomada' : 'iniciada'}.`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+async function executarApontarProducaoEtapa(input: { numeroOp: string | number; quantidadeProduzida: number; quantidadePerda?: number; motivoPerda?: string; centroNome?: string }, empresaId: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  const etapa = await prisma.etapaOrdemProducao.findFirst({
+    where: {
+      ordemProducaoId: op.id,
+      status: { in: ['EM_ANDAMENTO', 'PAUSADA'] },
+      ...(input.centroNome ? { centroProducao: { descricao: { contains: input.centroNome, mode: 'insensitive' } } } : {}),
+    },
+    orderBy: { sequencia: 'asc' },
+    include: { centroProducao: { select: { descricao: true } } },
+  })
+  if (!etapa) {
+    return { resposta: `⚠️ Não encontrei etapa em andamento/pausada na OP **#${op.referenciaExterna || op.numero}** para apontar produção. Inicie a etapa primeiro.` }
+  }
+
+  const quantidadePerda = input.quantidadePerda || 0
+  await prisma.apontamentoEtapa.create({
+    data: {
+      etapaOrdemProducaoId: etapa.id,
+      empresaId,
+      tipo: quantidadePerda > 0 ? 'PERDA' : 'PRODUCAO',
+      quantidadeProduzida: input.quantidadeProduzida,
+      quantidadePerda,
+      motivoPerda: input.motivoPerda as any,
+    },
+  })
+  await prisma.etapaOrdemProducao.update({
+    where: { id: etapa.id },
+    data: { quantidadeProduzida: { increment: input.quantidadeProduzida }, quantidadePerda: { increment: quantidadePerda } },
+  })
+
+  return {
+    resposta: `✅ Apontamento registrado na etapa **${etapa.descricao}** da OP **#${op.referenciaExterna || op.numero}**: +${input.quantidadeProduzida.toLocaleString('pt-BR')} produzidas${quantidadePerda > 0 ? `, ${quantidadePerda.toLocaleString('pt-BR')} de perda` : ''}.`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+async function executarConcluirEtapaProducao(input: { numeroOp: string | number; quantidadeProduzida?: number; centroNome?: string }, empresaId: string, usuarioId?: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  const etapa = await prisma.etapaOrdemProducao.findFirst({
+    where: {
+      ordemProducaoId: op.id,
+      status: { in: ['EM_ANDAMENTO', 'PAUSADA'] },
+      ...(input.centroNome ? { centroProducao: { descricao: { contains: input.centroNome, mode: 'insensitive' } } } : {}),
+    },
+    orderBy: { sequencia: 'asc' },
+    include: { centroProducao: { select: { descricao: true } } },
+  })
+  if (!etapa) {
+    return { resposta: `⚠️ Não encontrei etapa em andamento/pausada na OP **#${op.referenciaExterna || op.numero}** para concluir.` }
+  }
+
+  if (input.quantidadeProduzida && input.quantidadeProduzida > 0) {
+    await prisma.apontamentoEtapa.create({
+      data: { etapaOrdemProducaoId: etapa.id, empresaId, tipo: 'PRODUCAO', quantidadeProduzida: input.quantidadeProduzida },
+    })
+    await prisma.etapaOrdemProducao.update({ where: { id: etapa.id }, data: { quantidadeProduzida: { increment: input.quantidadeProduzida } } })
+  }
+
+  const agora = new Date()
+  const atualizada = await prisma.etapaOrdemProducao.update({ where: { id: etapa.id }, data: { status: 'CONCLUIDA', dataFimReal: agora } })
+
+  const todasEtapas = await prisma.etapaOrdemProducao.findMany({ where: { ordemProducaoId: op.id }, select: { status: true } })
+  const todasConcluidas = todasEtapas.every(e => e.status === 'CONCLUIDA')
+
+  if (todasConcluidas) {
+    await prisma.ordemProducao.update({
+      where: { id: op.id },
+      data: { status: 'CONCLUIDA', dataFimReal: agora, quantidadeProduzida: atualizada.quantidadeProduzida, quantidadeRejeitada: atualizada.quantidadePerda },
+    })
+    if (usuarioId) {
+      await prisma.logOrdemProducao.create({
+        data: { ordemProducaoId: op.id, statusAnterior: 'EM_PRODUCAO', statusNovo: 'CONCLUIDA', usuarioId, observacao: `Todas as etapas concluídas via Vizor AI. Quantidade produzida: ${Number(atualizada.quantidadeProduzida)}.` },
+      }).catch(() => {})
+    }
+  }
+
+  return {
+    resposta: `✅ Etapa **${etapa.descricao}** (${etapa.centroProducao?.descricao || 'sem centro'}) da OP **#${op.referenciaExterna || op.numero}** concluída.${todasConcluidas ? ` 🎉 Era a última etapa — a OP foi marcada como **CONCLUIDA**.` : ''}`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+async function executarPausarEtapaProducao(input: { numeroOp: string | number; motivoParada: string; observacao?: string; centroNome?: string }, empresaId: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  const etapa = await prisma.etapaOrdemProducao.findFirst({
+    where: {
+      ordemProducaoId: op.id,
+      status: 'EM_ANDAMENTO',
+      ...(input.centroNome ? { centroProducao: { descricao: { contains: input.centroNome, mode: 'insensitive' } } } : {}),
+    },
+    orderBy: { sequencia: 'asc' },
+    include: { centroProducao: { select: { descricao: true } } },
+  })
+  if (!etapa) {
+    return { resposta: `⚠️ Não encontrei etapa em andamento na OP **#${op.referenciaExterna || op.numero}** para pausar.` }
+  }
+
+  await prisma.etapaOrdemProducao.update({ where: { id: etapa.id }, data: { status: 'PAUSADA' } })
+  await prisma.apontamentoEtapa.create({
+    data: { etapaOrdemProducaoId: etapa.id, empresaId, tipo: 'PARADA', motivoParada: input.motivoParada as any, observacao: input.observacao },
+  })
+
+  return {
+    resposta: `⏸️ Etapa **${etapa.descricao}** da OP **#${op.referenciaExterna || op.numero}** pausada. Motivo: ${input.motivoParada}.`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+async function executarPostergarEntregaOp(input: { numeroOp: string | number; novaDataEntrega: string }, empresaId: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  const dataOriginal = op.dataEntregaOriginal || op.dataEntregaPrevista
+  const novaData = new Date(`${input.novaDataEntrega}T12:00:00`)
+
+  const atualizada = await prisma.ordemProducao.update({
+    where: { id: op.id },
+    data: { dataEntregaPrevista: novaData, dataEntregaOriginal: dataOriginal },
+  })
+
+  return {
+    resposta: `📅 Entrega da OP **#${op.referenciaExterna || op.numero}** postergada para **${formatDate(novaData)}**.`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+async function executarCriarOpAvulsa(input: { centroNome: string; quantidade: number; produtoNomeLivre?: string; clienteNomeLivre?: string; descricao?: string }, empresaId: string): Promise<ToolResult> {
+  const centro = await prisma.centroProducao.findFirst({
+    where: { empresaId, descricao: { contains: input.centroNome, mode: 'insensitive' } },
+    select: { id: true, descricao: true },
+  })
+  if (!centro) {
+    return { resposta: `❌ Centro de produção **"${input.centroNome}"** não encontrado.` }
+  }
+
+  const avulsasExistentes = await prisma.ordemProducao.findMany({
+    where: { empresaId, origemImportacao: 'AVULSA' },
+    select: { referenciaExterna: true },
+  })
+  let maiorSeq = 0
+  for (const av of avulsasExistentes) {
+    const m = av.referenciaExterna?.match(/^AV-(\d+)$/)
+    if (m) maiorSeq = Math.max(maiorSeq, parseInt(m[1]))
+  }
+  const referenciaAvulsa = `AV-${maiorSeq + 1}`
+
+  const { proximoNumeroOp } = await import('../ordem-producao/ordem-producao.service')
+  const proximoNumero = await proximoNumeroOp(empresaId)
+
+  const tagsObs: string[] = []
+  if (input.clienteNomeLivre) tagsObs.push(`[Cliente] ${input.clienteNomeLivre.trim()}`)
+  if (input.produtoNomeLivre) tagsObs.push(`[Produto] ${input.produtoNomeLivre.trim()}`)
+
+  const op = await prisma.ordemProducao.create({
+    data: {
+      empresaId,
+      numero: proximoNumero,
+      referenciaExterna: referenciaAvulsa,
+      origemImportacao: 'AVULSA',
+      quantidade: input.quantidade,
+      unidadeMedida: 'UN',
+      status: 'PROGRAMADA',
+      prioridade: 'NORMAL',
+      dataEntregaPrevista: new Date(),
+      dataEntregaOriginal: new Date(),
+      observacoes: tagsObs.length > 0 ? tagsObs.join('\n') : undefined,
+    },
+  })
+
+  const maxPos = await prisma.etapaOrdemProducao.aggregate({
+    where: { centroProducaoId: centro.id, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+    _max: { posicaoFila: true },
+  })
+  await prisma.etapaOrdemProducao.create({
+    data: {
+      ordemProducaoId: op.id,
+      sequencia: 1,
+      descricao: input.descricao || `Lançamento avulso ${referenciaAvulsa}`,
+      centroProducaoId: centro.id,
+      status: 'PENDENTE',
+      posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
+    },
+  })
+
+  return {
+    resposta: `✅ **OP avulsa ${referenciaAvulsa}** criada e adicionada à fila do centro **${centro.descricao}**!\n• Quantidade: ${input.quantidade.toLocaleString('pt-BR')}\n${input.produtoNomeLivre ? `• Produto: ${input.produtoNomeLivre}\n` : ''}${input.clienteNomeLivre ? `• Cliente: ${input.clienteNomeLivre}\n` : ''}`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
   }
 }
