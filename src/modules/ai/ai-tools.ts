@@ -773,6 +773,108 @@ export const AI_TOOLS: AITool[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // PCP — Liberação de Material
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    name: 'liberar_material_op',
+    description: 'Cria uma liberação de material (requisição de separação de insumos do estoque) para uma OP que já está com status LIBERADA ou EM_PRODUCAO. Liberação TOTAL libera todo o saldo pendente de todos os itens da OP automaticamente; PARCIAL exige informar quais materiais e quantidades. Se a empresa usa WMS, gera automaticamente uma onda de separação para o almoxarifado. Use quando o usuário pedir para "libera o material da OP X", "solicita separação de insumos da OP X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string', description: 'Número ou referência da OP' },
+        centroNome: { type: 'string', description: 'Nome do centro de produção que vai receber o material' },
+        tipo: { type: 'string', enum: ['TOTAL', 'PARCIAL'], description: 'TOTAL libera todo o saldo pendente automaticamente. Default: TOTAL' },
+        itens: {
+          type: 'array',
+          description: 'Obrigatório apenas se tipo=PARCIAL. Cada item deve corresponder a um material já listado na OP (consulte via consultar_ordem_producao ou pela descrição).',
+          items: {
+            type: 'object',
+            properties: {
+              descricaoMaterial: { type: 'string', description: 'Descrição (ou parte dela) do material da OP a liberar' },
+              quantidade: { type: 'number' },
+            },
+            required: ['descricaoMaterial', 'quantidade'],
+          },
+        },
+        observacoes: { type: 'string' },
+      },
+      required: ['numeroOp', 'centroNome'],
+    },
+  },
+  {
+    name: 'consultar_liberacoes_material',
+    description: 'Lista as liberações de material de uma OP específica, com status e itens. Use para "quais liberações a OP X já tem", "status da separação de material da OP X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroOp: { type: 'string', description: 'Número ou referência da OP' },
+      },
+      required: ['numeroOp'],
+    },
+  },
+  {
+    name: 'atualizar_status_liberacao_material',
+    description: 'Atualiza o status de uma liberação de material já criada (SEPARANDO, SEPARADA, ENTREGUE, CANCELADA). Use quando o usuário confirmar que o material foi separado/entregue, ex: "marca a liberação #5 como entregue".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        numeroLiberacao: { type: 'number', description: 'Número sequencial da liberação' },
+        novoStatus: { type: 'string', enum: ['SEPARANDO', 'SEPARADA', 'ENTREGUE', 'CANCELADA'] },
+      },
+      required: ['numeroLiberacao', 'novoStatus'],
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PCP — Cálculos (Conversão de Unidades e Paletização)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    name: 'converter_unidade_grafica',
+    description: 'Converte um valor entre unidades usadas na indústria gráfica: kg↔m² (via gramatura), kg↔metros_lineares (via largura+gramatura), resmas↔folhas (via folhas por resma), folhas↔m² (via largura+comprimento). Use para perguntas como "quantos kg são 500 folhas de gramatura 240" ou "converte 1000 metros lineares pra kg".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        valorOrigem: { type: 'number' },
+        unidadeOrigem: { type: 'string', enum: ['kg', 'm2', 'metros_lineares', 'resmas', 'folhas'] },
+        unidadeDestino: { type: 'string', enum: ['kg', 'm2', 'metros_lineares', 'resmas', 'folhas'] },
+        larguraMm: { type: 'number', description: 'Necessário para conversões envolvendo metros_lineares ou folhas' },
+        comprimentoMm: { type: 'number', description: 'Necessário para conversões folhas↔m2' },
+        gramaturaGm2: { type: 'number', description: 'Necessário para conversões envolvendo kg' },
+        folhasPorResma: { type: 'number', description: 'Necessário para conversões resmas↔folhas' },
+      },
+      required: ['valorOrigem', 'unidadeOrigem', 'unidadeDestino'],
+    },
+  },
+  {
+    name: 'calcular_paletizacao',
+    description: 'Calcula quantos paletes são necessários para expedir uma lista de itens, respeitando limites de peso e altura do tipo de palete escolhido. Retorna a distribuição por palete e totais de peso/volume. Use para "quantos paletes preciso para 5000 caixas de tal produto".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        itens: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              descricao: { type: 'string' },
+              quantidade: { type: 'number' },
+              pesoUnitarioKg: { type: 'number' },
+              larguraCm: { type: 'number' },
+              alturaCm: { type: 'number' },
+              profundidadeCm: { type: 'number' },
+            },
+            required: ['quantidade', 'pesoUnitarioKg', 'larguraCm', 'alturaCm', 'profundidadeCm'],
+          },
+        },
+        tipoPalete: { type: 'string', enum: ['MADEIRA_1000x1200', 'MADEIRA_800x1200', 'PLASTICO', 'CUSTOMIZADO'], description: 'Default: MADEIRA_1000x1200' },
+        pesoMaximoPaleteKg: { type: 'number', description: 'Default: 1000' },
+        alturaMaximaPaleteCm: { type: 'number', description: 'Default: 180' },
+      },
+      required: ['itens'],
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // DIAGNÓSTICO E PRÉ-REQUISITOS
   // ═══════════════════════════════════════════════════════════════════════════
   {
