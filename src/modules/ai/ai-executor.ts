@@ -89,6 +89,11 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'pausar_etapa_producao': return await executarPausarEtapaProducao(input, empresaId)
       case 'postergar_entrega_op': return await executarPostergarEntregaOp(input, empresaId)
       case 'criar_op_avulsa': return await executarCriarOpAvulsa(input, empresaId)
+      case 'liberar_material_op': return await executarLiberarMaterialOp(input, empresaId, usuarioId)
+      case 'consultar_liberacoes_material': return await executarConsultarLiberacoesMaterial(input, empresaId)
+      case 'atualizar_status_liberacao_material': return await executarAtualizarStatusLiberacaoMaterial(input, empresaId)
+      case 'converter_unidade_grafica': return executarConverterUnidadeGrafica(input)
+      case 'calcular_paletizacao': return executarCalcularPaletizacao(input)
       default:
         return { resposta: `⚠️ Ação **"${toolName}"** não reconhecida.` }
     }
@@ -2627,5 +2632,271 @@ async function executarCriarOpAvulsa(input: { centroNome: string; quantidade: nu
   return {
     resposta: `✅ **OP avulsa ${referenciaAvulsa}** criada e adicionada à fila do centro **${centro.descricao}**!\n• Quantidade: ${input.quantidade.toLocaleString('pt-BR')}\n${input.produtoNomeLivre ? `• Produto: ${input.produtoNomeLivre}\n` : ''}${input.clienteNomeLivre ? `• Cliente: ${input.clienteNomeLivre}\n` : ''}`,
     acao: { tipo: 'NAVEGAR', rota: '/pcp/programacao' },
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PCP — Liberação de Material
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function proximoNumeroLiberacaoAi(empresaId: string): Promise<number> {
+  const ultima = await prisma.liberacaoMaterial.findFirst({
+    where: { empresaId },
+    orderBy: { numero: 'desc' },
+    select: { numero: true },
+  })
+  return (ultima?.numero ?? 0) + 1
+}
+
+async function executarLiberarMaterialOp(
+  input: { numeroOp: string | number; centroNome: string; tipo?: 'TOTAL' | 'PARCIAL'; itens?: Array<{ descricaoMaterial: string; quantidade: number }>; observacoes?: string },
+  empresaId: string,
+  usuarioId?: string,
+): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  if (!['LIBERADA', 'EM_PRODUCAO'].includes(op.status)) {
+    return { resposta: `⚠️ A OP **#${op.referenciaExterna || op.numero}** precisa estar com status LIBERADA ou EM_PRODUCAO para liberar material. Status atual: **${op.status}**.` }
+  }
+
+  const centro = await prisma.centroProducao.findFirst({
+    where: { empresaId, descricao: { contains: input.centroNome, mode: 'insensitive' } },
+    select: { id: true, descricao: true },
+  })
+  if (!centro) {
+    return { resposta: `❌ Centro de produção **"${input.centroNome}"** não encontrado.` }
+  }
+
+  const itensOp = await prisma.itemOrdemProducao.findMany({ where: { ordemProducaoId: op.id } })
+  const tipo = input.tipo || 'TOTAL'
+
+  let itensParaLiberar: Array<{ itemOrdemProducaoId: string; quantidadeSolicitada: number; produtoId: string; descricao: string }> = []
+
+  if (tipo === 'TOTAL') {
+    itensParaLiberar = itensOp
+      .filter(item => Number(item.quantidade) - Number(item.quantidadeLiberada) > 0)
+      .map(item => ({
+        itemOrdemProducaoId: item.id,
+        quantidadeSolicitada: Number(item.quantidade) - Number(item.quantidadeLiberada),
+        produtoId: item.produtoComponenteId || '',
+        descricao: item.descricaoProduto,
+      }))
+  } else {
+    if (!input.itens || input.itens.length === 0) {
+      return { resposta: `⚠️ Para liberação PARCIAL, informe os materiais e quantidades.` }
+    }
+    for (const itemReq of input.itens) {
+      const itemOp = itensOp.find(i => i.descricaoProduto.toLowerCase().includes(itemReq.descricaoMaterial.toLowerCase()))
+      if (!itemOp) {
+        return { resposta: `❌ Material **"${itemReq.descricaoMaterial}"** não encontrado nos itens da OP **#${op.referenciaExterna || op.numero}**.` }
+      }
+      const pendente = Number(itemOp.quantidade) - Number(itemOp.quantidadeLiberada)
+      if (itemReq.quantidade > pendente) {
+        return { resposta: `⚠️ Quantidade solicitada (${itemReq.quantidade}) excede o saldo pendente (${pendente}) do material **${itemOp.descricaoProduto}**.` }
+      }
+      itensParaLiberar.push({ itemOrdemProducaoId: itemOp.id, quantidadeSolicitada: itemReq.quantidade, produtoId: itemOp.produtoComponenteId || '', descricao: itemOp.descricaoProduto })
+    }
+  }
+
+  if (itensParaLiberar.length === 0) {
+    return { resposta: `✅ Não há saldo pendente para liberar na OP **#${op.referenciaExterna || op.numero}** — todos os materiais já foram liberados.` }
+  }
+
+  const numero = await proximoNumeroLiberacaoAi(empresaId)
+  const liberacao = await prisma.liberacaoMaterial.create({
+    data: {
+      empresaId,
+      numero,
+      ordemProducaoId: op.id,
+      centroProducaoDestinoId: centro.id,
+      tipo,
+      usuarioId: usuarioId || op.id, // fallback nunca deve ocorrer em uso normal (usuarioId sempre vem do chat autenticado)
+      observacoes: input.observacoes,
+      itens: {
+        create: itensParaLiberar.map(item => ({
+          itemOrdemProducaoId: item.itemOrdemProducaoId,
+          produtoId: item.produtoId,
+          quantidadeSolicitada: item.quantidadeSolicitada,
+        })),
+      },
+    },
+  })
+
+  for (const item of itensParaLiberar) {
+    await prisma.itemOrdemProducao.update({
+      where: { id: item.itemOrdemProducaoId },
+      data: { quantidadeLiberada: { increment: item.quantidadeSolicitada }, status: 'PARCIAL' },
+    })
+  }
+
+  // Integração WMS: cria onda de separação, mesmo padrão de liberacao-material.routes.ts
+  let ondaInfo = ''
+  try {
+    const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { usaWms: true } })
+    if (empresa?.usaWms) {
+      const ultimaOnda = await prisma.ondaSeparacao.findFirst({ where: { empresaId }, orderBy: { numero: 'desc' }, select: { numero: true } })
+      const doca = await prisma.doca.findFirst({ where: { empresaId, status: true }, select: { id: true } })
+      if (doca) {
+        const onda = await prisma.ondaSeparacao.create({
+          data: { empresaId, numero: (ultimaOnda?.numero ?? 0) + 1, prioridade: 'ALTA', status: 'PENDENTE', docaId: doca.id, criadoPorId: usuarioId || liberacao.usuarioId },
+        })
+        const ultimaOs = await prisma.ordemServicoWms.findFirst({ where: { empresaId }, orderBy: { numero: 'desc' }, select: { numero: true } })
+        await prisma.ordemServicoWms.create({
+          data: { empresaId, numero: (ultimaOs?.numero ?? 0) + 1, tipo: 'SAIDA', operacao: 'SEPARACAO', status: 'ABERTO', ondaSeparacaoId: onda.id, observacao: `Separação de materiais para OP #${op.numero} - Liberação #${numero}` },
+        })
+        await prisma.liberacaoMaterial.update({ where: { id: liberacao.id }, data: { status: 'SEPARANDO' } })
+        ondaInfo = `\n📦 Onda de separação #${onda.numero} criada no WMS para o almoxarifado.`
+      }
+    }
+  } catch (err) {
+    console.error('[PCP→WMS via IA] Erro ao criar onda de separação:', err)
+  }
+
+  const listaItens = itensParaLiberar.map(i => `  • ${i.descricao} — ${i.quantidadeSolicitada.toLocaleString('pt-BR')}`).join('\n')
+
+  return {
+    resposta: `✅ **Liberação #${numero}** (${tipo}) criada para a OP **#${op.referenciaExterna || op.numero}**, destino: **${centro.descricao}**.\n${listaItens}${ondaInfo}`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/liberacoes' },
+  }
+}
+
+async function executarConsultarLiberacoesMaterial(input: { numeroOp: string | number }, empresaId: string): Promise<ToolResult> {
+  const op = await buscarOpPorNumero(empresaId, input.numeroOp)
+  if (!op) return { resposta: `❌ OP **${input.numeroOp}** não encontrada.` }
+
+  const liberacoes = await prisma.liberacaoMaterial.findMany({
+    where: { empresaId, ordemProducaoId: op.id },
+    orderBy: { criadoEm: 'desc' },
+    include: { itens: true },
+  })
+
+  if (liberacoes.length === 0) {
+    return { resposta: `✅ A OP **#${op.referenciaExterna || op.numero}** ainda não tem nenhuma liberação de material registrada.` }
+  }
+
+  const lista = liberacoes.map(l => {
+    const itensTexto = l.itens.map(i => `${Number(i.quantidadeSolicitada).toLocaleString('pt-BR')} solicitado / ${Number(i.quantidadeSeparada).toLocaleString('pt-BR')} separado`).join(', ')
+    return `  • **Liberação #${l.numero}** (${l.tipo}) — **${l.status}** — ${l.itens.length} item(ns): ${itensTexto}`
+  }).join('\n')
+
+  return {
+    resposta: `📋 **Liberações de material — OP #${op.referenciaExterna || op.numero}**:\n${lista}`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/liberacoes' },
+  }
+}
+
+async function executarAtualizarStatusLiberacaoMaterial(input: { numeroLiberacao: number; novoStatus: string }, empresaId: string): Promise<ToolResult> {
+  const liberacao = await prisma.liberacaoMaterial.findFirst({ where: { empresaId, numero: input.numeroLiberacao } })
+  if (!liberacao) {
+    return { resposta: `❌ Liberação **#${input.numeroLiberacao}** não encontrada.` }
+  }
+
+  const data: any = { status: input.novoStatus }
+  if (input.novoStatus === 'ENTREGUE') data.dataEntrega = new Date()
+
+  await prisma.liberacaoMaterial.update({ where: { id: liberacao.id }, data })
+
+  return {
+    resposta: `✅ Liberação **#${liberacao.numero}** atualizada para **${input.novoStatus}**.`,
+    acao: { tipo: 'NAVEGAR', rota: '/pcp/liberacoes' },
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PCP — Conversão de Unidades e Paletização (cálculos puros, sem persistência)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function executarConverterUnidadeGrafica(input: { valorOrigem: number; unidadeOrigem: string; unidadeDestino: string; larguraMm?: number; comprimentoMm?: number; gramaturaGm2?: number; folhasPorResma?: number }): ToolResult {
+  const conversoesGraficas: Record<string, { fn: (p: typeof input) => number | null; required: string[] }> = {
+    'kg->m2': { fn: (p) => (p.valorOrigem * 1000) / p.gramaturaGm2!, required: ['gramaturaGm2'] },
+    'm2->kg': { fn: (p) => (p.valorOrigem * p.gramaturaGm2!) / 1000, required: ['gramaturaGm2'] },
+    'kg->metros_lineares': { fn: (p) => (p.valorOrigem * 1000) / ((p.larguraMm! / 1000) * p.gramaturaGm2!), required: ['larguraMm', 'gramaturaGm2'] },
+    'metros_lineares->kg': { fn: (p) => (p.valorOrigem * (p.larguraMm! / 1000) * p.gramaturaGm2!) / 1000, required: ['larguraMm', 'gramaturaGm2'] },
+    'resmas->folhas': { fn: (p) => p.valorOrigem * p.folhasPorResma!, required: ['folhasPorResma'] },
+    'folhas->resmas': { fn: (p) => p.valorOrigem / p.folhasPorResma!, required: ['folhasPorResma'] },
+    'folhas->m2': { fn: (p) => p.valorOrigem * (p.larguraMm! / 1000) * (p.comprimentoMm! / 1000), required: ['larguraMm', 'comprimentoMm'] },
+    'm2->folhas': { fn: (p) => p.valorOrigem / ((p.larguraMm! / 1000) * (p.comprimentoMm! / 1000)), required: ['larguraMm', 'comprimentoMm'] },
+  }
+
+  const chave = `${input.unidadeOrigem}->${input.unidadeDestino}`
+  const config = conversoesGraficas[chave]
+  if (!config) {
+    const disponiveis = Object.keys(conversoesGraficas).map(k => k.replace('->', ' → ')).join(', ')
+    return { resposta: `❌ Conversão **${input.unidadeOrigem} → ${input.unidadeDestino}** não suportada. Disponíveis: ${disponiveis}.` }
+  }
+
+  const faltantes = config.required.filter(r => (input as any)[r] === undefined || (input as any)[r] === null)
+  if (faltantes.length > 0) {
+    return { resposta: `⚠️ Para essa conversão, informe também: **${faltantes.join(', ')}**.` }
+  }
+
+  const resultado = config.fn(input)
+  if (resultado === null || !isFinite(resultado)) {
+    return { resposta: `❌ Erro no cálculo — verifique os parâmetros informados.` }
+  }
+  const valorFinal = Math.round(resultado * 10000) / 10000
+
+  return {
+    resposta: `🔄 **${input.valorOrigem.toLocaleString('pt-BR')} ${input.unidadeOrigem}** = **${valorFinal.toLocaleString('pt-BR')} ${input.unidadeDestino}**`,
+    acao: { tipo: 'MOSTRAR_DADOS', resultado: { valorOrigem: input.valorOrigem, unidadeOrigem: input.unidadeOrigem, valorConvertido: valorFinal, unidadeDestino: input.unidadeDestino } },
+  }
+}
+
+const PESO_PALETE_AI: Record<string, number> = {
+  MADEIRA_1000x1200: 25,
+  MADEIRA_800x1200: 20,
+  PLASTICO: 15,
+  CUSTOMIZADO: 20,
+}
+
+function executarCalcularPaletizacao(input: {
+  itens: Array<{ descricao?: string; quantidade: number; pesoUnitarioKg: number; larguraCm: number; alturaCm: number; profundidadeCm: number }>
+  tipoPalete?: string
+  pesoMaximoPaleteKg?: number
+  alturaMaximaPaleteCm?: number
+}): ToolResult {
+  const tipoPalete = input.tipoPalete || 'MADEIRA_1000x1200'
+  const pesoMaximoPaleteKg = input.pesoMaximoPaleteKg || 1000
+  const alturaMaximaPaleteCm = input.alturaMaximaPaleteCm || 180
+  const pesoPaleteVazio = PESO_PALETE_AI[tipoPalete] ?? 20
+  const pesoMaximoUtil = pesoMaximoPaleteKg - pesoPaleteVazio
+  const alturaMaximaUtil = alturaMaximaPaleteCm - 15
+
+  type PaleteCalc = { numero: number; itens: Array<{ descricao?: string; quantidade: number }>; pesoItensKg: number; alturaUtilCm: number }
+  const paletes: PaleteCalc[] = []
+  let atual: PaleteCalc = { numero: 1, itens: [], pesoItensKg: 0, alturaUtilCm: 0 }
+
+  for (const item of input.itens) {
+    let restante = item.quantidade
+    while (restante > 0) {
+      const pesoDisp = pesoMaximoUtil - atual.pesoItensKg
+      const alturaDisp = alturaMaximaUtil - atual.alturaUtilCm
+      const maxPorPeso = Math.floor(pesoDisp / item.pesoUnitarioKg)
+      const maxPorAltura = Math.floor(alturaDisp / item.alturaCm)
+      const maxCabe = Math.min(maxPorPeso, maxPorAltura, restante)
+
+      if (maxCabe <= 0) {
+        paletes.push(atual)
+        atual = { numero: paletes.length + 1, itens: [], pesoItensKg: 0, alturaUtilCm: 0 }
+        continue
+      }
+
+      atual.itens.push({ descricao: item.descricao, quantidade: maxCabe })
+      atual.pesoItensKg += maxCabe * item.pesoUnitarioKg
+      atual.alturaUtilCm += maxCabe * item.alturaCm
+      restante -= maxCabe
+    }
+  }
+  if (atual.itens.length > 0) paletes.push(atual)
+
+  const pesoTotalExpedicao = paletes.reduce((acc, p) => acc + p.pesoItensKg + pesoPaleteVazio, 0)
+  const quantidadeTotalItens = input.itens.reduce((acc, i) => acc + i.quantidade, 0)
+
+  const lista = paletes.map(p => `  • **Palete ${p.numero}** — ${p.itens.reduce((a, i) => a + i.quantidade, 0)} un | ${Math.round((p.pesoItensKg + pesoPaleteVazio) * 100) / 100} kg`).join('\n')
+
+  return {
+    resposta: `📦 Cálculo de paletização (${tipoPalete}):\n• **${paletes.length} palete(s)** necessário(s) para ${quantidadeTotalItens.toLocaleString('pt-BR')} unidades\n• Peso total: **${Math.round(pesoTotalExpedicao * 100) / 100} kg**\n\n${lista}`,
+    acao: { tipo: 'MOSTRAR_DADOS', resultado: { numeroPaletes: paletes.length, pesoTotalExpedicaoKg: pesoTotalExpedicao, paletes } },
   }
 }
