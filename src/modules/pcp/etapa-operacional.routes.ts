@@ -71,10 +71,28 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       },
     })
 
-    // Registra apontamento de retomada se estava pausada
+    // Registra apontamento de retomada se estava pausada, calculando a
+    // duração real da parada (diferença entre o apontamento de PARADA mais
+    // recente e agora) — necessário para o Pareto de tempo de parada por
+    // motivo no dashboard PCP, que antes só contava ocorrências sem duração.
     if (etapa.status === 'PAUSADA') {
+      const ultimaParada = await prisma.apontamentoEtapa.findFirst({
+        where: { etapaOrdemProducaoId: id, tipo: 'PARADA' },
+        orderBy: { dataHora: 'desc' },
+      })
+      const tempoParadaMinutos = ultimaParada
+        ? Math.max(0, Math.round((agora.getTime() - new Date(ultimaParada.dataHora).getTime()) / 60000))
+        : undefined
+
       await prisma.apontamentoEtapa.create({
-        data: { etapaOrdemProducaoId: id, empresaId: user.empresaId, funcionarioId: body.funcionarioId, tipo: 'RETOMADA' },
+        data: {
+          etapaOrdemProducaoId: id,
+          empresaId: user.empresaId,
+          funcionarioId: body.funcionarioId,
+          tipo: 'RETOMADA',
+          motivoParada: ultimaParada?.motivoParada,
+          tempoParadaMinutos,
+        },
       })
     }
 
