@@ -785,6 +785,68 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // PATCH /api/ordens-producao/:id/quantidade-produzida — Registrar/corrigir
+  // quantidade produzida (uso principal: OPs antigas que foram concluídas
+  // pelo painel de Programação antes da correção que propaga automaticamente
+  // a quantidade apontada nas etapas — ver etapa-operacional.routes.ts,
+  // rota /etapas/:id/concluir). Diferente do PATCH /:id genérico, esta rota
+  // permite editar mesmo com a OP já CONCLUIDA, pois é exatamente o caso de
+  // uso: corrigir o %Concluído de uma OP finalizada que ficou com 0%.
+  // =========================================================================
+  app.patch('/:id/quantidade-produzida', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      quantidadeProduzida: z.number().min(0),
+      quantidadeRejeitada: z.number().min(0).optional(),
+    }).parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, status: true, quantidade: true },
+    })
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+    if (op.status === 'CANCELADA') {
+      return reply.status(400).send({ message: 'Não é possível editar uma OP cancelada' })
+    }
+
+    const data: any = { quantidadeProduzida: body.quantidadeProduzida }
+    if (body.quantidadeRejeitada !== undefined) data.quantidadeRejeitada = body.quantidadeRejeitada
+
+    const atualizada = await prisma.ordemProducao.update({
+      where: { id },
+      data,
+      select: {
+        id: true, empresaId: true, numero: true, produtoId: true, estruturaProdutoId: true,
+        quantidade: true, unidadeMedida: true, quantidadeProduzida: true, quantidadeRejeitada: true,
+        status: true, prioridade: true, dataEmissao: true, dataEntregaPrevista: true,
+        dataEntregaOriginal: true, vezesPostergada: true, dataInicioPrevista: true, dataFimPrevista: true,
+        dataInicioReal: true, dataFimReal: true, pedidoVendaId: true, clienteId: true, lote: true, cor: true,
+        grupoOpId: true, quantidadeExcedente: true, motivoCancelamento: true, observacoes: true,
+        referenciaExterna: true, origemImportacao: true, criadoPorId: true, criadoEm: true, atualizadoEm: true,
+      },
+    })
+
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: id,
+        statusAnterior: op.status,
+        statusNovo: op.status,
+        usuarioId: user.id,
+        observacao: `Quantidade produzida registrada/corrigida manualmente: ${body.quantidadeProduzida}`,
+      },
+    })
+
+    const percentualConcluido = Number(op.quantidade) > 0
+      ? Math.min(100, Math.round((Number(atualizada.quantidadeProduzida) / Number(op.quantidade)) * 100))
+      : 0
+
+    return { ...atualizada, percentualConcluido }
+  })
+
+  // =========================================================================
   // GET /api/ordens-producao/:id/pdf — Servir PDF importado
   // =========================================================================
   app.get('/:id/pdf', async (request, reply) => {
