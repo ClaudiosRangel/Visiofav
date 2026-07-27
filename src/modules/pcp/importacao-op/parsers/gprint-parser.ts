@@ -515,7 +515,18 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
 
       // Tempos podem ter 2 ou 3 dígitos de hora (ex: "133:20" = 133 minutos e
       // 20 segundos, ou "02:05"), então o padrão aceita \d{2,3} antes dos ":".
-      const matchLinha = linha.match(/^(.+?)\s{2,}(\d{2,3}:\d{2})\s+(\d{2,3}:\d{2})\s*$/)
+      //
+      // IMPORTANTE: o separador entre o nome/detalhe e os dois tempos usa
+      // \s+ (1 ou mais espaços), não \s{2,} (2 ou mais). O número exato de
+      // espaços inseridos pelo pdf-extractor depende do kerning entre o
+      // último caractere do texto e o "HH:MM" seguinte — variação de
+      // renderização de fonte que NADA tem a ver com a estrutura real da
+      // linha. Usar \s{2,} aqui já causou o mesmo texto (com o mesmo
+      // conteúdo lógico) ser parseado como etapa própria em uma execução e
+      // como "continuação" (perdendo a etapa) em outra, sem nenhuma mudança
+      // no PDF de origem. Como a âncora "$" já garante que os dois tempos
+      // estão no fim da linha, \s+ é suficiente e não depende de kerning.
+      const matchLinha = linha.match(/^(.+?)\s+(\d{2,3}:\d{2})\s+(\d{2,3}:\d{2})\s*$/)
       if (!matchLinha) {
         // Não bate no padrão de etapa (nome + 2 tempos) — é continuação do
         // detalhe da última etapa já reconhecida nesta seção.
