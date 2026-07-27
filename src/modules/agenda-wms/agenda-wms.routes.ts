@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
 import { sincronizarDadosTransporte } from './transporte-sync.service'
+import { resolverCodigosProdutoItensXml } from '../nota-entrada/resolver-codigo-produto-item.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -596,10 +597,19 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
           if (compraXml) {
             const parsed = parseNfeXml(compraXml)
 
+            // Resolver codigoProduto (cProd do fornecedor) para o código
+            // interno do Produto — via De-Para/EAN/SKU — antes de persistir.
+            // Sem isso, a Conferência de Entrada não encontra o Produto
+            // (exigeLote, shelfLifeMinimo, tolerância ficam sem efeito).
+            const codigosResolvidos = await resolverCodigosProdutoItensXml(
+              tx, user.empresaId, ag.fornecedorId,
+              parsed.itens.map((i) => ({ codigoProduto: i.codigoProduto, cEAN: i.cEAN, cEANTrib: i.cEANTrib })),
+            )
+
             const itensXml = parsed.itens.map((i) => ({
               item: i.item,
               descricao: i.descricao,
-              codigoProduto: i.codigoProduto,
+              codigoProduto: codigosResolvidos.get(i.codigoProduto)?.codigoProduto ?? i.codigoProduto,
               unidade: i.unidade || 'UN',
               quantidade: i.quantidade,
               lote: i.lote || null,
@@ -644,10 +654,17 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
           if (compraXml) {
             const parsed = parseNfeXml(compraXml)
 
+            // Resolver codigoProduto (cProd do fornecedor) para o código
+            // interno do Produto — via De-Para/EAN/SKU — antes de persistir.
+            const codigosResolvidos = await resolverCodigosProdutoItensXml(
+              tx, user.empresaId, ag.fornecedorId,
+              parsed.itens.map((i) => ({ codigoProduto: i.codigoProduto, cEAN: i.cEAN, cEANTrib: i.cEANTrib })),
+            )
+
             const itensXml = parsed.itens.map((i) => ({
               item: i.item,
               descricao: i.descricao,
-              codigoProduto: i.codigoProduto,
+              codigoProduto: codigosResolvidos.get(i.codigoProduto)?.codigoProduto ?? i.codigoProduto,
               unidade: i.unidade || 'UN',
               quantidade: i.quantidade,
               lote: i.lote || null,

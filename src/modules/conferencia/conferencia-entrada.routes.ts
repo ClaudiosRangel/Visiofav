@@ -308,6 +308,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       : []
     const shelfLifeMap = new Map(produtosInfo.map(p => [p.codigo, p.shelfLifeMinimo]))
     const exigeLoteInfoMap = new Map(produtosInfo.map(p => [p.codigo, p.exigeLote]))
+    const codigosEncontrados = new Set(produtosInfo.map(p => p.codigo))
 
     return {
       nota: { id: nota.id, numero: nota.numero, serie: nota.serie, fornecedor: nota.fornecedor, fornecedorDoc: nota.fornecedorDoc, status: 'EM_CONFERENCIA' },
@@ -322,6 +323,13 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         validade: conferenciaLoteCega ? null : item.validade,
         shelfLifeMinimo: item.codigoProduto ? shelfLifeMap.get(item.codigoProduto) ?? null : null,
         exigeLote: item.codigoProduto ? exigeLoteInfoMap.get(item.codigoProduto) ?? false : false,
+        // Alerta: item.codigoProduto não corresponde a nenhum Produto
+        // cadastrado nesta empresa — exigeLote/shelfLifeMinimo/tolerância
+        // NÃO puderam ser verificados para este item (ver
+        // resolver-codigo-produto-item.service.ts). Acontece quando a nota
+        // foi criada sem resolução do código do fornecedor para o código
+        // interno do produto. O frontend deve alertar visualmente.
+        produtoNaoEncontrado: !!item.codigoProduto && !codigosEncontrados.has(item.codigoProduto),
       })),
     }
   })
@@ -432,6 +440,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const codigosProduto = nota.itens.map((i) => i.codigoProduto).filter(Boolean) as string[]
     const exigeLoteMap = new Map<string, boolean>()
     const toleranciaProdutoMap = new Map<string, number | null>()
+    const codigosProdutoEncontrados = new Set<string>()
     if (codigosProduto.length > 0) {
       const produtosExigeLote = await prisma.produto.findMany({
         where: { empresaId: userConf2.empresaId, codigo: { in: codigosProduto } },
@@ -440,6 +449,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       for (const p of produtosExigeLote) {
         exigeLoteMap.set(p.codigo, p.exigeLote)
         toleranciaProdutoMap.set(p.codigo, p.toleranciaQuantidadePercentual != null ? Number(p.toleranciaQuantidadePercentual) : null)
+        codigosProdutoEncontrados.add(p.codigo)
       }
     }
 
@@ -453,6 +463,10 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       if (!item) continue
 
       const exigeLote = item.codigoProduto ? (exigeLoteMap.get(item.codigoProduto) ?? false) : false
+      // Alerta: codigoProduto do item não corresponde a nenhum Produto
+      // cadastrado — exigeLote/shelfLife/tolerância não puderam ser
+      // verificados para este item (ver resolver-codigo-produto-item.service.ts).
+      const produtoNaoEncontrado = !!item.codigoProduto && !codigosProdutoEncontrados.has(item.codigoProduto)
 
       // ─── Regra 1: quantidade é SEMPRE obrigatória ao apertar Conferir ────────
       if (conferido.quantidadeConferida === null || conferido.quantidadeConferida === undefined) {
@@ -464,6 +478,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           divergencia: 0,
           status: 'DIVERGENTE',
           tipoDivergencia: 'QUANTIDADE_NAO_INFORMADA',
+          loteConferido: conferido.lote ?? null,
+          validadeConferida: conferido.validade ?? null,
+          produtoNaoEncontrado,
         })
         temDivergencia = true
         continue
@@ -480,6 +497,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             divergencia: 0,
             status: 'DIVERGENTE',
             tipoDivergencia: 'LOTE_NAO_INFORMADO',
+            loteConferido: conferido.lote ?? null,
+            validadeConferida: conferido.validade ?? null,
+            produtoNaoEncontrado,
           })
           temDivergencia = true
           continue
@@ -493,6 +513,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             divergencia: 0,
             status: 'DIVERGENTE',
             tipoDivergencia: 'VALIDADE_NAO_INFORMADA',
+            loteConferido: conferido.lote ?? null,
+            validadeConferida: conferido.validade ?? null,
+            produtoNaoEncontrado,
           })
           temDivergencia = true
           continue
@@ -633,7 +656,16 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         divergencia: divergenciaQtd,
         status: itemDivergente ? 'DIVERGENTE' : 'CONFORME',
         tipoDivergencia: tipoDivergenciaQtd,
+        // Lote/validade digitados nesta conferência — antes ausentes da
+        // resposta, o que impedia o operador de revisar o que foi
+        // comparado (ver tela de resultado).
+        loteConferido: conferido.lote ?? null,
+        validadeConferida: conferido.validade ?? null,
         ...(toleranciaInfo ? { tolerancia: toleranciaInfo } : {}),
+        // Alerta: codigoProduto do item não bate com nenhum Produto
+        // cadastrado — exigeLote/shelfLife/tolerância não foram aplicados
+        // para este item, mesmo que o produto esteja configurado para tal.
+        produtoNaoEncontrado,
       })
     }
 
