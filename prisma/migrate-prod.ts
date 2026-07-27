@@ -692,20 +692,41 @@ async function main() {
   // =========================================================================
   // PCP — Ordenação de Grupos: campo posicao no centro_producao
   // =========================================================================
-  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "posicao" INTEGER NOT NULL DEFAULT 0`)
-
-  // Backfill: atribuir posições sequenciais para centros existentes (por empresa, ordenados por codigo)
+  //
+  // BUG CRÍTICO CORRIGIDO: este script roda a CADA start do container (não só
+  // na primeira vez). O backfill abaixo usava `WHERE posicao = 0` como guarda
+  // de "nunca foi definido" — mas 0 também é a posição LEGÍTIMA do centro que
+  // o usuário arrasta para o primeiro lugar no painel de Programação (índice
+  // 0-based). Resultado: a cada deploy, o centro reordenado para o topo era
+  // sobrescrito de volta pela ordem alfabética de código, fazendo a
+  // reordenação manual "sumir" a cada atualização — sem qualquer alteração
+  // do usuário. Corrigido para só rodar o backfill uma única vez, verificando
+  // se a coluna já existia ANTES deste ALTER TABLE (não depende mais do
+  // valor do dado, que pode legitimamente ser 0 depois da primeira vez).
   await prisma.$executeRawUnsafe(`
-    WITH ranked AS (
-      SELECT id, ROW_NUMBER() OVER (PARTITION BY empresa_id ORDER BY codigo ASC) - 1 AS nova_posicao
-      FROM centro_producao
-    )
-    UPDATE centro_producao
-    SET posicao = ranked.nova_posicao
-    FROM ranked
-    WHERE centro_producao.id = ranked.id AND centro_producao.posicao = 0
+    DO $$
+    DECLARE coluna_ja_existia boolean;
+    BEGIN
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'centro_producao' AND column_name = 'posicao'
+      ) INTO coluna_ja_existia;
+
+      IF NOT coluna_ja_existia THEN
+        ALTER TABLE "centro_producao" ADD COLUMN "posicao" INTEGER NOT NULL DEFAULT 0;
+
+        WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY empresa_id ORDER BY codigo ASC) - 1 AS nova_posicao
+          FROM centro_producao
+        )
+        UPDATE centro_producao
+        SET posicao = ranked.nova_posicao
+        FROM ranked
+        WHERE centro_producao.id = ranked.id;
+      END IF;
+    END $$;
   `)
-  console.log('✅ PCP Ordenação: campo posicao + backfill sequencial')
+  console.log('✅ PCP Ordenação: campo posicao + backfill sequencial (só na criação da coluna)')
 
   // =========================================================================
   // Segurança — Refresh Tokens table
