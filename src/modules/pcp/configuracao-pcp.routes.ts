@@ -16,6 +16,11 @@ const FLAGS_PCP = [
   'pcp.usaControleApara',
   'pcp.usaControleUmidade',
   'pcp.usaZonaSegregada',
+  // Habilita/desabilita as cores de status (pendente/andamento/pausada/
+  // concluída/atrasada) da fila de programação nos dois layouts (Grid e
+  // Detalhado). A cor de OP Avulsa (rosa) é fixa e NUNCA é afetada por essa
+  // flag — ver getRowBackground nos dois componentes do frontend.
+  'pcp.usaCoresStatusProgramacao',
 ] as const
 
 const patchConfigSchema = z.object({
@@ -26,6 +31,7 @@ const patchConfigSchema = z.object({
   usaControleApara: z.boolean().optional(),
   usaControleUmidade: z.boolean().optional(),
   usaZonaSegregada: z.boolean().optional(),
+  usaCoresStatusProgramacao: z.boolean().optional(),
 })
 
 export async function configuracaoPcpRoutes(app: FastifyInstance) {
@@ -53,6 +59,9 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
       usaControleApara: false,
       usaControleUmidade: false,
       usaZonaSegregada: false,
+      // Default TRUE — comportamento visual já existente hoje (cores
+      // habilitadas), a flag serve para desabilitar, não para habilitar.
+      usaCoresStatusProgramacao: true,
     }
 
     for (const param of parametros) {
