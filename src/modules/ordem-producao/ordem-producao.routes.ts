@@ -847,6 +847,81 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // POST /api/ordens-producao/:id/etapas — Criar etapa manualmente na OP
+  // visualizada (tela de detalhe da OP, aba Etapas). Diferente da rota
+  // /pcp/etapas/adicionar-manual (usada no painel de Programação, que busca
+  // a OP pelo número), esta já recebe o ID da OP direto da tela de detalhe,
+  // e permite informar setup/operação/espera — os mesmos campos exibidos na
+  // tabela de Etapas dessa tela.
+  // =========================================================================
+  app.post('/:id/etapas', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      descricao: z.string().min(1, 'Descrição é obrigatória').max(200),
+      centroProducaoId: z.string().uuid().nullable().optional(),
+      tempoSetupMinutos: z.number().min(0).optional().default(0),
+      tempoOperacaoMinutos: z.number().min(0).optional().default(0),
+      tempoEsperaMinutos: z.number().min(0).optional().default(0),
+    }).parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, status: true },
+    })
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+    if (['CONCLUIDA', 'CANCELADA'].includes(op.status)) {
+      return reply.status(400).send({ message: `Não é possível adicionar etapa a uma OP ${op.status.toLowerCase()}` })
+    }
+
+    if (body.centroProducaoId) {
+      const centro = await prisma.centroProducao.findFirst({
+        where: { id: body.centroProducaoId, empresaId: user.empresaId },
+        select: { id: true },
+      })
+      if (!centro) {
+        return reply.status(404).send({ message: 'Centro de produção não encontrado' })
+      }
+    }
+
+    const maxSeq = await prisma.etapaOrdemProducao.aggregate({
+      where: { ordemProducaoId: id },
+      _max: { sequencia: true },
+    })
+
+    // Posição de fila só faz sentido se a etapa já nasce vinculada a um
+    // centro — mesma lógica usada em /pcp/etapas/adicionar-manual, para a
+    // etapa entrar no fim da fila daquele centro no painel de Programação.
+    let posicaoFila: number | null = null
+    if (body.centroProducaoId) {
+      const maxPos = await prisma.etapaOrdemProducao.aggregate({
+        where: { centroProducaoId: body.centroProducaoId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+        _max: { posicaoFila: true },
+      })
+      posicaoFila = (maxPos._max.posicaoFila || 0) + 1
+    }
+
+    const etapa = await prisma.etapaOrdemProducao.create({
+      data: {
+        ordemProducaoId: id,
+        sequencia: (maxSeq._max.sequencia || 0) + 1,
+        descricao: body.descricao,
+        centroProducaoId: body.centroProducaoId || null,
+        tempoSetupMinutos: body.tempoSetupMinutos,
+        tempoOperacaoCalculado: body.tempoOperacaoMinutos,
+        tempoEsperaMinutos: body.tempoEsperaMinutos,
+        status: 'PENDENTE',
+        posicaoFila,
+      },
+      include: { centroProducao: { select: { id: true, descricao: true } } },
+    })
+
+    return reply.status(201).send(etapa)
+  })
+
+  // =========================================================================
   // GET /api/ordens-producao/:id/pdf — Servir PDF importado
   // =========================================================================
   app.get('/:id/pdf', async (request, reply) => {
