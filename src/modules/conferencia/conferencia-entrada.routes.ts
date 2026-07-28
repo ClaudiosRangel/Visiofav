@@ -13,7 +13,7 @@ import {
   notaTemItensPendenteSegundaConferencia,
   marcarPendenteSegundaConferencia,
 } from '../conferencia-entrada/divergencia-lote-validade.service'
-import { executarSegundaConferencia } from '../conferencia-entrada/segunda-conferencia.service'
+import { executarSegundaConferencia, processarDivergenciasPendentes } from '../conferencia-entrada/segunda-conferencia.service'
 import { registrarSaldoPendente } from '../conferencia-entrada/recebimento-parcial.service'
 import { verificarPendenciasAbertas } from '../pendencia-cce/pendencia-cce.service'
 import { registrarMovimentacoesEntradaNota } from '../faturamento/movimentacao-faturavel.service'
@@ -710,16 +710,18 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     const divergenciaResolvida = resultado.itens.some((i) => i.resultado.status === 'resolvido')
     const divergenciaQuantidade = resultado.itens.some((i) => i.resultado.status === 'divergenciaQuantidade')
-    const pendenciaCriada = resultado.itens.some((i) => i.resultado.status === 'pendenciaCriada')
-    const emailEnviado = resultado.itens.some((i) => i.resultado.status === 'emailEnviado')
+    // Divergência de lote/validade confirmada e registrada — a notificação
+    // fiscal (pendência CC-e ou e-mail) ainda NÃO foi disparada; só ocorre
+    // na aprovação da nota (ver POST /confirmar). Renomeado de
+    // "pendenciaCriada"/"emailEnviado" para não sugerir que já aconteceu.
+    const divergenciaRegistrada = resultado.itens.some((i) => i.resultado.status === 'divergenciaRegistrada')
     const requerSenha = resultado.itens.some((i) => i.resultado.status === 'requerSenha')
     const bloqueado = resultado.itens.some((i) => i.resultado.status === 'bloqueado')
 
     return {
       divergenciaResolvida,
       divergenciaQuantidade,
-      pendenciaCriada,
-      emailEnviado,
+      divergenciaRegistrada,
       requerSenha,
       bloqueado,
       itens: resultado.itens,
@@ -960,7 +962,35 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     // Hook faturamento: registrar movimentações de entrada (non-blocking, pós-commit)
     registrarMovimentacoesEntradaNota(user.empresaId, notaId).catch(() => {})
 
-    return { message: 'Conferência confirmada — OS de endereçamento criada' }
+    // Notificação fiscal de divergências de lote/validade registradas durante
+    // a segunda conferência (pendência CC-e ou e-mail) — disparada só agora,
+    // com a nota já efetivamente aprovada. Executada de forma síncrona (não
+    // "non-blocking") justamente para que uma falha de envio (ex.: SMTP não
+    // configurado) apareça na resposta ao operador em vez de ficar apenas no
+    // log do servidor.
+    let notificacaoFiscal: {
+      pendenciasCriadas: number
+      emailsEnviados: number
+      emailsFalharam: number
+      falhas: Array<{ divergenciaId: string; motivo: string }>
+    } | null = null
+    try {
+      notificacaoFiscal = await processarDivergenciasPendentes(notaId, user.empresaId)
+    } catch (err) {
+      // Falha inesperada no processamento não deve impedir a conferência já
+      // confirmada de retornar sucesso — mas o erro é reportado, não descartado.
+      notificacaoFiscal = {
+        pendenciasCriadas: 0, emailsEnviados: 0, emailsFalharam: 0,
+        falhas: [{ divergenciaId: 'N/A', motivo: err instanceof Error ? err.message : 'ERRO_DESCONHECIDO' }],
+      }
+    }
+
+    return {
+      message: 'Conferência confirmada — OS de endereçamento criada',
+      notificacaoFiscal: notificacaoFiscal && (notificacaoFiscal.pendenciasCriadas > 0 || notificacaoFiscal.emailsEnviados > 0 || notificacaoFiscal.emailsFalharam > 0)
+        ? notificacaoFiscal
+        : undefined,
+    }
   })
 
   // POST /rejeitar/:notaId — rejeitar conferência (volta para recontar)

@@ -424,6 +424,14 @@ async function main() {
 
   console.log('✅ Divergência Lote/Validade: tabela config_conferencia_produto e coluna supervisor_id criadas')
 
+  // DivergenciaConferencia — status precisa acomodar valores mais longos
+  // ('PENDENTE_NOTIFICACAO_FISCAL' tem 27 caracteres) introduzidos pelo fluxo
+  // de notificação fiscal adiada para o momento da aprovação da nota
+  // (processarDivergenciasPendentes, em segunda-conferencia.service.ts) —
+  // a coluna original era VARCHAR(20), estreita demais para esses valores.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "divergencia_conferencia" ALTER COLUMN "status" TYPE VARCHAR(30)`)
+  console.log('✅ DivergenciaConferencia: coluna status ampliada para VARCHAR(30)')
+
   // =========================================================================
   // WMS Fase 2 — Multi-CD com Transferências: tabelas de transferência
   // =========================================================================

@@ -41,9 +41,13 @@ export interface ItemSegundaConferenciaInput {
 export type ResultadoItem =
   | { status: 'resolvido' }
   | { status: 'divergenciaQuantidade'; quantidadeNota: number; quantidadeConferida: number }
-  | { status: 'pendenciaCriada'; pendenciaId: string }
-  | { status: 'emailEnviado' }
-  | { status: 'emailFalhou'; motivo: string }
+  // Divergência de lote/validade confirmada e registrada (DivergenciaConferencia,
+  // status PENDENTE) — a notificação fiscal (pendência CC-e ou e-mail) NÃO é
+  // disparada aqui. Ela só ocorre quando a nota é efetivamente aprovada
+  // (POST /confirmar), para evitar notificar o fiscal de uma divergência que
+  // o operador pode abandonar sem aprovar (fechar aba, corrigir contagem,
+  // rejeitar a conferência etc.) — ver processarDivergenciasPendentes().
+  | { status: 'divergenciaRegistrada'; divergenciaId: string }
   | { status: 'requerSenha' }
   | { status: 'bloqueado' }
   | { status: 'ignorado'; motivo: string }
@@ -292,16 +296,23 @@ export async function executarSegundaConferencia(
     // aceitarSenha e aceitarCcePendente são independentes: senha libera a
     // operação (desbloqueia o item para CONFERIDO) e CC-e/e-mail é o
     // rastreamento fiscal da divergência. Quando ambos estão marcados, os
-    // dois ocorrem — a pendência/e-mail é registrada como efeito colateral
-    // (sem gerar entrada própria no resultado, para não duplicar o item na
-    // tela) e a liberação do item ainda depende da autorização de
-    // supervisor (endpoint /autorizar-senha), que é o único resultado
-    // reportado ao frontend para este item.
+    // dois se aplicam — a divergência é registrada (sem notificar ainda) e a
+    // liberação do item depende da autorização de supervisor (endpoint
+    // /autorizar-senha), que é o único resultado reportado ao frontend para
+    // este item.
+    //
+    // IMPORTANTE: a notificação fiscal (pendência CC-e ou e-mail) NÃO é
+    // disparada aqui — apenas a DivergenciaConferencia é registrada com
+    // status PENDENTE. O envio real ocorre em processarDivergenciasPendentes(),
+    // chamada só quando a nota é aprovada (POST /confirmar). Antes dessa
+    // mudança, o e-mail/pendência era criado no momento da 2ª conferência,
+    // mesmo que o operador depois abandonasse a tela, corrigisse a contagem
+    // ou rejeitasse a conferência — gerando notificações fiscais para
+    // divergências que nunca chegaram a ser efetivamente recebidas.
     if (configBloqueio.aceitarSenha) {
       if (configBloqueio.aceitarCcePendente) {
-        await registrarPendenciaOuEmail({
-          empresaId, notaId, nota, itemNota, itemInput, tipoDivergencia, validadeConferida, integracaoAtiva,
-          marcarConferido: false, // liberação final depende da senha, feita em /autorizar-senha
+        await registrarDivergencia({
+          empresaId, notaId, itemNota, itemInput, tipoDivergencia, validadeConferida,
         })
       }
       resultados.push({
@@ -312,76 +323,56 @@ export async function executarSegundaConferencia(
     }
 
     if (configBloqueio.aceitarCcePendente) {
-      const resultadoPendencia = await registrarPendenciaOuEmail({
-        empresaId, notaId, nota, itemNota, itemInput, tipoDivergencia, validadeConferida, integracaoAtiva,
-        marcarConferido: true,
+      const divergencia = await registrarDivergencia({
+        empresaId, notaId, itemNota, itemInput, tipoDivergencia, validadeConferida,
       })
-      resultados.push({ itemNotaEntradaId: itemInput.itemNotaEntradaId, resultado: resultadoPendencia })
-    }
-
-    if (!configBloqueio.aceitarCcePendente) {
-      // Nem senha nem CC-e/e-mail habilitados — bloqueio total, reconferência
-      // obrigatória. O item permanece PENDENTE_SEGUNDA_CONFERENCIA (sem
-      // trilha de aceite) para que uma nova tentativa seja obrigatória.
+      // Sem senha exigida — a divergência registrada já é suficiente para
+      // liberar o item; a notificação fiscal fica pendente para o momento
+      // da aprovação da nota.
+      await prisma.itemNotaEntrada.update({
+        where: { id: itemInput.itemNotaEntradaId },
+        data: { statusConferencia: 'CONFERIDO' },
+      })
       resultados.push({
         itemNotaEntradaId: itemInput.itemNotaEntradaId,
-        resultado: { status: 'bloqueado' },
+        resultado: { status: 'divergenciaRegistrada', divergenciaId: divergencia.id },
       })
+      continue
     }
+
+    // Nem senha nem CC-e/e-mail habilitados — bloqueio total, reconferência
+    // obrigatória. O item permanece PENDENTE_SEGUNDA_CONFERENCIA (sem
+    // trilha de aceite) para que uma nova tentativa seja obrigatória.
+    resultados.push({
+      itemNotaEntradaId: itemInput.itemNotaEntradaId,
+      resultado: { status: 'bloqueado' },
+    })
   }
 
   return { itens: resultados }
 }
 
-// ─── Registro de pendência CC-e / e-mail fiscal ────────────────────────────────
+// ─── Registro de divergência (sem notificação imediata) ───────────────────────
 
-interface RegistrarPendenciaOuEmailInput {
+interface RegistrarDivergenciaInput {
   empresaId: string
   notaId: string
-  nota: { fornecedor: string | null; numero: number; dataEmissao: Date | null }
-  itemNota: { codigoProduto: string | null; descricao: string; lote: string | null; validade: Date | null }
+  itemNota: { id: string; codigoProduto: string | null; descricao: string; lote: string | null; validade: Date | null }
   itemInput: ItemSegundaConferenciaInput
   tipoDivergencia: 'LOTE' | 'VALIDADE'
   validadeConferida: Date | null
-  integracaoAtiva: boolean
-  /** Se true, marca o item como CONFERIDO após registrar a pendência/e-mail */
-  marcarConferido: boolean
 }
 
 /**
- * Cria a PendenciaCce (integração ativa) ou envia e-mail fiscal (integração
- * inativa) para uma divergência de lote/validade confirmada. Extraído como
- * função própria pois é acionado tanto quando só `aceitarCcePendente` está
- * ativo quanto quando `aceitarSenha` e `aceitarCcePendente` estão ativos
- * simultaneamente.
+ * Registra a divergência de lote/validade confirmada como
+ * `DivergenciaConferencia` (status PENDENTE), sem disparar pendência CC-e ou
+ * e-mail fiscal. A notificação real é feita depois, por
+ * `processarDivergenciasPendentes()`, apenas se/quando a nota for aprovada.
  */
-async function registrarPendenciaOuEmail(input: RegistrarPendenciaOuEmailInput): Promise<ResultadoItem> {
-  const { empresaId, notaId, nota, itemNota, itemInput, tipoDivergencia, validadeConferida, integracaoAtiva, marcarConferido } = input
+async function registrarDivergencia(input: RegistrarDivergenciaInput) {
+  const { empresaId, notaId, itemNota, itemInput, tipoDivergencia, validadeConferida } = input
 
-  const valorEsperado = tipoDivergencia === 'LOTE' ? itemNota.lote ?? '' : itemNota.validade?.toISOString() ?? ''
-  const valorConferido = tipoDivergencia === 'LOTE' ? itemInput.lote ?? '' : itemInput.validade ?? ''
-
-  if (marcarConferido) {
-    await prisma.itemNotaEntrada.update({
-      where: { id: itemInput.itemNotaEntradaId },
-      data: { statusConferencia: 'CONFERIDO' },
-    })
-  }
-
-  if (integracaoAtiva) {
-    const pendencia = await criarPendencia({
-      empresaId,
-      notaEntradaId: notaId,
-      codigoProduto: itemNota.codigoProduto ?? '',
-      descricaoProduto: itemNota.descricao,
-      fornecedor: nota.fornecedor ?? '',
-      tipo: tipoDivergencia,
-    })
-    return { status: 'pendenciaCriada', pendenciaId: pendencia.id }
-  }
-
-  // Enviar e-mail ao setor fiscal — cria divergência para vincular ao e-mail
-  const divergencia = await prisma.divergenciaConferencia.create({
+  return prisma.divergenciaConferencia.create({
     data: {
       empresaId,
       notaEntradaId: notaId,
@@ -394,19 +385,107 @@ async function registrarPendenciaOuEmail(input: RegistrarPendenciaOuEmailInput):
       status: 'PENDENTE',
     },
   })
+}
 
-  const resultadoEmail = await enviarEmailDivergencia({
-    divergenciaId: divergencia.id,
-    empresaId,
-    fornecedor: nota.fornecedor ?? '',
-    numeroNF: nota.numero,
-    dataEmissao: nota.dataEmissao ?? new Date(),
-    descricaoProduto: itemNota.descricao,
-    tipoDivergencia,
-    valorEsperado,
-    valorConferido,
+// ─── Processamento de divergências pendentes (chamado na aprovação da nota) ───
+
+export interface ResultadoProcessamentoDivergencias {
+  pendenciasCriadas: number
+  emailsEnviados: number
+  emailsFalharam: number
+  falhas: Array<{ divergenciaId: string; motivo: string }>
+}
+
+/**
+ * Processa todas as `DivergenciaConferencia` com status PENDENTE de uma nota,
+ * disparando a notificação fiscal (pendência CC-e se `integracaoAtiva`, senão
+ * e-mail) — chamada apenas no momento em que a nota é efetivamente aprovada
+ * (POST /confirmar/:notaId), nunca durante a segunda conferência em si.
+ *
+ * Cada divergência processada tem seu status atualizado: `PENDENTE_CCE`
+ * (pendência criada), `NOTIFICADO` (e-mail enviado com sucesso) ou
+ * `PENDENTE_NOTIFICACAO_FISCAL` (e-mail falhou após retries — precisa
+ * reprocessamento manual). Falhas são reportadas ao chamador, nunca
+ * descartadas silenciosamente.
+ */
+export async function processarDivergenciasPendentes(
+  notaId: string,
+  empresaId: string,
+): Promise<ResultadoProcessamentoDivergencias> {
+  const resultado: ResultadoProcessamentoDivergencias = {
+    pendenciasCriadas: 0,
+    emailsEnviados: 0,
+    emailsFalharam: 0,
+    falhas: [],
+  }
+
+  const divergencias = await prisma.divergenciaConferencia.findMany({
+    where: { notaEntradaId: notaId, status: 'PENDENTE' },
   })
+  if (divergencias.length === 0) return resultado
 
-  if (resultadoEmail.sucesso) return { status: 'emailEnviado' }
-  return { status: 'emailFalhou', motivo: resultadoEmail.motivo ?? 'ERRO_DESCONHECIDO' }
+  const [nota, configIntegracao] = await Promise.all([
+    prisma.notaEntrada.findUnique({
+      where: { id: notaId },
+      select: { fornecedor: true, numero: true, dataEmissao: true },
+    }),
+    prisma.configIntegracao.findUnique({ where: { empresaId } }),
+  ])
+  const integracaoAtiva = configIntegracao?.integracaoAtiva ?? false
+
+  for (const divergencia of divergencias) {
+    const itemNota = await prisma.itemNotaEntrada.findUnique({
+      where: { id: divergencia.itemNotaEntradaId },
+      select: { codigoProduto: true, descricao: true },
+    })
+
+    const tipoDivergencia: 'LOTE' | 'VALIDADE' = divergencia.tipo === 'LOTE_DIVERGENTE' ? 'LOTE' : 'VALIDADE'
+    const valorEsperado = tipoDivergencia === 'LOTE'
+      ? divergencia.loteEsperado ?? ''
+      : divergencia.validadeEsperada?.toISOString() ?? ''
+    const valorConferido = tipoDivergencia === 'LOTE'
+      ? divergencia.loteConferido ?? ''
+      : divergencia.validadeConferida?.toISOString() ?? ''
+
+    if (integracaoAtiva) {
+      await criarPendencia({
+        empresaId,
+        notaEntradaId: notaId,
+        codigoProduto: itemNota?.codigoProduto ?? '',
+        descricaoProduto: itemNota?.descricao ?? '',
+        fornecedor: nota?.fornecedor ?? '',
+        tipo: tipoDivergencia,
+      })
+      await prisma.divergenciaConferencia.update({
+        where: { id: divergencia.id },
+        data: { status: 'PENDENTE_CCE' },
+      })
+      resultado.pendenciasCriadas++
+      continue
+    }
+
+    // Sem integração — enviar e-mail ao setor fiscal
+    const resultadoEmail = await enviarEmailDivergencia({
+      divergenciaId: divergencia.id,
+      empresaId,
+      fornecedor: nota?.fornecedor ?? '',
+      numeroNF: nota?.numero ?? 0,
+      dataEmissao: nota?.dataEmissao ?? new Date(),
+      descricaoProduto: itemNota?.descricao ?? '',
+      tipoDivergencia,
+      valorEsperado,
+      valorConferido,
+    })
+
+    if (resultadoEmail.sucesso) {
+      resultado.emailsEnviados++
+      // enviarEmailDivergencia já atualiza o status para NOTIFICADO em caso de sucesso
+    } else {
+      resultado.emailsFalharam++
+      resultado.falhas.push({ divergenciaId: divergencia.id, motivo: resultadoEmail.motivo ?? 'ERRO_DESCONHECIDO' })
+      // enviarEmailDivergencia já atualiza o status para PENDENTE_NOTIFICACAO_FISCAL em caso de falha
+    }
+  }
+
+  return resultado
 }

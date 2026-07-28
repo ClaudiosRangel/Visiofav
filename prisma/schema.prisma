@@ -3483,7 +3483,7 @@ model DivergenciaConferencia {
   loteConferido       String?     @map("lote_conferido") @db.VarChar(30)
   validadeEsperada    DateTime?   @map("validade_esperada")
   validadeConferida   DateTime?   @map("validade_conferida")
-  status              String      @default("PENDENTE") @db.VarChar(20) // PENDENTE, ACEITA, REJEITADA, PENDENTE_CCE
+  status              String      @default("PENDENTE") @db.VarChar(30) // PENDENTE, ACEITA, REJEITADA, PENDENTE_CCE, NOTIFICADO, PENDENTE_NOTIFICACAO_FISCAL
   observacao          String?     @db.Text
   supervisorId        String?     @map("supervisor_id")
   supervisor          Usuario?    @relation(fields: [supervisorId], references: [id])
