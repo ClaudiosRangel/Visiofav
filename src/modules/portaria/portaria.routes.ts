@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { analisarPendenciasLogisticas } from '../pendencia-logistica/pendencia-logistica.routes'
 import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
+import { resolverCodigosProdutoItensXml } from '../nota-entrada/resolver-codigo-produto-item.service'
 import { filaService } from '../patio/fila.service'
 import { portariaService } from './portaria.service'
 import { autorizarEntradaBodySchema, decidirLiberacaoConferencia } from './liberacao-conferencia.service'
@@ -81,6 +82,9 @@ async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise
 
   // Buscar itens do pedido de compra OU da compra efetivada do fornecedor
   let itensNota: any[] = []
+  // codigoProduto aqui já é o CÓDIGO INTERNO do Produto (resolvido via
+  // De-Para/EAN/SKU), não o cProd bruto do fornecedor — necessário para
+  // casar corretamente com `item.produto.codigo` do Pedido de Compra abaixo.
   let xmlItens: Array<{ codigoProduto: string; lote: string; validade: string | null }> = []
   let transportadoraUf: string | null = null
   let transportadoraRntc: string | null = null
@@ -105,8 +109,19 @@ async function criarNotaEntradaSeNecessario(ag: any, empresaId: string): Promise
   if (compra?.xmlNfe) {
     try {
       const parsed = parseNfeXml(compra.xmlNfe)
+
+      // O XML traz `cProd` (código do fornecedor) — resolver para o código
+      // interno do Produto antes de comparar com `item.produto.codigo` do
+      // Pedido de Compra. Sem isso, o match abaixo (`x.codigoProduto ===
+      // item.produto.codigo`) nunca bate e lote/validade da NF-e nunca são
+      // aplicados no item da nota criada pela Portaria.
+      const codigosResolvidos = await resolverCodigosProdutoItensXml(
+        prisma, empresaId, ag.fornecedorId ?? null,
+        parsed.itens.map(i => ({ codigoProduto: i.codigoProduto, cEAN: i.cEAN, cEANTrib: i.cEANTrib })),
+      )
+
       xmlItens = parsed.itens.map(i => ({
-        codigoProduto: i.codigoProduto,
+        codigoProduto: codigosResolvidos.get(i.codigoProduto)?.codigoProduto ?? i.codigoProduto,
         lote: i.lote || '',
         validade: (i as any).validade || null,
       }))
