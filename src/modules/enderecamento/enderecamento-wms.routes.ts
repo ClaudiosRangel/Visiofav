@@ -76,6 +76,10 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
         tipo: { in: ['ARMAZENAGEM', 'LIVRE'] },
         status: true,
         saldos: { none: { quantidade: { gt: 0 } } },
+        // Isolamento multi-tenant: sem este filtro, endereços de OUTRA
+        // empresa (mesma numeração sequencial 001-001-001-...) podiam ser
+        // sugeridos aqui.
+        OR: [{ empresaId: user.empresaId }, { empresaId: null }],
       },
       orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
     })

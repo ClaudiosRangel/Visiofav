@@ -7,6 +7,8 @@ import { extrairTextoPdf } from './importacao-op/pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-parser'
 import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
 import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
+import { integracaoWmsAutomaticaAtiva } from './configuracao-pcp.routes'
+import { criarEntradaProducao } from './pcp-wms-integration.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -54,7 +56,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const { id } = idSchema.parse(request.params)
     const body = z.object({ funcionarioId: z.string().uuid().optional() }).parse(request.body)
 
-    const etapa = await prisma.etapaOrdemProducao.findFirst({ where: { id } })
+    // Segurança: filtro explícito por empresaId (via ordemProducao) — sem
+    // isso, qualquer usuário autenticado que soubesse/enumerar um UUID de
+    // etapa de OUTRA empresa conseguiria iniciá-la (mesma classe de bug já
+    // documentada em ATENCAO-pontos-verificar.md).
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
 
     if (!['PENDENTE', 'PAUSADA'].includes(etapa.status)) {
@@ -110,7 +118,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       observacao: z.string().optional(),
     }).parse(request.body)
 
-    const etapa = await prisma.etapaOrdemProducao.findFirst({ where: { id } })
+    // Segurança: filtro explícito por empresaId — ver comentário em /iniciar.
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
 
     if (etapa.status !== 'EM_ANDAMENTO') {
@@ -187,8 +198,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { id } = idSchema.parse(request.params)
 
+    // Segurança: filtro explícito por empresaId — sem isso, um usuário de
+    // OUTRA empresa que soubesse o UUID da etapa conseguia concluí-la, e a
+    // NotaEntrada de produção (abaixo) era criada com empresaId do usuário
+    // que clicou, não da empresa real da OP — vazando o lançamento de
+    // produção para o WMS de uma empresa diferente da que produziu.
     const etapa = await prisma.etapaOrdemProducao.findFirst({
-      where: { id },
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
       include: { ordemProducao: { select: { id: true, empresaId: true, produtoId: true, quantidade: true, numero: true, lote: true } } },
     })
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
@@ -247,43 +263,37 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
 
       try {
-        const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
+        // empresaId sempre da OP (etapa.ordemProducao.empresaId), nunca do
+        // usuário logado — já garantido pelo filtro na busca da etapa acima,
+        // mas mantido explícito aqui para não reintroduzir o bug se a busca
+        // for alterada no futuro sem esse cuidado.
+        const empresaId = etapa.ordemProducao.empresaId
+        const empresa = await prisma.empresa.findUnique({ where: { id: empresaId } })
 
-        if (empresa?.usaWms) {
-          // Cria Nota de Entrada tipo PRODUCAO (PA entra no estoque WMS)
-          const ultimaNota = await prisma.notaEntrada.findFirst({
-            where: { empresaId: user.empresaId },
-            orderBy: { numero: 'desc' },
-            select: { numero: true },
-          })
+        // Flag dedicada de integração automática PCP → WMS (pcp.integracaoWmsAutomatica),
+        // não apenas `Empresa.usaWms` — usaWms indica só que a empresa usa o
+        // módulo WMS, não que toda OP concluída deva gerar entrada automática
+        // de estoque (ex.: empresa pode preferir lançar manualmente). Ver
+        // configuracao-pcp.routes.ts e ATENCAO-pontos-verificar.md.
+        const integracaoAutomatica = empresa?.usaWms
+          ? await integracaoWmsAutomaticaAtiva(empresaId)
+          : false
 
-          const produto = await prisma.produto.findFirst({
-            where: { id: etapa.ordemProducao.produtoId },
-            select: { codigo: true, nome: true, unidade: true },
-          })
+        if (integracaoAutomatica) {
+          // Cria Nota de Entrada tipo PRODUCAO (PA entra no estoque WMS) —
+          // implementação única em pcp-wms-integration.service.ts, chamada
+          // aqui em vez de duplicar a lógica inline (ver histórico do bug
+          // de duas versões divergentes em ATENCAO-pontos-verificar.md).
+          const quantidadeProduzidaFinal = Number(atualizada.quantidadeProduzida) > 0
+            ? Number(atualizada.quantidadeProduzida)
+            : Number(etapa.ordemProducao.quantidade)
 
-          const nota = await prisma.notaEntrada.create({
-            data: {
-              numero: (ultimaNota?.numero ?? 900000) + 1,
-              serie: 'PRD',
-              fornecedor: 'PRODUÇÃO INTERNA',
-              fornecedorDoc: user.empresaId.substring(0, 14),
-              dataEmissao: agora,
-              dataEntrada: agora,
-              tipo: 'PRODUCAO',
-              status: 'PENDENTE',
-              empresaId: user.empresaId,
-              itens: {
-                create: [{
-                  item: 1,
-                  descricao: `${produto?.codigo || ''} - ${produto?.nome || 'Produto Acabado'}`,
-                  codigoProduto: produto?.codigo || '',
-                  unidade: produto?.unidade || 'UN',
-                  quantidade: Number(atualizada.quantidadeProduzida) > 0 ? Number(atualizada.quantidadeProduzida) : Number(etapa.ordemProducao.quantidade),
-                  lote: etapa.ordemProducao.lote || null,
-                }],
-              },
-            },
+          const nota = await criarEntradaProducao({
+            empresaId,
+            ordemProducaoId: etapa.ordemProducaoId,
+            produtoId: etapa.ordemProducao.produtoId,
+            quantidade: quantidadeProduzidaFinal,
+            lote: etapa.ordemProducao.lote,
           })
 
           entradaWms = { notaEntradaId: nota.id, numero: nota.numero, status: 'PENDENTE' }

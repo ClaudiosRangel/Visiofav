@@ -8,26 +8,43 @@ import { prisma } from '../../lib/prisma'
 /**
  * Cria uma Nota de Entrada de tipo PRODUCAO quando produto acabado é concluído.
  * Isso dispara o fluxo WMS existente: Conferência → Endereçamento → Estoque.
+ *
+ * Implementação única da integração PCP → WMS — chamada por
+ * `etapa-operacional.routes.ts` (PATCH /etapas/:id/concluir), quando a
+ * última etapa pendente de uma OP é concluída. Antes esta lógica vivia
+ * duplicada inline naquele arquivo (com `serie: 'INT'` divergindo de
+ * `serie: 'PRD'` usado aqui) — unificado para não haver duas versões que
+ * podem divergir silenciosamente entre si.
+ *
+ * `empresaId` deve ser SEMPRE o da própria OP/etapa concluída
+ * (`etapa.ordemProducao.empresaId`), nunca do usuário logado — ver
+ * ATENCAO-pontos-verificar.md sobre o vazamento entre empresas já corrigido.
  */
 export async function criarEntradaProducao(params: {
   empresaId: string
   ordemProducaoId: string
-  produtoId: string
+  // OP pode não ter produtoId vinculado (ex.: OP importada via PDF sem
+  // cadastro formal do produto acabado) — nesse caso a nota é criada com
+  // descrição/código genéricos, igual ao comportamento já existente antes
+  // desta função ser chamada de fato.
+  produtoId: string | null
   quantidade: number
-  lote?: string
+  lote?: string | null
 }) {
-  const { empresaId, ordemProducaoId, produtoId, quantidade, lote } = params
+  const { empresaId, produtoId, quantidade, lote } = params
 
-  const produto = await prisma.produto.findFirst({
-    where: { id: produtoId, empresaId },
-    select: { codigo: true, nome: true, unidade: true },
-  })
+  const produto = produtoId
+    ? await prisma.produto.findFirst({
+        where: { id: produtoId, empresaId },
+        select: { codigo: true, nome: true, unidade: true },
+      })
+    : null
 
-  if (!produto) return null
-
-  // Busca próximo número de nota interna
+  // Numeração sequencial a partir de 900000 (para diferenciar visualmente de
+  // notas de compra normais) — global por empresa, não filtrada por tipo,
+  // para nunca colidir com o número de outra NotaEntrada da mesma empresa.
   const ultimaNota = await prisma.notaEntrada.findFirst({
-    where: { empresaId, tipo: 'PRODUCAO' },
+    where: { empresaId },
     orderBy: { numero: 'desc' },
     select: { numero: true },
   })
@@ -36,7 +53,7 @@ export async function criarEntradaProducao(params: {
   const notaEntrada = await prisma.notaEntrada.create({
     data: {
       numero: proximoNumero,
-      serie: 'INT',
+      serie: 'PRD',
       fornecedor: 'PRODUÇÃO INTERNA',
       fornecedorDoc: empresaId.substring(0, 14),
       dataEmissao: new Date(),
@@ -47,9 +64,9 @@ export async function criarEntradaProducao(params: {
       itens: {
         create: [{
           item: 1,
-          descricao: `${produto.codigo} - ${produto.nome}`,
-          codigoProduto: produto.codigo,
-          unidade: produto.unidade,
+          descricao: `${produto?.codigo || ''} - ${produto?.nome || 'Produto Acabado'}`,
+          codigoProduto: produto?.codigo || '',
+          unidade: produto?.unidade || 'UN',
           quantidade,
           lote: lote ?? null,
         }],

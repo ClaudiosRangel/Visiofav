@@ -1118,7 +1118,15 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       if (!skuMaster) {
         // Fallback: tudo em um endereço
         const enderecoLivre = await prisma.endereco.findFirst({
-          where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
+          where: {
+            tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } },
+            // Isolamento multi-tenant: endereços de outras empresas nunca podem
+            // ser sugeridos aqui — sem este filtro, a numeração sequencial
+            // (001-001-001-001-001-001, ...) igual entre empresas diferentes
+            // fazia a tela mostrar o "mesmo" endereço (texto) repetido para
+            // posições que na realidade eram registros de OUTRA empresa.
+            OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+          },
           orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
         })
         if (enderecoLivre) {
@@ -1133,7 +1141,12 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       const capacidadePalete = calcularCapacidadePalete(skuMaster.lastro, skuMaster.camada, null)
 
       const enderecosLivres = await prisma.endereco.findMany({
-        where: { tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } } },
+        where: {
+          tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } },
+          // Isolamento multi-tenant — ver comentário equivalente acima, no
+          // fallback sem SKU master (mesmo bug, mesma correção).
+          OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+        },
         orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
       })
 
@@ -1283,9 +1296,17 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   })
 
   // GET /enderecos-livres
-  app.get('/enderecos-livres', async () => {
+  app.get('/enderecos-livres', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
     const enderecos = await prisma.endereco.findMany({
-      where: { tipo: 'ARMAZENAGEM', status: true },
+      where: {
+        tipo: 'ARMAZENAGEM', status: true,
+        // Isolamento multi-tenant — mesmo bug do enderecamento-automatico:
+        // sem este filtro, endereços de OUTRAS empresas apareciam nesta
+        // listagem (usada em várias telas: transferência de endereço,
+        // manutenção de estoque, dados logísticos, conferência de entrada).
+        OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+      },
       orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
       include: { saldos: { where: { quantidade: { gt: 0 } }, select: { quantidade: true } } },
     })

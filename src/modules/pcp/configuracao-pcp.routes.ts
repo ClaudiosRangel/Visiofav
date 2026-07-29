@@ -21,6 +21,13 @@ const FLAGS_PCP = [
   // Detalhado). A cor de OP Avulsa (rosa) é fixa e NUNCA é afetada por essa
   // flag — ver getRowBackground nos dois componentes do frontend.
   'pcp.usaCoresStatusProgramacao',
+  // Decide se a conclusão da ÚLTIMA etapa de uma OP dispara automaticamente
+  // a criação de NotaEntrada (tipo PRODUCAO) no WMS. Distinta de
+  // Empresa.usaWms (que só indica que a empresa usa o módulo WMS em geral)
+  // — uma empresa pode usar WMS para compras/vendas mas preferir lançar a
+  // entrada de produção manualmente. Ver etapa-operacional.routes.ts
+  // (integracaoWmsAutomaticaAtiva) e ATENCAO-pontos-verificar.md.
+  'pcp.integracaoWmsAutomatica',
 ] as const
 
 const patchConfigSchema = z.object({
@@ -32,7 +39,26 @@ const patchConfigSchema = z.object({
   usaControleUmidade: z.boolean().optional(),
   usaZonaSegregada: z.boolean().optional(),
   usaCoresStatusProgramacao: z.boolean().optional(),
+  integracaoWmsAutomatica: z.boolean().optional(),
 })
+
+/**
+ * Verifica se a integração automática PCP → WMS (criação de NotaEntrada de
+ * produção ao concluir a última etapa de uma OP) está habilitada para a
+ * empresa. Default `true` quando o parâmetro não está configurado (ver
+ * mesmo default em GET /configuracao), para preservar o comportamento já
+ * existente em empresas que não alteraram essa configuração.
+ *
+ * Usada por `etapa-operacional.routes.ts` — extraída aqui para não duplicar
+ * a leitura de `Parametro` em dois módulos diferentes.
+ */
+export async function integracaoWmsAutomaticaAtiva(empresaId: string): Promise<boolean> {
+  const param = await prisma.parametro.findUnique({
+    where: { empresaId_chave: { empresaId, chave: 'pcp.integracaoWmsAutomatica' } },
+  })
+  if (!param) return true
+  return param.valor === 'true'
+}
 
 export async function configuracaoPcpRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -62,6 +88,11 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
       // Default TRUE — comportamento visual já existente hoje (cores
       // habilitadas), a flag serve para desabilitar, não para habilitar.
       usaCoresStatusProgramacao: true,
+      // Default TRUE — preserva o comportamento automático já existente
+      // (baseado antes só em Empresa.usaWms) para não quebrar empresas que
+      // já dependem do lançamento automático hoje. Empresas que preferem
+      // lançar manualmente desabilitam esta flag no Configurador.
+      integracaoWmsAutomatica: true,
     }
 
     for (const param of parametros) {
