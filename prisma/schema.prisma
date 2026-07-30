@@ -2026,7 +2026,11 @@ model CentroProducao {
   codigo         String   @db.VarChar(20)
   descricao      String   @db.VarChar(200)
   tipo           String   @db.VarChar(20) // MAQUINA, SETOR, LINHA
-  tipoMaquina    String?  @map("tipo_maquina") @db.VarChar(20) // IMPRESSAO, ACABAMENTO, CORTADEIRA, COLAGEM, VERNIZ
+  // Cadastro obrigatório (substitui o antigo enum fixo tipoMaquina, que
+  // limitava a classificação a 5 valores hardcoded no código e não permitia
+  // reordenar as abas da Programação). Ver model TipoProcesso.
+  tipoProcessoId String   @map("tipo_processo_id")
+  tipoProcesso   TipoProcesso @relation(fields: [tipoProcessoId], references: [id])
   capacidadeHora Decimal? @map("capacidade_hora") @db.Decimal(12, 4)
   custoHora      Decimal? @map("custo_hora") @db.Decimal(12, 4)
   posicao        Int      @default(0)
@@ -2041,6 +2045,27 @@ model CentroProducao {
 
   @@unique([empresaId, codigo])
   @@map("centro_producao")
+}
+
+/// Cadastro de Tipo de Processo produtivo (ex: Cortadeira, Impressão,
+/// Acabamento) — substitui o antigo enum fixo `tipoMaquina` do
+/// CentroProducao. Cada Centro de Produção deve obrigatoriamente pertencer
+/// a um Tipo de Processo. As abas do painel de Programação são geradas
+/// dinamicamente a partir dos tipos ATIVOS, na ordem definida por `posicao`
+/// (reordenável via drag-and-drop na tela de cadastro).
+model TipoProcesso {
+  id        String   @id @default(uuid())
+  empresaId String   @map("empresa_id")
+  codigo    String   @db.VarChar(20)
+  descricao String   @db.VarChar(200)
+  posicao   Int      @default(0)
+  status    Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  centros CentroProducao[]
+
+  @@unique([empresaId, codigo])
+  @@map("tipo_processo")
 }
 
 model RecursoProducao {

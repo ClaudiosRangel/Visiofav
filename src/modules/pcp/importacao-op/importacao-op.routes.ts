@@ -138,7 +138,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         indice: z.number().int().min(0),
         centroProducaoId: z.string().uuid().nullable(),
         nomeEditado: z.string().optional(),
-        tipoMaquina: z.enum(['IMPRESSAO', 'ACABAMENTO', 'CORTADEIRA', 'COLAGEM', 'VERNIZ']).optional(),
+        tipoProcessoId: z.string().uuid().optional(),
       })).optional(),
       // Se quer salvar De/Para para futuras importaÃ§Ãµes
       salvarDePara: z.boolean().optional().default(false),
@@ -333,13 +333,36 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
             codigoFinal = `${codigoCentro.substring(0, 17)}_${tentativa}`
           }
 
+          // tipoProcessoId é obrigatório no CentroProducao. Se o usuário não
+          // selecionou um no wizard, cai no fallback 'ACABAMENTO' (mesmo
+          // critério usado na migração de dados legados) — evita falhar a
+          // criação da OP por um campo de classificação não preenchido.
+          let tipoProcessoIdValidado: string | null = null
+          if (vinculoCentro.tipoProcessoId) {
+            const tp = await prisma.tipoProcesso.findFirst({ where: { id: vinculoCentro.tipoProcessoId, empresaId: user.empresaId } })
+            if (tp) tipoProcessoIdValidado = tp.id
+          }
+          if (!tipoProcessoIdValidado) {
+            const fallback = await prisma.tipoProcesso.findFirst({ where: { empresaId: user.empresaId, codigo: 'ACABAMENTO' } })
+            tipoProcessoIdValidado = fallback?.id ?? null
+          }
+          if (!tipoProcessoIdValidado) {
+            // Nenhum Tipo de Processo cadastrado para a empresa (cenário
+            // inesperado) — usa o primeiro ativo disponível para não travar a importação.
+            const qualquerTipo = await prisma.tipoProcesso.findFirst({ where: { empresaId: user.empresaId, status: true }, orderBy: { posicao: 'asc' } })
+            tipoProcessoIdValidado = qualquerTipo?.id ?? null
+          }
+          if (!tipoProcessoIdValidado) {
+            throw new Error('Nenhum Tipo de Processo cadastrado para esta empresa. Cadastre em PCP → Cadastros → Tipo de Processo antes de importar OPs.')
+          }
+
           const novoCentro = await prisma.centroProducao.create({
             data: {
               empresaId: user.empresaId,
               codigo: codigoFinal,
               descricao: nomeCentro,
               tipo: 'MAQUINA',
-              tipoMaquina: vinculoCentro.tipoMaquina ?? null,
+              tipoProcessoId: tipoProcessoIdValidado,
             },
           })
           centroIdValidado = novoCentro.id
@@ -618,7 +641,7 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
       where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'CENTRO_PRODUCAO', codigoExterno: descricaoCompleta },
     })
     if (deParaCentro) {
-      const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
+      const centro = await prisma.centroProducao.findFirst({ where: { id: deParaCentro.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoProcessoId: true } })
       sugestoes.centros.push({ indice: i, sugestao: centro || null })
     } else {
       // Fallback: tentar pelo nome curto da máquina no de/para (compatibilidade com mapeamentos antigos)
@@ -628,7 +651,7 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
           })
         : null
       if (deParaFallback) {
-        const centro = await prisma.centroProducao.findFirst({ where: { id: deParaFallback.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoMaquina: true } })
+        const centro = await prisma.centroProducao.findFirst({ where: { id: deParaFallback.entidadeInternaId }, select: { id: true, codigo: true, descricao: true, tipoProcessoId: true } })
         sugestoes.centros.push({ indice: i, sugestao: centro || null })
       } else {
         // Sem de/para: NÃO fazer busca fuzzy — retornar null para o usuário definir manualmente

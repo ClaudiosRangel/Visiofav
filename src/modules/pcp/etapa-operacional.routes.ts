@@ -964,6 +964,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const centros = await prisma.centroProducao.findMany({
       where: { empresaId: user.empresaId, status: true },
+      include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } } },
       orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
     })
 
@@ -981,7 +982,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ'] } } },
           },
         },
-        centroProducao: { select: { id: true, codigo: true, descricao: true, tipoMaquina: true } },
+        centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true, tipoProcesso: { select: { codigo: true } } } },
       },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
@@ -1097,7 +1098,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       const pendentes = etapasDoCentro.filter(e => e.status === 'PENDENTE')
 
       return {
-        centro: { id: centro.id, codigo: centro.codigo, descricao: centro.descricao, tipo: centro.tipo, tipoMaquina: centro.tipoMaquina },
+        centro: {
+          id: centro.id, codigo: centro.codigo, descricao: centro.descricao, tipo: centro.tipo,
+          tipoProcessoId: centro.tipoProcessoId,
+          tipoProcesso: { codigo: centro.tipoProcesso.codigo, descricao: centro.tipoProcesso.descricao, posicao: centro.tipoProcesso.posicao },
+        },
         resumo: {
           emAndamento: emAndamento.length,
           pausadas: pausadas.length,
@@ -1207,7 +1212,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           observacoes: e.ordemProducao.observacoes,
           observacaoOperador: e.observacaoOperador || null,
           centroDescricao: e.centroProducao?.descricao || null,
-          tipoMaquina: 'CORTADEIRA' as string | null, // Aguardando Cartão sempre pertence à Cortadeira
+          // "Aguardando Cartão" sempre pertence à categoria Cortadeira,
+          // independente do centro real da etapa — usa o código do
+          // TipoProcesso cadastrado como 'CORTADEIRA' para essa empresa.
+          tipoProcessoCodigo: 'CORTADEIRA' as string | null,
           bobinas,
           kgEstoque,
           kgEncomendado,

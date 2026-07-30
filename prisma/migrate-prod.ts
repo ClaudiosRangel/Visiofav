@@ -2099,6 +2099,103 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "foto_url" TEXT`)
   console.log('✅ PCP — Apontamento com foto: coluna foto_url criada')
 
+  // ===================================================================
+  // PCP — Cadastro de Tipo de Processo (substitui o enum fixo tipoMaquina)
+  // ===================================================================
+  // 1. Criar tabela (mesmo padrão dos demais cadastros "Tipo" do PCP)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "tipo_processo" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(20) NOT NULL,
+      "descricao" VARCHAR(200) NOT NULL,
+      "posicao" INTEGER NOT NULL DEFAULT 0,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "tipo_processo_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "tipo_processo_empresa_id_codigo_key" ON "tipo_processo"("empresa_id", "codigo")`)
+
+  // 2. Popular, para cada empresa, os 5 tipos que hoje são fixos no código
+  // (mesma ordem/posição já usada nas abas do painel de Programação) — só
+  // cria se ainda não existir (idempotente).
+  const tiposPadrao = [
+    { codigo: 'CORTADEIRA', descricao: 'Cortadeira', posicao: 0 },
+    { codigo: 'IMPRESSAO', descricao: 'Impressão', posicao: 1 },
+    { codigo: 'ACABAMENTO', descricao: 'Acabamento', posicao: 2 },
+    { codigo: 'COLAGEM', descricao: 'Colagem', posicao: 3 },
+    { codigo: 'VERNIZ', descricao: 'Verniz', posicao: 4 },
+  ]
+  const empresasPcp = await prisma.empresa.findMany({ select: { id: true } })
+  for (const empresa of empresasPcp) {
+    for (const tp of tiposPadrao) {
+      const existente = await prisma.tipoProcesso.findFirst({ where: { empresaId: empresa.id, codigo: tp.codigo } })
+      if (!existente) {
+        await prisma.tipoProcesso.create({ data: { empresaId: empresa.id, ...tp } })
+      }
+    }
+  }
+  console.log(`✅ PCP Tipo de Processo: tabela criada e ${empresasPcp.length} empresa(s) populada(s) com os 5 tipos padrão`)
+
+  // 3. Adicionar a nova FK (nullable por enquanto) e migrar o valor do antigo
+  // tipo_maquina para o tipo_processo_id correspondente da mesma empresa.
+  // Fallback para 'ACABAMENTO' quando tipo_maquina estava nulo (centro sem
+  // classificação) — mesmo padrão adotado manualmente pelo usuário para
+  // casos como o centro "Ebox".
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "tipo_processo_id" TEXT`)
+
+  // A coluna tipo_maquina é removida no final deste bloco (passo 4) na
+  // primeira execução bem-sucedida — checar se ela ainda existe antes de
+  // selecioná-la, para a migração continuar idempotente em reexecuções.
+  const colunaTipoMaquinaExiste = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'centro_producao' AND column_name = 'tipo_maquina') as exists`
+  )
+  const temColunaTipoMaquina = colunaTipoMaquinaExiste[0]?.exists === true
+
+  const centrosSemTipoProcesso = temColunaTipoMaquina
+    ? await prisma.$queryRawUnsafe<Array<{ id: string; empresa_id: string; tipo_maquina: string | null }>>(
+        `SELECT id, empresa_id, tipo_maquina FROM centro_producao WHERE tipo_processo_id IS NULL`
+      )
+    : await prisma.$queryRawUnsafe<Array<{ id: string; empresa_id: string; tipo_maquina: string | null }>>(
+        `SELECT id, empresa_id, NULL as tipo_maquina FROM centro_producao WHERE tipo_processo_id IS NULL`
+      )
+
+  for (const centro of centrosSemTipoProcesso) {
+    const codigo = centro.tipo_maquina || 'ACABAMENTO'
+    let tipoProcesso = await prisma.tipoProcesso.findFirst({ where: { empresaId: centro.empresa_id, codigo } })
+    if (!tipoProcesso) {
+      // Valor de tipo_maquina fora dos 5 esperados (dado legado/inconsistente) — cai no fallback.
+      tipoProcesso = await prisma.tipoProcesso.findFirst({ where: { empresaId: centro.empresa_id, codigo: 'ACABAMENTO' } })
+    }
+    if (tipoProcesso) {
+      await prisma.centroProducao.update({ where: { id: centro.id }, data: { tipoProcessoId: tipoProcesso.id } })
+    }
+  }
+
+  // 4. Só torna a coluna obrigatória (NOT NULL) se TODOS os centros já
+  // tiverem sido migrados — proteção para não deixar o banco num estado
+  // inconsistente caso alguma empresa não tenha o tipo ACABAMENTO por
+  // algum motivo inesperado.
+  const restantesSemTipo = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+    `SELECT COUNT(*) as count FROM centro_producao WHERE tipo_processo_id IS NULL`
+  )
+  const totalRestante = Number(restantesSemTipo[0]?.count ?? 0)
+  if (totalRestante === 0) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ALTER COLUMN "tipo_processo_id" SET NOT NULL`)
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD CONSTRAINT "centro_producao_tipo_processo_id_fkey" FOREIGN KEY ("tipo_processo_id") REFERENCES "tipo_processo"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+    } catch {
+      // Constraint já existe — Postgres não tem ADD CONSTRAINT IF NOT EXISTS.
+    }
+    // Coluna antiga totalmente substituída pela FK — dado já preservado no
+    // passo 3 acima antes de remover.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" DROP COLUMN IF EXISTS "tipo_maquina"`)
+    console.log('✅ PCP Tipo de Processo: centro_producao.tipo_processo_id obrigatório, FK criada, tipo_maquina removida')
+  } else {
+    console.log(`⚠️ PCP Tipo de Processo: ${totalRestante} centro(s) ainda sem tipo_processo_id — NOT NULL/FK NÃO aplicados nesta execução. Investigar manualmente.`)
+  }
+
   console.log('✅ All migrations applied successfully')
 }
 

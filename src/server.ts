@@ -151,6 +151,7 @@ import { startWaveWorker } from './modules/wave/wave.worker'
 
 // PCP — Planejamento e Controle da Produção
 import { centroProducaoRoutes } from './modules/centro-producao/centro-producao.routes'
+import { tipoProcessoRoutes } from './modules/tipo-processo/tipo-processo.routes'
 import { recursoProducaoRoutes } from './modules/recurso-producao/recurso-producao.routes'
 import { turnoProducaoRoutes } from './modules/turno-producao/turno-producao.routes'
 import { estruturaProdutoRoutes } from './modules/estrutura-produto/estrutura-produto.routes'
@@ -351,6 +352,7 @@ async function bootstrap() {
 
   // Módulo PCP — Planejamento e Controle da Produção
   await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })
+  await app.register(tipoProcessoRoutes, { prefix: '/api/tipos-processo' })
   await app.register(recursoProducaoRoutes, { prefix: '/api/recursos-producao' })
   await app.register(turnoProducaoRoutes, { prefix: '/api/turnos-producao' })
   await app.register(estruturaProdutoRoutes, { prefix: '/api/estruturas-produto' })

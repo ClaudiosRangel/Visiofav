@@ -32,13 +32,43 @@ logo depois. Há também `DeParaImportacao`, mais adiante no schema (~linha
 de produção (ex: "Cortadeira Coin", "Impressão Heidelberg CD", "Acabamento").
 Campos-chave:
 - `tipo`: `MAQUINA | SETOR | LINHA`
-- `tipoMaquina`: `IMPRESSAO | ACABAMENTO | CORTADEIRA | COLAGEM | VERNIZ` — é
-  este campo (não uma entidade "Grupo" separada) que define o agrupamento
-  visual usado no painel de programação (abas Cortadeira/Impressão/Acabamento).
-- `capacidadeHora`, `custoHora`, `posicao` (ordem de exibição), `status`
-  (ativo/inativo).
+- `tipoProcessoId` (FK **obrigatória**, `tipo_processo_id`) — referencia o
+  cadastro `TipoProcesso` (ver abaixo). É este campo (não uma entidade
+  "Grupo" separada) que define o agrupamento visual usado no painel de
+  Programação: cada `TipoProcesso` ATIVO gera uma aba, na ordem de `posicao`
+  definida no cadastro. Substitui o antigo enum fixo `tipoMaquina`
+  (`IMPRESSAO | ACABAMENTO | CORTADEIRA | COLAGEM | VERNIZ`, hardcoded no
+  código) — migrado em 30/07/2026, ver seção 1.1.1.
+- `capacidadeHora`, `custoHora`, `posicao` (ordem de exibição dentro da
+  própria aba), `status` (ativo/inativo).
 - Relacionamentos: `recursos` (RecursoProducao), `etapasRoteiro`,
-  `etapasOp` (EtapaOrdemProducao), `apontamentos`.
+  `etapasOp` (EtapaOrdemProducao), `apontamentos`, `tipoProcesso`.
+
+#### 1.1.1 `TipoProcesso` (`tipo_processo`) — cadastro dinâmico de processo produtivo
+
+Cadastro em **PCP → Cadastros → Tipo de Processo**
+(`/pcp/cadastros/tipos-processo`), com CRUD completo (`código`, `descrição`,
+`status` ativo/inativo) e reordenação por drag-and-drop (`posicao`, mesmo
+padrão de `PATCH /centros-producao/ordenar`, agora replicado em
+`PATCH /tipos-processo/ordenar`). Toda `CentroProducao` deve obrigatoriamente
+apontar para um `TipoProcesso` — não existe mais centro "sem classificação"
+(a antiga aba "Outros" do painel deixou de existir por esse motivo).
+
+A migração de produção (`prisma/migrate-prod.ts`) populou, para cada
+empresa, os 5 tipos que antes eram fixos no código
+(`CORTADEIRA`, `IMPRESSAO`, `ACABAMENTO`, `COLAGEM`, `VERNIZ`, nessa ordem de
+`posicao`), e migrou o valor antigo de `tipo_maquina` de cada centro
+existente para o `tipo_processo_id` correspondente (fallback para
+`ACABAMENTO` quando o centro não tinha classificação — ex.: o centro "Ebox",
+reclassificado manualmente pelo usuário antes da migração).
+
+**Importante — mudança de comportamento**: antes, `COLAGEM` e `VERNIZ`
+caíam juntos com `ACABAMENTO` numa única aba "Acabamento" (regra fixa no
+código). Agora, como cada `TipoProcesso` ativo gera sua própria aba, os 5
+tipos padrão geram 5 abas separadas (Cortadeira/Impressão/Acabamento/
+Colagem/Verniz) a menos que o usuário inative manualmente `COLAGEM`/`VERNIZ`
+como tipos distintos e reclassifique os centros correspondentes como
+`ACABAMENTO`.
 
 **`RecursoProducao`** (`recurso_producao`) — recurso vinculado a um centro:
 operador, ferramenta, molde, faca. `tipo`: `OPERADOR | FERRAMENTA | MOLDE |
@@ -367,9 +397,13 @@ Backend: `src/modules/pcp/etapa-operacional.routes.ts` (prefixo `/api/pcp`).
 ### 4.1 Conceito de "grupos" (centros de produção)
 
 Não existe uma entidade "Grupo" separada — o agrupamento é o próprio
-`CentroProducao.tipoMaquina` (`IMPRESSAO | ACABAMENTO | CORTADEIRA | COLAGEM
-| VERNIZ`). O frontend usa uma função `getCategoriaCentro` para mapear cada
-centro numa das abas exibidas (Todos / Cortadeira / Impressão / Acabamento).
+`CentroProducao.tipoProcessoId`, que referencia o cadastro dinâmico
+`TipoProcesso` (ver seção 1.1.1). O frontend usa uma função
+`getCategoriaCentro(tipoProcessoCodigo)` que simplesmente normaliza o código
+do tipo em minúsculas para usar como chave da aba — as abas exibidas são
+geradas dinamicamente a partir dos `TipoProcesso` ATIVOS da empresa, na
+ordem de `posicao` (não existe mais lista fixa nem aba "Todos"/"Outros": todo
+centro é obrigatoriamente classificado).
 
 `GET /api/pcp/programacao/painel` monta o painel: busca todos os
 `CentroProducao` ativos (ordenados por `posicao`, `codigo`), busca todas as
@@ -670,6 +704,11 @@ que a integração falhe silenciosamente, deixando a OP com todas etapas
 | `admin-pcp.routes.ts` | DELETE | `/limpar-dados` | Limpeza destrutiva por módulo (inclui PCP). |
 | `admin-pcp.routes.ts` | GET | `/backup` | Exporta dados da empresa em JSON. |
 | `admin-pcp.routes.ts` | POST | `/restaurar` | Restaura dados a partir de backup JSON. |
+| `tipo-processo.routes.ts` | GET | `/tipos-processo` | Lista tipos de processo, ordenados por posição. |
+| `tipo-processo.routes.ts` | POST | `/tipos-processo` | Cria tipo de processo. |
+| `tipo-processo.routes.ts` | PUT | `/tipos-processo/:id` | Atualiza tipo de processo. |
+| `tipo-processo.routes.ts` | PATCH | `/tipos-processo/ordenar` | Reordena em lote (drag-and-drop, define ordem das abas no painel). |
+| `tipo-processo.routes.ts` | PATCH | `/tipos-processo/:id/ativar` \| `/:id/inativar` | Ativa/inativa (só tipos ATIVOS geram aba no painel). |
 
 ### 8.5 Cálculo, conversão, bobina, paletização, dashboards
 

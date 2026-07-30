@@ -10,13 +10,14 @@ const idParamsSchema = z.object({
   id: z.string().uuid(),
 })
 
-const tipoMaquinaSchema = z.enum(['IMPRESSAO', 'ACABAMENTO', 'CORTADEIRA', 'COLAGEM', 'VERNIZ'])
-
 const centroProducaoBodySchema = z.object({
   codigo: z.string().min(1, 'Código é obrigatório').max(20),
   descricao: z.string().min(1, 'Descrição é obrigatória').max(200),
   tipo: z.enum(['MAQUINA', 'SETOR', 'LINHA']),
-  tipoMaquina: tipoMaquinaSchema.nullable().optional(),
+  // Cadastro obrigatório (substitui o antigo enum fixo tipoMaquina) — ver
+  // módulo tipo-processo. Toda Máquina, Setor ou Linha precisa pertencer a
+  // um Tipo de Processo, para aparecer em alguma aba do painel de Programação.
+  tipoProcessoId: z.string().uuid('Tipo de Processo é obrigatório'),
   capacidadeHora: z.number().min(0).optional().nullable(),
   custoHora: z.number().min(0).optional().nullable(),
 })
@@ -24,7 +25,7 @@ const centroProducaoBodySchema = z.object({
 const listQuerySchema = z.object({
   busca: z.string().optional(),
   tipo: z.enum(['MAQUINA', 'SETOR', 'LINHA']).optional(),
-  tipoMaquina: tipoMaquinaSchema.optional(),
+  tipoProcessoId: z.string().uuid().optional(),
   status: z.enum(['true', 'false']).optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
@@ -40,7 +41,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
    */
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const { busca, tipo, tipoMaquina, status, page, limit } = listQuerySchema.parse(request.query)
+    const { busca, tipo, tipoProcessoId, status, page, limit } = listQuerySchema.parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
 
@@ -55,8 +56,8 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
       where.tipo = tipo
     }
 
-    if (tipoMaquina) {
-      where.tipoMaquina = tipoMaquina
+    if (tipoProcessoId) {
+      where.tipoProcessoId = tipoProcessoId
     }
 
     if (status !== undefined) {
@@ -66,6 +67,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
     const [data, total] = await Promise.all([
       prisma.centroProducao.findMany({
         where,
+        include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true } } },
         skip: (page - 1) * limit,
         take: limit,
         orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
@@ -123,6 +125,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
       where: { id, empresaId: user.empresaId },
       include: {
         recursos: { where: { status: true }, orderBy: { codigo: 'asc' } },
+        tipoProcesso: { select: { id: true, codigo: true, descricao: true } },
       },
     })
 
@@ -154,7 +157,12 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
       return reply.status(409).send({ message: `Código '${body.codigo}' já existe para esta empresa` })
     }
 
-    const tipoMaquina = body.tipo === 'MAQUINA' ? (body.tipoMaquina ?? null) : null
+    const tipoProcesso = await prisma.tipoProcesso.findFirst({
+      where: { id: body.tipoProcessoId, empresaId: user.empresaId },
+    })
+    if (!tipoProcesso) {
+      return reply.status(400).send({ message: 'Tipo de Processo inválido ou não pertence a esta empresa' })
+    }
 
     // Calcular próxima posição disponível
     const centrosEmpresa = await prisma.centroProducao.findMany({
@@ -169,7 +177,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         codigo: body.codigo,
         descricao: body.descricao,
         tipo: body.tipo,
-        tipoMaquina,
+        tipoProcessoId: body.tipoProcessoId,
         capacidadeHora: body.capacidadeHora ?? undefined,
         custoHora: body.custoHora ?? undefined,
         posicao,
@@ -212,7 +220,12 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
       }
     }
 
-    const tipoMaquina = body.tipo === 'MAQUINA' ? (body.tipoMaquina ?? null) : null
+    const tipoProcesso = await prisma.tipoProcesso.findFirst({
+      where: { id: body.tipoProcessoId, empresaId: user.empresaId },
+    })
+    if (!tipoProcesso) {
+      return reply.status(400).send({ message: 'Tipo de Processo inválido ou não pertence a esta empresa' })
+    }
 
     const atualizado = await prisma.centroProducao.update({
       where: { id },
@@ -220,7 +233,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         codigo: body.codigo,
         descricao: body.descricao,
         tipo: body.tipo,
-        tipoMaquina,
+        tipoProcessoId: body.tipoProcessoId,
         capacidadeHora: body.capacidadeHora ?? null,
         custoHora: body.custoHora ?? null,
       },

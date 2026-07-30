@@ -169,13 +169,18 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
 
     const centros = await prisma.centroProducao.findMany({
       where: { empresaId, status: true },
-      select: { id: true, descricao: true, tipoMaquina: true, capacidadeHora: true },
+      select: { id: true, descricao: true, capacidadeHora: true, tipoProcesso: { select: { codigo: true } } },
     })
 
-    function categoriaDoCentro(tipoMaquina: string | null): 'cortadeira' | 'impressao' | 'acabamento' | 'outros' {
-      if (tipoMaquina === 'CORTADEIRA') return 'cortadeira'
-      if (tipoMaquina === 'IMPRESSAO') return 'impressao'
-      if (tipoMaquina === 'ACABAMENTO' || tipoMaquina === 'COLAGEM' || tipoMaquina === 'VERNIZ') return 'acabamento'
+    // Categoriza pelo código do Tipo de Processo (cadastro dinâmico) — os
+    // buckets do OEE continuam agrupados em 3 categorias fixas (Cortadeira/
+    // Impressão/Acabamento, esta última somando Acabamento+Colagem+Verniz)
+    // por serem os indicadores já consolidados no dashboard. Um Tipo de
+    // Processo novo/customizado cai em 'outros' e não entra no OEE.
+    function categoriaDoCentro(tipoProcessoCodigo: string | undefined): 'cortadeira' | 'impressao' | 'acabamento' | 'outros' {
+      if (tipoProcessoCodigo === 'CORTADEIRA') return 'cortadeira'
+      if (tipoProcessoCodigo === 'IMPRESSAO') return 'impressao'
+      if (tipoProcessoCodigo === 'ACABAMENTO' || tipoProcessoCodigo === 'COLAGEM' || tipoProcessoCodigo === 'VERNIZ') return 'acabamento'
       return 'outros'
     }
 
@@ -237,7 +242,7 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
     for (const ap of apontamentos) {
       const centro = ap.etapaOrdemProducao.centroProducaoId ? centroPorId.get(ap.etapaOrdemProducao.centroProducaoId) : undefined
       if (!centro) continue
-      const cat = categoriaDoCentro(centro.tipoMaquina)
+      const cat = categoriaDoCentro(centro.tipoProcesso?.codigo)
       if (cat === 'outros') continue
       const bucket = acumulado[cat]
 
@@ -266,7 +271,7 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
     for (const etapa of etapasConcluidas) {
       const centro = etapa.centroProducaoId ? centroPorId.get(etapa.centroProducaoId) : undefined
       if (!centro) continue
-      const cat = categoriaDoCentro(centro.tipoMaquina)
+      const cat = categoriaDoCentro(centro.tipoProcesso?.codigo)
       if (cat === 'outros') continue
       const bucket = acumulado[cat]
 
