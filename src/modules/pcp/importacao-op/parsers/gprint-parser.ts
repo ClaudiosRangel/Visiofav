@@ -500,7 +500,17 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
   // seguida de "entrando direto em máquina" na linha seguinte). Uma linha de
   // continuação não termina em dois tempos HH:MM — é reanexada à linha anterior
   // antes de extrair nome/detalhe/tempos.
-  const secaoAcab = texto.match(/Acabamentos\s+Fixo\s+Vari[áa]vel([\s\S]*?)(?:Obs\.|Materiais)/i)
+  // Delimitador: "Obs.:" (com dois-pontos) ou "Materiais" — NUNCA apenas
+  // "Obs." sem dois-pontos. Linhas de acabamento legítimas frequentemente
+  // contêm a palavra "obs." minúscula no meio da frase (ex.: "Cortadeira
+  // (Grande) / Segue obs. de impressão"), referindo-se à observação da
+  // impressão, não ao campo real de observações do documento. Com a versão
+  // antiga (`Obs\.` sem ":", case-insensitive), essa menção incidental era
+  // confundida com o fim da seção, descartando todas as etapas seguintes
+  // (ex.: Destacar, Guilhotina, Laminação maior/menor ficavam de fora).
+  // O parser de Materiais já usa `Obs\.\:` por este mesmo motivo — replicado
+  // aqui para manter a mesma regra nos dois pontos do arquivo.
+  const secaoAcab = texto.match(/Acabamentos\s+Fixo\s+Vari[áa]vel([\s\S]*?)(?:Obs\.:|Materiais)/i)
   if (secaoAcab) {
     const linhasBrutas = secaoAcab[1].split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
 

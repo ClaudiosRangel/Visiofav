@@ -730,6 +730,25 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     })
     if (!op) return reply.status(404).send({ message: `OP #${body.opNumero} não encontrada` })
 
+    const descricaoEtapa = body.descricao ? `[MANUAL] ${body.descricao}` : `[MANUAL] Lançamento manual - OP #${body.opNumero}`
+
+    // Guarda contra duplo clique/duplo submit (rede lenta, cliques repetidos):
+    // já existe uma etapa manual idêntica (mesma OP + mesmo centro + mesma
+    // descrição) ainda pendente/em fila? Se sim, não duplica — bug real
+    // encontrado na OP 2898, grupo "Serviços Manuais - Produção" (duas
+    // linhas idênticas na fila).
+    const etapaDuplicada = await prisma.etapaOrdemProducao.findFirst({
+      where: {
+        ordemProducaoId: op.id,
+        centroProducaoId: body.centroProducaoId,
+        descricao: descricaoEtapa,
+        status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+      },
+    })
+    if (etapaDuplicada) {
+      return reply.status(409).send({ message: `OP #${body.opNumero} já está na fila deste centro com a mesma descrição. Evite adicionar duplicado.` })
+    }
+
     // Find max sequencia for this OP
     const maxSeq = await prisma.etapaOrdemProducao.aggregate({
       where: { ordemProducaoId: op.id },
@@ -746,7 +765,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       data: {
         ordemProducaoId: op.id,
         sequencia: (maxSeq._max.sequencia || 0) + 1,
-        descricao: body.descricao ? `[MANUAL] ${body.descricao}` : `[MANUAL] Lançamento manual - OP #${body.opNumero}`,
+        descricao: descricaoEtapa,
         centroProducaoId: body.centroProducaoId,
         status: 'PENDENTE',
         posicaoFila: (maxPos._max.posicaoFila || 0) + 1,

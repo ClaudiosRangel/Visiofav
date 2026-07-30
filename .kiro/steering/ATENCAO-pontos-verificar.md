@@ -211,3 +211,51 @@ Arquivos e causas (agrupado por módulo):
 **Nenhum destes foi corrigido nesta sessão** — são listados aqui apenas para
 não precisar re-investigar do zero a cada verificação de build futura, e
 para facilitar se algum dia o usuário pedir para tratá-los em lote.
+
+## 7. Parser de PDF de OP (GPrint/Calcograf) — regex sobre texto reconstruído, cuidado com regressão silenciosa
+
+`src/modules/pcp/importacao-op/parsers/gprint-parser.ts` extrai o roteiro de
+produção (etapas/máquinas) de um PDF de OP inteiramente via regex sobre
+texto reconstruído a partir das posições X/Y dos itens de texto do PDF (ver
+`pdf-extractor.service.ts`). Isso é inerentemente frágil: uma regex ajustada
+para corrigir o parsing de um PDF pode silenciosamente quebrar o parsing de
+outro PDF com um layout ligeiramente diferente, sem que nenhum teste
+unitário isolado detecte isso (cada teste testa um trecho sintético
+pequeno, não o PDF real inteiro).
+
+**Bug real já encontrado e corrigido (sessão de 29/07/2026)**: o delimitador
+de fim da seção "Acabamentos" era a regex `/Obs\./i` (sem exigir
+dois-pontos). A OP-2452 tinha uma etapa com detalhe "Segue **obs.** de
+impressão" (menção incidental, minúscula, sem relação com o campo real de
+observações do documento) — o parser confundia essa ocorrência com o
+marcador real (`Obs.:`) e cortava a seção ali, descartando todas as etapas
+seguintes (Destacar, Guilhotina maior, Laminação maior, Laminação menor —
+de 8 etapas reais, só 3 eram extraídas). Corrigido trocando o delimitador
+para `/Obs\.:/i` (com dois-pontos), igual ao padrão já usado corretamente na
+extração de Materiais no mesmo arquivo. Teste de regressão específico em
+`gprint-parser.test.ts`.
+
+**Ferramenta de regressão criada para isso — `scripts/testar-todos-pdfs-op.ts`**:
+roda `parseGprintPdf` contra TODOS os PDFs de OP presentes na raiz do
+projeto (qualquer `.pdf` cujo nome contenha "OP" + dígitos) e imprime quantas
+etapas cada um extraiu. **Toda vez que alguém alterar qualquer regex dentro
+de `gprint-parser.ts`, deve rodar este script antes e depois da mudança e
+comparar a saída** (instruções de comparação `git stash` no cabeçalho do
+próprio script) — se o número de etapas ou a lista de máquinas de QUALQUER
+PDF já testado mudar sem essa ser a intenção da alteração, é regressão.
+
+```powershell
+npx tsx scripts/testar-todos-pdfs-op.ts
+```
+
+Vários PDFs de OP reais já estão versionados na raiz do projeto justamente
+para servir de massa de teste desta ferramenta (`OP 2849.pdf`, `OP 2870.pdf`,
+`OP 2956.pdf`, `OP 4-101.pdf`, além de `tests/op-gprint-teste.pdf`) — rodar
+`git ls-files | Select-String '\.pdf$'` mostra a lista completa, incluindo
+os que estão em `uploads/ops/` (nomeados por UUID, gerados pela importação
+real em produção/dev, não pensados como massa de teste legível). Se você
+encontrar um PDF de OP com um caso de borda interessante para o parser
+(layout diferente, campo faltando, etc.), **comite-o na raiz do projeto**
+com um nome descritivo (`OP <numero>.pdf` ou `OP-<numero>.pdf`) para os
+próximos que forem tocar nesse parser rodarem o script contra ele também —
+quanto mais PDFs reais versionados, melhor a cobertura desta ferramenta.
