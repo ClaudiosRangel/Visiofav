@@ -146,19 +146,51 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
   // =========================================================================
   // POST /api/pcp/etapas/:id/apontar — Registra produção parcial
+  //
+  // Aceita tanto JSON puro (Content-Type: application/json, sem foto — mantém
+  // 100% compatível com chamadas antigas) quanto multipart/form-data (quando
+  // o operador anexa a foto da contagem produzida). No multipart, os campos
+  // numéricos chegam como string e precisam ser convertidos antes do parse.
   // =========================================================================
   app.post('/etapas/:id/apontar', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = idSchema.parse(request.params)
-    const body = z.object({
-      quantidadeProduzida: z.number().min(0).default(0),
-      quantidadePerda: z.number().min(0).default(0),
+
+    const bodySchema = z.object({
+      quantidadeProduzida: z.coerce.number().min(0).default(0),
+      quantidadePerda: z.coerce.number().min(0).default(0),
       motivoPerda: z.enum(['ACERTO', 'REFUGO', 'DEFEITO', 'APARA']).optional(),
       funcionarioId: z.string().uuid().optional(),
       observacao: z.string().optional(),
-    }).parse(request.body)
+    })
 
-    const etapa = await prisma.etapaOrdemProducao.findFirst({ where: { id } })
+    let body: z.infer<typeof bodySchema>
+    let fotoUrl: string | undefined
+
+    if (request.isMultipart()) {
+      const camposRecebidos: Record<string, string> = {}
+      const parts = request.parts()
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          const allowedMimes = ['image/jpeg', 'image/png', 'image/webp']
+          if (!allowedMimes.includes(part.mimetype)) {
+            return reply.status(400).send({ message: 'Formato de foto inválido. Use JPEG, PNG ou WebP.' })
+          }
+          const buffer = await part.toBuffer()
+          if (buffer.length > 5 * 1024 * 1024) {
+            return reply.status(400).send({ message: 'Foto muito grande. Máximo 5MB.' })
+          }
+          fotoUrl = `data:${part.mimetype};base64,${buffer.toString('base64')}`
+        } else {
+          camposRecebidos[part.fieldname] = part.value as string
+        }
+      }
+      body = bodySchema.parse(camposRecebidos)
+    } else {
+      body = bodySchema.parse(request.body)
+    }
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({ where: { id, ordemProducao: { empresaId: user.empresaId } } })
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
 
     if (!['EM_ANDAMENTO', 'PAUSADA'].includes(etapa.status)) {
@@ -176,6 +208,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         quantidadePerda: body.quantidadePerda,
         motivoPerda: body.motivoPerda,
         observacao: body.observacao,
+        fotoUrl,
       },
     })
 

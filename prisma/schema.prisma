@@ -2297,6 +2297,10 @@ model ApontamentoEtapa {
   motivoParada         String?            @map("motivo_parada") @db.VarChar(50) // MANUTENCAO, FALTA_MATERIAL, ACERTO_MAQUINA, TROCA_TURNO, OUTRO
   tempoParadaMinutos   Int?               @map("tempo_parada_minutos")
   observacao           String?            @db.Text
+  // Foto da contagem produzida (base64 data URL, mesmo padrão de Produto.imagemUrl).
+  // Anexada pelo operador ao registrar apontamento de produção — evidência
+  // visual da contagem (ex: foto do contador da máquina/pilha de folhas).
+  fotoUrl              String?            @map("foto_url") @db.Text
   dataHora             DateTime           @default(now()) @map("data_hora")
 
   @@index([etapaOrdemProducaoId])

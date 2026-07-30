@@ -2093,6 +2093,12 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_nota_entrada" ADD COLUMN IF NOT EXISTS "hold_criado_em" TIMESTAMP(3)`)
   console.log('✅ Conferência — Tolerância de Quantidade e Fila de Exceções: colunas criadas')
 
+  // ===================================================================
+  // PCP — Foto da contagem produzida no apontamento de etapa
+  // ===================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "foto_url" TEXT`)
+  console.log('✅ PCP — Apontamento com foto: coluna foto_url criada')
+
   console.log('✅ All migrations applied successfully')
 }
 
