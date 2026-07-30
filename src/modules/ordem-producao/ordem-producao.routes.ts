@@ -12,6 +12,7 @@ import {
   gerarEtapasOp,
   calcularConsumoAutomatico,
 } from './ordem-producao.service'
+import { reordenarFilaAutomaticamente } from '../pcp/fila-ordenacao.service'
 
 /**
  * Extrai o nome do cliente salvo na tag [Cliente] das observações da OP.
@@ -917,6 +918,12 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       },
       include: { centroProducao: { select: { id: true, descricao: true } } },
     })
+
+    // Reordena a fila automaticamente (nº OP → data de entrega), respeitando
+    // as etapas já posicionadas manualmente pelo usuário.
+    if (body.centroProducaoId) {
+      await reordenarFilaAutomaticamente(body.centroProducaoId)
+    }
 
     return reply.status(201).send(etapa)
   })

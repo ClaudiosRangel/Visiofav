@@ -2302,6 +2302,12 @@ model EtapaOrdemProducao {
   quantidadePerda        Decimal          @default(0) @map("quantidade_perda_etapa") @db.Decimal(12, 4)
   observacaoOperador     String?          @map("observacao_operador") @db.Text
   posicaoFila            Int?             @map("posicao_fila")
+  // Marca que a posição desta etapa na fila foi definida manualmente pelo
+  // usuário (drag-and-drop em PATCH /etapas/reordenar). Etapas com esta flag
+  // são preservadas na posição atual quando novas etapas entram na mesma
+  // fila — a reordenação automática (por número de OP, depois data de
+  // entrega) só rearranja as etapas SEM esta flag.
+  ordemManual            Boolean          @default(false) @map("ordem_manual")
 
   apontamentosEtapa ApontamentoEtapa[]
 

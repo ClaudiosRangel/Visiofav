@@ -9,6 +9,7 @@ import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
 import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
 import { integracaoWmsAutomaticaAtiva } from './configuracao-pcp.routes'
 import { criarEntradaProducao } from './pcp-wms-integration.service'
+import { reordenarFilaAutomaticamente } from './fila-ordenacao.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -24,6 +25,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const body = z.object({
       centroProducaoId: z.string().uuid(),
       etapaIds: z.array(z.string().uuid()).min(1),
+      // ID da etapa que o usuário efetivamente arrastou (dnd-kit `active.id`)
+      // — só ela é marcada como `ordemManual=true` (posição fixa, sobrepõe
+      // os critérios automáticos). As demais etapas apenas têm sua
+      // `posicaoFila` atualizada para refletir o novo array, mas continuam
+      // participando da ordenação automática normalmente quando uma nova
+      // etapa entrar na fila. Opcional por compatibilidade com chamadas
+      // antigas — se omitido, nenhuma etapa é marcada como manual.
+      etapaMovidaId: z.string().uuid().optional(),
     }).parse(request.body)
 
     // Verify all etapas belong to this empresa and centro
@@ -39,9 +48,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Uma ou mais etapas não pertencem ao centro informado' })
     }
 
-    // Update posicaoFila for each etapa based on array order
+    // Update posicaoFila for each etapa based on array order.
     const updates = body.etapaIds.map((id, index) =>
-      prisma.etapaOrdemProducao.update({ where: { id }, data: { posicaoFila: index + 1 } })
+      prisma.etapaOrdemProducao.update({
+        where: { id },
+        data: {
+          posicaoFila: index + 1,
+          ...(body.etapaMovidaId === id ? { ordemManual: true } : {}),
+        },
+      })
     )
     await prisma.$transaction(updates)
 
@@ -737,10 +752,23 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     })
     if (!centro) return reply.status(404).send({ message: 'Centro de destino não encontrado' })
 
+    const centroOrigemId = etapa.centroProducaoId
+
+    // Etapa entra no centro destino como uma nova posição, sem posicionamento
+    // manual prévio (mesmo que já tivesse sido arrastada no centro anterior)
+    // — a reordenação automática decide onde ela entra na fila do destino.
     const atualizada = await prisma.etapaOrdemProducao.update({
       where: { id },
-      data: { centroProducaoId: body.centroProducaoId },
+      data: { centroProducaoId: body.centroProducaoId, ordemManual: false },
     })
+
+    // Reordena a fila do centro de destino (nº OP → data de entrega) e,
+    // se havia um centro de origem diferente, também reordena a origem
+    // (a saída da etapa pode ter deixado "buracos" nas posições manuais).
+    await reordenarFilaAutomaticamente(body.centroProducaoId)
+    if (centroOrigemId && centroOrigemId !== body.centroProducaoId) {
+      await reordenarFilaAutomaticamente(centroOrigemId)
+    }
 
     return { id: atualizada.id, centroProducaoId: atualizada.centroProducaoId }
   })
@@ -804,6 +832,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
       },
     })
+
+    // Reordena a fila automaticamente (nº OP → data de entrega), respeitando
+    // as etapas já posicionadas manualmente pelo usuário.
+    await reordenarFilaAutomaticamente(body.centroProducaoId)
 
     return reply.status(201).send(etapa)
   })
@@ -909,6 +941,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
       },
     })
+
+    // Reordena a fila automaticamente (nº OP → data de entrega), respeitando
+    // as etapas já posicionadas manualmente pelo usuário.
+    await reordenarFilaAutomaticamente(body.centroProducaoId)
 
     return reply.status(201).send({ op, etapa, referenciaAvulsa })
   })

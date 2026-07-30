@@ -6,6 +6,7 @@ import { moduloGuard } from '../../../middleware/modulo-guard'
 import { extrairTextoPdf } from './pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf, DadosOpGprint } from './parsers/gprint-parser'
 import { getOpPdfPath, getOpsPdfDir, salvarOpPdf } from '../../../lib/storage'
+import { reordenarFilaAutomaticamente } from '../fila-ordenacao.service'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -382,6 +383,14 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         },
       })
       etapasCriadas.push(etapaCriada)
+    }
+
+    // Reordena automaticamente (nº OP → data de entrega) a fila de cada
+    // centro que recebeu uma etapa nova nesta importação, respeitando
+    // etapas já posicionadas manualmente pelo usuário em outras OPs.
+    const centrosAfetados = new Set(etapasCriadas.map(e => e.centroProducaoId).filter((id): id is string => !!id))
+    for (const centroId of centrosAfetados) {
+      await reordenarFilaAutomaticamente(centroId)
     }
 
     // Registrar log

@@ -2100,6 +2100,13 @@ async function main() {
   console.log('✅ PCP — Apontamento com foto: coluna foto_url criada')
 
   // ===================================================================
+  // PCP — Ordenação automática da fila (numero OP -> data entrega) com
+  // preservação de posicionamento manual
+  // ===================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "ordem_manual" BOOLEAN NOT NULL DEFAULT false`)
+  console.log('✅ PCP — Ordenação automática da fila: coluna ordem_manual criada')
+
+  // ===================================================================
   // PCP — Cadastro de Tipo de Processo (substitui o enum fixo tipoMaquina)
   // ===================================================================
   // 1. Criar tabela (mesmo padrão dos demais cadastros "Tipo" do PCP)
