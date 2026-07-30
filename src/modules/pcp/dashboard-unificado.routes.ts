@@ -150,11 +150,12 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
-  // GET /api/pcp/dashboard/indicadores — Gráficos por centro (Cortadeira,
-  // Impressão, Acabamento): OEE simplificado, Pareto de paradas/perdas e
-  // produção diária. Agrupa os centros pelo mesmo `tipoMaquina` já usado no
-  // painel de Programação (ver getCategoriaCentro no frontend), então cada
-  // categoria (cortadeira/impressao/acabamento) soma todas as máquinas dela.
+  // GET /api/pcp/dashboard/indicadores — Gráficos por Tipo de Processo
+  // (cadastro dinâmico em PCP → Cadastros → Tipo de Processo, substitui o
+  // antigo enum fixo tipoMaquina): OEE simplificado, Pareto de paradas/
+  // perdas e produção diária. Agrupa os centros pelo `tipoProcessoId` de
+  // cada um — cada Tipo de Processo ATIVO gera uma categoria própria nos
+  // indicadores (mesma lógica das abas do painel de Programação).
   // =========================================================================
   app.get('/dashboard/indicadores', async (request) => {
     const user = request.user as { id: string; empresaId: string }
@@ -167,25 +168,23 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
     const dataFim = query.dataFim ? new Date(`${query.dataFim}T23:59:59`) : new Date()
     const dataInicio = query.dataInicio ? new Date(`${query.dataInicio}T00:00:00`) : new Date(dataFim.getTime() - 29 * 86400000)
 
-    const centros = await prisma.centroProducao.findMany({
-      where: { empresaId, status: true },
-      select: { id: true, descricao: true, capacidadeHora: true, tipoProcesso: { select: { codigo: true } } },
-    })
-
-    // Categoriza pelo código do Tipo de Processo (cadastro dinâmico) — os
-    // buckets do OEE continuam agrupados em 3 categorias fixas (Cortadeira/
-    // Impressão/Acabamento, esta última somando Acabamento+Colagem+Verniz)
-    // por serem os indicadores já consolidados no dashboard. Um Tipo de
-    // Processo novo/customizado cai em 'outros' e não entra no OEE.
-    function categoriaDoCentro(tipoProcessoCodigo: string | undefined): 'cortadeira' | 'impressao' | 'acabamento' | 'outros' {
-      if (tipoProcessoCodigo === 'CORTADEIRA') return 'cortadeira'
-      if (tipoProcessoCodigo === 'IMPRESSAO') return 'impressao'
-      if (tipoProcessoCodigo === 'ACABAMENTO' || tipoProcessoCodigo === 'COLAGEM' || tipoProcessoCodigo === 'VERNIZ') return 'acabamento'
-      return 'outros'
-    }
+    const [centros, tiposProcesso] = await Promise.all([
+      prisma.centroProducao.findMany({
+        where: { empresaId, status: true },
+        select: { id: true, descricao: true, capacidadeHora: true, tipoProcessoId: true },
+      }),
+      prisma.tipoProcesso.findMany({
+        where: { empresaId, status: true },
+        orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
+      }),
+    ])
 
     const centroPorId = new Map(centros.map(c => [c.id, c]))
     const centroIds = centros.map(c => c.id)
+    // Categorias são os próprios Tipos de Processo ATIVOS da empresa — cada
+    // um vira uma chave (id) e um label (descrição) nos indicadores.
+    const categorias = tiposProcesso.map(tp => tp.id)
+    const labelPorCategoria = new Map(tiposProcesso.map(tp => [tp.id, tp.descricao]))
 
     // Apontamentos no período, de etapas vinculadas a algum centro da empresa
     const apontamentos = await prisma.apontamentoEtapa.findMany({
@@ -221,10 +220,8 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       },
     })
 
-    // Estrutura acumulada por categoria
-    type Categoria = 'cortadeira' | 'impressao' | 'acabamento'
-    const categorias: Categoria[] = ['cortadeira', 'impressao', 'acabamento']
-    const acumulado: Record<Categoria, {
+    // Estrutura acumulada por categoria (uma por Tipo de Processo ativo)
+    type Bucket = {
       producaoTotal: number
       perdaTotal: number
       tempoParadaTotal: number
@@ -233,18 +230,17 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       paradasPorMotivo: Record<string, number>
       perdasPorMotivo: Record<string, number>
       producaoPorDia: Record<string, number>
-    }> = {
-      cortadeira: { producaoTotal: 0, perdaTotal: 0, tempoParadaTotal: 0, tempoOperacaoRealTotal: 0, tempoOperacaoCalculadoTotal: 0, paradasPorMotivo: {}, perdasPorMotivo: {}, producaoPorDia: {} },
-      impressao: { producaoTotal: 0, perdaTotal: 0, tempoParadaTotal: 0, tempoOperacaoRealTotal: 0, tempoOperacaoCalculadoTotal: 0, paradasPorMotivo: {}, perdasPorMotivo: {}, producaoPorDia: {} },
-      acabamento: { producaoTotal: 0, perdaTotal: 0, tempoParadaTotal: 0, tempoOperacaoRealTotal: 0, tempoOperacaoCalculadoTotal: 0, paradasPorMotivo: {}, perdasPorMotivo: {}, producaoPorDia: {} },
     }
+    function novoBucket(): Bucket {
+      return { producaoTotal: 0, perdaTotal: 0, tempoParadaTotal: 0, tempoOperacaoRealTotal: 0, tempoOperacaoCalculadoTotal: 0, paradasPorMotivo: {}, perdasPorMotivo: {}, producaoPorDia: {} }
+    }
+    const acumulado = new Map<string, Bucket>(categorias.map(cat => [cat, novoBucket()]))
 
     for (const ap of apontamentos) {
       const centro = ap.etapaOrdemProducao.centroProducaoId ? centroPorId.get(ap.etapaOrdemProducao.centroProducaoId) : undefined
-      if (!centro) continue
-      const cat = categoriaDoCentro(centro.tipoProcesso?.codigo)
-      if (cat === 'outros') continue
-      const bucket = acumulado[cat]
+      if (!centro?.tipoProcessoId) continue
+      const bucket = acumulado.get(centro.tipoProcessoId)
+      if (!bucket) continue // Tipo de Processo inativo — não entra nos indicadores
 
       bucket.producaoTotal += Number(ap.quantidadeProduzida)
       bucket.perdaTotal += Number(ap.quantidadePerda)
@@ -270,10 +266,9 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
 
     for (const etapa of etapasConcluidas) {
       const centro = etapa.centroProducaoId ? centroPorId.get(etapa.centroProducaoId) : undefined
-      if (!centro) continue
-      const cat = categoriaDoCentro(centro.tipoProcesso?.codigo)
-      if (cat === 'outros') continue
-      const bucket = acumulado[cat]
+      if (!centro?.tipoProcessoId) continue
+      const bucket = acumulado.get(centro.tipoProcessoId)
+      if (!bucket) continue
 
       bucket.tempoOperacaoCalculadoTotal += Number(etapa.tempoOperacaoCalculado)
       if (etapa.dataInicioReal && etapa.dataFimReal) {
@@ -281,15 +276,13 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       }
     }
 
-    const LABELS_CATEGORIA: Record<Categoria, string> = { cortadeira: 'Cortadeira', impressao: 'Impressão', acabamento: 'Acabamento' }
-
-    // OEE simplificado por categoria:
+    // OEE simplificado por categoria (Tipo de Processo):
     // - Qualidade = produzido / (produzido + perda)
     // - Desempenho = tempo calculado / tempo real (capado em 100%: rodar mais rápido que o previsto não conta como >100%)
     // - Disponibilidade = tempo real de operação / (tempo real de operação + tempo parado)
     // OEE = Disponibilidade × Desempenho × Qualidade
     const oeePorCentro = categorias.map((cat) => {
-      const b = acumulado[cat]
+      const b = acumulado.get(cat)!
       const totalProduzidoEPerda = b.producaoTotal + b.perdaTotal
       const qualidade = totalProduzidoEPerda > 0 ? b.producaoTotal / totalProduzidoEPerda : 1
       const desempenho = b.tempoOperacaoRealTotal > 0 ? Math.min(1, b.tempoOperacaoCalculadoTotal / b.tempoOperacaoRealTotal) : (b.tempoOperacaoCalculadoTotal > 0 ? 0 : 1)
@@ -297,7 +290,7 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       const oee = disponibilidade * desempenho * qualidade
 
       return {
-        centro: LABELS_CATEGORIA[cat],
+        centro: labelPorCategoria.get(cat)!,
         disponibilidade: Math.round(disponibilidade * 1000) / 10,
         desempenho: Math.round(desempenho * 1000) / 10,
         qualidade: Math.round(qualidade * 1000) / 10,
@@ -315,8 +308,8 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       })
     }
 
-    const paretoParadas = categorias.map(cat => ({ centro: LABELS_CATEGORIA[cat], dados: paretoDe(acumulado[cat].paradasPorMotivo) }))
-    const paretoPerdas = categorias.map(cat => ({ centro: LABELS_CATEGORIA[cat], dados: paretoDe(acumulado[cat].perdasPorMotivo) }))
+    const paretoParadas = categorias.map(cat => ({ centro: labelPorCategoria.get(cat)!, dados: paretoDe(acumulado.get(cat)!.paradasPorMotivo) }))
+    const paretoPerdas = categorias.map(cat => ({ centro: labelPorCategoria.get(cat)!, dados: paretoDe(acumulado.get(cat)!.perdasPorMotivo) }))
 
     // Série de produção diária, com todos os dias do intervalo preenchidos (0 quando não há apontamento)
     function serieDiaria(registro: Record<string, number>) {
@@ -333,7 +326,7 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       return serie
     }
 
-    const producaoDiaria = categorias.map(cat => ({ centro: LABELS_CATEGORIA[cat], serie: serieDiaria(acumulado[cat].producaoPorDia) }))
+    const producaoDiaria = categorias.map(cat => ({ centro: labelPorCategoria.get(cat)!, serie: serieDiaria(acumulado.get(cat)!.producaoPorDia) }))
 
     return {
       periodo: { dataInicio: dataInicio.toISOString().slice(0, 10), dataFim: dataFim.toISOString().slice(0, 10) },
