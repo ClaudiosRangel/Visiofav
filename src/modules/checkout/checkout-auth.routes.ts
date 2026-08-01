@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { checkoutAuth } from './checkout-auth.middleware'
 import { criarSessaoTerminal, trocarCentroSessao, SessaoTerminalError } from './sessao-terminal.service'
-import { identificarOperadorPorPin, PinOperadorError } from './pin-operador.service'
+import { identificarOperadorPorPin, criarHashPin, PinOperadorError } from './pin-operador.service'
 
 /**
  * Rotas de autenticação do Checkout de Apontamento (tasks 8.1–8.4 do spec
@@ -178,5 +178,95 @@ export async function checkoutAuthRoutes(app: FastifyInstance) {
       }
       throw err
     }
+  })
+
+  // =========================================================================
+  // PATCH /admin/funcionarios/:id/pin — Define ou atualiza o PIN de um
+  // Funcionário (6 dígitos numéricos). Protegida pelo middleware
+  // `authenticate` padrão do ERP (não pelo checkoutAuth do Terminal) —
+  // quem define PIN é o Admin/Supervisor logado no ERP, não o operador.
+  //
+  // Aceita `{ pin: "123456" }` e grava o hash em `funcionario.pinHash` +
+  // marca `pinAtivo = true`. Para remover o PIN, usar a rota DELETE abaixo.
+  // =========================================================================
+  app.patch('/admin/funcionarios/:id/pin', async (request, reply) => {
+    try { await request.jwtVerify() } catch { return reply.status(401).send({ message: 'Não autenticado' }) }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!user || !user.empresaId) {
+      return reply.status(401).send({ message: 'Não autenticado' })
+    }
+
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { pin } = z.object({ pin: z.string().regex(/^\d{6}$/, 'PIN deve ter exatamente 6 dígitos numéricos') }).parse(request.body)
+
+    // Verifica se o funcionário existe e pertence à empresa do usuário logado
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, nome: true },
+    })
+
+    if (!funcionario) {
+      return reply.status(404).send({ message: 'Funcionário não encontrado' })
+    }
+
+    const pinHash = await criarHashPin(pin)
+
+    await prisma.funcionario.update({
+      where: { id },
+      data: { pinHash, pinAtivo: true },
+    })
+
+    return reply.status(200).send({ message: `PIN definido para ${funcionario.nome}`, funcionarioId: id })
+  })
+
+  // =========================================================================
+  // DELETE /admin/funcionarios/:id/pin — Remove o PIN de um Funcionário
+  // (desabilita a identificação por PIN no Checkout para este operador).
+  // =========================================================================
+  app.delete('/admin/funcionarios/:id/pin', async (request, reply) => {
+    try { await request.jwtVerify() } catch { return reply.status(401).send({ message: 'Não autenticado' }) }
+    const user = request.user as { id: string; empresaId: string }
+    if (!user || !user.empresaId) {
+      return reply.status(401).send({ message: 'Não autenticado' })
+    }
+
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, nome: true },
+    })
+
+    if (!funcionario) {
+      return reply.status(404).send({ message: 'Funcionário não encontrado' })
+    }
+
+    await prisma.funcionario.update({
+      where: { id },
+      data: { pinHash: null, pinAtivo: false },
+    })
+
+    return reply.status(200).send({ message: `PIN removido de ${funcionario.nome}` })
+  })
+
+  // =========================================================================
+  // GET /admin/funcionarios/pin-status — Lista funcionários da empresa com
+  // status do PIN (ativo/inativo), para o Admin ver quem já tem PIN
+  // configurado. Não retorna o PIN em si (nem o hash).
+  // =========================================================================
+  app.get('/admin/funcionarios/pin-status', async (request, reply) => {
+    try { await request.jwtVerify() } catch { return reply.status(401).send({ message: 'Não autenticado' }) }
+    const user = request.user as { id: string; empresaId: string }
+    if (!user || !user.empresaId) {
+      return reply.status(401).send({ message: 'Não autenticado' })
+    }
+
+    const funcionarios = await prisma.funcionario.findMany({
+      where: { empresaId: user.empresaId, status: true },
+      select: { id: true, nome: true, codigo: true, matricula: true, pinAtivo: true },
+      orderBy: { nome: 'asc' },
+    })
+
+    return reply.status(200).send(funcionarios)
   })
 }
