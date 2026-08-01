@@ -79,7 +79,7 @@ export async function checkoutAuthRoutes(app: FastifyInstance) {
     }
 
     // Busca empresas vinculadas ao usuário
-    const empresasVinculadas = await prisma.empresaUsuario.findMany({
+    const empresasVinculadas = await prisma.usuarioEmpresa.findMany({
       where: { usuarioId: usuario.id },
       include: { empresa: { select: { id: true, razaoSocial: true, nomeFantasia: true } } },
     })
