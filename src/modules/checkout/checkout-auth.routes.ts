@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
 import { prisma } from '../../lib/prisma'
 import { checkoutAuth } from './checkout-auth.middleware'
 import { criarSessaoTerminal, trocarCentroSessao, SessaoTerminalError } from './sessao-terminal.service'
@@ -62,11 +63,15 @@ export async function checkoutAuthRoutes(app: FastifyInstance) {
 
     // Valida credenciais usando o mesmo fluxo de criarSessaoTerminal,
     // mas sem criar a sessão — apenas verifica email/senha e perfil.
-    const bcrypt = await import('bcryptjs')
     const usuario = await prisma.usuario.findFirst({ where: { email: body.email } })
+
+    console.log(`[Checkout pre-login] email=${body.email}, encontrado=${!!usuario}, perfil=${usuario?.perfil || 'N/A'}`)
+
     if (!usuario) return reply.status(401).send({ message: 'Credenciais inválidas' })
 
-    const senhaValida = await bcrypt.compare(body.senha, usuario.senha)
+    const senhaValida = bcrypt.compareSync(body.senha, usuario.senha)
+    console.log(`[Checkout pre-login] senhaValida=${senhaValida}`)
+
     if (!senhaValida) return reply.status(401).send({ message: 'Credenciais inválidas' })
 
     if (!['ADMIN', 'SUPERVISOR'].includes(usuario.perfil)) {
