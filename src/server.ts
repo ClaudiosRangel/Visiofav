@@ -196,6 +196,7 @@ async function bootstrap() {
     'https://visiofav-front-wofr.vercel.app',
     'https://app.vizorerp.com.br',
     'https://visiofab-checkout.vercel.app',
+    'https://checkout.vizorerp.com.br',
     'http://localhost:3000',
     'http://localhost:3001',
   ]
