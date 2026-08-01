@@ -195,6 +195,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'https://visiofav-front-wofr.vercel.app',
     'https://app.vizorerp.com.br',
+    'https://visiofab-checkout.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001',
   ]
