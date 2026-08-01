@@ -1,0 +1,190 @@
+/* Estilos da tela de pausa da Etapa — mobile-first, botões de toque grande
+   (mínimo 48x48px de área clicável), mesmo padrão visual de
+   etapa.module.css / painel.module.css. */
+
+.container {
+  min-height: 100vh;
+  padding: 16px;
+  background-color: #f5f5f5;
+}
+
+.header {
+  margin-bottom: 16px;
+}
+
+.voltarLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.titulo {
+  margin: 0 0 20px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #111111;
+}
+
+.secao {
+  margin-bottom: 20px;
+}
+
+.secaoTitulo {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333333;
+}
+
+.opcoesMotivo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.botaoMotivo {
+  min-height: 56px;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #333333;
+  background-color: #ffffff;
+  border: 2px solid #d4d4d4;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.botaoMotivo:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.botaoMotivoSelecionado {
+  color: #ffffff;
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.opcoesPlanejada {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.botaoPlanejada {
+  min-height: 56px;
+  padding: 8px 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #333333;
+  background-color: #ffffff;
+  border: 2px solid #d4d4d4;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.botaoPlanejada:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.botaoPlanejadaSelecionado {
+  color: #ffffff;
+  background-color: #16a34a;
+  border-color: #16a34a;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #111111;
+  background-color: #ffffff;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.textarea:disabled {
+  opacity: 0.6;
+}
+
+.errorMessage {
+  margin: 0 0 16px;
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #b91c1c;
+  background-color: #fee2e2;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.botaoConfirmar {
+  width: 100%;
+  min-height: 64px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+  background-color: #ea580c;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.botaoConfirmar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sucessoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 16px;
+  margin-top: 40px;
+  background-color: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.sucessoTitulo {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #166534;
+}
+
+.sucessoTexto {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #444444;
+}
+
+.avisoManutencao {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #92400e;
+  background-color: #fef3c7;
+  border-radius: 8px;
+}
+
+.botaoVoltar {
+  min-height: 48px;
+  padding: 0 16px;
+  margin-top: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #2563eb;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}

@@ -98,9 +98,9 @@ model Empresa {
   auditoriasFiscais    AuditoriaFiscal[]
 
   // Configurações de Conferência
-  conferenciaQuantidadeCega Boolean @default(false) @map("conferencia_quantidade_cega")
-  conferenciaLoteCega       Boolean @default(false) @map("conferencia_lote_cega")
-  permiteRecebimentoParcial Boolean @default(false) @map("permite_recebimento_parcial")
+  conferenciaQuantidadeCega            Boolean  @default(false) @map("conferencia_quantidade_cega")
+  conferenciaLoteCega                  Boolean  @default(false) @map("conferencia_lote_cega")
+  permiteRecebimentoParcial            Boolean  @default(false) @map("permite_recebimento_parcial")
   // Tolerância padrão de quantidade (%) aplicada a produtos sem configuração própria
   toleranciaQuantidadePercentualPadrao Decimal? @map("tolerancia_quantidade_percentual_padrao") @db.Decimal(5, 2)
 
@@ -315,26 +315,26 @@ model Transportadora {
 }
 
 model Produto {
-  id               String   @id @default(uuid())
-  empresaId        String   @map("empresa_id")
-  empresa          Empresa  @relation(fields: [empresaId], references: [id])
-  codigo           String   @db.VarChar(60)
-  nome             String   @db.VarChar(200)
-  descricao        String?  @db.Text
-  unidade          String   @default("UN") @db.VarChar(6)
-  precoBase        Decimal  @default(0) @map("preco_base") @db.Decimal(12, 4)
-  status           Boolean  @default(true)
-  imagemUrl        String?  @map("imagem_url") @db.Text
-  shelfLifeMinimo  Int?     @map("shelf_life_minimo")
-  curvaAbc         String?  @map("curva_abc") @db.VarChar(1)
-  classificacaoPcp String?  @map("classificacao_pcp") @db.VarChar(20) // MATERIA_PRIMA, INTERMEDIARIO, PRODUTO_ACABADO, EMBALAGEM, INSUMO
-  tipoFisico       String?  @map("tipo_fisico") @db.VarChar(20) // UNIDADE_PADRAO, FISICO_LINEAR, FISICO_SUPERFICIAL, LIQUIDO, PESO
-  exigeLote        Boolean  @default(false) @map("exige_lote")
+  id                             String   @id @default(uuid())
+  empresaId                      String   @map("empresa_id")
+  empresa                        Empresa  @relation(fields: [empresaId], references: [id])
+  codigo                         String   @db.VarChar(60)
+  nome                           String   @db.VarChar(200)
+  descricao                      String?  @db.Text
+  unidade                        String   @default("UN") @db.VarChar(6)
+  precoBase                      Decimal  @default(0) @map("preco_base") @db.Decimal(12, 4)
+  status                         Boolean  @default(true)
+  imagemUrl                      String?  @map("imagem_url") @db.Text
+  shelfLifeMinimo                Int?     @map("shelf_life_minimo")
+  curvaAbc                       String?  @map("curva_abc") @db.VarChar(1)
+  classificacaoPcp               String?  @map("classificacao_pcp") @db.VarChar(20) // MATERIA_PRIMA, INTERMEDIARIO, PRODUTO_ACABADO, EMBALAGEM, INSUMO
+  tipoFisico                     String?  @map("tipo_fisico") @db.VarChar(20) // UNIDADE_PADRAO, FISICO_LINEAR, FISICO_SUPERFICIAL, LIQUIDO, PESO
+  exigeLote                      Boolean  @default(false) @map("exige_lote")
   // Tolerância de quantidade na conferência de entrada — percentual de desvio
   // aceito automaticamente sem gerar divergência. Null usa o padrão da empresa.
   toleranciaQuantidadePercentual Decimal? @map("tolerancia_quantidade_percentual") @db.Decimal(5, 2)
-  criadoEm         DateTime @default(now()) @map("criado_em")
-  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
+  criadoEm                       DateTime @default(now()) @map("criado_em")
+  atualizadoEm                   DateTime @updatedAt @map("atualizado_em")
 
   // Fiscal
   ncm          String? @db.VarChar(8)
@@ -1516,6 +1516,8 @@ model Funcionario {
   status               Boolean  @default(true)
   criadoEm             DateTime @default(now()) @map("criado_em")
   empresaId            String?  @map("empresa_id")
+  pinHash              String?  @map("pin_hash") @db.VarChar(200)
+  pinAtivo             Boolean  @default(false) @map("pin_ativo")
 
   @@map("funcionario")
 }
@@ -1655,10 +1657,10 @@ model ItemNotaEntrada {
 
   // Estado HOLD — divergência confirmada colocada em espera para resolução
   // assíncrona na Fila de Exceções, com motivo padronizado
-  holdMotivo        String?     @map("hold_motivo") @db.VarChar(40)
-  holdMotivoDetalhe String?     @map("hold_motivo_detalhe") @db.Text
-  holdUsuarioId     String?     @map("hold_usuario_id")
-  holdCriadoEm      DateTime?   @map("hold_criado_em")
+  holdMotivo        String?   @map("hold_motivo") @db.VarChar(40)
+  holdMotivoDetalhe String?   @map("hold_motivo_detalhe") @db.Text
+  holdUsuarioId     String?   @map("hold_usuario_id")
+  holdCriadoEm      DateTime? @map("hold_criado_em")
 
   @@map("item_nota_entrada")
 }
@@ -2021,27 +2023,28 @@ model DeparaProdutoFornecedor {
 // ============================================================================
 
 model CentroProducao {
-  id             String   @id @default(uuid())
-  empresaId      String   @map("empresa_id")
-  codigo         String   @db.VarChar(20)
-  descricao      String   @db.VarChar(200)
-  tipo           String   @db.VarChar(20) // MAQUINA, SETOR, LINHA
+  id             String       @id @default(uuid())
+  empresaId      String       @map("empresa_id")
+  codigo         String       @db.VarChar(20)
+  descricao      String       @db.VarChar(200)
+  tipo           String       @db.VarChar(20) // MAQUINA, SETOR, LINHA
   // Cadastro obrigatório (substitui o antigo enum fixo tipoMaquina, que
   // limitava a classificação a 5 valores hardcoded no código e não permitia
   // reordenar as abas da Programação). Ver model TipoProcesso.
-  tipoProcessoId String   @map("tipo_processo_id")
+  tipoProcessoId String       @map("tipo_processo_id")
   tipoProcesso   TipoProcesso @relation(fields: [tipoProcessoId], references: [id])
-  capacidadeHora Decimal? @map("capacidade_hora") @db.Decimal(12, 4)
-  custoHora      Decimal? @map("custo_hora") @db.Decimal(12, 4)
-  posicao        Int      @default(0)
-  status         Boolean  @default(true)
-  criadoEm       DateTime @default(now()) @map("criado_em")
-  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+  capacidadeHora Decimal?     @map("capacidade_hora") @db.Decimal(12, 4)
+  custoHora      Decimal?     @map("custo_hora") @db.Decimal(12, 4)
+  posicao        Int          @default(0)
+  status         Boolean      @default(true)
+  criadoEm       DateTime     @default(now()) @map("criado_em")
+  atualizadoEm   DateTime     @updatedAt @map("atualizado_em")
 
-  recursos      RecursoProducao[]
-  etapasRoteiro EtapaRoteiro[]
-  etapasOp      EtapaOrdemProducao[]
-  apontamentos  ApontamentoProducao[]
+  recursos        RecursoProducao[]
+  etapasRoteiro   EtapaRoteiro[]
+  etapasOp        EtapaOrdemProducao[]
+  apontamentos    ApontamentoProducao[]
+  sessoesTerminal SessaoTerminal[]
 
   @@unique([empresaId, codigo])
   @@map("centro_producao")
@@ -2334,9 +2337,81 @@ model ApontamentoEtapa {
   fotoUrl              String?            @map("foto_url") @db.Text
   dataHora             DateTime           @default(now()) @map("data_hora")
 
+  // Checkout de Apontamento — extensão (ver design.md do spec checkout-apontamento)
+  quantidadeRetrabalho Decimal @default(0) @map("quantidade_retrabalho") @db.Decimal(12, 4)
+
+  // Requirement 15 — origem do apontamento: MANUAL_OPERADOR | INTEGRACAO_MAQUINA
+  fonteApontamento String @default("MANUAL_OPERADOR") @map("fonte_apontamento") @db.VarChar(30)
+
+  // Requirement 8 — planejada vs não planejada
+  paradaPlanejada Boolean? @map("parada_planejada")
+
+  // Requirement 6 — setup como evento com início/fim
+  setupInicio         DateTime? @map("setup_inicio")
+  setupFim            DateTime? @map("setup_fim")
+  setupDuracaoMinutos Int?      @map("setup_duracao_minutos")
+
+  // Requirement 11 — apontamento retroativo (auto-referência)
+  apontamentoOrigemId    String?            @map("apontamento_origem_id")
+  apontamentoOrigem      ApontamentoEtapa?  @relation("ApontamentoRetroativo", fields: [apontamentoOrigemId], references: [id])
+  retroativos            ApontamentoEtapa[] @relation("ApontamentoRetroativo")
+  motivoRetroativo       String?            @map("motivo_retroativo") @db.Text
+  autorizadoPorUsuarioId String?            @map("autorizado_por_usuario_id")
+
   @@index([etapaOrdemProducaoId])
   @@index([empresaId, dataHora])
+  @@index([fonteApontamento])
+  @@index([apontamentoOrigemId])
   @@map("apontamento_etapa")
+}
+
+// Pendência de falta de material identificada durante a execução de uma
+// etapa (Checkout de Apontamento). Visível para PCP e almoxarifado até ser
+// resolvida. Ver design.md do spec checkout-apontamento.
+model PendenciaMaterial {
+  id                    String    @id @default(uuid())
+  empresaId             String    @map("empresa_id")
+  etapaOrdemProducaoId  String    @map("etapa_ordem_producao_id")
+  apontamentoParadaId   String?   @map("apontamento_parada_id")
+  descricao             String?   @db.Text
+  status                String    @default("PENDENTE") @db.VarChar(20) // PENDENTE, RESOLVIDA
+  criadaEm              DateTime  @default(now()) @map("criada_em")
+  resolvidaEm           DateTime? @map("resolvida_em")
+  resolvidaPorUsuarioId String?   @map("resolvida_por_usuario_id")
+
+  @@index([empresaId, status])
+  @@index([etapaOrdemProducaoId])
+  @@map("pendencia_material")
+}
+
+// Operador ativo numa etapa (Checkout de Apontamento) — suporta múltiplos
+// operadores simultâneos trabalhando na mesma etapa (ex: coladeira com
+// equipe). Ver design.md do spec checkout-apontamento — Requirement 10.
+model OperadorAtivoEtapa {
+  id                   String    @id @default(uuid())
+  empresaId            String    @map("empresa_id")
+  etapaOrdemProducaoId String    @map("etapa_ordem_producao_id")
+  funcionarioId        String    @map("funcionario_id")
+  entradaEm            DateTime  @default(now()) @map("entrada_em")
+  saidaEm              DateTime? @map("saida_em")
+
+  @@index([etapaOrdemProducaoId, saidaEm])
+  @@map("operador_ativo_etapa")
+}
+
+// Autorização explícita de Supervisor para concluir uma etapa fora da
+// ordem de sequência (Checkout de Apontamento). Ver design.md do spec
+// checkout-apontamento — Requirement 9.4.
+model EtapaAutorizacaoSequencia {
+  id                     String   @id @default(uuid())
+  empresaId              String   @map("empresa_id")
+  etapaOrdemProducaoId   String   @map("etapa_ordem_producao_id")
+  etapaBloqueadoraId     String   @map("etapa_bloqueadora_id")
+  autorizadoPorUsuarioId String   @map("autorizado_por_usuario_id")
+  criadaEm               DateTime @default(now()) @map("criada_em")
+
+  @@index([etapaOrdemProducaoId])
+  @@map("etapa_autorizacao_sequencia")
 }
 
 model ApontamentoProducao {
@@ -4255,4 +4330,27 @@ model PagamentoPdv {
   autorizacao String?  @db.VarChar(20)
 
   @@map("pagamento_pdv")
+}
+
+// ============================================================================
+// CHECKOUT DE APONTAMENTO — Sessão de Terminal
+// ============================================================================
+
+/// Sessão de turno que vincula um Terminal (computador/tablet/celular do
+/// chão de fábrica) a um Centro_Producao, autenticada por um Supervisor.
+/// Ver .kiro/specs/checkout-apontamento/design.md — seção "Data Models".
+model SessaoTerminal {
+  id                      String         @id @default(uuid())
+  empresaId               String         @map("empresa_id")
+  centroProducaoId        String         @map("centro_producao_id")
+  centroProducao          CentroProducao @relation(fields: [centroProducaoId], references: [id])
+  autenticadaPorUsuarioId String         @map("autenticada_por_usuario_id")
+  status                  String         @default("ATIVA") @db.VarChar(20) // ATIVA | EXPIRADA | ENCERRADA
+  criadaEm                DateTime       @default(now()) @map("criada_em")
+  expiraEm                DateTime       @map("expira_em")
+  encerradaEm             DateTime?      @map("encerrada_em")
+
+  @@index([empresaId, status])
+  @@index([centroProducaoId, status])
+  @@map("sessao_terminal")
 }

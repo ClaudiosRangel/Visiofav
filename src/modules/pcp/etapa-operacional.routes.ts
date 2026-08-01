@@ -7,9 +7,14 @@ import { extrairTextoPdf } from './importacao-op/pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-parser'
 import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
 import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
-import { integracaoWmsAutomaticaAtiva } from './configuracao-pcp.routes'
-import { criarEntradaProducao } from './pcp-wms-integration.service'
 import { reordenarFilaAutomaticamente } from './fila-ordenacao.service'
+import {
+  iniciarEtapa,
+  pausarEtapa,
+  apontarProducao,
+  concluirEtapa,
+  EtapaOperacionalError,
+} from './etapa-operacional.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -71,55 +76,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const { id } = idSchema.parse(request.params)
     const body = z.object({ funcionarioId: z.string().uuid().optional() }).parse(request.body)
 
-    // Segurança: filtro explícito por empresaId (via ordemProducao) — sem
-    // isso, qualquer usuário autenticado que soubesse/enumerar um UUID de
-    // etapa de OUTRA empresa conseguiria iniciá-la (mesma classe de bug já
-    // documentada em ATENCAO-pontos-verificar.md).
-    const etapa = await prisma.etapaOrdemProducao.findFirst({
-      where: { id, ordemProducao: { empresaId: user.empresaId } },
-    })
-    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
-
-    if (!['PENDENTE', 'PAUSADA'].includes(etapa.status)) {
-      return reply.status(400).send({ message: `Etapa não pode ser iniciada. Status atual: ${etapa.status}` })
+    try {
+      return await iniciarEtapa(id, user.empresaId, body.funcionarioId || user.id)
+    } catch (err) {
+      if (err instanceof EtapaOperacionalError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
     }
-
-    const agora = new Date()
-    const atualizada = await prisma.etapaOrdemProducao.update({
-      where: { id },
-      data: {
-        status: 'EM_ANDAMENTO',
-        dataInicioReal: etapa.dataInicioReal || agora,
-        funcionarioId: body.funcionarioId || user.id,
-      },
-    })
-
-    // Registra apontamento de retomada se estava pausada, calculando a
-    // duração real da parada (diferença entre o apontamento de PARADA mais
-    // recente e agora) — necessário para o Pareto de tempo de parada por
-    // motivo no dashboard PCP, que antes só contava ocorrências sem duração.
-    if (etapa.status === 'PAUSADA') {
-      const ultimaParada = await prisma.apontamentoEtapa.findFirst({
-        where: { etapaOrdemProducaoId: id, tipo: 'PARADA' },
-        orderBy: { dataHora: 'desc' },
-      })
-      const tempoParadaMinutos = ultimaParada
-        ? Math.max(0, Math.round((agora.getTime() - new Date(ultimaParada.dataHora).getTime()) / 60000))
-        : undefined
-
-      await prisma.apontamentoEtapa.create({
-        data: {
-          etapaOrdemProducaoId: id,
-          empresaId: user.empresaId,
-          funcionarioId: body.funcionarioId,
-          tipo: 'RETOMADA',
-          motivoParada: ultimaParada?.motivoParada,
-          tempoParadaMinutos,
-        },
-      })
-    }
-
-    return atualizada
   })
 
   // =========================================================================
@@ -133,30 +97,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       observacao: z.string().optional(),
     }).parse(request.body)
 
-    // Segurança: filtro explícito por empresaId — ver comentário em /iniciar.
-    const etapa = await prisma.etapaOrdemProducao.findFirst({
-      where: { id, ordemProducao: { empresaId: user.empresaId } },
-    })
-    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
-
-    if (etapa.status !== 'EM_ANDAMENTO') {
-      return reply.status(400).send({ message: 'Só é possível pausar etapa em andamento' })
+    try {
+      return await pausarEtapa(id, user.empresaId, body)
+    } catch (err) {
+      if (err instanceof EtapaOperacionalError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
     }
-
-    await prisma.etapaOrdemProducao.update({ where: { id }, data: { status: 'PAUSADA' } })
-
-    await prisma.apontamentoEtapa.create({
-      data: {
-        etapaOrdemProducaoId: id,
-        empresaId: user.empresaId,
-        funcionarioId: etapa.funcionarioId,
-        tipo: 'PARADA',
-        motivoParada: body.motivoParada,
-        observacao: body.observacao,
-      },
-    })
-
-    return { message: 'Etapa pausada', motivo: body.motivoParada }
   })
 
   // =========================================================================
@@ -205,38 +153,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       body = bodySchema.parse(request.body)
     }
 
-    const etapa = await prisma.etapaOrdemProducao.findFirst({ where: { id, ordemProducao: { empresaId: user.empresaId } } })
-    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
-
-    if (!['EM_ANDAMENTO', 'PAUSADA'].includes(etapa.status)) {
-      return reply.status(400).send({ message: 'Etapa precisa estar em andamento ou pausada para apontar' })
+    try {
+      const apontamento = await apontarProducao(id, user.empresaId, { ...body, fotoUrl })
+      return reply.status(201).send(apontamento)
+    } catch (err) {
+      if (err instanceof EtapaOperacionalError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
     }
-
-    // Registra apontamento
-    const apontamento = await prisma.apontamentoEtapa.create({
-      data: {
-        etapaOrdemProducaoId: id,
-        empresaId: user.empresaId,
-        funcionarioId: body.funcionarioId || etapa.funcionarioId,
-        tipo: body.quantidadePerda > 0 ? 'PERDA' : 'PRODUCAO',
-        quantidadeProduzida: body.quantidadeProduzida,
-        quantidadePerda: body.quantidadePerda,
-        motivoPerda: body.motivoPerda,
-        observacao: body.observacao,
-        fotoUrl,
-      },
-    })
-
-    // Atualiza totais na etapa
-    await prisma.etapaOrdemProducao.update({
-      where: { id },
-      data: {
-        quantidadeProduzida: { increment: body.quantidadeProduzida },
-        quantidadePerda: { increment: body.quantidadePerda },
-      },
-    })
-
-    return reply.status(201).send(apontamento)
   })
 
   // =========================================================================
@@ -246,122 +171,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { id } = idSchema.parse(request.params)
 
-    // Segurança: filtro explícito por empresaId — sem isso, um usuário de
-    // OUTRA empresa que soubesse o UUID da etapa conseguia concluí-la, e a
-    // NotaEntrada de produção (abaixo) era criada com empresaId do usuário
-    // que clicou, não da empresa real da OP — vazando o lançamento de
-    // produção para o WMS de uma empresa diferente da que produziu.
-    const etapa = await prisma.etapaOrdemProducao.findFirst({
-      where: { id, ordemProducao: { empresaId: user.empresaId } },
-      include: { ordemProducao: { select: { id: true, empresaId: true, produtoId: true, quantidade: true, numero: true, lote: true } } },
-    })
-    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
-
-    if (!['EM_ANDAMENTO', 'PAUSADA'].includes(etapa.status)) {
-      return reply.status(400).send({ message: 'Etapa precisa estar em andamento para concluir' })
-    }
-
-    const agora = new Date()
-    const tempoRealMs = etapa.dataInicioReal ? agora.getTime() - new Date(etapa.dataInicioReal).getTime() : 0
-    const tempoRealMin = Math.round(tempoRealMs / 60000)
-
-    const atualizada = await prisma.etapaOrdemProducao.update({
-      where: { id },
-      data: { status: 'CONCLUIDA', dataFimReal: agora },
-    })
-
-    // Verifica se TODAS as etapas da OP estão concluídas → entrada de PA no WMS
-    let entradaWms = null
-    const todasEtapas = await prisma.etapaOrdemProducao.findMany({
-      where: { ordemProducaoId: etapa.ordemProducaoId },
-      select: { status: true },
-    })
-
-    const todasConcluidas = todasEtapas.every(e => e.status === 'CONCLUIDA')
-
-    if (todasConcluidas) {
-      // Propaga a quantidade produzida (apontada na última etapa) para a OP —
-      // SEMPRE, independente de usar WMS ou não. Antes disso, a OP virava
-      // CONCLUIDA (via essa própria rota, quando usaWms=true, ou via
-      // PATCH /ordens-producao/:id/status manual) sem nunca atualizar
-      // `quantidadeProduzida`, deixando o %Concluído travado em 0% mesmo com
-      // a OP finalizada e material real apontado nas etapas.
-      try {
-        await prisma.ordemProducao.update({
-          where: { id: etapa.ordemProducaoId },
-          data: {
-            status: 'CONCLUIDA',
-            dataFimReal: agora,
-            quantidadeProduzida: atualizada.quantidadeProduzida,
-            quantidadeRejeitada: atualizada.quantidadePerda,
-          },
-        })
-
-        await prisma.logOrdemProducao.create({
-          data: {
-            ordemProducaoId: etapa.ordemProducaoId,
-            statusAnterior: 'EM_PRODUCAO',
-            statusNovo: 'CONCLUIDA',
-            usuarioId: user.id,
-            observacao: `Todas as etapas concluídas. Quantidade produzida: ${Number(atualizada.quantidadeProduzida)}.`,
-          },
-        })
-      } catch (err) {
-        console.error('[PCP] Erro ao atualizar quantidade produzida da OP na conclusão:', err)
+    try {
+      return await concluirEtapa(id, user.empresaId, user.id)
+    } catch (err) {
+      if (err instanceof EtapaOperacionalError) {
+        return reply.status(err.statusCode).send({ message: err.message })
       }
-
-      try {
-        // empresaId sempre da OP (etapa.ordemProducao.empresaId), nunca do
-        // usuário logado — já garantido pelo filtro na busca da etapa acima,
-        // mas mantido explícito aqui para não reintroduzir o bug se a busca
-        // for alterada no futuro sem esse cuidado.
-        const empresaId = etapa.ordemProducao.empresaId
-        const empresa = await prisma.empresa.findUnique({ where: { id: empresaId } })
-
-        // Flag dedicada de integração automática PCP → WMS (pcp.integracaoWmsAutomatica),
-        // não apenas `Empresa.usaWms` — usaWms indica só que a empresa usa o
-        // módulo WMS, não que toda OP concluída deva gerar entrada automática
-        // de estoque (ex.: empresa pode preferir lançar manualmente). Ver
-        // configuracao-pcp.routes.ts e ATENCAO-pontos-verificar.md.
-        const integracaoAutomatica = empresa?.usaWms
-          ? await integracaoWmsAutomaticaAtiva(empresaId)
-          : false
-
-        if (integracaoAutomatica) {
-          // Cria Nota de Entrada tipo PRODUCAO (PA entra no estoque WMS) —
-          // implementação única em pcp-wms-integration.service.ts, chamada
-          // aqui em vez de duplicar a lógica inline (ver histórico do bug
-          // de duas versões divergentes em ATENCAO-pontos-verificar.md).
-          const quantidadeProduzidaFinal = Number(atualizada.quantidadeProduzida) > 0
-            ? Number(atualizada.quantidadeProduzida)
-            : Number(etapa.ordemProducao.quantidade)
-
-          const nota = await criarEntradaProducao({
-            empresaId,
-            ordemProducaoId: etapa.ordemProducaoId,
-            produtoId: etapa.ordemProducao.produtoId,
-            quantidade: quantidadeProduzidaFinal,
-            lote: etapa.ordemProducao.lote,
-          })
-
-          entradaWms = { notaEntradaId: nota.id, numero: nota.numero, status: 'PENDENTE' }
-
-          await prisma.logOrdemProducao.create({
-            data: {
-              ordemProducaoId: etapa.ordemProducaoId,
-              statusAnterior: 'CONCLUIDA',
-              statusNovo: 'CONCLUIDA',
-              usuarioId: user.id,
-              observacao: `Nota de entrada #${nota.numero} criada no WMS.`,
-            },
-          })
-        }
-      } catch (err) {
-        console.error('[PCP→WMS] Erro ao criar entrada de PA:', err)
-      }
+      throw err
     }
-
-    return { ...atualizada, tempoRealMinutos: tempoRealMin, todasConcluidas, entradaWms }
   })
 
   // =========================================================================
