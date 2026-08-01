@@ -52,6 +52,74 @@ const identificarOperadorBodySchema = z.object({
 
 export async function checkoutAuthRoutes(app: FastifyInstance) {
   // =========================================================================
+  // POST /auth/pre-login — Valida credenciais do Supervisor e retorna a
+  // lista de empresas e centros de produção disponíveis para seleção.
+  // Não cria a Sessão_Terminal — é usado pelo frontend para popular os
+  // seletores de empresa/centro ANTES do login definitivo.
+  // =========================================================================
+  app.post('/auth/pre-login', async (request, reply) => {
+    const body = z.object({ email: z.string().email(), senha: z.string().min(1) }).parse(request.body)
+
+    // Valida credenciais usando o mesmo fluxo de criarSessaoTerminal,
+    // mas sem criar a sessão — apenas verifica email/senha e perfil.
+    const bcrypt = await import('bcryptjs')
+    const usuario = await prisma.usuario.findFirst({ where: { email: body.email } })
+    if (!usuario) return reply.status(401).send({ message: 'Credenciais inválidas' })
+
+    const senhaValida = await bcrypt.compare(body.senha, usuario.senha)
+    if (!senhaValida) return reply.status(401).send({ message: 'Credenciais inválidas' })
+
+    if (!['ADMIN', 'SUPERVISOR'].includes(usuario.perfil)) {
+      return reply.status(403).send({ message: 'Perfil não autorizado para autenticar um Terminal' })
+    }
+
+    // Busca empresas vinculadas ao usuário
+    const empresasVinculadas = await prisma.empresaUsuario.findMany({
+      where: { usuarioId: usuario.id },
+      include: { empresa: { select: { id: true, razaoSocial: true, nomeFantasia: true } } },
+    })
+
+    const empresas = empresasVinculadas.map((eu: any) => ({
+      id: eu.empresa.id,
+      nome: eu.empresa.nomeFantasia || eu.empresa.razaoSocial || eu.empresa.id,
+    }))
+
+    // Se só tem uma empresa, já busca os centros dela
+    let centros: { id: string; nome: string }[] = []
+    if (empresas.length === 1) {
+      const centrosDb = await prisma.centroProducao.findMany({
+        where: { empresaId: empresas[0].id, status: true },
+        select: { id: true, codigo: true, descricao: true },
+        orderBy: { posicao: 'asc' },
+      })
+      centros = centrosDb.map((c: any) => ({ id: c.id, nome: c.descricao || c.codigo || c.id }))
+    }
+
+    return reply.status(200).send({ empresas, centros })
+  })
+
+  // =========================================================================
+  // GET /auth/centros/:empresaId — Retorna os centros de produção ativos
+  // de uma empresa (usado quando o Supervisor tem mais de uma empresa e
+  // seleciona qual quer usar). Protegido por JWT básico (já emitido pelo
+  // login normal do ERP) ou sem proteção (é uma listagem não-sensível de
+  // nomes de centros, sem dados de negócio).
+  // =========================================================================
+  app.get('/auth/centros/:empresaId', async (request, reply) => {
+    const { empresaId } = z.object({ empresaId: z.string().uuid() }).parse(request.params)
+
+    const centros = await prisma.centroProducao.findMany({
+      where: { empresaId, status: true },
+      select: { id: true, codigo: true, descricao: true },
+      orderBy: { posicao: 'asc' },
+    })
+
+    return reply.status(200).send(
+      centros.map((c: any) => ({ id: c.id, nome: c.descricao || c.codigo || c.id }))
+    )
+  })
+
+  // =========================================================================
   // POST /auth/sessao — Autentica Supervisor + Centro_Producao, cria a
   // Sessão_Terminal e emite o Token_Checkout (Requirements 1.1, 1.2, 1.3, 1.7)
   // =========================================================================
