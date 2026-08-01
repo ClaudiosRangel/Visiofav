@@ -1,0 +1,72 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.dots {
+  display: flex;
+  gap: 12px;
+}
+
+.dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--foreground);
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.dotFilled {
+  background: var(--foreground);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.key {
+  min-width: 64px;
+  min-height: 64px;
+  width: 64px;
+  height: 64px;
+  font-size: 24px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 1px solid var(--gray-alpha-200, rgba(0, 0, 0, 0.15));
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .key:not(:disabled):hover {
+    background: var(--gray-alpha-100, rgba(0, 0, 0, 0.06));
+  }
+}
+
+.key:not(:disabled):active {
+  background: var(--gray-alpha-200, rgba(0, 0, 0, 0.15));
+}
+
+.keyEmpty {
+  visibility: hidden;
+}
+
+.keyBackspace {
+  font-size: 20px;
+}

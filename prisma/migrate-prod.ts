@@ -34,6 +34,10 @@ async function main() {
   // Funcionario table - usuario_id column (direct link to usuario)
   await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "usuario_id" TEXT`)
 
+  // Funcionario table - PIN de operador (Checkout de Apontamento)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "pin_hash" VARCHAR(200)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "pin_ativo" BOOLEAN DEFAULT false`)
+
   // Estrutura table - codigo column
   await prisma.$executeRawUnsafe(`ALTER TABLE "estrutura" ADD COLUMN IF NOT EXISTS "codigo" SERIAL`)
 
@@ -2100,6 +2104,28 @@ async function main() {
   console.log('✅ PCP — Apontamento com foto: coluna foto_url criada')
 
   // ===================================================================
+  // Checkout de Apontamento — extensão de ApontamentoEtapa
+  // (ver .kiro/specs/checkout-apontamento/design.md, seção "Data Models")
+  // ===================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "quantidade_retrabalho" DECIMAL(12,4) DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "fonte_apontamento" VARCHAR(30) DEFAULT 'MANUAL_OPERADOR'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "parada_planejada" BOOLEAN`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "setup_inicio" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "setup_fim" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "setup_duracao_minutos" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "apontamento_origem_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "motivo_retroativo" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "autorizado_por_usuario_id" TEXT`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_apontamento_etapa_fonte" ON "apontamento_etapa"("fonte_apontamento")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_apontamento_etapa_origem" ON "apontamento_etapa"("apontamento_origem_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD CONSTRAINT "fk_apontamento_etapa_origem" FOREIGN KEY ("apontamento_origem_id") REFERENCES "apontamento_etapa"("id")`)
+  } catch {
+    // Constraint já existe — Postgres não tem ADD CONSTRAINT IF NOT EXISTS.
+  }
+  console.log('✅ Checkout de Apontamento — ApontamentoEtapa: colunas de retrabalho/fonte/setup/retroativo criadas')
+
+  // ===================================================================
   // PCP — Ordenação automática da fila (numero OP -> data entrega) com
   // preservação de posicionamento manual
   // ===================================================================
@@ -2202,6 +2228,86 @@ async function main() {
   } else {
     console.log(`⚠️ PCP Tipo de Processo: ${totalRestante} centro(s) ainda sem tipo_processo_id — NOT NULL/FK NÃO aplicados nesta execução. Investigar manualmente.`)
   }
+
+  // =========================================================================
+  // CHECKOUT DE APONTAMENTO — Sessão de Terminal
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "sessao_terminal" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "centro_producao_id" TEXT NOT NULL,
+      "autenticada_por_usuario_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVA',
+      "criada_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "expira_em" TIMESTAMP(3) NOT NULL,
+      "encerrada_em" TIMESTAMP(3),
+      CONSTRAINT "sessao_terminal_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_sessao_terminal_empresa_status" ON "sessao_terminal"("empresa_id", "status")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_sessao_terminal_centro_status" ON "sessao_terminal"("centro_producao_id", "status")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "sessao_terminal" ADD CONSTRAINT "sessao_terminal_centro_producao_id_fkey" FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch {
+    // Constraint já existe — Postgres não tem ADD CONSTRAINT IF NOT EXISTS.
+  }
+  console.log('✅ Checkout de Apontamento: tabela sessao_terminal criada')
+
+  // =========================================================================
+  // CHECKOUT DE APONTAMENTO — Pendência de Material
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pendencia_material" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "etapa_ordem_producao_id" TEXT NOT NULL,
+      "apontamento_parada_id" TEXT,
+      "descricao" TEXT,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "criada_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "resolvida_em" TIMESTAMP(3),
+      "resolvida_por_usuario_id" TEXT,
+      CONSTRAINT "pendencia_material_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_pendencia_material_empresa_status" ON "pendencia_material"("empresa_id", "status")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_pendencia_material_etapa" ON "pendencia_material"("etapa_ordem_producao_id")`)
+  console.log('✅ Checkout de Apontamento: tabela pendencia_material criada')
+
+  // =========================================================================
+  // CHECKOUT DE APONTAMENTO — Operador Ativo na Etapa (múltiplos operadores)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "operador_ativo_etapa" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "etapa_ordem_producao_id" TEXT NOT NULL,
+      "funcionario_id" TEXT NOT NULL,
+      "entrada_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "saida_em" TIMESTAMP(3),
+      CONSTRAINT "operador_ativo_etapa_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_operador_ativo_etapa_etapa_saida" ON "operador_ativo_etapa"("etapa_ordem_producao_id", "saida_em")`)
+  console.log('✅ Checkout de Apontamento: tabela operador_ativo_etapa criada')
+
+  // =========================================================================
+  // CHECKOUT DE APONTAMENTO — Autorização de Sequência (conclusão fora de ordem)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "etapa_autorizacao_sequencia" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "etapa_ordem_producao_id" TEXT NOT NULL,
+      "etapa_bloqueadora_id" TEXT NOT NULL,
+      "autorizado_por_usuario_id" TEXT NOT NULL,
+      "criada_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "etapa_autorizacao_sequencia_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_etapa_autorizacao_sequencia_etapa" ON "etapa_autorizacao_sequencia"("etapa_ordem_producao_id")`)
+  console.log('✅ Checkout de Apontamento: tabela etapa_autorizacao_sequencia criada')
 
   console.log('✅ All migrations applied successfully')
 }

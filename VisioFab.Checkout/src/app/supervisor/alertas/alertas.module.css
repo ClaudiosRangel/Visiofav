@@ -1,0 +1,136 @@
+/* Estilos da tela dedicada de alertas do Supervisor — mobile-first,
+   cards em lista vertical com destaque visual de parada prolongada
+   (borda/sombra vermelha), equivalente ao `.cardEmAlerta`/`.alertaParada`
+   de `painel.module.css`. Módulos CSS são isolados por arquivo, então as
+   classes são redefinidas aqui em vez de importadas. */
+
+.container {
+  min-height: 100vh;
+  padding: 16px;
+  background-color: #f5f5f5;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.voltarButton {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e40af;
+  background-color: #dbeafe;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.infoMessage {
+  margin: 32px 0;
+  font-size: 1rem;
+  color: #555555;
+  text-align: center;
+}
+
+.errorContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.errorMessage {
+  margin: 0;
+  padding: 12px;
+  width: 100%;
+  font-size: 0.9rem;
+  color: #b91c1c;
+  background-color: #fee2e2;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.retryButton {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #2563eb;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.lista {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Card destacado de alerta de parada prolongada — borda/sombra em
+   vermelho, equivalente ao `.cardEmAlerta` de `painel.module.css`. Aqui é
+   a unidade de exibição principal (não um adendo a um card de etapa). */
+.cardEmAlerta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 48px;
+  padding: 16px;
+  text-align: left;
+  background-color: #ffffff;
+  border: 2px solid #dc2626;
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+  cursor: pointer;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.opNumero {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sequencia {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background-color: #e5e5e5;
+  color: #333333;
+  white-space: nowrap;
+}
+
+.alertaParada {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #b91c1c;
+  background-color: #fee2e2;
+  border-radius: 6px;
+  width: fit-content;
+}

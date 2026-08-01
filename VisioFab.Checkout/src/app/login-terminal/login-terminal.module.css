@@ -1,0 +1,121 @@
+/* Estilos da tela de login do Terminal — mobile-first, botões grandes,
+   poucos campos (Requirement 14). Sem Tailwind, conforme decisão da
+   tarefa 15.1: CSS Modules simples. */
+
+.container {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: #f5f5f5;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 32px 24px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.subtitle {
+  margin: 0 0 24px;
+  font-size: 0.9rem;
+  color: #555555;
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.input {
+  height: 48px;
+  padding: 0 12px;
+  font-size: 1rem;
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+}
+
+.input:focus {
+  outline: 2px solid #2563eb;
+  border-color: #2563eb;
+}
+
+.submitButton {
+  min-height: 48px;
+  min-width: 48px;
+  margin-top: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #2563eb;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.submitButton:disabled {
+  background-color: #93c5fd;
+  cursor: not-allowed;
+}
+
+.errorMessage {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #b91c1c;
+  background-color: #fee2e2;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.trocarCentroSection {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.trocarCentroToggle {
+  width: 100%;
+  min-height: 48px;
+  min-width: 48px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2563eb;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.successMessage {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #166534;
+  background-color: #dcfce7;
+  border-radius: 8px;
+  text-align: center;
+}

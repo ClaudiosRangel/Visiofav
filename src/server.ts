@@ -174,6 +174,10 @@ import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entre
 import { liberacaoMaterialRoutes } from './modules/liberacao-material/liberacao-material.routes'
 import { apontamentoProducaoRoutes } from './modules/apontamento-producao/apontamento-producao.routes'
 
+// Checkout de Apontamento — app web separado do ERP (Terminal + PIN)
+import { checkoutAuthRoutes } from './modules/checkout/checkout-auth.routes'
+import { checkoutRoutes } from './modules/checkout/checkout.routes'
+
 import { registerTenantContext } from './middleware/tenant-context'
 import { registerSecurityAuditHook } from './middleware/security-audit'
 import multipart from '@fastify/multipart'
@@ -349,6 +353,16 @@ async function bootstrap() {
   await app.register(portalRoutes, { prefix: '/api/portal' })
   await app.register(biRoutes, { prefix: '/api/bi' })
   await app.register(waveRoutes, { prefix: '/api/wave' })
+
+  // Checkout de Apontamento — app web separado do ERP (Terminal + PIN),
+  // escopo de token dedicado (CHECKOUT_OPERADOR), rejeitado pelas demais
+  // rotas do ERP. Os dois módulos compartilham o mesmo prefixo de
+  // primeiro nível porque cada um declara paths internos distintos e sem
+  // colisão (checkout-auth.routes.ts: /auth/sessao*, /operador/identificar;
+  // checkout.routes.ts: /painel, /etapas/..., /apontamentos/...,
+  // /pendencias-material/..., /supervisor/...).
+  await app.register(checkoutAuthRoutes, { prefix: '/api/checkout' })
+  await app.register(checkoutRoutes, { prefix: '/api/checkout' })
 
   // Módulo PCP — Planejamento e Controle da Produção
   await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })
