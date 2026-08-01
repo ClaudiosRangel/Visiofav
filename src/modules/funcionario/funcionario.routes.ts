@@ -78,7 +78,7 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       nome: z.string().min(1),
       matricula: z.string().optional(),
       tipo: z.string().min(1),
-      centroDistribuicaoId: z.string().uuid(),
+      centroDistribuicaoId: z.string().uuid().optional(),
       email: z.string().email().optional(),
       senha: z.string().min(6).optional(),
     }).parse(request.body)
@@ -97,12 +97,20 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       // Link funcionario directly to usuario
       await db.funcionario.update({ where: { id: funcionario.id }, data: { usuarioId: usuario.id } })
       // Link user to empresa (get from centroDistribuicao)
-      const cd = await db.centroDistribuicao.findFirst({ where: { id: data.centroDistribuicaoId }, select: { empresaId: true } })
-      if (cd?.empresaId) {
+      if (data.centroDistribuicaoId) {
+        const cd = await db.centroDistribuicao.findFirst({ where: { id: data.centroDistribuicaoId }, select: { empresaId: true } })
+        if (cd?.empresaId) {
+          await prisma.usuarioEmpresa.upsert({
+            where: { usuarioId_empresaId: { usuarioId: usuario.id, empresaId: cd.empresaId } },
+            update: {},
+            create: { usuarioId: usuario.id, empresaId: cd.empresaId, modulos: 'WMS' },
+          })
+        }
+      } else if (empresaId) {
         await prisma.usuarioEmpresa.upsert({
-          where: { usuarioId_empresaId: { usuarioId: usuario.id, empresaId: cd.empresaId } },
+          where: { usuarioId_empresaId: { usuarioId: usuario.id, empresaId } },
           update: {},
-          create: { usuarioId: usuario.id, empresaId: cd.empresaId, modulos: 'WMS' },
+          create: { usuarioId: usuario.id, empresaId, modulos: '*' },
         })
       }
     }
@@ -124,6 +132,7 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       tipo: z.string().optional(),
       presente: z.boolean().optional(),
       status: z.boolean().optional(),
+      centroDistribuicaoId: z.string().uuid().nullable().optional(),
       email: z.string().email().optional(),
       senha: z.string().min(6).optional(),
     }).parse(request.body)
