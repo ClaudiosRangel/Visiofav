@@ -75,7 +75,12 @@ export async function usuarioRoutes(app: FastifyInstance) {
     }
 
     // Sempre filtra pela empresa selecionada na sessão atual (inclusive para SUPER_ADMIN).
-    where.empresas = { some: { empresaId: user.empresaId } }
+    // Incluir o próprio usuário logado mesmo que não tenha vínculo formal na EmpresaUsuario
+    // (ex: SUPER_ADMIN que criou a empresa mas ainda não se vinculou explicitamente).
+    where.OR = [
+      { empresas: { some: { empresaId: user.empresaId } } },
+      { id: user.id },
+    ]
 
     const [data, total] = await Promise.all([
       prisma.usuario.findMany({
