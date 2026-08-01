@@ -119,3 +119,16 @@
   border-radius: 8px;
   text-align: center;
 }
+
+.voltarButton {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #555555;
+  background-color: transparent;
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+  cursor: pointer;
+}
