@@ -2309,6 +2309,12 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_etapa_autorizacao_sequencia_etapa" ON "etapa_autorizacao_sequencia"("etapa_ordem_producao_id")`)
   console.log('✅ Checkout de Apontamento: tabela etapa_autorizacao_sequencia criada')
 
+  // =========================================================================
+  // FEFO Picking — campo modoAbastecimento em dados_logisticos_picking
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_picking" ADD COLUMN IF NOT EXISTS "modo_abastecimento" VARCHAR(20) NOT NULL DEFAULT 'VERIFICAR_PK'`)
+  console.log('✅ FEFO Picking: campo modo_abastecimento adicionado a dados_logisticos_picking')
+
   console.log('✅ All migrations applied successfully')
 }
 

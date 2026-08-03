@@ -13,7 +13,7 @@ import { converterParaUnidadeMaster, selecionarSkuMaster, type SkuInfo } from '.
 import { validarCubagem, type DimensoesSku, type DimensoesEstrutura, type CapacidadeNivelConfig } from './validador-cubagem.service'
 import { ordenarPorProximidade, type EnderecoCandidate } from './alocador-proximidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade, type DistribuicaoResult } from './motor-distribuicao.service'
-import { calcularAbastecimentoPicking, type DadosPickingConfig, type AlocacaoPicking } from './abastecimento-picking.service'
+import { calcularAbastecimentoPicking, obterMenorValidadePicking, type DadosPickingConfig, type AlocacaoPicking } from './abastecimento-picking.service'
 
 // ── Zod Schemas ────────────────────────────────────────────────────────
 
@@ -182,6 +182,30 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
         saldoAtual = 0
       }
 
+      // Buscar menor validade do picking para comparação FEFO
+      let menorValidadePicking: Date | null = null
+      try {
+        const saldosComValidade = await prisma.saldoEndereco.findMany({
+          where: {
+            enderecoId: dadosLogPicking.enderecoPickingId!,
+            produtoId: body.produtoId,
+            empresaId: user.empresaId,
+            quantidade: { gt: 0 },
+            validade: { not: null },
+          },
+          select: { validade: true },
+        })
+        const validades = saldosComValidade.map((s) => s.validade)
+        menorValidadePicking = obterMenorValidadePicking(validades)
+      } catch (err) {
+        console.error(
+          `[abastecimento-picking] Erro ao buscar validades do picking ${dadosLogPicking.enderecoPickingId}:`,
+          err,
+        )
+        // Graceful degradation: validadePicking = null → FEFO não aplicada
+        menorValidadePicking = null
+      }
+
       dadosPickingConfigs.push({
         enderecoPickingId: enderecoPick.id,
         enderecoCompleto: enderecoPick.enderecoCompleto ?? '',
@@ -190,6 +214,9 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
         saldoAtual,
         enderecoAtivo: enderecoPick.status,
         sequencia: dadosLogPicking.sequencia,
+        // ── Campos FEFO ──
+        validadePicking: menorValidadePicking,
+        modoAbastecimento: (dadosLogPicking.modoAbastecimento === 'BYPASS_PULMAO' ? 'BYPASS_PULMAO' : 'VERIFICAR_PK') as 'VERIFICAR_PK' | 'BYPASS_PULMAO',
       })
     }
 
@@ -206,6 +233,7 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
       skuMaster,
       skuMasterRaw: skusRaw.find((s) => s.id === skuMaster.id)!,
       dadosPickingConfigs,
+      validadeEntrada: body.validade ? new Date(body.validade) : null,
     })
 
     return resultado
@@ -444,13 +472,14 @@ interface CadeiaPrioridadeInput {
   skuMaster: SkuInfo
   skuMasterRaw: { largura: any; altura: any; comprimento: any; volume: any; pesoBruto: any }
   dadosPickingConfigs: DadosPickingConfig[]
+  validadeEntrada: Date | null
 }
 
 async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<DistribuicaoResult> {
   const {
     produtoId, empresaId, quantidadeMaster, dadosArmazenagem,
     predioOrigem, ruaOrigem, nivelMin, nivelMax, skuMaster, skuMasterRaw,
-    dadosPickingConfigs,
+    dadosPickingConfigs, validadeEntrada,
   } = input
 
   // ── Abastecimento do Picking (Task 4.3) ──────────────────────────────
@@ -466,6 +495,7 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
       const resultadoPicking = calcularAbastecimentoPicking({
         quantidadeRestante: quantidadeMaster,
         dadosPicking: dadosPickingConfigs,
+        validadeEntrada,
       })
 
       if (!resultadoPicking.sucesso) {

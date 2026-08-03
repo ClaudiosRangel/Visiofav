@@ -14,11 +14,16 @@ export interface DadosPickingConfig {
   saldoAtual: number // saldo físico atual no picking
   enderecoAtivo: boolean // status do endereço
   sequencia: number // ordem de processamento
+  // ── Campos FEFO ──
+  validadePicking: Date | null // menor validade encontrada no picking para este endereço/produto
+  modoAbastecimento: 'VERIFICAR_PK' | 'BYPASS_PULMAO' // modo de operação do produto
 }
 
 export interface AbastecimentoPickingInput {
   quantidadeRestante: number // quantidade total a endereçar (em unidade master)
   dadosPicking: DadosPickingConfig[] // pode ser vazio (sem picking configurado)
+  // ── Novo campo FEFO ──
+  validadeEntrada: Date | null // validade da mercadoria sendo endereçada
 }
 
 // ── Tipos de Saída ────────────────────────────────────────────────────
@@ -50,6 +55,21 @@ export type AbastecimentoPickingOutput =
   | { sucesso: false; erro: AbastecimentoPickingError }
 
 // ── Funções de Cálculo ────────────────────────────────────────────────
+
+/**
+ * Dado um array de validades (possivelmente com nulls), retorna a menor data
+ * (mais próxima do vencimento). Retorna null se todas forem null ou o array vazio.
+ */
+export function obterMenorValidadePicking(validades: (Date | null)[]): Date | null {
+  let menor: Date | null = null
+  for (const v of validades) {
+    if (v === null) continue
+    if (menor === null || v < menor) {
+      menor = v
+    }
+  }
+  return menor
+}
 
 /**
  * Calcula a quantidade de abastecimento para um único endereço de picking.
@@ -134,6 +154,21 @@ export function calcularAbastecimentoPicking(
     // Pular se não há mais quantidade para alocar
     if (quantidadeRestante <= 0) break
 
+    // ── Check de bypass (BYPASS_PULMAO) ─────────────────────────────────
+    if (config.modoAbastecimento === 'BYPASS_PULMAO') {
+      avisos.push(
+        `Endereço ${config.enderecoCompleto} ignorado — modo BYPASS_PULMAO ativo`,
+      )
+      continue
+    }
+
+    // Tratar modos inválidos como VERIFICAR_PK (default seguro)
+    if (config.modoAbastecimento !== 'VERIFICAR_PK') {
+      avisos.push(
+        `Modo de abastecimento inválido '${config.modoAbastecimento}' para endereço ${config.enderecoCompleto}, tratando como VERIFICAR_PK`,
+      )
+    }
+
     // Pular se endereço inativo
     if (!config.enderecoAtivo) {
       avisos.push(
@@ -158,6 +193,20 @@ export function calcularAbastecimentoPicking(
     ) {
       // Saldo acima do ponto de reposição — não abastecer
       continue
+    }
+
+    // ── Check FEFO ──────────────────────────────────────────────────────
+    // Se validadeEntrada é null → skip FEFO (comportamento existente, só capacidade)
+    // Se validadePicking é null → skip FEFO (picking vazio, só capacidade)
+    // Se validadeEntrada <= validadePicking → permitir (proceed to capacity calc)
+    // Se validadeEntrada > validadePicking → bloquear, registrar aviso, continue
+    if (input.validadeEntrada !== null && config.validadePicking !== null) {
+      if (input.validadeEntrada > config.validadePicking) {
+        avisos.push(
+          `Validade da entrada (${input.validadeEntrada.toLocaleDateString('pt-BR')}) é posterior à validade do picking (${config.validadePicking.toLocaleDateString('pt-BR')}) para endereço ${config.enderecoCompleto} — mercadoria direcionada ao pulmão`,
+        )
+        continue
+      }
     }
 
     // pontoReposicao nulo, zero ou negativo → tratar como inativo (sempre abastecer quando há espaço)

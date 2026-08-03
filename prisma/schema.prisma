@@ -1902,6 +1902,7 @@ model DadosLogisticosPicking {
   pontoReposicao        Decimal  @default(0) @map("ponto_reposicao") @db.Decimal(12, 4)
   pontoReposicaoPercent Decimal  @default(0) @map("ponto_reposicao_percent") @db.Decimal(5, 2)
   pontoReposicaoDias    Int      @default(0) @map("ponto_reposicao_dias")
+  modoAbastecimento     String   @default("VERIFICAR_PK") @map("modo_abastecimento") @db.VarChar(20)
   criadoEm              DateTime @default(now()) @map("criado_em")
   atualizadoEm          DateTime @updatedAt @map("atualizado_em")
 
