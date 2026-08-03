@@ -801,8 +801,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const match = desc.match(/(\d{2,3})\s*g(?:\/m[²2])?/i)
     if (match) return `${match[1]}g/m²`
     // Padrão "Bobina 222" ou "Enzo 222" (número de 3 dígitos no contexto de papel)
-    const matchBobina = desc.match(/(?:bobina|enzo|stora|suzano|klabin)\s+.*?(\d{3})\b/i)
+    const matchBobina = desc.match(/(?:bobina|enzo|stora|suzano|klabin|accurate|billerud|silverpack|freeze|board)\s+.*?(\d{3})\b/i)
     if (matchBobina) return `${matchBobina[1]}g/m²`
+    // Padrão genérico: nome termina com número de 3 dígitos (ex: "Accurate Freeze 290", "Micro Pardo Formato 245")
+    const matchFinal = desc.match(/\s(\d{3})$/)
+    if (matchFinal) return `${matchFinal[1]}g/m²`
     return null
   }
 

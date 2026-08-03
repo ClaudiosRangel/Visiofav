@@ -359,7 +359,7 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
       else if (/verniz|primer/i.test(nomeParaTipo)) tipo = 'VERNIZ'
       else if (/escala|pantone|tinta|cmyk/i.test(nomeParaTipo)) tipo = 'TINTA'
       else if (/faca|clich[eê]|destacador/i.test(nomeParaTipo)) tipo = 'FACA'
-      else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado/i.test(nomeParaTipo)) tipo = 'PAPEL'
+      else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado|accurate|billerud|silverpack|triplex|duplex|cart[aã]o|reciclato|kraft|couch[eê]|supremo|avanta|ensocoat|kromopak|ningbo/i.test(nomeParaTipo)) tipo = 'PAPEL'
       else if (/^CD$/i.test(nomeParaTipo)) tipo = 'FACA'
 
       if (tipo === 'FACA') unid = 'UN'
@@ -428,7 +428,7 @@ function extrairMateriais(texto: string, avisos: string[]): MaterialOp[] {
     else if (/verniz|primer/i.test(nome)) tipo = 'VERNIZ'
     else if (/escala|pantone|tinta|cmyk/i.test(nome)) tipo = 'TINTA'
     else if (/faca|clich[eê]|destacador/i.test(nome)) tipo = 'FACA'
-    else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado/i.test(nome)) tipo = 'PAPEL'
+    else if (/bobina|stora|suzano|klabin|papel|micro\s*pardo|micro\s*maculado|accurate|billerud|silverpack|triplex|duplex|cart[aã]o|reciclato|kraft|couch[eê]|supremo|avanta|ensocoat|kromopak|ningbo/i.test(nome)) tipo = 'PAPEL'
 
     // Corrige unidade para FACA (sempre UN)
     if (tipo === 'FACA') unid = 'UN'
