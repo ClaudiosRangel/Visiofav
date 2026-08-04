@@ -945,9 +945,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     }
 
+    // IDs das OPs com material encomendado — essas etapas devem aparecer
+    // SOMENTE na seção "Aguardando Cartão", não duplicadas nos centros normais.
+    const opsComMaterialEncomendado = new Set(
+      etapasAtivas.filter(e => temMaterialEncomendado(e)).map(e => e.ordemProducaoId)
+    )
+
     // Agrupa por centro
     const painelPorCentro = centros.map(centro => {
-      const etapasDoCentro = etapasAtivas.filter(e => e.centroProducaoId === centro.id)
+      const etapasDoCentro = etapasAtivas.filter(e =>
+        e.centroProducaoId === centro.id && !opsComMaterialEncomendado.has(e.ordemProducaoId)
+      )
 
       const emAndamento = etapasDoCentro.filter(e => e.status === 'EM_ANDAMENTO')
       const pausadas = etapasDoCentro.filter(e => e.status === 'PAUSADA')
