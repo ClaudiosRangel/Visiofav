@@ -794,6 +794,63 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/pcp/logs — Logs de auditoria do módulo PCP (por OP ou geral)
+  // =========================================================================
+  app.get('/logs', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const query = z.object({
+      opId: z.string().uuid().optional(),
+      page: z.coerce.number().min(1).default(1),
+      limit: z.coerce.number().min(1).max(100).default(50),
+    }).parse(request.query)
+
+    const where: any = {
+      ordemProducao: { empresaId: user.empresaId },
+    }
+    if (query.opId) {
+      where.ordemProducaoId = query.opId
+    }
+
+    const skip = (query.page - 1) * query.limit
+
+    const [logs, total] = await Promise.all([
+      prisma.logOrdemProducao.findMany({
+        where,
+        include: {
+          ordemProducao: { select: { numero: true, referenciaExterna: true } },
+        },
+        orderBy: { criadoEm: 'desc' },
+        skip,
+        take: query.limit,
+      }),
+      prisma.logOrdemProducao.count({ where }),
+    ])
+
+    // Buscar nomes de usuários
+    const usuarioIds = [...new Set(logs.map(l => l.usuarioId).filter(Boolean))]
+    const usuarios = usuarioIds.length > 0
+      ? await prisma.usuario.findMany({ where: { id: { in: usuarioIds } }, select: { id: true, nome: true } })
+      : []
+    const usuarioMap = new Map(usuarios.map(u => [u.id, u.nome]))
+
+    return {
+      data: logs.map(l => ({
+        id: l.id,
+        opNumero: l.ordemProducao.referenciaExterna || String(l.ordemProducao.numero),
+        statusAnterior: l.statusAnterior,
+        statusNovo: l.statusNovo,
+        usuario: usuarioMap.get(l.usuarioId) || 'Sistema',
+        observacao: l.observacao,
+        criadoEm: l.criadoEm,
+      })),
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.ceil(total / query.limit),
+    }
+  })
+
+  // =========================================================================
   // GET /api/pcp/programacao/concluidas — Lista etapas CONCLUÍDAS por processo
   // (para visualização no painel de programação, com opção de retornar)
   // =========================================================================
