@@ -74,7 +74,7 @@ export async function checkoutAuthRoutes(app: FastifyInstance) {
 
     if (!senhaValida) return reply.status(401).send({ message: 'Credenciais inválidas' })
 
-    if (!['ADMIN', 'SUPERVISOR'].includes(usuario.perfil)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR'].includes(usuario.perfil)) {
       return reply.status(403).send({ message: 'Perfil não autorizado para autenticar um Terminal' })
     }
 

@@ -35,7 +35,7 @@ export class SessaoTerminalError extends Error {
   }
 }
 
-const PERFIS_AUTORIZADOS = ['ADMIN', 'SUPERVISOR']
+const PERFIS_AUTORIZADOS = ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR']
 const ERRO_CREDENCIAIS_INVALIDAS = 'Credenciais inválidas'
 const ERRO_PERFIL_NAO_AUTORIZADO = 'Perfil não autorizado para autenticar um Terminal'
 const DOZE_HORAS_MS = 12 * 60 * 60 * 1000

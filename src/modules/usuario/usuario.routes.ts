@@ -170,10 +170,21 @@ export async function usuarioRoutes(app: FastifyInstance) {
       senha: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
       perfil: z.enum(['ADMIN', 'SUPERVISOR', 'OPERADOR']).default('OPERADOR'),
       funcionarioId: z.string().uuid().optional(),
+      senhaPrimeiroAcesso: z.boolean().optional().default(false),
+      cadastrarPin: z.boolean().optional().default(false),
+      pin: z.string().regex(/^\d{6}$/, 'PIN deve ter exatamente 6 dígitos numéricos').optional(),
     })
 
     const data = bodySchema.parse(request.body)
     const user = request.user as { id: string; empresaId?: string }
+
+    // Se cadastrarPin=true, exige o pin no body e também um funcionarioId
+    if (data.cadastrarPin && !data.pin) {
+      return reply.status(400).send({ message: 'PIN é obrigatório quando "Cadastrar PIN" está habilitado' })
+    }
+    if (data.cadastrarPin && !data.funcionarioId) {
+      return reply.status(400).send({ message: 'Vincular um funcionário é obrigatório para cadastrar o PIN' })
+    }
 
     // Check if email already exists
     const existing = await prisma.usuario.findUnique({ where: { email: data.email } })
@@ -200,6 +211,9 @@ export async function usuarioRoutes(app: FastifyInstance) {
         email: data.email,
         senha: senhaHash,
         perfil: data.perfil,
+        // Se senhaPrimeiroAcesso=true, senhaAlterada fica false (forçará troca no próximo login)
+        // Se senhaPrimeiroAcesso=false, senhaAlterada fica true (senha definitiva)
+        senhaAlterada: !data.senhaPrimeiroAcesso,
       },
       select: { id: true, nome: true, email: true, perfil: true, status: true },
     })
@@ -221,6 +235,16 @@ export async function usuarioRoutes(app: FastifyInstance) {
         where: { id: data.funcionarioId },
         data: { usuarioId: usuario.id },
       })
+
+      // Cadastrar PIN se solicitado
+      if (data.cadastrarPin && data.pin) {
+        const { criarHashPin } = await import('../checkout/pin-operador.service')
+        const pinHash = await criarHashPin(data.pin)
+        await prisma.funcionario.update({
+          where: { id: data.funcionarioId },
+          data: { pinHash, pinAtivo: true },
+        })
+      }
     }
 
     return reply.status(201).send(usuario)
@@ -370,6 +394,41 @@ export async function usuarioRoutes(app: FastifyInstance) {
     }
 
     return { success: true }
+  })
+
+  // PUT /usuarios/:id/resetar-senha — reset to default password and force change on next login
+  app.put('/:id/resetar-senha', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const bodySchema = z.object({
+      novaSenha: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres').optional(),
+    })
+
+    const data = bodySchema.parse(request.body ?? {})
+    const requester = request.user as { empresaId?: string }
+
+    const usuario = await prisma.usuario.findUnique({ where: { id } })
+    if (!usuario) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    if (!(await pertenceAEmpresa(id, requester.empresaId))) {
+      return reply.status(404).send({ message: 'Usuário não encontrado' })
+    }
+
+    // Senha padrão: o que o admin passar em novaSenha, ou "123456" se não informar
+    const senhaPadrao = data.novaSenha || '123456'
+    const senhaHash = bcrypt.hashSync(senhaPadrao, 10)
+
+    await prisma.usuario.update({
+      where: { id },
+      data: {
+        senha: senhaHash,
+        senhaAlterada: false, // Força troca no próximo login
+      },
+    })
+
+    return reply.status(200).send({ message: 'Senha resetada. O usuário deverá alterar a senha no próximo acesso.' })
   })
 
   // DELETE /usuarios/:id — soft delete (set status=false)
