@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import bcrypt from 'bcryptjs'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
@@ -790,6 +791,152 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     ])
 
     return { message: `OP avulsa ${op.referenciaExterna} excluída` }
+  })
+
+  // =========================================================================
+  // GET /api/pcp/programacao/concluidas — Lista etapas CONCLUÍDAS por processo
+  // (para visualização no painel de programação, com opção de retornar)
+  // =========================================================================
+  app.get('/programacao/concluidas', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const query = z.object({
+      tipoProcessoId: z.string().uuid().optional(),
+      limite: z.coerce.number().min(1).max(200).default(50),
+    }).parse(request.query)
+
+    const where: any = {
+      status: 'CONCLUIDA',
+      ordemProducao: { empresaId: user.empresaId },
+    }
+
+    // Filtrar por tipo de processo (via centro de produção)
+    if (query.tipoProcessoId) {
+      where.centroProducao = { tipoProcessoId: query.tipoProcessoId }
+    }
+
+    const etapas = await prisma.etapaOrdemProducao.findMany({
+      where,
+      include: {
+        ordemProducao: {
+          select: {
+            id: true, numero: true, referenciaExterna: true, quantidade: true,
+            unidadeMedida: true, prioridade: true, observacoes: true,
+            clienteId: true, produtoId: true, dataEntregaPrevista: true,
+          },
+        },
+        centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true } },
+      },
+      orderBy: { dataFimReal: 'desc' },
+      take: query.limite,
+    })
+
+    // Enriquecer com nomes de cliente/produto
+    const clienteIds = [...new Set(etapas.map(e => e.ordemProducao.clienteId).filter(Boolean))] as string[]
+    const produtoIds = [...new Set(etapas.map(e => e.ordemProducao.produtoId).filter(Boolean))] as string[]
+    const clientes = clienteIds.length > 0 ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } }) : []
+    const produtos = produtoIds.length > 0 ? await prisma.produto.findMany({ where: { id: { in: produtoIds } }, select: { id: true, codigo: true, nome: true } }) : []
+    const clienteMap = new Map(clientes.map(c => [c.id, c.nomeFantasia || c.razaoSocial]))
+    const produtoMap = new Map(produtos.map(p => [p.id, `${p.codigo} - ${p.nome}`]))
+
+    function extrairClienteObs2(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Cliente\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+    function extrairProdutoObs2(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Produto\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+
+    return etapas.map(e => ({
+      id: e.id,
+      opId: e.ordemProducao.id,
+      opNumero: e.ordemProducao.referenciaExterna || String(e.ordemProducao.numero),
+      cliente: extrairClienteObs2(e.ordemProducao.observacoes)
+        || (e.ordemProducao.clienteId ? clienteMap.get(e.ordemProducao.clienteId) : null)
+        || null,
+      produto: extrairProdutoObs2(e.ordemProducao.observacoes)
+        || (e.ordemProducao.produtoId ? produtoMap.get(e.ordemProducao.produtoId) : null)
+        || null,
+      descricao: e.descricao,
+      sequencia: e.sequencia,
+      quantidade: Number(e.ordemProducao.quantidade),
+      quantidadeProduzida: Number(e.quantidadeProduzida),
+      centroDescricao: e.centroProducao?.descricao || e.centroProducao?.codigo || '',
+      dataFimReal: e.dataFimReal,
+    }))
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/retornar — Retorna uma etapa CONCLUIDA para
+  // a fila (status PENDENTE), exigindo autenticação de admin/supervisor
+  // =========================================================================
+  app.patch('/etapas/:id/retornar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil: string }
+    const { id } = idSchema.parse(request.params)
+
+    const body = z.object({
+      emailAdmin: z.string().email(),
+      senhaAdmin: z.string().min(1),
+    }).parse(request.body)
+
+    // Verificar credenciais do admin/supervisor
+    const admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
+    if (!admin) {
+      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+    }
+    const senhaValida = bcrypt.compareSync(body.senhaAdmin, admin.senha)
+    if (!senhaValida) {
+      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+    }
+    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR'].includes(admin.perfil)) {
+      return reply.status(403).send({ message: 'Perfil não autorizado para esta operação' })
+    }
+
+    // Verificar que a etapa pertence à empresa e está CONCLUIDA
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId }, status: 'CONCLUIDA' },
+      include: { ordemProducao: { select: { id: true, numero: true, status: true, empresaId: true } } },
+    })
+
+    if (!etapa) {
+      return reply.status(404).send({ message: 'Etapa concluída não encontrada' })
+    }
+
+    // Retornar a etapa para PENDENTE
+    await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: {
+        status: 'PENDENTE',
+        dataFimReal: null,
+        // Mover para o final da fila (posição alta)
+        posicaoFila: 9999,
+      },
+    })
+
+    // Se a OP estava CONCLUIDA (todas as etapas tinham sido concluídas),
+    // retorná-la para EM_PRODUCAO
+    if (etapa.ordemProducao.status === 'CONCLUIDA') {
+      await prisma.ordemProducao.update({
+        where: { id: etapa.ordemProducao.id },
+        data: { status: 'EM_PRODUCAO', dataFimReal: null },
+      })
+    }
+
+    // Log de auditoria
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: etapa.ordemProducao.id,
+        empresaId: etapa.ordemProducao.empresaId,
+        usuarioId: admin.id,
+        statusAnterior: 'CONCLUIDA',
+        statusNovo: 'PENDENTE',
+        observacao: `Etapa retornada à fila por ${admin.nome} (${admin.email})`,
+      },
+    })
+
+    return { message: 'Etapa retornada à fila com sucesso' }
   })
 
   // =========================================================================
