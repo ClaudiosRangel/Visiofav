@@ -928,7 +928,6 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     await prisma.logOrdemProducao.create({
       data: {
         ordemProducaoId: etapa.ordemProducao.id,
-        empresaId: etapa.ordemProducao.empresaId,
         usuarioId: admin.id,
         statusAnterior: 'CONCLUIDA',
         statusNovo: 'PENDENTE',
