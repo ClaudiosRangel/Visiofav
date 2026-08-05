@@ -934,12 +934,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const { id } = idSchema.parse(request.params)
 
     const body = z.object({
-      emailAdmin: z.string().email(),
+      emailAdmin: z.string().min(1),
       senhaAdmin: z.string().min(1),
     }).parse(request.body)
 
-    // Verificar credenciais do admin/supervisor
-    const admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
+    // Verificar credenciais do admin/supervisor — busca por email exato ou por email contendo o texto
+    let admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
+    if (!admin) {
+      // Tentar busca parcial (ex: "admin" → "admin@visiofab.com")
+      admin = await prisma.usuario.findFirst({
+        where: { email: { contains: body.emailAdmin, mode: 'insensitive' } },
+      })
+    }
     if (!admin) {
       return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
     }
