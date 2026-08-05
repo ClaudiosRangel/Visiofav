@@ -1003,6 +1003,72 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // PATCH /api/ordens-producao/:id/cancelar-forcado — Cancela OP em qualquer
+  // status (incluindo EM_PRODUCAO e CONCLUIDA), exigindo senha de admin
+  // =========================================================================
+  app.patch('/:id/cancelar-forcado', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      motivoCancelamento: z.string().min(10, 'Motivo deve ter pelo menos 10 caracteres'),
+      emailAdmin: z.string().min(1),
+      senhaAdmin: z.string().min(1),
+    }).parse(request.body)
+
+    // Verificar credenciais do admin
+    const bcrypt = await import('bcryptjs')
+    let admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
+    if (!admin) {
+      admin = await prisma.usuario.findFirst({
+        where: { email: { contains: body.emailAdmin, mode: 'insensitive' } },
+      })
+    }
+    if (!admin) {
+      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+    }
+    const senhaValida = bcrypt.default.compareSync(body.senhaAdmin, admin.senha)
+    if (!senhaValida) {
+      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+    }
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(admin.perfil)) {
+      return reply.status(403).send({ message: 'Apenas ADMIN pode cancelar OPs em produção/concluídas' })
+    }
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, numero: true, status: true, empresaId: true },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    if (op.status === 'CANCELADA') {
+      return reply.status(400).send({ message: 'OP já está cancelada' })
+    }
+
+    const statusAnterior = op.status
+
+    await prisma.ordemProducao.update({
+      where: { id },
+      data: { status: 'CANCELADA', motivoCancelamento: body.motivoCancelamento },
+    })
+
+    // Log de auditoria
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: id,
+        usuarioId: admin.id,
+        statusAnterior,
+        statusNovo: 'CANCELADA',
+        observacao: `Cancelamento forçado por ${admin.nome} (${admin.email}). Motivo: ${body.motivoCancelamento}`,
+      },
+    })
+
+    return { message: `OP #${op.numero} cancelada com sucesso` }
+  })
+
+  // =========================================================================
   // DELETE /api/ordens-producao/:id — Exclui OP que não tem apontamento/não iniciada
   // =========================================================================
   app.delete('/:id', async (request, reply) => {
