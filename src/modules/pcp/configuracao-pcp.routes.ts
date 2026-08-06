@@ -219,4 +219,49 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
     })
     return { message: 'Permissões atualizadas', permissoes: novas }
   })
+
+  // =========================================================================
+  // POST /api/pcp/programacao/pintar-matriz — Toggle de aprovação de matriz
+  // (pré-impressão) — marca/desmarca [MATRIZ_OK] no observacaoOperador
+  // =========================================================================
+  app.post('/programacao/pintar-matriz', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil: string }
+    const { etapaId } = z.object({ etapaId: z.string().uuid() }).parse(request.body)
+
+    // Verificar permissão de pré-impressão (ler config salva do usuário)
+    const paramPerm = await prisma.parametro.findFirst({
+      where: { empresaId: user.empresaId, chave: `pcp.permissoes.${user.id}` },
+    })
+    let isPreImpressao = false
+    if (paramPerm?.valor) { try { isPreImpressao = JSON.parse(paramPerm.valor).isPreImpressao === true } catch {} }
+    if (!isPreImpressao && !['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Apenas funcionários de pré-impressão podem usar esta ação' })
+    }
+
+    // Verificar que a etapa pertence à empresa
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id: etapaId, ordemProducao: { empresaId: user.empresaId } },
+      select: { id: true, observacaoOperador: true },
+    })
+
+    if (!etapa) {
+      return reply.status(404).send({ message: 'Etapa não encontrada' })
+    }
+
+    // Toggle: se já tem a tag [MATRIZ_OK], remove; senão adiciona
+    const TAG = '[MATRIZ_OK]'
+    const obsAtual = etapa.observacaoOperador || ''
+    const jaTemTag = obsAtual.includes(TAG)
+
+    await prisma.etapaOrdemProducao.update({
+      where: { id: etapaId },
+      data: {
+        observacaoOperador: jaTemTag
+          ? obsAtual.replace(TAG, '').trim()
+          : (obsAtual ? `${obsAtual} ${TAG}` : TAG),
+      },
+    })
+
+    return { matrizOk: !jaTemTag }
+  })
 }
