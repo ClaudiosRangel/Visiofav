@@ -688,7 +688,8 @@ function extrairObservacoes(texto: string): ObservacoesOp {
 
   // Matriz: extrair do texto da seção de Acabamentos
   // Padrões: "/ Matriz: M2508", "/ Matriz 1376B", "/ Matriz 2529B - COM BRAILLE", "/ Matriz: M1376B - FACA NOVA"
-  const matchMatriz = texto.match(/Matriz:?\s*(M?\d[\dA-Z]*(?:\s*[-–]\s*[A-Za-z\s]+)?)/i)
+  // "/ Matriz - 2367B" (com traço separador antes do código)
+  const matchMatriz = texto.match(/Matriz[\s:]*[-–]?\s*(M?\d[\dA-Z]*(?:\s*[-–]\s*[A-Za-z\s]+)?)/i)
   if (matchMatriz) {
     obs.matriz = matchMatriz[1].trim().toUpperCase()
   } else {
