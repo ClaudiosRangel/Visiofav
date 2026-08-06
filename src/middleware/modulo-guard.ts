@@ -18,7 +18,10 @@ export type Modulo = 'COMPRAS' | 'VENDAS' | 'FINANCEIRO' | 'WMS' | 'CTE' | 'PCP'
  */
 export function moduloGuard(modulo: Modulo) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const user = request.user as { id: string; empresaId?: string }
+    const user = request.user as { id: string; empresaId?: string; perfil?: string }
+
+    // SUPER_ADMIN bypasses all module checks (same pattern as perfilGuard)
+    if (user.perfil === 'SUPER_ADMIN') return
 
     const usuarioId = user.id
     const empresaId = user.empresaId
