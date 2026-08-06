@@ -146,15 +146,19 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
   // =========================================================================
   app.get('/permissoes/minha', async (request) => {
     const user = request.user as { id: string; empresaId: string; perfil: string }
-    if (['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
-      return { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false, isAdmin: true }
-    }
+    // Buscar permissões salvas do usuário (mesmo para admin, pois pode ter isPreImpressao)
     const param = await prisma.parametro.findFirst({
       where: { empresaId: user.empresaId, chave: `pcp.permissoes.${user.id}` },
     })
+    let salvas: any = {}
+    if (param?.valor) { try { salvas = JSON.parse(param.valor) } catch {} }
+
+    if (['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
+      return { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: salvas.isPreImpressao || false, isAdmin: true }
+    }
     const defaults = { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
     if (!param || !param.valor) return { ...defaults, isAdmin: false }
-    try { return { ...defaults, ...JSON.parse(param.valor), isAdmin: false } } catch { return { ...defaults, isAdmin: false } }
+    try { return { ...defaults, ...salvas, isAdmin: false } } catch { return { ...defaults, isAdmin: false } }
   })
 
   // =========================================================================
