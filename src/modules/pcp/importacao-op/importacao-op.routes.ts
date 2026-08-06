@@ -197,7 +197,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           where: { id: existe.id },
           data: {
             quantidade: body.quantidade || dados.cabecalho.quantidade || Number(existe.quantidade),
-            dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (dados.cabecalho.programacaoEntrega?.[0]?.data ? parseDateBR(dados.cabecalho.programacaoEntrega[0].data) : existe.dataEntregaPrevista),
+            dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getUltimaDataEntrega(dados.cabecalho.programacaoEntrega) || existe.dataEntregaPrevista),
             clienteId: body.clienteId || existe.clienteId,
             prioridade: body.prioridade || existe.prioridade,
             observacoes: novasObs,
@@ -233,8 +233,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           status: 'PLANEJADA',
           prioridade: body.prioridade,
           dataEmissao: new Date(),
-          dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (dados.cabecalho.programacaoEntrega?.[0]?.data ? parseDateBR(dados.cabecalho.programacaoEntrega[0].data) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
-          dataEntregaOriginal: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (dados.cabecalho.programacaoEntrega?.[0]?.data ? parseDateBR(dados.cabecalho.programacaoEntrega[0].data) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getUltimaDataEntrega(dados.cabecalho.programacaoEntrega) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          dataEntregaOriginal: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getUltimaDataEntrega(dados.cabecalho.programacaoEntrega) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
           clienteId: body.clienteId || undefined,
           lote: undefined,
           observacoes: body.observacoes || obsConsolidadas || undefined,
@@ -743,4 +743,19 @@ function parseDateBR(dateStr: string): Date | undefined {
   if (year < 100) year += 2000 // 26 → 2026
   const date = new Date(year, month, day)
   return isNaN(date.getTime()) ? undefined : date
+}
+
+/**
+ * Pega a data MAIS RECENTE (última entrega) da programação de entrega.
+ * A data de entrega prevista da OP deve ser a mais distante — quando
+ * toda a produção precisa estar concluída.
+ */
+function getUltimaDataEntrega(programacaoEntrega?: Array<{ data: string }>): Date | undefined {
+  if (!programacaoEntrega || programacaoEntrega.length === 0) return undefined
+  let maisRecente: Date | undefined
+  for (const prog of programacaoEntrega) {
+    const d = parseDateBR(prog.data)
+    if (d && (!maisRecente || d > maisRecente)) maisRecente = d
+  }
+  return maisRecente
 }

@@ -118,27 +118,29 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Apenas administradores' })
     }
 
-    // Buscar todos os usuários da empresa (mesma lógica de usuario.routes.ts)
-    const vinculos = await prisma.usuarioEmpresa.findMany({
-      where: { empresaId: user.empresaId },
-      include: { usuario: { select: { id: true, nome: true, email: true, perfil: true, status: true } } },
-    })
+    let usuarios: Array<{ id: string; nome: string; email: string; perfil: string; status: boolean }> = []
 
-    // Fallback: se não encontrou via UsuarioEmpresa, busca todos os usuarios
-    // ativos do sistema (caso a empresa não use o vínculo formal)
-    let usuarios = vinculos.filter(v => v.usuario.status).map(v => v.usuario)
+    // Tentar buscar via UsuarioEmpresa se empresaId existe
+    if (user.empresaId) {
+      const vinculos = await prisma.usuarioEmpresa.findMany({
+        where: { empresaId: user.empresaId },
+        include: { usuario: { select: { id: true, nome: true, email: true, perfil: true, status: true } } },
+      })
+      usuarios = vinculos.filter(v => v.usuario.status).map(v => v.usuario)
+    }
 
+    // Fallback: buscar todos os usuários ativos
     if (usuarios.length === 0) {
-      const todosDaBase = await prisma.usuario.findMany({
+      usuarios = await prisma.usuario.findMany({
         where: { status: true },
         select: { id: true, nome: true, email: true, perfil: true, status: true },
       })
-      usuarios = todosDaBase
     }
 
+    const empresaId = user.empresaId || 'default'
     const resultado = await Promise.all(
       usuarios.map(async (u) => {
-          const permissoes = await getPermissoes(user.empresaId, u.id)
+          const permissoes = await getPermissoes(empresaId, u.id)
           return {
             usuarioId: u.id,
             nome: u.nome,
