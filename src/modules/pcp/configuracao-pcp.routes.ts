@@ -165,18 +165,24 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
     if (!['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
       return reply.status(403).send({ message: 'Apenas administradores' })
     }
-    // Buscar todos os usuários ativos
-    const usuarios = await prisma.usuario.findMany({
-      where: { status: true },
-      select: { id: true, nome: true, email: true, perfil: true },
-    })
+    // Buscar usuários vinculados à empresa atual
     const empresaId = user.empresaId || 'default'
+    const vinculos = await prisma.usuarioEmpresa.findMany({
+      where: { empresaId: user.empresaId },
+      include: { usuario: { select: { id: true, nome: true, email: true, perfil: true, status: true } } },
+    })
+    let usuarios = vinculos.filter(v => v.usuario.status).map(v => v.usuario)
+    // Se não encontrou vínculos (empresa sem UsuarioEmpresa), busca por usuario logado
+    if (usuarios.length === 0) {
+      const meuUsuario = await prisma.usuario.findUnique({ where: { id: user.id }, select: { id: true, nome: true, email: true, perfil: true } })
+      if (meuUsuario) usuarios = [{ ...meuUsuario, status: true }]
+    }
     const resultado = await Promise.all(
       usuarios.map(async (u) => {
         const param = await prisma.parametro.findFirst({
           where: { empresaId, chave: `pcp.permissoes.${u.id}` },
         })
-        const defaults = { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
+        const defaults = { tiposProcessoVisiveis: [] as string[], permissoesPorProcesso: {} as Record<string, any>, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
         let permissoes = defaults
         if (param?.valor) { try { permissoes = { ...defaults, ...JSON.parse(param.valor) } } catch {} }
         return { usuarioId: u.id, nome: u.nome, email: u.email, perfil: u.perfil, permissoes }
