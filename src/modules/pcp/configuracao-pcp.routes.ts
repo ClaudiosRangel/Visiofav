@@ -140,4 +140,73 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
 
     return { message: 'Configuração atualizada', atualizados }
   })
+
+  // =========================================================================
+  // GET /api/pcp/permissoes/minha — Retorna permissões do usuário logado
+  // =========================================================================
+  app.get('/permissoes/minha', async (request) => {
+    const user = request.user as { id: string; empresaId: string; perfil: string }
+    if (['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
+      return { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false, isAdmin: true }
+    }
+    const param = await prisma.parametro.findFirst({
+      where: { empresaId: user.empresaId, chave: `pcp.permissoes.${user.id}` },
+    })
+    const defaults = { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
+    if (!param || !param.valor) return { ...defaults, isAdmin: false }
+    try { return { ...defaults, ...JSON.parse(param.valor), isAdmin: false } } catch { return { ...defaults, isAdmin: false } }
+  })
+
+  // =========================================================================
+  // GET /api/pcp/permissoes — Lista permissões de todos os usuários (ADMIN)
+  // =========================================================================
+  app.get('/permissoes', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil: string }
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Apenas administradores' })
+    }
+    // Buscar todos os usuários ativos
+    const usuarios = await prisma.usuario.findMany({
+      where: { status: true },
+      select: { id: true, nome: true, email: true, perfil: true },
+    })
+    const empresaId = user.empresaId || 'default'
+    const resultado = await Promise.all(
+      usuarios.map(async (u) => {
+        const param = await prisma.parametro.findFirst({
+          where: { empresaId, chave: `pcp.permissoes.${u.id}` },
+        })
+        const defaults = { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
+        let permissoes = defaults
+        if (param?.valor) { try { permissoes = { ...defaults, ...JSON.parse(param.valor) } } catch {} }
+        return { usuarioId: u.id, nome: u.nome, email: u.email, perfil: u.perfil, permissoes }
+      })
+    )
+    return resultado
+  })
+
+  // =========================================================================
+  // PUT /api/pcp/permissoes/:usuarioId — Define permissões de um usuário (ADMIN)
+  // =========================================================================
+  app.put('/permissoes/:usuarioId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil: string }
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Apenas administradores' })
+    }
+    const { usuarioId } = z.object({ usuarioId: z.string().uuid() }).parse(request.params)
+    const body = request.body as any
+    const empresaId = user.empresaId || 'default'
+    const chave = `pcp.permissoes.${usuarioId}`
+    // Mesclar com existente
+    const existente = await prisma.parametro.findFirst({ where: { empresaId, chave } })
+    let atual: any = {}
+    if (existente?.valor) { try { atual = JSON.parse(existente.valor) } catch {} }
+    const novas = { ...atual, ...body }
+    await prisma.parametro.upsert({
+      where: { empresaId_chave: { empresaId, chave } },
+      create: { empresaId, chave, valor: JSON.stringify(novas) },
+      update: { valor: JSON.stringify(novas) },
+    })
+    return { message: 'Permissões atualizadas', permissoes: novas }
+  })
 }

@@ -162,6 +162,7 @@ import { controleBobinaRoutes } from './modules/pcp/controle-bobina.routes'
 import { estoqueTerceirosRoutes } from './modules/pcp/estoque-terceiros.routes'
 import { paletizacaoRoutes } from './modules/pcp/paletizacao.routes'
 import { configuracaoPcpRoutes } from './modules/pcp/configuracao-pcp.routes'
+import { permissoesPcpRoutes } from './modules/pcp/permissoes-pcp.routes'
 import { calculoConsumoGraficoRoutes } from './modules/pcp/calculo-consumo-grafico.routes'
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
@@ -383,6 +384,7 @@ async function bootstrap() {
   await app.register(estoqueTerceirosRoutes, { prefix: '/api/pcp' })
   await app.register(paletizacaoRoutes, { prefix: '/api/pcp' })
   await app.register(configuracaoPcpRoutes, { prefix: '/api/pcp' })
+  // permissoesPcpRoutes agora embutido dentro de configuracaoPcpRoutes
   await app.register(calculoConsumoGraficoRoutes, { prefix: '/api/pcp' })
   await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
