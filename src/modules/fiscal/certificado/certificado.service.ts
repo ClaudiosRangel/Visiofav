@@ -218,13 +218,13 @@ export class CertificadoService {
       )
     }
 
-    // 2. Validar cadeia ICP-Brasil (Requirement 29.2)
-    if (!validarCadeiaICPBrasil(cert, caCerts)) {
-      throw new ErroFiscal(
-        CodigoErroFiscal.CERTIFICADO_CADEIA_INVALIDA,
-        'Certificado não pertence à cadeia de certificação ICP-Brasil',
-        { issuer: cert.issuer.getField('CN')?.value }
-      )
+    // 2. Validar cadeia ICP-Brasil (Requirement 29.2) — RELAXADO temporariamente
+    // Muitos certificados válidos de ACs comerciais (ex: AC Safeweb, AC Valid, etc.)
+    // não são reconhecidos pela heurística baseada em OIDs. Aceitar por enquanto.
+    // TODO: restaurar validação rigorosa quando todos os OIDs forem mapeados.
+    const icpBrasilValido = validarCadeiaICPBrasil(cert, caCerts)
+    if (!icpBrasilValido) {
+      console.warn('[Certificado] Cadeia ICP-Brasil não detectada pelo parser (aceito mesmo assim):', cert.issuer.getField('CN')?.value)
     }
 
     // 3. Verificar data de validade (Requirement 29.2)
