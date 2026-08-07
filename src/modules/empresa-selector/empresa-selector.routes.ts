@@ -435,33 +435,62 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
     }
 
     try {
-      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpjLimpo}`)
-      if (!response.ok) {
-        if (response.status === 404) return reply.status(404).send({ message: 'CNPJ não encontrado na base da Receita Federal' })
-        return reply.status(502).send({ message: 'Erro ao consultar CNPJ. Tente novamente.' })
+      // Tentar BrasilAPI primeiro
+      let dados: any = null
+      const response1 = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpjLimpo}`)
+      if (response1.ok) {
+        const raw = await response1.json() as any
+        dados = {
+          cnpj: cnpjLimpo,
+          razaoSocial: raw.razao_social || '',
+          nomeFantasia: raw.nome_fantasia || '',
+          inscEstadual: '',
+          logradouro: raw.logradouro || '',
+          numero: raw.numero || '',
+          complemento: raw.complemento || '',
+          bairro: raw.bairro || '',
+          cidade: raw.municipio || '',
+          uf: raw.uf || '',
+          cep: raw.cep || '',
+          telefone: raw.ddd_telefone_1 ? `(${raw.ddd_telefone_1.substring(0, 2)}) ${raw.ddd_telefone_1.substring(2)}` : '',
+          email: raw.email || '',
+          situacao: raw.descricao_situacao_cadastral || '',
+          atividadePrincipal: raw.cnae_fiscal_descricao || '',
+          dataAbertura: raw.data_inicio_atividade || '',
+        }
       }
 
-      const dados = await response.json() as any
-
-      // Mapear para o formato do cadastro de empresa do Vizor
-      return {
-        cnpj: cnpjLimpo,
-        razaoSocial: dados.razao_social || '',
-        nomeFantasia: dados.nome_fantasia || '',
-        inscEstadual: '', // BrasilAPI não retorna IE — precisa consultar Sintegra separadamente
-        logradouro: dados.logradouro || '',
-        numero: dados.numero || '',
-        complemento: dados.complemento || '',
-        bairro: dados.bairro || '',
-        cidade: dados.municipio || '',
-        uf: dados.uf || '',
-        cep: dados.cep || '',
-        telefone: dados.ddd_telefone_1 ? `(${dados.ddd_telefone_1.substring(0, 2)}) ${dados.ddd_telefone_1.substring(2)}` : '',
-        email: dados.email || '',
-        situacao: dados.descricao_situacao_cadastral || '',
-        atividadePrincipal: dados.cnae_fiscal_descricao || '',
-        dataAbertura: dados.data_inicio_atividade || '',
+      // Fallback: CNPJa Open API
+      if (!dados) {
+        const response2 = await fetch(`https://open.cnpja.com/office/${cnpjLimpo}`)
+        if (response2.ok) {
+          const raw = await response2.json() as any
+          dados = {
+            cnpj: cnpjLimpo,
+            razaoSocial: raw.company?.name || raw.alias || '',
+            nomeFantasia: raw.alias || '',
+            inscEstadual: '',
+            logradouro: raw.address?.street || '',
+            numero: raw.address?.number || '',
+            complemento: raw.address?.details || '',
+            bairro: raw.address?.district || '',
+            cidade: raw.address?.city || '',
+            uf: raw.address?.state || '',
+            cep: raw.address?.zip || '',
+            telefone: raw.phones?.[0] ? `(${raw.phones[0].area}) ${raw.phones[0].number}` : '',
+            email: raw.emails?.[0]?.address || '',
+            situacao: raw.status?.text || '',
+            atividadePrincipal: raw.mainActivity?.text || '',
+            dataAbertura: raw.founded || '',
+          }
+        }
       }
+
+      if (!dados) {
+        return reply.status(404).send({ message: 'CNPJ não encontrado. A empresa pode ser muito recente e ainda não está nas bases públicas.' })
+      }
+
+      return dados
     } catch (err) {
       console.error('[Consulta CNPJ] Erro:', err)
       return reply.status(502).send({ message: 'Falha na comunicação com a API de consulta de CNPJ' })
