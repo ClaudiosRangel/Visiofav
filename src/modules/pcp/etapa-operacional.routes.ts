@@ -1048,7 +1048,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             numero: true, produtoId: true, quantidade: true, unidadeMedida: true,
             prioridade: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true,
             clienteId: true, observacoes: true, referenciaExterna: true, origemImportacao: true,
-            itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ'] } } },
+            itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ', 'OUTRO'] } } },
           },
         },
         centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true, tipoProcesso: { select: { codigo: true } } } },
@@ -1105,17 +1105,19 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       const pantones: string[] = []
       let escala: string | null = null
 
+      // Detectar "Reativa" em TODOS os itens (pode estar como TINTA ou OUTRO)
+      const temReativa = itens.some(i => /^reativa\b|\(reativa\)/i.test(i.descricaoProduto))
+      if (temReativa) {
+        pantones.push('REATIVA')
+      }
+
       for (const tinta of tintas) {
         const desc = tinta.descricaoProduto
         // Detectar se é item de Escala pelo nome (começa com "Escala" ou contém "Escala")
         const isEscala = /^escala\b/i.test(desc.trim())
-        // Detectar se é item Reativa
-        const isReativa = /^reativa\b|reativa\)/i.test(desc.trim())
-        if (isReativa) {
-          // Inserir "REATIVA" no início dos pantones
-          if (!pantones.includes('REATIVA')) pantones.unshift('REATIVA')
-          continue
-        }
+        // Pular se é Reativa (já adicionada acima)
+        const isReativa = /^reativa\b|\(reativa\)/i.test(desc.trim())
+        if (isReativa) continue
         // Extrair nome da cor do formato: "Pantone 01 (CW0122 - ROSA) (35%)" ou "Escala (CYMK) (65%)"
         const matchCor = desc.match(/\(([^)]+)\)\s*\(\d+%\)/)
         if (matchCor) {
