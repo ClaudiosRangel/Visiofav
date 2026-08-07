@@ -1006,6 +1006,235 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/pcp/quadro-producao — Quadro de produção para TV (tempo real)
+  // =========================================================================
+  app.get('/quadro-producao', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+
+    const centros = await prisma.centroProducao.findMany({
+      where: { empresaId: user.empresaId, status: true },
+      include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true } } },
+      orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
+    })
+
+    // Buscar todas as etapas ativas (PENDENTE, EM_ANDAMENTO, PAUSADA) de OPs na produção
+    const etapasAtivas = await prisma.etapaOrdemProducao.findMany({
+      where: {
+        ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+        status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+        centroProducaoId: { not: null },
+      },
+      include: {
+        ordemProducao: {
+          select: {
+            id: true, numero: true, produtoId: true, clienteId: true,
+            quantidade: true, unidadeMedida: true, observacoes: true,
+            referenciaExterna: true,
+          },
+        },
+      },
+    })
+
+    // Buscar operadores ativos (sem saída) agrupados por etapa
+    const etapaIdsEmAndamento = etapasAtivas
+      .filter(e => e.status === 'EM_ANDAMENTO' || e.status === 'PAUSADA')
+      .map(e => e.id)
+
+    const operadoresAtivos = etapaIdsEmAndamento.length > 0
+      ? await prisma.operadorAtivoEtapa.findMany({
+          where: {
+            empresaId: user.empresaId,
+            etapaOrdemProducaoId: { in: etapaIdsEmAndamento },
+            saidaEm: null,
+          },
+          select: { etapaOrdemProducaoId: true, funcionarioId: true },
+        })
+      : []
+
+    // Buscar nomes dos funcionários
+    const funcIds = [...new Set(operadoresAtivos.map(o => o.funcionarioId))]
+    const funcionarios = funcIds.length > 0
+      ? await prisma.funcionario.findMany({
+          where: { id: { in: funcIds } },
+          select: { id: true, nome: true },
+        })
+      : []
+    const funcMap = new Map(funcionarios.map(f => [f.id, f.nome]))
+
+    // Map de operadores por etapa
+    const operadoresPorEtapa = new Map<string, string[]>()
+    for (const op of operadoresAtivos) {
+      const nome = funcMap.get(op.funcionarioId)
+      if (nome) {
+        if (!operadoresPorEtapa.has(op.etapaOrdemProducaoId)) {
+          operadoresPorEtapa.set(op.etapaOrdemProducaoId, [])
+        }
+        operadoresPorEtapa.get(op.etapaOrdemProducaoId)!.push(nome)
+      }
+    }
+
+    // Buscar nomes de clientes e produtos para exibição
+    const clienteIds = [...new Set(etapasAtivas.map(e => e.ordemProducao.clienteId).filter(Boolean))] as string[]
+    const produtoIds = [...new Set(etapasAtivas.map(e => e.ordemProducao.produtoId).filter(Boolean))] as string[]
+    const clientes = clienteIds.length > 0
+      ? await prisma.cliente.findMany({ where: { id: { in: clienteIds } }, select: { id: true, razaoSocial: true, nomeFantasia: true } })
+      : []
+    const produtos = produtoIds.length > 0
+      ? await prisma.produto.findMany({ where: { id: { in: produtoIds } }, select: { id: true, codigo: true, nome: true } })
+      : []
+    const clienteMap = new Map(clientes.map(c => [c.id, c.nomeFantasia || c.razaoSocial]))
+    const produtoMap = new Map(produtos.map(p => [p.id, `${p.codigo} - ${p.nome}`]))
+
+    function extrairClienteObsLocal(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Cliente\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+    function extrairProdutoObsLocal(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[Produto\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
+
+    // Último apontamento por etapa (tipo PARADA para motivo)
+    const ultimoApontamentoPorEtapa = new Map<string, { dataHora: Date; motivoParada: string | null }>()
+    if (etapaIdsEmAndamento.length > 0) {
+      const apontamentos = await prisma.apontamentoEtapa.findMany({
+        where: {
+          empresaId: user.empresaId,
+          etapaOrdemProducaoId: { in: etapaIdsEmAndamento },
+        },
+        orderBy: { dataHora: 'desc' },
+        select: { etapaOrdemProducaoId: true, dataHora: true, tipo: true, motivoParada: true },
+      })
+      for (const apt of apontamentos) {
+        if (!ultimoApontamentoPorEtapa.has(apt.etapaOrdemProducaoId)) {
+          ultimoApontamentoPorEtapa.set(apt.etapaOrdemProducaoId, { dataHora: apt.dataHora, motivoParada: apt.motivoParada })
+        }
+      }
+    }
+
+    // Agrupar etapas por centro
+    const etapasPorCentro = new Map<string, typeof etapasAtivas>()
+    for (const etapa of etapasAtivas) {
+      const centroId = etapa.centroProducaoId!
+      if (!etapasPorCentro.has(centroId)) etapasPorCentro.set(centroId, [])
+      etapasPorCentro.get(centroId)!.push(etapa)
+    }
+
+    // Início do dia (hoje 00:00)
+    const hoje = new Date()
+    hoje.setHours(0, 0, 0, 0)
+
+    // OPs concluídas hoje: etapas com dataFimReal >= hoje
+    const opsConcluidas = await prisma.etapaOrdemProducao.count({
+      where: {
+        ordemProducao: { empresaId: user.empresaId },
+        status: 'CONCLUIDA',
+        dataFimReal: { gte: hoje },
+      },
+    })
+
+    // Produção hoje: soma de apontamentos tipo PRODUCAO de hoje
+    const apontamentosHoje = await prisma.apontamentoEtapa.aggregate({
+      where: {
+        empresaId: user.empresaId,
+        tipo: 'PRODUCAO',
+        dataHora: { gte: hoje },
+      },
+      _sum: { quantidadeProduzida: true },
+    })
+
+    const agora = new Date()
+
+    // Montar resposta por máquina
+    const maquinas = centros.map(centro => {
+      const etapasCentro = etapasPorCentro.get(centro.id) || []
+      const emAndamento = etapasCentro.find(e => e.status === 'EM_ANDAMENTO')
+      const pausada = etapasCentro.find(e => e.status === 'PAUSADA')
+      const etapaAtual = emAndamento || pausada || null
+
+      let status: 'PRODUZINDO' | 'PARADA' | 'OCIOSA'
+      if (emAndamento) status = 'PRODUZINDO'
+      else if (pausada) status = 'PARADA'
+      else status = 'OCIOSA'
+
+      let etapaAtualData = null
+      if (etapaAtual) {
+        const op = etapaAtual.ordemProducao
+        const clienteNome = extrairClienteObsLocal(op.observacoes) || (op.clienteId && clienteMap.get(op.clienteId)) || null
+        const produtoNome = extrairProdutoObsLocal(op.observacoes) || (op.produtoId && produtoMap.get(op.produtoId)) || null
+        const quantidade = Number(op.quantidade)
+        const quantidadeProduzida = Number(etapaAtual.quantidadeProduzida)
+        const percentual = quantidade > 0 ? Math.min(Math.round((quantidadeProduzida / quantidade) * 100), 100) : 0
+        const tempoNaEtapa = etapaAtual.dataInicioReal
+          ? Math.round((agora.getTime() - new Date(etapaAtual.dataInicioReal).getTime()) / 60000)
+          : 0
+
+        etapaAtualData = {
+          opNumero: op.referenciaExterna || String(op.numero),
+          cliente: clienteNome,
+          produto: produtoNome,
+          quantidade,
+          quantidadeProduzida,
+          percentual,
+          tempoNaEtapa,
+          operadores: operadoresPorEtapa.get(etapaAtual.id) || [],
+        }
+      }
+
+      const ultimoApt = ultimoApontamentoPorEtapa.get(etapaAtual?.id || '')
+      // Motivo da parada: do último apontamento tipo PARADA se o status é PAUSADA
+      let motivoParada: string | null = null
+      if (status === 'PARADA' && ultimoApt?.motivoParada) {
+        const motivos: Record<string, string> = {
+          MANUTENCAO: 'Manutenção',
+          FALTA_MATERIAL: 'Falta Material',
+          ACERTO_MAQUINA: 'Acerto Máquina',
+          TROCA_TURNO: 'Troca Turno',
+          OUTRO: 'Outro',
+        }
+        motivoParada = motivos[ultimoApt.motivoParada] || ultimoApt.motivoParada
+      }
+
+      return {
+        centroId: centro.id,
+        centroNome: centro.descricao,
+        tipoProcesso: centro.tipoProcesso?.descricao || '',
+        status,
+        etapaAtual: etapaAtualData,
+        ultimoApontamento: ultimoApt?.dataHora?.toISOString() || null,
+        motivoParada,
+      }
+    })
+
+    // Resumo
+    const maquinasAtivas = maquinas.filter(m => m.status === 'PRODUZINDO').length
+    const maquinasParadas = maquinas.filter(m => m.status === 'PARADA').length
+    const maquinasOciosas = maquinas.filter(m => m.status === 'OCIOSA').length
+
+    // Alertas: paradas > 60 min
+    let alertasParada = 0
+    for (const m of maquinas) {
+      if (m.status === 'PARADA' && m.etapaAtual && m.etapaAtual.tempoNaEtapa > 60) {
+        alertasParada++
+      }
+    }
+
+    return {
+      resumo: {
+        maquinasAtivas,
+        maquinasParadas,
+        maquinasOciosas,
+        opsConcluídasHoje: opsConcluidas,
+        producaoHoje: Number(apontamentosHoje._sum.quantidadeProduzida || 0),
+        alertasParada,
+      },
+      maquinas,
+    }
+  })
+
+  // =========================================================================
   // GET /api/pcp/programacao/painel — Painel operacional completo
   // =========================================================================
 
