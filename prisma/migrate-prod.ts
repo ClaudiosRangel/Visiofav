@@ -2315,6 +2315,10 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_picking" ADD COLUMN IF NOT EXISTS "modo_abastecimento" VARCHAR(20) NOT NULL DEFAULT 'VERIFICAR_PK'`)
   console.log('✅ FEFO Picking: campo modo_abastecimento adicionado a dados_logisticos_picking')
 
+  // ── RNTRC/ANTT na Empresa (obrigatório no XML do CT-e) ──
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "rntrc" VARCHAR(20)`)
+  console.log('✅ Empresa: campo rntrc (ANTT) adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 

@@ -45,6 +45,7 @@ model Empresa {
   proximoNumeroNFe Int     @default(1) @map("proximo_numero_nfe")
   serieCTe         Int     @default(1) @map("serie_cte")
   proximoNumeroCTe Int     @default(1) @map("proximo_numero_cte")
+  rntrc            String? @map("rntrc") @db.VarChar(20) // ANTT/RNTRC - obrigatório no XML do CT-e para transportadoras
   // NFC-e: CSC (Código de Segurança do Contribuinte) para geração do QRCode
   cscIdNfce        String? @map("csc_id_nfce") @db.VarChar(6)
   cscTokenNfce     String? @map("csc_token_nfce") @db.VarChar(36)
