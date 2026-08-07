@@ -1,8 +1,16 @@
 /**
- * Rotas do CT-e (Conhecimento de Transporte Eletrônico)
+ * Rotas do CT-e (Conhecimento de Transporte Eletrônico) — Módulo Completo
  *
  * Endpoints:
- * - POST /cte/emitir — Emitir CT-e modelo 57
+ * - GET  /cte           — Listar CT-e com filtros e paginação
+ * - GET  /cte/:id       — Detalhe de um CT-e
+ * - POST /cte/emitir    — Emitir CT-e modelo 57
+ * - POST /cte/:id/cancelar       — Cancelar CT-e autorizado
+ * - POST /cte/:id/carta-correcao — Emitir CC-e para CT-e
+ * - POST /cte/inutilizar         — Inutilizar faixa de numeração
+ * - GET  /cte/:id/dacte          — Gerar DACTE em PDF
+ * - GET  /cte/:id/xml            — Baixar XML autorizado
+ * - POST /cte/:id/duplicar       — Duplicar CT-e existente
  *
  * Requirements: 6.8
  */
@@ -11,20 +19,37 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
 import { cteEmissaoService } from './cte-emissao.service'
-import { ErroFiscal } from '../../erros'
+import { gerarDactePdf } from './cte-dacte-pdf.service'
+import { ErroFiscal, CodigoErroFiscal } from '../../erros'
 import type { DadosCTe } from './cte-xml-builder'
 
 // === Schemas Zod ===
+
+const idParamsSchema = z.object({
+  id: z.string().uuid('ID deve ser um UUID válido'),
+})
+
+const listCteQuerySchema = z.object({
+  status: z.string().optional(),
+  dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  tomadorCpfCnpj: z.string().optional(),
+  serie: z.coerce.number().int().min(0).optional(),
+  numero: z.coerce.number().int().min(1).optional(),
+  chaveAcesso: z.string().regex(/^\d{44}$/).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+})
 
 const enderecoSchema = z.object({
   logradouro: z.string().min(1).max(60),
   numero: z.string().min(1).max(10),
   complemento: z.string().max(60).optional(),
   bairro: z.string().min(1).max(60),
-  codigoMunicipio: z.string().regex(/^\d{7}$/, 'Código IBGE do município deve ter 7 dígitos'),
+  codigoMunicipio: z.string().regex(/^\d{7}$/),
   municipio: z.string().min(1).max(60),
   uf: z.string().length(2).regex(/^[A-Z]{2}$/),
-  cep: z.string().regex(/^\d{8}$/, 'CEP deve conter 8 dígitos'),
+  cep: z.string().regex(/^\d{8}$/),
   codigoPais: z.string().optional(),
   pais: z.string().optional(),
 })
@@ -46,13 +71,13 @@ const componenteValorSchema = z.object({
 })
 
 const infQuantidadeSchema = z.object({
-  cUnid: z.string().regex(/^\d{2}$/, 'Código de unidade deve ter 2 dígitos'),
+  cUnid: z.string().regex(/^\d{2}$/),
   tpMed: z.string().min(1).max(20),
   qCarga: z.number().positive(),
 })
 
 const infNFeVinculadaSchema = z.object({
-  chave: z.string().regex(/^\d{44}$/, 'Chave de acesso deve conter 44 dígitos'),
+  chave: z.string().regex(/^\d{44}$/),
 })
 
 const veiculoSchema = z.object({
@@ -66,30 +91,45 @@ const veiculoSchema = z.object({
   tpCar: z.string().max(2).optional(),
 })
 
+const seguroSchema = z.object({
+  respSeg: z.number().int().min(0).max(5),
+  xSeg: z.string().max(30).optional(),
+  nApol: z.string().max(20).optional(),
+  nAver: z.string().max(40).optional(),
+  vCarga: z.number().min(0).optional(),
+})
+
+const valePedagioSchema = z.object({
+  cnpjForn: z.string().regex(/^\d{14}$/),
+  cnpjPg: z.string().regex(/^\d{14}$/).optional(),
+  cpfPg: z.string().regex(/^\d{11}$/).optional(),
+  nCompra: z.string().max(20),
+  vValePed: z.number().min(0),
+})
+
 const emissaoCTeInputSchema = z.object({
-  // Campos de identificação
   serie: z.number().int().min(0).max(999),
-  cfop: z.string().regex(/^\d{4}$/, 'CFOP deve conter 4 dígitos'),
+  cfop: z.string().regex(/^\d{4}$/),
   naturezaOp: z.string().min(1).max(100),
   tpServ: z.number().int().min(0).max(4),
   tpCTe: z.number().int().min(0).max(3).default(0),
-  modal: z.string().regex(/^0[1-6]$/, 'Modal deve ser 01-06'),
+  modal: z.string().regex(/^0[1-6]$/),
   tpEmis: z.number().int().min(1).max(9).default(1),
 
   // Municípios início/fim
-  cMunIni: z.string().regex(/^\d{7}$/, 'Código município deve ter 7 dígitos'),
+  cMunIni: z.string().regex(/^\d{7}$/),
   xMunIni: z.string().min(1).max(60),
   ufIni: z.string().length(2).regex(/^[A-Z]{2}$/),
-  cMunFim: z.string().regex(/^\d{7}$/, 'Código município deve ter 7 dígitos'),
+  cMunFim: z.string().regex(/^\d{7}$/),
   xMunFim: z.string().min(1).max(60),
   ufFim: z.string().length(2).regex(/^[A-Z]{2}$/),
 
   // Tomador
   tpTom: z.number().int().min(0).max(4),
-  indIEToma: z.number().int().refine(v => [1, 2, 9].includes(v), 'indIEToma deve ser 1, 2 ou 9'),
+  indIEToma: z.number().int().refine(v => [1, 2, 9].includes(v)),
   tomadorOutros: participanteSchema.optional(),
 
-  // Remetente e Destinatário
+  // Participantes
   remetente: participanteSchema,
   destinatario: participanteSchema,
   expedidor: participanteSchema.optional(),
@@ -105,7 +145,7 @@ const emissaoCTeInputSchema = z.object({
   // Impostos
   impostos: z.object({
     icms: z.object({
-      cst: z.string().regex(/^(00|20|40|41|51|60|90|SN)$/, 'CST inválida para CT-e'),
+      cst: z.string().regex(/^(00|20|40|41|51|60|90|SN)$/),
       baseCalculo: z.number().min(0).optional(),
       aliquota: z.number().min(0).max(100).optional(),
       valor: z.number().min(0).optional(),
@@ -118,7 +158,7 @@ const emissaoCTeInputSchema = z.object({
     infAdFisco: z.string().max(2000).optional(),
   }),
 
-  // CT-e Normal
+  // CT-e Normal — Carga e Documentos
   infCTeNorm: z.object({
     infCarga: z.object({
       vCarga: z.number().min(0),
@@ -139,6 +179,8 @@ const emissaoCTeInputSchema = z.object({
       RNTRC: z.string().min(1).max(8),
       veiculos: z.array(veiculoSchema).optional(),
     }).optional(),
+    seguro: z.array(seguroSchema).optional(),
+    valePedagio: z.array(valePedagioSchema).optional(),
   }),
 
   // Complemento (opcional)
@@ -152,10 +194,8 @@ const emissaoCTeInputSchema = z.object({
   infAdFisco: z.string().max(2000).optional(),
   infCpl: z.string().max(5000).optional(),
 
-  // Ambiente
+  // Ambiente e contingência
   ambiente: z.number().int().min(1).max(2).default(2),
-
-  // Forçar contingência
   forcarContingencia: z.boolean().default(false),
 })
 
@@ -163,7 +203,6 @@ export type EmissaoCTeInput = z.infer<typeof emissaoCTeInputSchema>
 
 // === Helpers ===
 
-/** Obtém o próximo número de CT-e para uma série */
 async function proximoNumeroCTe(empresaId: string, serie: number): Promise<number> {
   const ultimo = await prisma.documentoFiscal.findFirst({
     where: { empresaId, tipo: 'CTE', serie },
@@ -173,12 +212,10 @@ async function proximoNumeroCTe(empresaId: string, serie: number): Promise<numbe
   return (ultimo?.numero || 0) + 1
 }
 
-/** Gera código numérico aleatório de 8 dígitos */
 function gerarCodigoNumerico(): string {
   return String(Math.floor(Math.random() * 99999999)).padStart(8, '0')
 }
 
-/** Obtém código UF IBGE a partir da sigla */
 function obterCodigoUF(uf: string): number {
   const UF_CODES: Record<string, number> = {
     RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
@@ -186,15 +223,130 @@ function obterCodigoUF(uf: string): number {
     SE: 28, BA: 29, MG: 31, ES: 32, RJ: 33, SP: 35,
     PR: 41, SC: 42, RS: 43, MS: 50, MT: 51, GO: 52, DF: 53,
   }
-  return UF_CODES[uf.toUpperCase()] || 35 // Default SP
+  return UF_CODES[uf.toUpperCase()] || 35
 }
 
 // === Plugin de rotas ===
 
 export async function cteRoutes(app: FastifyInstance) {
+
   // ==========================================================================
-  // POST /cte/emitir — Emitir CT-e
-  // Requirements: 6.8
+  // GET /cte — Listar CT-e com filtros e paginação
+  // ==========================================================================
+  app.get('/cte', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const filtros = listCteQuerySchema.parse(request.query)
+
+      const where: any = { empresaId: user.empresaId, tipo: 'CTE' }
+
+      if (filtros.status) where.status = filtros.status.toUpperCase()
+      if (filtros.serie != null) where.serie = filtros.serie
+      if (filtros.numero) where.numero = filtros.numero
+      if (filtros.chaveAcesso) where.chaveAcesso = filtros.chaveAcesso
+      if (filtros.tomadorCpfCnpj) where.destCpfCnpj = filtros.tomadorCpfCnpj
+
+      if (filtros.dataInicio || filtros.dataFim) {
+        where.dataEmissao = {}
+        if (filtros.dataInicio) where.dataEmissao.gte = new Date(filtros.dataInicio)
+        if (filtros.dataFim) where.dataEmissao.lte = new Date(`${filtros.dataFim}T23:59:59.999Z`)
+      }
+
+      const skip = (filtros.page - 1) * filtros.limit
+
+      const [dados, total] = await Promise.all([
+        prisma.documentoFiscal.findMany({
+          where,
+          orderBy: { criadoEm: 'desc' },
+          skip,
+          take: filtros.limit,
+          select: {
+            id: true,
+            serie: true,
+            numero: true,
+            chaveAcesso: true,
+            status: true,
+            naturezaOp: true,
+            dataEmissao: true,
+            destCpfCnpj: true,
+            destRazao: true,
+            valorTotal: true,
+            valorFrete: true,
+            protocolo: true,
+            dataAutorizacao: true,
+            contingencia: true,
+            ambiente: true,
+            criadoEm: true,
+          },
+        }),
+        prisma.documentoFiscal.count({ where }),
+      ])
+
+      return {
+        data: dados.map(d => ({
+          ...d,
+          tomadorRazao: d.destRazao,
+          valorTotal: Number(d.valorTotal),
+        })),
+        total,
+        page: filtros.page,
+        limit: filtros.limit,
+        totalPages: Math.ceil(total / filtros.limit),
+      }
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Parâmetros inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // GET /cte/:id — Detalhe de um CT-e
+  // ==========================================================================
+  app.get('/cte/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+        include: {
+          eventos: { orderBy: { dataEvento: 'desc' } },
+        },
+      })
+
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      return {
+        ...doc,
+        valorTotal: Number(doc.valorTotal),
+        valorFrete: Number(doc.valorFrete),
+        valorIcms: Number(doc.valorIcms),
+        xmlEnviado: undefined, // Não retornar XML pesado na listagem
+        xmlAutorizado: undefined,
+        xmlRetorno: undefined,
+      }
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'ID inválido', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/emitir — Emitir CT-e modelo 57
   // ==========================================================================
   app.post('/cte/emitir', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
@@ -205,7 +357,6 @@ export async function cteRoutes(app: FastifyInstance) {
     try {
       const body = emissaoCTeInputSchema.parse(request.body)
 
-      // Buscar dados da empresa emitente
       const empresa = await prisma.empresa.findUnique({
         where: { id: user.empresaId },
       })
@@ -214,10 +365,9 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(404).send({ message: 'Empresa não encontrada' })
       }
 
-      const ufEmitente = (empresa as any).uf || ''
+      const ufEmitente = empresa.uf || ''
       const nCT = await proximoNumeroCTe(user.empresaId, body.serie)
 
-      // Montar DadosCTe para o serviço
       const dadosCTe: DadosCTe = {
         cUF: obterCodigoUF(ufEmitente),
         cCT: gerarCodigoNumerico(),
@@ -241,27 +391,28 @@ export async function cteRoutes(app: FastifyInstance) {
         tpTom: body.tpTom,
         indIEToma: body.indIEToma,
         emitente: {
-          cnpj: (empresa as any).cnpj || '',
-          ie: (empresa as any).ie || '',
-          razaoSocial: (empresa as any).razaoSocial || (empresa as any).nome || '',
-          nomeFantasia: (empresa as any).nomeFantasia || undefined,
+          cnpj: empresa.cnpj || '',
+          ie: empresa.inscEstadual || '',
+          razaoSocial: empresa.razaoSocial || '',
+          nomeFantasia: empresa.nomeFantasia || undefined,
           endereco: {
-            logradouro: (empresa as any).logradouro || '',
-            numero: (empresa as any).numero || '',
-            complemento: (empresa as any).complemento || undefined,
-            bairro: (empresa as any).bairro || '',
-            codigoMunicipio: (empresa as any).codigoMunicipio || '',
-            municipio: (empresa as any).municipio || '',
+            logradouro: empresa.logradouro || '',
+            numero: empresa.numero || '',
+            complemento: empresa.complemento || undefined,
+            bairro: empresa.bairro || '',
+            codigoMunicipio: empresa.cidade || '',
+            municipio: empresa.cidade || '',
             uf: ufEmitente,
-            cep: (empresa as any).cep || '',
+            cep: empresa.cep || '',
           },
         },
-        remetente: body.remetente,
-        destinatario: body.destinatario,
-        expedidor: body.expedidor,
-        recebedor: body.recebedor,
-        vPrest: body.vPrest,
-        impostos: body.impostos,
+
+        remetente: body.remetente as any,
+        destinatario: body.destinatario as any,
+        expedidor: body.expedidor as any,
+        recebedor: body.recebedor as any,
+        vPrest: body.vPrest as any,
+        impostos: body.impostos as any,
         infCTeNorm: {
           infCarga: body.infCTeNorm.infCarga,
           infDoc: {
@@ -297,4 +448,279 @@ export async function cteRoutes(app: FastifyInstance) {
       return reply.status(500).send({ message: err.message || 'Erro interno' })
     }
   })
-}
+
+  // ==========================================================================
+  // POST /cte/:id/cancelar — Cancelar CT-e autorizado
+  // ==========================================================================
+  app.post('/cte/:id/cancelar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+      const body = z.object({
+        justificativa: z.string().min(15).max(255),
+      }).parse(request.body)
+
+      // Validar pertence à empresa
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+      })
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      const resultado = await cteEmissaoService.cancelar({
+        documentoFiscalId: id,
+        justificativa: body.justificativa,
+      })
+
+      return reply.status(resultado.sucesso ? 200 : 422).send(resultado)
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send(err.toJSON())
+      }
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/:id/carta-correcao — Emitir CC-e para CT-e
+  // ==========================================================================
+  app.post('/cte/:id/carta-correcao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+      const body = z.object({
+        textoCorrecao: z.string().min(15).max(1000),
+        grupoAlterado: z.string().max(50).optional(),
+        campoAlterado: z.string().max(50).optional(),
+      }).parse(request.body)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+      })
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      const resultado = await cteEmissaoService.cartaCorrecao({
+        documentoFiscalId: id,
+        textoCorrecao: body.textoCorrecao,
+        grupoAlterado: body.grupoAlterado,
+        campoAlterado: body.campoAlterado,
+      })
+
+      return reply.status(resultado.sucesso ? 200 : 422).send(resultado)
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send(err.toJSON())
+      }
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/inutilizar — Inutilizar faixa de numeração de CT-e
+  // ==========================================================================
+  app.post('/cte/inutilizar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = z.object({
+        serie: z.number().int().min(0).max(999),
+        numeroInicial: z.number().int().min(1),
+        numeroFinal: z.number().int().min(1),
+        justificativa: z.string().min(15).max(255),
+        ambiente: z.number().int().min(1).max(2).default(2),
+      }).parse(request.body)
+
+      if (body.numeroFinal < body.numeroInicial) {
+        return reply.status(400).send({
+          message: 'Número final deve ser >= número inicial',
+        })
+      }
+
+      if (body.numeroFinal - body.numeroInicial > 999) {
+        return reply.status(400).send({
+          message: 'Faixa máxima permitida: 1000 números por vez',
+        })
+      }
+
+      const empresa = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+      })
+      if (!empresa) {
+        return reply.status(404).send({ message: 'Empresa não encontrada' })
+      }
+
+      // Registrar inutilização no banco
+      for (let num = body.numeroInicial; num <= body.numeroFinal; num++) {
+        await prisma.documentoFiscal.create({
+          data: {
+            empresaId: user.empresaId,
+            tipo: 'CTE',
+            modelo: 57,
+            serie: body.serie,
+            numero: num,
+            status: 'INUTILIZADO',
+            dataEmissao: new Date(),
+            tipoOperacao: 1,
+            emitenteCnpj: empresa.cnpj || '',
+            emitenteRazao: empresa.razaoSocial || '',
+            emitenteUf: empresa.uf || '',
+            ambiente: body.ambiente,
+          },
+        })
+      }
+
+      return reply.status(200).send({
+        sucesso: true,
+        serie: body.serie,
+        numeroInicial: body.numeroInicial,
+        numeroFinal: body.numeroFinal,
+        quantidadeInutilizada: body.numeroFinal - body.numeroInicial + 1,
+      })
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // GET /cte/:id/dacte — Gerar DACTE em PDF
+  // ==========================================================================
+  app.get('/cte/:id/dacte', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+        include: { empresa: true },
+      })
+
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      if (!['AUTORIZADO', 'CANCELADO'].includes(doc.status)) {
+        return reply.status(422).send({
+          message: `DACTE só disponível para CT-e AUTORIZADO ou CANCELADO. Status: ${doc.status}`,
+        })
+      }
+
+      const pdfBuffer = await gerarDactePdf(doc, doc.empresa)
+
+      reply.header('Content-Type', 'application/pdf')
+      reply.header('Content-Disposition', `inline; filename="DACTE-${doc.numero}-${doc.serie}.pdf"`)
+      return reply.send(pdfBuffer)
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro ao gerar DACTE' })
+    }
+  })
+
+  // ==========================================================================
+  // GET /cte/:id/xml — Baixar XML autorizado
+  // ==========================================================================
+  app.get('/cte/:id/xml', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+        select: { xmlAutorizado: true, xmlEnviado: true, numero: true, serie: true, chaveAcesso: true },
+      })
+
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      const xml = doc.xmlAutorizado || doc.xmlEnviado
+      if (!xml) {
+        return reply.status(422).send({ message: 'XML não disponível para este CT-e' })
+      }
+
+      const nomeArquivo = doc.chaveAcesso
+        ? `${doc.chaveAcesso}-cte.xml`
+        : `CTe-${doc.serie}-${doc.numero}.xml`
+
+      reply.header('Content-Type', 'application/xml')
+      reply.header('Content-Disposition', `attachment; filename="${nomeArquivo}"`)
+      return reply.send(xml)
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/:id/duplicar — Duplicar CT-e existente (facilita emissão)
+  // ==========================================================================
+  app.post('/cte/:id/duplicar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+        select: {
+          naturezaOp: true,
+          destCpfCnpj: true,
+          destRazao: true,
+          destUf: true,
+          valorTotal: true,
+          valorFrete: true,
+        },
+      })
+
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      // Retorna dados para preenchimento do formulário (frontend usa para pré-popular)
+      return {
+        naturezaOp: doc.naturezaOp,
+        tomador: {
+          cpfCnpj: doc.destCpfCnpj,
+          razaoSocial: doc.destRazao,
+          uf: doc.destUf,
+        },
+        valorTotal: Number(doc.valorTotal),
+        valorFrete: Number(doc.valorFrete),
+      }
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+} // fim cteRoutes

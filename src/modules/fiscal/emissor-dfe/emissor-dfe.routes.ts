@@ -21,6 +21,7 @@ import { nfeEmissaoService } from './nfe/nfe-emissao.service'
 import { nfceEmissaoService } from './nfce/nfce-emissao.service'
 import { danfePdfService } from './nfe/danfe-pdf.service'
 import { cteRoutes } from './cte/cte.routes'
+import { cteTabelaFreteRoutes } from './cte/cte-tabela-frete.routes'
 import {
   cancelar,
   cartaCorrecao,
@@ -67,6 +68,9 @@ const listNFeQuerySchema = z.object({
 export async function emissorDfeRoutes(app: FastifyInstance) {
   // Registrar rotas do CT-e (modelo 57)
   app.register(cteRoutes)
+
+  // Registrar rotas de Tabela de Frete CT-e
+  app.register(cteTabelaFreteRoutes)
 
   // Registrar rotas do MDF-e (modelo 58)
   app.register(mdfeRoutes)

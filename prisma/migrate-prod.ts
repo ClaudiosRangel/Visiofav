@@ -2319,6 +2319,98 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "rntrc" VARCHAR(20)`)
   console.log('✅ Empresa: campo rntrc (ANTT) adicionado')
 
+  // =========================================================================
+  // MÓDULO CT-e COMPLETO — Tabelas auxiliares
+  // =========================================================================
+
+  // Tabela de Frete CT-e
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "tabela_frete_cte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(100) NOT NULL,
+      "descricao" VARCHAR(300),
+      "uf_origem" VARCHAR(2),
+      "uf_destino" VARCHAR(2),
+      "valor_frete_peso" DECIMAL(12,4),
+      "valor_frete_volume" DECIMAL(12,4),
+      "valor_ad_valorem" DECIMAL(5,4),
+      "valor_gris" DECIMAL(5,4),
+      "valor_pedagio" DECIMAL(12,2),
+      "valor_despacho" DECIMAL(12,2),
+      "valor_tde" DECIMAL(12,2),
+      "valor_suframa" DECIMAL(12,2),
+      "peso_minimo" DECIMAL(12,4),
+      "frete_minimo" DECIMAL(12,2),
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "tabela_frete_cte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_tabela_frete_cte_empresa_uf" ON "tabela_frete_cte"("empresa_id", "uf_origem", "uf_destino")`)
+  console.log('✅ CT-e: tabela tabela_frete_cte criada')
+
+  // Seguro CT-e
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "seguro_cte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "documento_fiscal_id" TEXT,
+      "resp_seg" INTEGER NOT NULL,
+      "x_seg" VARCHAR(30),
+      "n_apol" VARCHAR(20),
+      "n_aver" VARCHAR(40),
+      "v_carga" DECIMAL(15,2),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "seguro_cte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_seguro_cte_empresa" ON "seguro_cte"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_seguro_cte_doc" ON "seguro_cte"("documento_fiscal_id")`)
+  console.log('✅ CT-e: tabela seguro_cte criada')
+
+  // Vale-Pedágio CT-e
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "vale_pedagio_cte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "documento_fiscal_id" TEXT,
+      "cnpj_forn" VARCHAR(14) NOT NULL,
+      "cnpj_pg" VARCHAR(14),
+      "cpf_pg" VARCHAR(11),
+      "n_compra" VARCHAR(20) NOT NULL,
+      "v_vale_ped" DECIMAL(12,2) NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "vale_pedagio_cte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_vale_pedagio_cte_empresa" ON "vale_pedagio_cte"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_vale_pedagio_cte_doc" ON "vale_pedagio_cte"("documento_fiscal_id")`)
+  console.log('✅ CT-e: tabela vale_pedagio_cte criada')
+
+  // Veículos CT-e
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "veiculo_cte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "documento_fiscal_id" TEXT,
+      "placa" VARCHAR(7) NOT NULL,
+      "uf" VARCHAR(2) NOT NULL,
+      "renavam" VARCHAR(11),
+      "tp_prop" INTEGER,
+      "cpf_cnpj_prop" VARCHAR(14),
+      "rntrc_prop" VARCHAR(8),
+      "tp_rod" VARCHAR(2),
+      "tp_car" VARCHAR(2),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "veiculo_cte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_veiculo_cte_empresa" ON "veiculo_cte"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_veiculo_cte_doc" ON "veiculo_cte"("documento_fiscal_id")`)
+  console.log('✅ CT-e: tabela veiculo_cte criada')
+
   console.log('✅ All migrations applied successfully')
 }
 

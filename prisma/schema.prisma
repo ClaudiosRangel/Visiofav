@@ -1005,6 +1005,86 @@ model NfeCteReferencia {
   @@map("nfe_cte_referencia")
 }
 
+// CT-e — Tabela de Frete (composição de valores)
+model TabelaFreteCte {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  nome            String   @db.VarChar(100)
+  descricao       String?  @db.VarChar(300)
+  ufOrigem        String?  @map("uf_origem") @db.VarChar(2)
+  ufDestino       String?  @map("uf_destino") @db.VarChar(2)
+  valorFretePeso  Decimal? @map("valor_frete_peso") @db.Decimal(12, 4) // R$/kg
+  valorFreteVolume Decimal? @map("valor_frete_volume") @db.Decimal(12, 4) // R$/m³
+  valorAdValorem  Decimal? @map("valor_ad_valorem") @db.Decimal(5, 4) // % sobre valor carga
+  valorGris       Decimal? @map("valor_gris") @db.Decimal(5, 4) // % GRIS
+  valorPedagio    Decimal? @map("valor_pedagio") @db.Decimal(12, 2)
+  valorDespacho   Decimal? @map("valor_despacho") @db.Decimal(12, 2)
+  valorTDE        Decimal? @map("valor_tde") @db.Decimal(12, 2)
+  valorSuframa    Decimal? @map("valor_suframa") @db.Decimal(12, 2)
+  pesoMinimo      Decimal? @map("peso_minimo") @db.Decimal(12, 4) // kg mínimo para cobrança
+  freteMinimo     Decimal? @map("frete_minimo") @db.Decimal(12, 2) // valor mínimo cobrado
+  status          Boolean  @default(true)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, ufOrigem, ufDestino])
+  @@map("tabela_frete_cte")
+}
+
+// CT-e — Seguro da Carga
+model SeguroCte {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  documentoFiscalId String? @map("documento_fiscal_id")
+  respSeg          Int      @map("resp_seg") // 0=Remetente, 1=Expedidor, 2=Recebedor, 3=Destinatário, 4=Emitente, 5=Tomador
+  xSeg             String?  @map("x_seg") @db.VarChar(30) // Nome da seguradora
+  nApol            String?  @map("n_apol") @db.VarChar(20) // Número da apólice
+  nAver            String?  @map("n_aver") @db.VarChar(40) // Número da averbação
+  vCarga           Decimal? @map("v_carga") @db.Decimal(15, 2) // Valor da carga para seguro
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@index([documentoFiscalId])
+  @@map("seguro_cte")
+}
+
+// CT-e — Vale-Pedágio
+model ValePedagioCte {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  documentoFiscalId String? @map("documento_fiscal_id")
+  cnpjForn         String   @map("cnpj_forn") @db.VarChar(14) // CNPJ fornecedor do vale-pedágio
+  cnpjPg           String?  @map("cnpj_pg") @db.VarChar(14) // CNPJ responsável pelo pagamento
+  cpfPg            String?  @map("cpf_pg") @db.VarChar(11)
+  nCompra          String   @map("n_compra") @db.VarChar(20) // Número do comprovante de compra
+  vValePed         Decimal  @map("v_vale_ped") @db.Decimal(12, 2) // Valor do vale-pedágio
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@index([documentoFiscalId])
+  @@map("vale_pedagio_cte")
+}
+
+// CT-e — Veículos vinculados ao transporte
+model VeiculoCte {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  documentoFiscalId String? @map("documento_fiscal_id")
+  placa            String   @db.VarChar(7)
+  uf               String   @db.VarChar(2)
+  renavam          String?  @db.VarChar(11)
+  tpProp           Int?     @map("tp_prop") // 0=TAC Agregado, 1=TAC Independente, 2=Outros
+  cpfCnpjProp      String?  @map("cpf_cnpj_prop") @db.VarChar(14)
+  rntrcProp        String?  @map("rntrc_prop") @db.VarChar(8)
+  tpRod            String?  @map("tp_rod") @db.VarChar(2) // tipo de rodado
+  tpCar            String?  @map("tp_car") @db.VarChar(2) // tipo de carroceria
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@index([documentoFiscalId])
+  @@map("veiculo_cte")
+}
+
 // ============================================================================
 // WMS
 // ============================================================================
