@@ -794,10 +794,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
-  // GET /api/pcp/logs — Logs de auditoria do módulo PCP (por OP ou geral)
+  // GET /api/pcp/logs — Logs de auditoria do módulo PCP (só ADMIN)
   // =========================================================================
-  app.get('/logs', async (request) => {
-    const user = request.user as { id: string; empresaId: string }
+  app.get('/logs', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil: string }
+    // Apenas ADMIN/SUPER_ADMIN pode acessar logs
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Apenas administradores podem acessar os logs' })
+    }
     const query = z.object({
       opId: z.string().uuid().optional(),
       page: z.coerce.number().min(1).default(1),
@@ -1105,6 +1109,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         const desc = tinta.descricaoProduto
         // Detectar se é item de Escala pelo nome (começa com "Escala" ou contém "Escala")
         const isEscala = /^escala\b/i.test(desc.trim())
+        // Detectar se é item Reativa
+        const isReativa = /^reativa\b|reativa\)/i.test(desc.trim())
+        if (isReativa) {
+          // Inserir "REATIVA" no início dos pantones
+          if (!pantones.includes('REATIVA')) pantones.unshift('REATIVA')
+          continue
+        }
         // Extrair nome da cor do formato: "Pantone 01 (CW0122 - ROSA) (35%)" ou "Escala (CYMK) (65%)"
         const matchCor = desc.match(/\(([^)]+)\)\s*\(\d+%\)/)
         if (matchCor) {
