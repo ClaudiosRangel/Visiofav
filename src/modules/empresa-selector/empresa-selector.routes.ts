@@ -421,4 +421,50 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
 
     return empresa
   })
+
+  // =========================================================================
+  // GET /api/empresas/consulta-cnpj/:cnpj — Consulta dados da empresa via CNPJ (BrasilAPI)
+  // =========================================================================
+  app.get('/consulta-cnpj/:cnpj', async (request, reply) => {
+    const { cnpj } = z.object({ cnpj: z.string().min(14).max(18) }).parse(request.params)
+
+    // Limpar CNPJ (remover pontos, barras, traços)
+    const cnpjLimpo = cnpj.replace(/[^\d]/g, '')
+    if (cnpjLimpo.length !== 14) {
+      return reply.status(400).send({ message: 'CNPJ inválido. Informe 14 dígitos.' })
+    }
+
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpjLimpo}`)
+      if (!response.ok) {
+        if (response.status === 404) return reply.status(404).send({ message: 'CNPJ não encontrado na base da Receita Federal' })
+        return reply.status(502).send({ message: 'Erro ao consultar CNPJ. Tente novamente.' })
+      }
+
+      const dados = await response.json() as any
+
+      // Mapear para o formato do cadastro de empresa do Vizor
+      return {
+        cnpj: cnpjLimpo,
+        razaoSocial: dados.razao_social || '',
+        nomeFantasia: dados.nome_fantasia || '',
+        inscEstadual: '', // BrasilAPI não retorna IE — precisa consultar Sintegra separadamente
+        logradouro: dados.logradouro || '',
+        numero: dados.numero || '',
+        complemento: dados.complemento || '',
+        bairro: dados.bairro || '',
+        cidade: dados.municipio || '',
+        uf: dados.uf || '',
+        cep: dados.cep || '',
+        telefone: dados.ddd_telefone_1 ? `(${dados.ddd_telefone_1.substring(0, 2)}) ${dados.ddd_telefone_1.substring(2)}` : '',
+        email: dados.email || '',
+        situacao: dados.descricao_situacao_cadastral || '',
+        atividadePrincipal: dados.cnae_fiscal_descricao || '',
+        dataAbertura: dados.data_inicio_atividade || '',
+      }
+    } catch (err) {
+      console.error('[Consulta CNPJ] Erro:', err)
+      return reply.status(502).send({ message: 'Falha na comunicação com a API de consulta de CNPJ' })
+    }
+  })
 }
