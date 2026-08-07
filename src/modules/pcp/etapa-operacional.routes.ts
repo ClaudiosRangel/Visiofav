@@ -1013,8 +1013,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const centros = await prisma.centroProducao.findMany({
       where: { empresaId: user.empresaId, status: true },
-      include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true } } },
-      orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
+      include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } } },
+      orderBy: [{ tipoProcesso: { posicao: 'asc' } }, { posicao: 'asc' }, { codigo: 'asc' }],
     })
 
     // Buscar todas as etapas ativas (PENDENTE, EM_ANDAMENTO, PAUSADA) de OPs na produção
