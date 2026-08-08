@@ -231,6 +231,160 @@ function obterCodigoUF(uf: string): number {
 export async function cteRoutes(app: FastifyInstance) {
 
   // ==========================================================================
+  // GET /cte/defaults — Retorna configurações padrão da empresa para pré-preencher
+  // ==========================================================================
+  app.get('/cte/defaults', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId },
+      select: {
+        rntrc: true,
+        serieCTe: true,
+        ambienteNFe: true,
+        uf: true,
+        cidade: true,
+        cep: true,
+        inscEstadual: true,
+        razaoSocial: true,
+        nomeFantasia: true,
+        cnpj: true,
+        logradouro: true,
+        numero: true,
+        complemento: true,
+        bairro: true,
+      },
+    })
+
+    if (!empresa) {
+      return reply.status(404).send({ message: 'Empresa não encontrada' })
+    }
+
+    // Buscar parâmetros CT-e da tabela Parametro
+    const parametros = await prisma.parametro.findMany({
+      where: { empresaId: user.empresaId, chave: { startsWith: 'cte.' } },
+    })
+    const params: Record<string, string> = {}
+    for (const p of parametros) {
+      params[p.chave] = p.valor
+    }
+
+    return {
+      rntrc: empresa.rntrc || '',
+      serie: empresa.serieCTe || 1,
+      ambiente: empresa.ambienteNFe || 2,
+      ufEmitente: empresa.uf || '',
+      // Padrões configuráveis (tabela Parametro, prefixo cte.)
+      naturezaOp: params['cte.naturezaOp'] || 'PRESTACAO DE SERVICO DE TRANSPORTE',
+      modal: params['cte.modal'] || '01',
+      cstIcms: params['cte.cstIcms'] || '00',
+      aliqIcms: params['cte.aliqIcms'] ? Number(params['cte.aliqIcms']) : 12,
+      seguradora: params['cte.seguradora'] || '',
+      apolice: params['cte.apolice'] || '',
+    }
+  })
+
+  // ==========================================================================
+  // PUT /cte/defaults — Salvar configurações padrão CT-e da empresa
+  // ==========================================================================
+  app.put('/cte/defaults', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const body = z.object({
+      naturezaOp: z.string().max(100).optional(),
+      modal: z.string().max(2).optional(),
+      cstIcms: z.string().max(3).optional(),
+      aliqIcms: z.number().min(0).max(100).optional(),
+      seguradora: z.string().max(30).optional(),
+      apolice: z.string().max(20).optional(),
+    }).parse(request.body)
+
+    // Salvar cada campo como parâmetro
+    const campos = Object.entries(body).filter(([_, v]) => v != null)
+    for (const [chave, valor] of campos) {
+      await prisma.parametro.upsert({
+        where: { empresaId_chave: { empresaId: user.empresaId, chave: `cte.${chave}` } },
+        create: { empresaId: user.empresaId, chave: `cte.${chave}`, valor: String(valor) },
+        update: { valor: String(valor) },
+      })
+    }
+
+    return { sucesso: true }
+  })
+
+  // ==========================================================================
+  // GET /cte/buscar-participante/:cpfCnpj — Busca cliente/fornecedor pelo CPF/CNPJ
+  // ==========================================================================
+  app.get('/cte/buscar-participante/:cpfCnpj', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const { cpfCnpj } = z.object({ cpfCnpj: z.string().min(11).max(14) }).parse(request.params)
+
+    // Buscar no cadastro de Clientes
+    const cliente = await prisma.cliente.findFirst({
+      where: { empresaId: user.empresaId, cpfCnpj: { contains: cpfCnpj } },
+    })
+
+    if (cliente) {
+      return {
+        encontrado: true,
+        tipo: 'cliente',
+        cnpj: (cliente as any).cpfCnpj || '',
+        razaoSocial: (cliente as any).razaoSocial || (cliente as any).nome || '',
+        nomeFantasia: (cliente as any).nomeFantasia || '',
+        ie: (cliente as any).inscEstadual || '',
+        logradouro: (cliente as any).logradouro || '',
+        numero: (cliente as any).numero || '',
+        complemento: (cliente as any).complemento || '',
+        bairro: (cliente as any).bairro || '',
+        codigoMunicipio: (cliente as any).codigoMunicipio || '',
+        municipio: (cliente as any).cidade || '',
+        uf: (cliente as any).uf || '',
+        cep: (cliente as any).cep || '',
+        email: (cliente as any).email || '',
+        telefone: (cliente as any).telefone || '',
+      }
+    }
+
+    // Buscar no cadastro de Fornecedores
+    const fornecedor = await prisma.fornecedor.findFirst({
+      where: { empresaId: user.empresaId, cnpj: { contains: cpfCnpj } },
+    })
+
+    if (fornecedor) {
+      return {
+        encontrado: true,
+        tipo: 'fornecedor',
+        cnpj: (fornecedor as any).cnpj || '',
+        razaoSocial: (fornecedor as any).razaoSocial || (fornecedor as any).nome || '',
+        nomeFantasia: (fornecedor as any).nomeFantasia || '',
+        ie: (fornecedor as any).inscEstadual || '',
+        logradouro: (fornecedor as any).logradouro || '',
+        numero: (fornecedor as any).numero || '',
+        complemento: (fornecedor as any).complemento || '',
+        bairro: (fornecedor as any).bairro || '',
+        codigoMunicipio: (fornecedor as any).codigoMunicipio || '',
+        municipio: (fornecedor as any).cidade || '',
+        uf: (fornecedor as any).uf || '',
+        cep: (fornecedor as any).cep || '',
+        email: (fornecedor as any).email || '',
+        telefone: (fornecedor as any).telefone || '',
+      }
+    }
+
+    return { encontrado: false }
+  })
+
+  // ==========================================================================
   // GET /cte — Listar CT-e com filtros e paginação
   // ==========================================================================
   app.get('/cte', async (request, reply) => {

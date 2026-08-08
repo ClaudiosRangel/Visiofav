@@ -36,6 +36,10 @@ const empresaBodySchema = z.object({
   permiteRecebimentoParcial: z.boolean().optional().default(false),
   toleranciaQuantidadePercentualPadrao: z.number().min(0).max(100).nullable().optional(),
   logo: z.string().nullable().optional(),
+  // CT-e — Configurações padrão para emissão recorrente
+  rntrc: z.string().max(20).optional(),
+  serieCTe: z.number().int().min(0).max(999).optional(),
+  ambienteNFe: z.number().int().min(1).max(2).optional(),
 })
 
 export async function empresaSelectorRoutes(app: FastifyInstance) {
