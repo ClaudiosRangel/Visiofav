@@ -107,6 +107,15 @@ const valePedagioSchema = z.object({
   vValePed: z.number().min(0),
 })
 
+const veiculoNovoSchema = z.object({
+  chassi: z.string().length(17, 'Chassi deve ter 17 caracteres'),
+  cCor: z.string().max(4),
+  xCor: z.string().max(40),
+  cMod: z.string().max(6),
+  vUnit: z.number().min(0),
+  vFrete: z.number().min(0),
+})
+
 const emissaoCTeInputSchema = z.object({
   serie: z.number().int().min(0).max(999),
   cfop: z.string().regex(/^\d{4}$/),
@@ -181,6 +190,7 @@ const emissaoCTeInputSchema = z.object({
     }).optional(),
     seguro: z.array(seguroSchema).optional(),
     valePedagio: z.array(valePedagioSchema).optional(),
+    veicNovos: z.array(veiculoNovoSchema).optional(),
   }),
 
   // Complemento (opcional)
@@ -577,6 +587,7 @@ export async function cteRoutes(app: FastifyInstance) {
             })),
           },
           infModal: body.infCTeNorm.infModal,
+          veicNovos: body.infCTeNorm.veicNovos,
         },
         complemento: body.complemento,
         infAdFisco: body.infAdFisco,

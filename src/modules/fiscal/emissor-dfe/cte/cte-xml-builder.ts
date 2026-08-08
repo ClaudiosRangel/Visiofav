@@ -163,6 +163,8 @@ export interface DadosInfCTeNorm {
   infDoc: DadosInfDoc
   /** Informações do modal rodoviário (quando modal=01) */
   infModal?: DadosInfModalRodoviario
+  /** Veículos novos transportados (grupo veicNovos do CT-e) */
+  veicNovos?: VeiculoNovoCTe[]
 }
 
 export interface DadosInfCarga {
@@ -232,6 +234,22 @@ export interface VeiculoCTe {
   tpRod?: string
   /** Tipo de carroceria (00=Não aplicável, 01=Aberta, 02=Fechada/Baú, 03=Graneleira, 04=Porta Container, 05=Sider) */
   tpCar?: string
+}
+
+/** Veículo novo transportado — grupo <veicNovos> do CT-e */
+export interface VeiculoNovoCTe {
+  /** Chassi do veículo (17 caracteres) */
+  chassi: string
+  /** Código da cor DENATRAN (2 dígitos) */
+  cCor: string
+  /** Descrição da cor */
+  xCor: string
+  /** Código marca/modelo DENATRAN (6 dígitos) */
+  cMod: string
+  /** Valor unitário do veículo */
+  vUnit: number
+  /** Valor do frete unitário */
+  vFrete: number
 }
 
 export interface DadosComplementoCTe {
@@ -646,10 +664,28 @@ function buildInfCTeNorm(infCTeNorm: DadosInfCTeNorm): string {
   let xml = '<infCTeNorm>\n'
   xml += buildInfCarga(infCTeNorm.infCarga)
   xml += buildInfDoc(infCTeNorm.infDoc)
+  if (infCTeNorm.veicNovos && infCTeNorm.veicNovos.length > 0) {
+    xml += buildVeicNovos(infCTeNorm.veicNovos)
+  }
   if (infCTeNorm.infModal) {
     xml += buildInfModal(infCTeNorm.infModal)
   }
   xml += '</infCTeNorm>'
+  return xml
+}
+
+function buildVeicNovos(veiculos: VeiculoNovoCTe[]): string {
+  let xml = ''
+  for (const v of veiculos) {
+    xml += '<veicNovos>\n'
+    xml += `<chassi>${escXml(v.chassi)}</chassi>\n`
+    xml += `<cCor>${escXml(v.cCor)}</cCor>\n`
+    xml += `<xCor>${escXml(v.xCor)}</xCor>\n`
+    xml += `<cMod>${escXml(v.cMod)}</cMod>\n`
+    xml += `<vUnit>${fmtDec(v.vUnit)}</vUnit>\n`
+    xml += `<vFrete>${fmtDec(v.vFrete)}</vFrete>\n`
+    xml += '</veicNovos>\n'
+  }
   return xml
 }
 
