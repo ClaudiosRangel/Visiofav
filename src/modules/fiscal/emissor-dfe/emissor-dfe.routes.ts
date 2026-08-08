@@ -22,6 +22,7 @@ import { nfceEmissaoService } from './nfce/nfce-emissao.service'
 import { danfePdfService } from './nfe/danfe-pdf.service'
 import { cteRoutes } from './cte/cte.routes'
 import { cteTabelaFreteRoutes } from './cte/cte-tabela-frete.routes'
+import { exportacaoXmlRoutes } from './exportacao-xml.routes'
 import {
   cancelar,
   cartaCorrecao,
@@ -71,6 +72,9 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
 
   // Registrar rotas de Tabela de Frete CT-e
   app.register(cteTabelaFreteRoutes)
+
+  // Exportação de XMLs em lote (ZIP para contador)
+  app.register(exportacaoXmlRoutes)
 
   // Registrar rotas do MDF-e (modelo 58)
   app.register(mdfeRoutes)
