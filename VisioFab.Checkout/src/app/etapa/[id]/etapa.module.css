@@ -83,6 +83,7 @@
 .opNumero {
   font-size: 1.1rem;
   font-weight: 700;
+  color: #111111;
 }
 
 .status {
@@ -199,6 +200,7 @@
 .operadoresTitulo {
   margin: 0 0 12px;
   font-size: 1.05rem;
+  color: #111111;
 }
 
 .operadoresLista {
@@ -277,6 +279,7 @@
 .historicoTitulo {
   margin: 0 0 12px;
   font-size: 1.05rem;
+  color: #111111;
 }
 
 .historicoLista {

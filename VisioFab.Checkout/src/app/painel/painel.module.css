@@ -20,6 +20,7 @@
 .title {
   margin: 0;
   font-size: 1.4rem;
+  color: #111111;
 }
 
 .logoutButton {
@@ -54,6 +55,42 @@
   border-radius: 8px;
   text-decoration: none;
   white-space: nowrap;
+}
+
+.operadorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.operadorBannerIdentificado {
+  background-color: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.operadorBannerNaoIdentificado {
+  background-color: #fef3c7;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.operadorBannerNome {
+  font-weight: 700;
+}
+
+.operadorBannerLink {
+  font-weight: 600;
+  color: #1e40af;
+  text-decoration: underline;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .infoMessage {
@@ -153,6 +190,7 @@
 .opNumero {
   font-size: 1rem;
   font-weight: 700;
+  color: #111111;
 }
 
 .status {

@@ -41,6 +41,10 @@ import { checkoutApiClient } from '@/lib/checkout-api-client'
 import { useSessaoTerminal } from '@/contexts/sessao-terminal-context'
 import styles from './painel.module.css'
 
+/** Chaves de localStorage usadas para o Funcionario identificado (task 19.2). */
+const FUNCIONARIO_ID_STORAGE_KEY = 'checkout_funcionario_identificado_id'
+const FUNCIONARIO_NOME_STORAGE_KEY = 'checkout_funcionario_identificado_nome'
+
 /**
  * Shape de cada Etapa retornada por `GET /checkout/painel`, espelhando a
  * interface `EtapaPainelCheckout` de `checkout.service.ts` no backend
@@ -102,6 +106,15 @@ export default function PainelPage() {
   const [alertasPorEtapaId, setAlertasPorEtapaId] = useState<
     Map<string, EtapaEmAlertaParadaProlongada>
   >(new Map())
+
+  // Operador identificado — lido de localStorage (mesmo padrão de etapa/[id])
+  const [operadorNome, setOperadorNome] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const nome = window.localStorage.getItem(FUNCIONARIO_NOME_STORAGE_KEY)
+    setOperadorNome(nome)
+  }, [])
 
   // Proteção básica de rota client-side: sem Sessão_Terminal ativa, não
   // há Centro_Producao vinculado para listar o painel.
@@ -184,6 +197,26 @@ export default function PainelPage() {
           Autorizar retroativo
         </Link>
       </nav>
+
+      {/* Banner de operador identificado — mostra quem está logado ou
+          avisa que ninguém se identificou ainda. */}
+      {operadorNome ? (
+        <div className={`${styles.operadorBanner} ${styles.operadorBannerIdentificado}`}>
+          <span>
+            Operador: <span className={styles.operadorBannerNome}>{operadorNome}</span>
+          </span>
+          <Link href="/identificar-operador" className={styles.operadorBannerLink}>
+            Trocar
+          </Link>
+        </div>
+      ) : (
+        <div className={`${styles.operadorBanner} ${styles.operadorBannerNaoIdentificado}`}>
+          <span>Nenhum operador identificado</span>
+          <Link href="/identificar-operador" className={styles.operadorBannerLink}>
+            Identificar-se
+          </Link>
+        </div>
+      )}
 
       {carregando && <p className={styles.infoMessage}>Carregando fila de etapas...</p>}
 
