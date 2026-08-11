@@ -180,8 +180,17 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     const numeroOriginal = /^\d+$/.test(numeroLimpo) ? parseInt(numeroLimpo) : NaN
 
     if (!isNaN(numeroOriginal)) {
+      // Busca OP existente por número sequencial OU referência externa
+      // (cobre os casos: numero=2997, referenciaExterna="2997", referenciaExterna="2.997")
       const existe = await prisma.ordemProducao.findFirst({
-        where: { empresaId: user.empresaId, numero: numeroOriginal },
+        where: {
+          empresaId: user.empresaId,
+          OR: [
+            { numero: numeroOriginal },
+            { referenciaExterna: String(numeroOriginal) },
+            ...(numeroOpOriginal && numeroOpOriginal !== String(numeroOriginal) ? [{ referenciaExterna: numeroOpOriginal }] : []),
+          ],
+        },
       })
 
       if (existe) {
