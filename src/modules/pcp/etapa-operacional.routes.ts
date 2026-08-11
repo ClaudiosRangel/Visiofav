@@ -16,6 +16,7 @@ import {
   concluirEtapa,
   EtapaOperacionalError,
 } from './etapa-operacional.service'
+import { getPermissoes, verificarPermissaoAcao, PermissoesPorProcesso } from './permissoes-pcp.routes'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -23,11 +24,57 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
   app.addHook('preHandler', moduloGuard('PCP'))
 
+  /**
+   * Helper: verifica se o usuário tem permissão para executar uma ação em
+   * determinada etapa. Busca o tipoProcessoId do centro da etapa e consulta
+   * as permissões configuradas. ADMIN/SUPER_ADMIN sempre passam.
+   */
+  async function verificarPermissaoEtapa(
+    user: { id: string; empresaId: string; perfil?: string },
+    etapaId: string,
+    acao: keyof PermissoesPorProcesso,
+  ): Promise<{ permitido: boolean; tipoProcessoId?: string | null }> {
+    // ADMIN/SUPER_ADMIN bypass
+    if (user.perfil === 'SUPER_ADMIN' || user.perfil === 'ADMIN') {
+      return { permitido: true }
+    }
+    const permissoes = await getPermissoes(user.empresaId, user.id)
+    // Busca o tipoProcessoId do centro associado à etapa
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id: etapaId, ordemProducao: { empresaId: user.empresaId } },
+      select: { centroProducao: { select: { tipoProcessoId: true } } },
+    })
+    const tipoProcessoId = etapa?.centroProducao?.tipoProcessoId || null
+    const permitido = verificarPermissaoAcao(permissoes, acao, tipoProcessoId)
+    return { permitido, tipoProcessoId }
+  }
+
+  /**
+   * Helper: verifica permissão para ações no nível da OP (postergar, prioridade).
+   * Busca o tipoProcessoId a partir das etapas da OP (usa o da primeira etapa ativa).
+   */
+  async function verificarPermissaoOp(
+    user: { id: string; empresaId: string; perfil?: string },
+    opId: string,
+    acao: keyof PermissoesPorProcesso,
+  ): Promise<boolean> {
+    if (user.perfil === 'SUPER_ADMIN' || user.perfil === 'ADMIN') return true
+    const permissoes = await getPermissoes(user.empresaId, user.id)
+    // Busca a primeira etapa da OP para determinar o tipo de processo
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { ordemProducaoId: opId },
+      select: { centroProducao: { select: { tipoProcessoId: true } } },
+      orderBy: { sequencia: 'asc' },
+    })
+    const tipoProcessoId = etapa?.centroProducao?.tipoProcessoId || null
+    return verificarPermissaoAcao(permissoes, acao, tipoProcessoId)
+  }
+
   // =========================================================================
   // PATCH /api/pcp/etapas/reordenar — Reordena etapas na fila de uma máquina
   // =========================================================================
   app.patch('/etapas/reordenar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const body = z.object({
       centroProducaoId: z.string().uuid(),
       etapaIds: z.array(z.string().uuid()).min(1),
@@ -40,6 +87,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       // antigas — se omitido, nenhuma etapa é marcada como manual.
       etapaMovidaId: z.string().uuid().optional(),
     }).parse(request.body)
+
+    // Verificar permissão de reordenar fila
+    if (user.perfil !== 'SUPER_ADMIN' && user.perfil !== 'ADMIN') {
+      const permissoes = await getPermissoes(user.empresaId, user.id)
+      if (!permissoes.podeReordenarFila) {
+        return reply.status(403).send({ message: 'Sem permissão para reordenar a fila' })
+      }
+    }
 
     // Verify all etapas belong to this empresa and centro
     const etapas = await prisma.etapaOrdemProducao.findMany({
@@ -73,9 +128,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // PATCH /api/pcp/etapas/:id/iniciar — Operador inicia a etapa
   // =========================================================================
   app.patch('/etapas/:id/iniciar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
     const body = z.object({ funcionarioId: z.string().uuid().optional() }).parse(request.body)
+
+    // Verificar permissão
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeIniciar')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para iniciar etapas neste tipo de processo' })
+    }
 
     try {
       return await iniciarEtapa(id, user.empresaId, body.funcionarioId || user.id)
@@ -91,12 +152,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // PATCH /api/pcp/etapas/:id/pausar — Pausa a etapa (parada de máquina)
   // =========================================================================
   app.patch('/etapas/:id/pausar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
     const body = z.object({
       motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']),
       observacao: z.string().optional(),
     }).parse(request.body)
+
+    // Verificar permissão
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podePausar')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para pausar etapas neste tipo de processo' })
+    }
 
     try {
       return await pausarEtapa(id, user.empresaId, body)
@@ -117,8 +184,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // numéricos chegam como string e precisam ser convertidos antes do parse.
   // =========================================================================
   app.post('/etapas/:id/apontar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
+
+    // Verificar permissão de apontar
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeApontar')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para apontar produção neste tipo de processo' })
+    }
 
     const bodySchema = z.object({
       quantidadeProduzida: z.coerce.number().min(0).default(0),
@@ -169,8 +242,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // PATCH /api/pcp/etapas/:id/concluir — Finaliza a etapa
   // =========================================================================
   app.patch('/etapas/:id/concluir', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
+
+    // Verificar permissão
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeFinalizar')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para finalizar etapas neste tipo de processo' })
+    }
 
     try {
       return await concluirEtapa(id, user.empresaId, user.id)
@@ -186,8 +265,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // POST /api/pcp/etapas/:id/desmembrar — Divide quantidade entre máquinas
   // =========================================================================
   app.post('/etapas/:id/desmembrar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
+
+    // Verificar permissão
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeDesmembrar')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para desmembrar etapas neste tipo de processo' })
+    }
+
     const body = z.object({
       partes: z.array(z.object({
         centroProducaoId: z.string().uuid(),
@@ -321,9 +407,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // PATCH /api/pcp/etapas/:id/observacao — Atualiza observação do operador (inline)
   // =========================================================================
   app.patch('/etapas/:id/observacao', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
     const body = z.object({ observacaoOperador: z.string().max(500) }).parse(request.body)
+
+    // Verificar permissão
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeEditarObservacao')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para editar observação neste tipo de processo' })
+    }
 
     const etapa = await prisma.etapaOrdemProducao.findFirst({
       where: { id, ordemProducao: { empresaId: user.empresaId } },
@@ -414,11 +506,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // PATCH /api/pcp/programacao/postergar-entrega — Posterga data de entrega da OP
   // =========================================================================
   app.patch('/programacao/postergar-entrega', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const body = z.object({
       opId: z.string().uuid(),
       novaDataEntrega: z.string(),
     }).parse(request.body)
+
+    // Verificar permissão
+    const permitido = await verificarPermissaoOp(user, body.opId, 'podePostergarEntrega')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para postergar entrega' })
+    }
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id: body.opId, empresaId: user.empresaId },
@@ -449,8 +547,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // POST /api/pcp/programacao/reextrair-pdf — Re-extrai Matriz e Formato do PDF salvo
   // =========================================================================
   app.post('/programacao/reextrair-pdf', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const body = z.object({ opId: z.string().uuid() }).parse(request.body)
+
+    // Verificar permissão
+    const permitido = await verificarPermissaoOp(user, body.opId, 'podeReextrair')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para re-extrair PDF' })
+    }
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id: body.opId, empresaId: user.empresaId },
@@ -555,9 +659,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // PATCH /api/pcp/etapas/:id/mover — Move etapa para outro centro de produção
   // =========================================================================
   app.patch('/etapas/:id/mover', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
     const body = z.object({ centroProducaoId: z.string().uuid() }).parse(request.body)
+
+    // Verificar permissão
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeMover')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para mover etapas neste tipo de processo' })
+    }
 
     const etapa = await prisma.etapaOrdemProducao.findFirst({
       where: { id, ordemProducao: { empresaId: user.empresaId } },

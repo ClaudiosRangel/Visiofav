@@ -14,11 +14,25 @@ import { moduloGuard } from '../../middleware/modulo-guard'
  * frontend decidir o que mostrar/ocultar).
  */
 
+export interface PermissoesPorProcesso {
+  podeIniciar?: boolean
+  podeFinalizar?: boolean
+  podePausar?: boolean
+  podeApontar?: boolean
+  podeMover?: boolean
+  podeDesmembrar?: boolean
+  podeReextrair?: boolean
+  podeAlterarPrioridade?: boolean
+  podePostergarEntrega?: boolean
+  podeEditarObservacao?: boolean
+}
+
 export interface PermissoesPcpUsuario {
   // Tipos de processo que o usuário pode visualizar (array de tipoProcessoId)
   // Se vazio ou ausente, pode ver todos
   tiposProcessoVisiveis: string[]
-  // Ações permitidas na Programação
+  // Ações permitidas na Programação (globais — usadas como fallback se não há
+  // configuração específica por tipo de processo)
   podeIniciar: boolean
   podeFinalizar: boolean
   podePausar: boolean
@@ -36,6 +50,9 @@ export interface PermissoesPcpUsuario {
   podeCriarGrupo: boolean
   // Flag: funcionário de pré-impressão (habilita ação "pintar matriz")
   isPreImpressao: boolean
+  // Permissões granulares por Tipo de Processo (tipoProcessoId → flags)
+  // Se definido, SOBRESCREVE as flags globais para aquele tipo de processo.
+  permissoesPorProcesso?: Record<string, PermissoesPorProcesso>
 }
 
 const DEFAULT_PERMISSOES: PermissoesPcpUsuario = {
@@ -60,7 +77,7 @@ function chavePermissoes(usuarioId: string) {
   return `pcp.permissoes.${usuarioId}`
 }
 
-async function getPermissoes(empresaId: string, usuarioId: string): Promise<PermissoesPcpUsuario> {
+export async function getPermissoes(empresaId: string, usuarioId: string): Promise<PermissoesPcpUsuario> {
   const param = await prisma.parametro.findUnique({
     where: { empresaId_chave: { empresaId, chave: chavePermissoes(usuarioId) } },
   })
@@ -70,6 +87,33 @@ async function getPermissoes(empresaId: string, usuarioId: string): Promise<Perm
   } catch {
     return { ...DEFAULT_PERMISSOES }
   }
+}
+
+/**
+ * Verifica se o usuário tem permissão para executar uma ação específica,
+ * considerando as permissões por tipo de processo (quando configuradas)
+ * ou as permissões globais como fallback.
+ *
+ * @param permissoes - Permissões do usuário (resultado de getPermissoes)
+ * @param acao - Nome do campo booleano (ex: 'podeIniciar', 'podePausar')
+ * @param tipoProcessoId - ID do tipo de processo do centro (obtido da etapa)
+ * @returns true se a ação é permitida
+ */
+export function verificarPermissaoAcao(
+  permissoes: PermissoesPcpUsuario,
+  acao: keyof PermissoesPorProcesso,
+  tipoProcessoId?: string | null,
+): boolean {
+  // Se há configuração específica para este tipo de processo, usa ela
+  if (tipoProcessoId && permissoes.permissoesPorProcesso?.[tipoProcessoId]) {
+    const permsProcesso = permissoes.permissoesPorProcesso[tipoProcessoId]
+    // Se o campo está definido (true/false), usa. Senão, fallback para global.
+    if (acao in permsProcesso && permsProcesso[acao] !== undefined) {
+      return permsProcesso[acao]!
+    }
+  }
+  // Fallback: permissão global
+  return permissoes[acao] ?? true
 }
 
 const permissoesSchema = z.object({
@@ -88,6 +132,18 @@ const permissoesSchema = z.object({
   podeReordenarGrupos: z.boolean().optional(),
   podeCriarGrupo: z.boolean().optional(),
   isPreImpressao: z.boolean().optional(),
+  permissoesPorProcesso: z.record(z.string(), z.object({
+    podeIniciar: z.boolean().optional(),
+    podeFinalizar: z.boolean().optional(),
+    podePausar: z.boolean().optional(),
+    podeApontar: z.boolean().optional(),
+    podeMover: z.boolean().optional(),
+    podeDesmembrar: z.boolean().optional(),
+    podeReextrair: z.boolean().optional(),
+    podeAlterarPrioridade: z.boolean().optional(),
+    podePostergarEntrega: z.boolean().optional(),
+    podeEditarObservacao: z.boolean().optional(),
+  })).optional(),
 })
 
 export async function permissoesPcpRoutes(app: FastifyInstance) {
