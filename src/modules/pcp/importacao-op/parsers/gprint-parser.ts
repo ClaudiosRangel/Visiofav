@@ -232,17 +232,32 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
   }
 
   // Quantidade
-  const matchQtd = texto.match(/Quantidade:?\s*([\d.,]+)/i)
-  if (matchQtd) {
-    cabecalho.quantidade = parseNumero(matchQtd[1])
+  // Padrão "Quantidade: 16.000 + 1.600 (excedente)" — soma principal + excedente
+  const matchQtdExcedente = texto.match(/Quantidade:?\s*([\d.,]+)\s*\+\s*([\d.,]+)/i)
+  if (matchQtdExcedente) {
+    const principal = parseNumero(matchQtdExcedente[1])
+    const exc = parseNumero(matchQtdExcedente[2])
+    cabecalho.quantidade = principal + exc
+    cabecalho.excedente = exc
   } else {
-    avisos.push('Quantidade não encontrada')
+    const matchQtd = texto.match(/Quantidade:?\s*([\d.,]+)/i)
+    if (matchQtd) {
+      cabecalho.quantidade = parseNumero(matchQtd[1])
+    } else {
+      avisos.push('Quantidade não encontrada')
+    }
   }
 
-  // Excedente
-  const matchExcedente = texto.match(/\(excedente\)\s*([\d.,]+)/i) || texto.match(/excedente:?\s*([\d.,]+)/i)
-  if (matchExcedente) {
-    cabecalho.excedente = parseNumero(matchExcedente[1])
+  // Excedente (fallback para formato alternativo onde número vem depois da palavra)
+  if (!cabecalho.excedente) {
+    const matchExcedente = texto.match(/\(excedente\)\s*([\d.,]+)/i) || texto.match(/excedente:?\s*([\d.,]+)/i)
+    if (matchExcedente) {
+      cabecalho.excedente = parseNumero(matchExcedente[1])
+      // Se o excedente ainda não foi somado à quantidade, somar
+      if (cabecalho.quantidade && !matchQtdExcedente) {
+        cabecalho.quantidade += cabecalho.excedente
+      }
+    }
   }
 
   // Pedido
