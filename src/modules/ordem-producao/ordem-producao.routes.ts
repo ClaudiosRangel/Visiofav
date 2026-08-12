@@ -49,6 +49,8 @@ const listQuerySchema = z.object({
   produtoId: z.string().uuid().optional(),
   clienteId: z.string().uuid().optional(),
   pedidoVendaId: z.string().uuid().optional(),
+  cliente: z.string().optional(),
+  produto: z.string().optional(),
   dataEntregaDe: z.string().optional(),
   dataEntregaAte: z.string().optional(),
   numero: z.coerce.number().int().optional(),
@@ -80,6 +82,22 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     if (query.clienteId) where.clienteId = query.clienteId
     if (query.pedidoVendaId) where.pedidoVendaId = query.pedidoVendaId
     if (query.numero) where.numero = query.numero
+    // Filtro por texto de cliente (busca na tag [Cliente] nas observações)
+    if (query.cliente) {
+      where.observacoes = { ...(where.observacoes || {}), contains: query.cliente, mode: 'insensitive' }
+    }
+    // Filtro por texto de produto (busca na tag [Produto] nas observações)
+    if (query.produto) {
+      // Se já tem filtro de observações (cliente), combina com AND
+      if (where.observacoes) {
+        where.AND = [
+          ...(where.AND || []),
+          { observacoes: { contains: query.produto, mode: 'insensitive' } },
+        ]
+      } else {
+        where.observacoes = { contains: query.produto, mode: 'insensitive' }
+      }
+    }
 
     if (query.dataEntregaDe || query.dataEntregaAte) {
       where.dataEntregaPrevista = {}
