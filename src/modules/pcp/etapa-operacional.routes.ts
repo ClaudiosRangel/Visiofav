@@ -1403,6 +1403,22 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const clienteMap = new Map(clientes.map(c => [c.id, c.nomeFantasia || c.razaoSocial]))
     const produtoMap = new Map(produtos.map(p => [p.id, `${p.codigo} - ${p.nome}`]))
 
+    // Buscar TODAS as etapas (incluindo concluídas) das OPs presentes no painel,
+    // para determinar se a etapa anterior de cada etapa ativa já foi concluída.
+    const opIdsNoPainel = [...new Set(etapasAtivas.map(e => e.ordemProducaoId))]
+    const todasEtapasPorOp = new Map<string, Array<{ sequencia: number; status: string }>>()
+    if (opIdsNoPainel.length > 0) {
+      const todasEtapas = await prisma.etapaOrdemProducao.findMany({
+        where: { ordemProducaoId: { in: opIdsNoPainel } },
+        select: { ordemProducaoId: true, sequencia: true, status: true },
+        orderBy: { sequencia: 'asc' },
+      })
+      for (const et of todasEtapas) {
+        if (!todasEtapasPorOp.has(et.ordemProducaoId)) todasEtapasPorOp.set(et.ordemProducaoId, [])
+        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ sequencia: et.sequencia, status: et.status })
+      }
+    }
+
     // Detecta "encomendado" em: observações da OP, descrição dos itens PAPEL, ou descricaoExterna
     function temMaterialEncomendado(e: typeof etapasAtivas[0]): boolean {
       if (e.ordemProducao.observacoes && /encomendad/i.test(e.ordemProducao.observacoes)) return true
@@ -1601,10 +1617,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               return null
             })(),
             // Etapa anterior concluída: true se a etapa com sequência imediatamente
-            // anterior (na mesma OP) já está CONCLUIDA
+            // anterior (na mesma OP) já está CONCLUIDA. Usa todasEtapasPorOp que
+            // inclui etapas concluídas (que já saíram de etapasAtivas).
             etapaAnteriorConcluida: (() => {
-              const etapasMesmaOp = etapasAtivas.filter(ea => ea.ordemProducaoId === e.ordemProducaoId)
-              const anteriores = etapasMesmaOp.filter(ea => ea.sequencia < e.sequencia)
+              const todasDaOp = todasEtapasPorOp.get(e.ordemProducaoId) || []
+              const anteriores = todasDaOp.filter(ea => ea.sequencia < e.sequencia)
               if (anteriores.length === 0) return null // não há etapa anterior
               const maisProxima = anteriores.sort((a, b) => b.sequencia - a.sequencia)[0]
               return maisProxima.status === 'CONCLUIDA'
