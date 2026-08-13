@@ -937,12 +937,6 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       include: { centroProducao: { select: { id: true, descricao: true } } },
     })
 
-    // Reordena a fila automaticamente (nº OP → data de entrega), respeitando
-    // as etapas já posicionadas manualmente pelo usuário.
-    if (body.centroProducaoId) {
-      await reordenarFilaAutomaticamente(body.centroProducaoId)
-    }
-
     return reply.status(201).send(etapa)
   })
 

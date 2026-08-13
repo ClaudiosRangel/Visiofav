@@ -394,12 +394,19 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       etapasCriadas.push(etapaCriada)
     }
 
-    // Reordena automaticamente (nº OP → data de entrega) a fila de cada
-    // centro que recebeu uma etapa nova nesta importação, respeitando
-    // etapas já posicionadas manualmente pelo usuário em outras OPs.
-    const centrosAfetados = new Set(etapasCriadas.map(e => e.centroProducaoId).filter((id): id is string => !!id))
-    for (const centroId of centrosAfetados) {
-      await reordenarFilaAutomaticamente(centroId)
+    // Novas etapas entram no final da fila de cada centro (não interfere na
+    // ordem existente definida pelo usuário via drag-and-drop).
+    for (const etapaCriada of etapasCriadas) {
+      if (etapaCriada.centroProducaoId) {
+        const maxPos = await prisma.etapaOrdemProducao.aggregate({
+          where: { centroProducaoId: etapaCriada.centroProducaoId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] }, id: { not: etapaCriada.id } },
+          _max: { posicaoFila: true },
+        })
+        await prisma.etapaOrdemProducao.update({
+          where: { id: etapaCriada.id },
+          data: { posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
+        })
+      }
     }
 
     // Registrar log

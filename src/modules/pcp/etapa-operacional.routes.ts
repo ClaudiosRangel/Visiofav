@@ -687,21 +687,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const centroOrigemId = etapa.centroProducaoId
 
-    // Etapa entra no centro destino como uma nova posição, sem posicionamento
-    // manual prévio (mesmo que já tivesse sido arrastada no centro anterior)
-    // — a reordenação automática decide onde ela entra na fila do destino.
-    const atualizada = await prisma.etapaOrdemProducao.update({
-      where: { id },
-      data: { centroProducaoId: body.centroProducaoId, ordemManual: false },
+    // Etapa entra no final da fila do centro destino (não interfere na ordem
+    // existente). Sem posicionamento manual prévio.
+    const maxPos = await prisma.etapaOrdemProducao.aggregate({
+      where: { centroProducaoId: body.centroProducaoId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+      _max: { posicaoFila: true },
     })
 
-    // Reordena a fila do centro de destino (nº OP → data de entrega) e,
-    // se havia um centro de origem diferente, também reordena a origem
-    // (a saída da etapa pode ter deixado "buracos" nas posições manuais).
-    await reordenarFilaAutomaticamente(body.centroProducaoId)
-    if (centroOrigemId && centroOrigemId !== body.centroProducaoId) {
-      await reordenarFilaAutomaticamente(centroOrigemId)
-    }
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: { centroProducaoId: body.centroProducaoId, ordemManual: false, posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
+    })
 
     return { id: atualizada.id, centroProducaoId: atualizada.centroProducaoId }
   })
@@ -765,10 +761,6 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
       },
     })
-
-    // Reordena a fila automaticamente (nº OP → data de entrega), respeitando
-    // as etapas já posicionadas manualmente pelo usuário.
-    await reordenarFilaAutomaticamente(body.centroProducaoId)
 
     return reply.status(201).send(etapa)
   })
@@ -874,10 +866,6 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
       },
     })
-
-    // Reordena a fila automaticamente (nº OP → data de entrega), respeitando
-    // as etapas já posicionadas manualmente pelo usuário.
-    await reordenarFilaAutomaticamente(body.centroProducaoId)
 
     return reply.status(201).send({ op, etapa, referenciaAvulsa })
   })
