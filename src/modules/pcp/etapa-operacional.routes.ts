@@ -110,12 +110,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }
 
     // Update posicaoFila for each etapa based on array order.
+    // TODAS as etapas da fila são marcadas como ordemManual=true — o usuário
+    // definiu a ordem inteira ao arrastar, não apenas a etapa individual.
+    // Isso garante que `reordenarFilaAutomaticamente` (chamada por importação
+    // de PDF, adicionar OS, mover etapa, etc.) NUNCA mexe numa fila que já
+    // foi organizada manualmente pelo usuário.
     const updates = body.etapaIds.map((id, index) =>
       prisma.etapaOrdemProducao.update({
         where: { id },
         data: {
           posicaoFila: index + 1,
-          ...(body.etapaMovidaId === id ? { ordemManual: true } : {}),
+          ordemManual: true,
         },
       })
     )
