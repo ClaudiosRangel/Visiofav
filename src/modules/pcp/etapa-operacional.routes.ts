@@ -1591,6 +1591,24 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             materialEncomendado: temMaterialEncomendado(e),
             tipoOp: extrairTipoOpObs(e.ordemProducao.observacoes),
             matriz: extrairMatrizObs(e.ordemProducao.observacoes),
+            // Status de pré-impressão: FINALIZADO, METADE, PROBLEMA ou null
+            preImpressaoStatus: (() => {
+              const obs = e.observacaoOperador || ''
+              const match = obs.match(/\[PREIMPRESS:(\w+)\]/)
+              if (match) return match[1]
+              // Legado: [MATRIZ_OK] = FINALIZADO
+              if (obs.includes('[MATRIZ_OK]')) return 'FINALIZADO'
+              return null
+            })(),
+            // Etapa anterior concluída: true se a etapa com sequência imediatamente
+            // anterior (na mesma OP) já está CONCLUIDA
+            etapaAnteriorConcluida: (() => {
+              const etapasMesmaOp = etapasAtivas.filter(ea => ea.ordemProducaoId === e.ordemProducaoId)
+              const anteriores = etapasMesmaOp.filter(ea => ea.sequencia < e.sequencia)
+              if (anteriores.length === 0) return null // não há etapa anterior
+              const maisProxima = anteriores.sort((a, b) => b.sequencia - a.sequencia)[0]
+              return maisProxima.status === 'CONCLUIDA'
+            })(),
             ...cores,
           }
         }),

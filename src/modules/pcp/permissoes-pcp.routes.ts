@@ -237,12 +237,15 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
-  // POST /api/pcp/programacao/pintar-matriz — Marca uma etapa como "matriz
-  // aprovada" (pré-impressão) — seta flag visual no campo observacaoOperador
+  // POST /api/pcp/programacao/pintar-matriz — Define status de pré-impressão
+  // da etapa. Status possíveis: FINALIZADO, METADE, PROBLEMA, null (remover).
   // =========================================================================
   app.post('/programacao/pintar-matriz', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
-    const { etapaId } = z.object({ etapaId: z.string().uuid() }).parse(request.body)
+    const body = z.object({
+      etapaId: z.string().uuid(),
+      status: z.enum(['FINALIZADO', 'METADE', 'PROBLEMA']).optional().nullable(),
+    }).parse(request.body)
 
     // Verificar permissão de pré-impressão
     const permissoes = await getPermissoes(user.empresaId, user.id)
@@ -252,7 +255,7 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
 
     // Verificar que a etapa pertence à empresa
     const etapa = await prisma.etapaOrdemProducao.findFirst({
-      where: { id: etapaId, ordemProducao: { empresaId: user.empresaId } },
+      where: { id: body.etapaId, ordemProducao: { empresaId: user.empresaId } },
       select: { id: true, observacaoOperador: true },
     })
 
@@ -260,20 +263,20 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Etapa não encontrada' })
     }
 
-    // Toggle: se já tem a tag [MATRIZ_OK], remove; senão adiciona
-    const TAG = '[MATRIZ_OK]'
-    const obsAtual = etapa.observacaoOperador || ''
-    const jaTemTag = obsAtual.includes(TAG)
+    let obsAtual = etapa.observacaoOperador || ''
+    // Remover tags legadas e novas
+    obsAtual = obsAtual.replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim()
+
+    if (body.status) {
+      const TAG = `[PREIMPRESS:${body.status}]`
+      obsAtual = obsAtual ? `${obsAtual} ${TAG}` : TAG
+    }
 
     await prisma.etapaOrdemProducao.update({
-      where: { id: etapaId },
-      data: {
-        observacaoOperador: jaTemTag
-          ? obsAtual.replace(TAG, '').trim()
-          : (obsAtual ? `${obsAtual} ${TAG}` : TAG),
-      },
+      where: { id: body.etapaId },
+      data: { observacaoOperador: obsAtual || null },
     })
 
-    return { matrizOk: !jaTemTag }
+    return { preImpressaoStatus: body.status || null }
   })
 }
