@@ -1131,6 +1131,8 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     // Pode excluir — remover dependências em cascata
     await prisma.$transaction([
+      prisma.itemLiberacao.deleteMany({ where: { liberacaoMaterial: { ordemProducaoId: id } } }),
+      prisma.liberacaoMaterial.deleteMany({ where: { ordemProducaoId: id } }),
       prisma.apontamentoEtapa.deleteMany({ where: { etapaOrdemProducao: { ordemProducaoId: id } } }),
       prisma.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId: id } }),
       prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: id } }),
