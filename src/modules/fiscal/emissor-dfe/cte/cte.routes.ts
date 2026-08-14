@@ -21,6 +21,7 @@ import { prisma } from '../../../../lib/prisma'
 import { cteEmissaoService } from './cte-emissao.service'
 import { gerarDactePdf } from './cte-dacte-pdf.service'
 import { parseNFeXml, autoCadastrarParticipante } from './cte-importar-nfe.service'
+import { extrairTextoDanfePdf, parseDanfeTexto } from './cte-danfe-parser.service'
 import { ErroFiscal, CodigoErroFiscal } from '../../erros'
 import type { DadosCTe } from './cte-xml-builder'
 
@@ -473,6 +474,126 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
       }
       return reply.status(500).send({ message: err.message || 'Erro ao processar NF-e' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/importar-danfe-pdf — Importar DANFE (PDF) para gerar CT-e
+  // ==========================================================================
+  app.post('/cte/importar-danfe-pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      // Receber o PDF como base64 no body (simples, sem multipart)
+      const body = z.object({
+        pdfBase64: z.string().min(100, 'PDF inválido ou vazio'),
+      }).parse(request.body)
+
+      // Converter base64 para Buffer
+      const base64Data = body.pdfBase64.replace(/^data:application\/pdf;base64,/, '')
+      const pdfBuffer = Buffer.from(base64Data, 'base64')
+
+      // Extrair texto do PDF
+      const texto = await extrairTextoDanfePdf(pdfBuffer)
+
+      if (!texto || texto.trim().length < 50) {
+        return reply.status(422).send({ message: 'Não foi possível extrair texto do PDF. O arquivo pode ser uma imagem (escaneado).' })
+      }
+
+      // Parsear dados do DANFE
+      const dados = parseDanfeTexto(texto)
+
+      if (!dados.chaveAcesso) {
+        return reply.status(422).send({
+          message: 'Não foi possível encontrar a chave de acesso de 44 dígitos no PDF. Verifique se é um DANFE válido.',
+          textoExtraido: texto.substring(0, 500),
+        })
+      }
+
+      // Montar resposta similar à importação de XML
+      const origemUf = dados.emitente.uf
+      const destinoUf = dados.destinatario.uf
+      const cfopSugerido = origemUf && destinoUf ? (origemUf === destinoUf ? '5353' : '6353') : '5353'
+
+      // Buscar defaults
+      const empresa = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+        select: { rntrc: true, serieCTe: true },
+      })
+      const parametros = await prisma.parametro.findMany({
+        where: { empresaId: user.empresaId, chave: { startsWith: 'cte.' } },
+      })
+      const params: Record<string, string> = {}
+      for (const p of parametros) params[p.chave] = p.valor
+
+      return {
+        sucesso: true,
+        origem: 'PDF',
+        dadosExtraidos: {
+          chaveAcesso: dados.chaveAcesso,
+          numero: dados.numero,
+          serie: dados.serie,
+          remetente: dados.emitente,
+          destinatario: dados.destinatario,
+          valorCarga: dados.valorTotal,
+          pesoBruto: dados.pesoBruto,
+          produtos: dados.produtos || 'MERCADORIAS',
+          origemMun: dados.emitente.municipio,
+          origemUf,
+          destinoMun: dados.destinatario.municipio,
+          destinoUf,
+          veiculosNovos: [],
+        },
+        ctePrePreenchido: {
+          serie: empresa?.serieCTe || 1,
+          cfop: cfopSugerido,
+          naturezaOp: params['cte.naturezaOp'] || 'PRESTACAO DE SERVICO DE TRANSPORTE',
+          modal: params['cte.modal'] || '01',
+          tpServ: 0,
+          tpTom: 0,
+          cMunIni: '',
+          xMunIni: dados.emitente.municipio,
+          ufIni: origemUf,
+          cMunFim: '',
+          xMunFim: dados.destinatario.municipio,
+          ufFim: destinoUf,
+          remetente: {
+            cnpj: dados.emitente.cnpj,
+            cpf: '',
+            razaoSocial: dados.emitente.razaoSocial,
+            nomeFantasia: '',
+            ie: dados.emitente.ie,
+            logradouro: '', numero: '', complemento: '', bairro: '',
+            codigoMunicipio: '', municipio: dados.emitente.municipio,
+            uf: origemUf, cep: '', email: '', telefone: '',
+          },
+          destinatario: {
+            cnpj: dados.destinatario.cnpj,
+            cpf: dados.destinatario.cpf,
+            razaoSocial: dados.destinatario.razaoSocial,
+            nomeFantasia: '',
+            ie: dados.destinatario.ie,
+            logradouro: '', numero: '', complemento: '', bairro: '',
+            codigoMunicipio: '', municipio: dados.destinatario.municipio,
+            uf: destinoUf, cep: '', email: '', telefone: '',
+          },
+          infCarga: {
+            vCarga: dados.valorTotal,
+            proPred: dados.produtos || 'MERCADORIAS',
+            pesoBruto: dados.pesoBruto,
+          },
+          nfesVinculadas: [{ chave: dados.chaveAcesso }],
+          veicNovos: [],
+          rntrc: empresa?.rntrc || '',
+          cstIcms: params['cte.cstIcms'] || '00',
+          aliqIcms: params['cte.aliqIcms'] ? Number(params['cte.aliqIcms']) : 12,
+        },
+      }
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro ao processar PDF' })
     }
   })
 
