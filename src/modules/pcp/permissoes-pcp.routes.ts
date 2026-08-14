@@ -272,6 +272,8 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
       obsAtual = obsAtual ? `${obsAtual} ${TAG}` : TAG
     }
 
+    console.log(`[pintar-matriz] etapaId=${body.etapaId} status=${body.status} obsAntes="${etapa.observacaoOperador}" obsDepois="${obsAtual}"`)
+
     await prisma.etapaOrdemProducao.update({
       where: { id: body.etapaId },
       data: { observacaoOperador: obsAtual || null },

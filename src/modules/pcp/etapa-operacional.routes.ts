@@ -1651,7 +1651,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             preImpressaoStatus: (() => {
               const obs = e.observacaoOperador || ''
               const match = obs.match(/\[PREIMPRESS:(\w+)\]/)
-              if (match) return match[1]
+              if (match) {
+                console.log(`[painel] etapa opNumero=${e.ordemProducao.referenciaExterna || e.ordemProducao.numero} preimpress=${match[1]} obs="${obs.substring(0, 60)}"`)
+                return match[1]
+              }
               // Legado: [MATRIZ_OK] = FINALIZADO
               if (obs.includes('[MATRIZ_OK]')) return 'FINALIZADO'
               return null
