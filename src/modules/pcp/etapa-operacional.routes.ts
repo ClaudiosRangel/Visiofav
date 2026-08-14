@@ -1420,30 +1420,30 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     }
     // Mapa de tipoProcessoId → posicao (para lookup rápido nas etapas ativas)
-    // Usa o campo `posicao` do TipoProcesso. Se vários tipos tiverem posicao=0
-    // (migração antiga), gera um índice sequencial a partir da lista ordenada
-    // de tipos de processo ATIVOS da empresa para garantir ordem correta.
+    // Constrói a partir dos centros já carregados. Se os valores de posicao do
+    // TipoProcesso forem todos iguais (migração antiga), gera um índice
+    // sequencial baseado na ordem de aparição (que já vem ordenada).
     const tipoProcessoPosicaoMap = new Map<string, number>()
-    const tiposProcessoVistos = new Map<string, { posicao: number; id: string }>()
+    const tiposVistos = new Map<string, number>()
+    let idxTipo = 0
     for (const centro of centros) {
-      if (centro.tipoProcessoId && centro.tipoProcesso && !tiposProcessoVistos.has(centro.tipoProcessoId)) {
-        tiposProcessoVistos.set(centro.tipoProcessoId, { posicao: centro.tipoProcesso.posicao, id: centro.tipoProcessoId })
+      if (centro.tipoProcessoId && !tiposVistos.has(centro.tipoProcessoId)) {
+        tiposVistos.set(centro.tipoProcessoId, centro.tipoProcesso?.posicao ?? idxTipo)
+        idxTipo++
       }
     }
-    // Verificar se todas as posições são iguais (ex: todos 0) — se sim, usar a ordem da lista
-    const posicoes = [...tiposProcessoVistos.values()].map(t => t.posicao)
+    // Verificar se todas posições são iguais (ex: todos 0)
+    const posicoes = [...tiposVistos.values()]
     const todasIguais = posicoes.length > 1 && posicoes.every(p => p === posicoes[0])
     if (todasIguais) {
-      // Buscar tipos de processo ordenados corretamente
-      const tiposOrdenados = await prisma.tipoProcesso.findMany({
-        where: { empresaId: user.empresaId, status: true },
-        select: { id: true, posicao: true },
-        orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
-      })
-      tiposOrdenados.forEach((tp, idx) => tipoProcessoPosicaoMap.set(tp.id, idx))
+      // Usar índice sequencial na ordem de aparição dos centros
+      let idx = 0
+      for (const [tpId] of tiposVistos) {
+        tipoProcessoPosicaoMap.set(tpId, idx++)
+      }
     } else {
-      for (const [id, info] of tiposProcessoVistos) {
-        tipoProcessoPosicaoMap.set(id, info.posicao)
+      for (const [tpId, pos] of tiposVistos) {
+        tipoProcessoPosicaoMap.set(tpId, pos)
       }
     }
 
