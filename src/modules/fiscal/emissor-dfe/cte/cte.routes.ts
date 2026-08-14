@@ -532,6 +532,10 @@ export async function cteRoutes(app: FastifyInstance) {
       return {
         sucesso: true,
         origem: 'PDF',
+        cadastros: {
+          remetenteCadastrado: false,
+          destinatarioCadastrado: false,
+        },
         dadosExtraidos: {
           chaveAcesso: dados.chaveAcesso,
           numero: dados.numero,
