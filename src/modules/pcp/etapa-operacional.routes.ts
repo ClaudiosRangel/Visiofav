@@ -1383,7 +1383,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ', 'OUTRO'] } } },
           },
         },
-        centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true, tipoProcesso: { select: { codigo: true } } } },
+        centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true, tipoProcesso: { select: { codigo: true, posicao: true } } } },
       },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
@@ -1397,18 +1397,53 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const produtoMap = new Map(produtos.map(p => [p.id, `${p.codigo} - ${p.nome}`]))
 
     // Buscar TODAS as etapas (incluindo concluídas) das OPs presentes no painel,
-    // para determinar se a etapa anterior de cada etapa ativa já foi concluída.
+    // para determinar se o PROCESSO ANTERIOR da OP já foi totalmente concluído.
+    // A lógica é por Tipo de Processo (posição): o ✓ aparece quando TODAS as
+    // etapas do tipo de processo anterior (na ordem de posição) estão concluídas.
     const opIdsNoPainel = [...new Set(etapasAtivas.map(e => e.ordemProducaoId))]
-    const todasEtapasPorOp = new Map<string, Array<{ sequencia: number; status: string }>>()
+    // Mapa: opId → array de { tipoProcessoPosicao, status }
+    const todasEtapasPorOp = new Map<string, Array<{ tipoProcessoPosicao: number; status: string }>>()
     if (opIdsNoPainel.length > 0) {
       const todasEtapas = await prisma.etapaOrdemProducao.findMany({
         where: { ordemProducaoId: { in: opIdsNoPainel } },
-        select: { ordemProducaoId: true, sequencia: true, status: true },
-        orderBy: { sequencia: 'asc' },
+        select: {
+          ordemProducaoId: true,
+          status: true,
+          centroProducao: { select: { tipoProcessoId: true } },
+        },
       })
       for (const et of todasEtapas) {
+        const tipoProcessoId = et.centroProducao?.tipoProcessoId
+        const posicao = tipoProcessoId ? (tipoProcessoPosicaoMap.get(tipoProcessoId) ?? 999) : 999
         if (!todasEtapasPorOp.has(et.ordemProducaoId)) todasEtapasPorOp.set(et.ordemProducaoId, [])
-        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ sequencia: et.sequencia, status: et.status })
+        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ tipoProcessoPosicao: posicao, status: et.status })
+      }
+    }
+    // Mapa de tipoProcessoId → posicao (para lookup rápido nas etapas ativas)
+    // Usa o campo `posicao` do TipoProcesso. Se vários tipos tiverem posicao=0
+    // (migração antiga), gera um índice sequencial a partir da lista ordenada
+    // de tipos de processo ATIVOS da empresa para garantir ordem correta.
+    const tipoProcessoPosicaoMap = new Map<string, number>()
+    const tiposProcessoVistos = new Map<string, { posicao: number; id: string }>()
+    for (const centro of centros) {
+      if (centro.tipoProcessoId && centro.tipoProcesso && !tiposProcessoVistos.has(centro.tipoProcessoId)) {
+        tiposProcessoVistos.set(centro.tipoProcessoId, { posicao: centro.tipoProcesso.posicao, id: centro.tipoProcessoId })
+      }
+    }
+    // Verificar se todas as posições são iguais (ex: todos 0) — se sim, usar a ordem da lista
+    const posicoes = [...tiposProcessoVistos.values()].map(t => t.posicao)
+    const todasIguais = posicoes.length > 1 && posicoes.every(p => p === posicoes[0])
+    if (todasIguais) {
+      // Buscar tipos de processo ordenados corretamente
+      const tiposOrdenados = await prisma.tipoProcesso.findMany({
+        where: { empresaId: user.empresaId, status: true },
+        select: { id: true, posicao: true },
+        orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
+      })
+      tiposOrdenados.forEach((tp, idx) => tipoProcessoPosicaoMap.set(tp.id, idx))
+    } else {
+      for (const [id, info] of tiposProcessoVistos) {
+        tipoProcessoPosicaoMap.set(id, info.posicao)
       }
     }
 
@@ -1609,15 +1644,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               if (obs.includes('[MATRIZ_OK]')) return 'FINALIZADO'
               return null
             })(),
-            // Etapa anterior concluída: true se a etapa com sequência imediatamente
-            // anterior (na mesma OP) já está CONCLUIDA. Usa todasEtapasPorOp que
-            // inclui etapas concluídas (que já saíram de etapasAtivas).
+            // Etapa anterior concluída: true se TODAS as etapas do TIPO DE PROCESSO
+            // anterior (na ordem de posição) estão CONCLUIDAS. A ordem dos processos
+            // é definida pelo campo `posicao` do TipoProcesso cadastrado.
             etapaAnteriorConcluida: (() => {
+              const minhaPosicao = tipoProcessoPosicaoMap.get(e.centroProducao?.tipoProcessoId || '') ?? 999
               const todasDaOp = todasEtapasPorOp.get(e.ordemProducaoId) || []
-              const anteriores = todasDaOp.filter(ea => ea.sequencia < e.sequencia)
-              if (anteriores.length === 0) return null // não há etapa anterior
-              const maisProxima = anteriores.sort((a, b) => b.sequencia - a.sequencia)[0]
-              return maisProxima.status === 'CONCLUIDA'
+              // Encontrar posições de processos anteriores (posicao < minhaPosicao)
+              const etapasProcessoAnterior = todasDaOp.filter(ea => ea.tipoProcessoPosicao < minhaPosicao)
+              if (etapasProcessoAnterior.length === 0) return null // é o primeiro processo, sem anterior
+              // ✓ se TODAS as etapas de processos anteriores estão CONCLUIDAS
+              return etapasProcessoAnterior.every(ea => ea.status === 'CONCLUIDA')
             })(),
             ...cores,
           }
