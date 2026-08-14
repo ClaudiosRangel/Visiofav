@@ -116,6 +116,47 @@ export function verificarPermissaoAcao(
   return permissoes[acao] ?? true
 }
 
+/**
+ * Verifica se o usuário tem permissão para executar uma ação em um menu específico.
+ * Retorna true se:
+ * - O menu não está configurado em acessoMenus (default: tudo liberado)
+ * - O menu está habilitado E a ação está na lista de ações permitidas
+ *
+ * @param empresaId - ID da empresa
+ * @param usuarioId - ID do usuário
+ * @param perfil - Perfil do usuário (ADMIN/SUPER_ADMIN bypass)
+ * @param menu - Identificador do menu (ex: 'ordens-producao', 'importar-op')
+ * @param acao - Ação desejada (ex: 'visualizar', 'criar', 'editar', 'excluir', 'alterar-status', 'cancelar')
+ */
+export async function verificarAcessoMenu(
+  empresaId: string,
+  usuarioId: string,
+  perfil: string | undefined,
+  menu: string,
+  acao: string,
+): Promise<boolean> {
+  // ADMIN/SUPER_ADMIN sempre tem acesso total
+  if (perfil === 'SUPER_ADMIN' || perfil === 'ADMIN') return true
+
+  const permissoes = await getPermissoes(empresaId, usuarioId)
+  const acessoMenus = (permissoes as any).acessoMenus as Record<string, { habilitado?: boolean; acoes?: string[] }> | undefined
+
+  // Se não há configuração de acessoMenus, tudo liberado (backward-compatible)
+  if (!acessoMenus) return true
+
+  const menuConfig = acessoMenus[menu]
+  // Se o menu não está configurado, liberado por default
+  if (!menuConfig) return true
+
+  // Se o menu está desabilitado, bloqueia tudo
+  if (menuConfig.habilitado === false) return false
+
+  // Se há lista de ações, a ação precisa estar nela
+  if (menuConfig.acoes && !menuConfig.acoes.includes(acao)) return false
+
+  return true
+}
+
 const permissoesSchema = z.object({
   tiposProcessoVisiveis: z.array(z.string()).optional(),
   podeIniciar: z.boolean().optional(),
@@ -143,6 +184,11 @@ const permissoesSchema = z.object({
     podeAlterarPrioridade: z.boolean().optional(),
     podePostergarEntrega: z.boolean().optional(),
     podeEditarObservacao: z.boolean().optional(),
+  })).optional(),
+  // Controle de acesso granular por menu (Ordens de Produção, Importar OP, etc.)
+  acessoMenus: z.record(z.string(), z.object({
+    habilitado: z.boolean().optional(),
+    acoes: z.array(z.string()).optional(),
   })).optional(),
 })
 

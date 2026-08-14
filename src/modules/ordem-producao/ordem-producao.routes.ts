@@ -13,6 +13,7 @@ import {
   calcularConsumoAutomatico,
 } from './ordem-producao.service'
 import { reordenarFilaAutomaticamente } from '../pcp/fila-ordenacao.service'
+import { verificarAcessoMenu } from '../pcp/permissoes-pcp.routes'
 
 /**
  * Extrai o nome do cliente salvo na tag [Cliente] das observações da OP.
@@ -67,8 +68,11 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // =========================================================================
   // GET /api/ordens-producao — Listagem com filtros
   // =========================================================================
-  app.get('/', async (request) => {
-    const user = request.user as { id: string; empresaId: string }
+  app.get('/', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', 'visualizar')) {
+      return reply.status(403).send({ message: 'Sem permissão para visualizar ordens de produção' })
+    }
     const query = listQuerySchema.parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
@@ -236,7 +240,10 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // GET /api/ordens-producao/:id — Detalhe completo
   // =========================================================================
   app.get('/:id', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', 'visualizar')) {
+      return reply.status(403).send({ message: 'Sem permissão para visualizar ordens de produção' })
+    }
     const { id } = idParamsSchema.parse(request.params)
 
     const op = await prisma.ordemProducao.findFirst({
@@ -322,7 +329,10 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // POST /api/ordens-producao — Criar OP
   // =========================================================================
   app.post('/', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', 'criar')) {
+      return reply.status(403).send({ message: 'Sem permissão para criar ordens de produção' })
+    }
     const body = criarOpSchema.parse(request.body)
 
     // Valida produto
@@ -399,13 +409,19 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // PATCH /api/ordens-producao/:id/status — Transição de status
   // =========================================================================
   app.patch('/:id/status', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idParamsSchema.parse(request.params)
     const body = z.object({
       status: z.string(),
       motivoCancelamento: z.string().min(10).optional(),
       observacao: z.string().optional(),
     }).parse(request.body)
+
+    // Cancelamento exige permissão específica 'cancelar'; demais transições exigem 'alterar-status'
+    const acaoNecessaria = body.status === 'CANCELADA' ? 'cancelar' : 'alterar-status'
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', acaoNecessaria)) {
+      return reply.status(403).send({ message: `Sem permissão para ${acaoNecessaria === 'cancelar' ? 'cancelar' : 'alterar status de'} ordens de produção` })
+    }
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id, empresaId: user.empresaId },
@@ -746,7 +762,10 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // PATCH /api/ordens-producao/:id — Atualização parcial
   // =========================================================================
   app.patch('/:id', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', 'editar')) {
+      return reply.status(403).send({ message: 'Sem permissão para editar ordens de produção' })
+    }
     const { id } = idParamsSchema.parse(request.params)
     const body = z.object({
       quantidade: z.number().positive().optional(),
@@ -1084,7 +1103,10 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   // DELETE /api/ordens-producao/:id — Exclui OP que não tem apontamento/não iniciada
   // =========================================================================
   app.delete('/:id', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', 'excluir')) {
+      return reply.status(403).send({ message: 'Sem permissão para excluir ordens de produção' })
+    }
     const { id } = idParamsSchema.parse(request.params)
 
     const op = await prisma.ordemProducao.findFirst({
