@@ -68,9 +68,35 @@ export interface DadosDanfeExtraidos {
 }
 
 export function parseDanfeTexto(texto: string): DadosDanfeExtraidos {
-  // Chave de acesso (44 dígitos consecutivos)
-  const chaveMatch = texto.match(/(\d{44})/)
-  const chaveAcesso = chaveMatch ? chaveMatch[1] : null
+  // Chave de acesso — pode estar:
+  // 1. Como 44 dígitos consecutivos: 33260702913365000132...
+  // 2. Com espaços entre grupos: 3326 0702 9133 6500 0132 ...
+  // 3. Com pontos: 3326.0702.9133...
+  let chaveAcesso: string | null = null
+
+  // Tentar 44 dígitos consecutivos primeiro
+  const chaveMatch44 = texto.match(/(\d{44})/)
+  if (chaveMatch44) {
+    chaveAcesso = chaveMatch44[1]
+  } else {
+    // Tentar com espaços/pontos entre grupos de 4 dígitos (11 grupos = 44 dígitos)
+    const chaveComEspacos = texto.match(/(\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4}[\s.]+\d{4})/)
+    if (chaveComEspacos) {
+      chaveAcesso = chaveComEspacos[1].replace(/\D/g, '')
+      if (chaveAcesso.length !== 44) chaveAcesso = null
+    }
+  }
+
+  // Fallback: buscar qualquer sequência de 44+ dígitos (ignorando espaços/pontos)
+  if (!chaveAcesso) {
+    const blocoNumeros = texto.match(/(?:CHAVE\s*(?:DE\s*)?ACESSO|chave)[:\s]*([\d\s.]{44,60})/i)
+    if (blocoNumeros) {
+      const limpo = blocoNumeros[1].replace(/\D/g, '')
+      if (limpo.length >= 44) {
+        chaveAcesso = limpo.substring(0, 44)
+      }
+    }
+  }
 
   // Número e série da NF-e
   const nfMatch = texto.match(/N[º°\.]\s*(\d{1,9})/i)
