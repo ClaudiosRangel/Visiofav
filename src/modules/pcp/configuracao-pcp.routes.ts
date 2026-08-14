@@ -221,12 +221,15 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
-  // POST /api/pcp/programacao/pintar-matriz — Toggle de aprovação de matriz
-  // (pré-impressão) — marca/desmarca [MATRIZ_OK] no observacaoOperador
+  // POST /api/pcp/programacao/pintar-matriz — Define status de pré-impressão
+  // da etapa. Usa campo dedicado `preImpressaoStatus` (FINALIZADO, METADE, PROBLEMA ou null).
   // =========================================================================
   app.post('/programacao/pintar-matriz', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string; perfil: string }
-    const { etapaId } = z.object({ etapaId: z.string().uuid() }).parse(request.body)
+    const body = z.object({
+      etapaId: z.string().uuid(),
+      status: z.enum(['FINALIZADO', 'METADE', 'PROBLEMA']).optional().nullable(),
+    }).parse(request.body)
 
     // Verificar permissão de pré-impressão (ler config salva do usuário)
     const paramPerm = await prisma.parametro.findFirst({
@@ -240,28 +243,19 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
 
     // Verificar que a etapa pertence à empresa
     const etapa = await prisma.etapaOrdemProducao.findFirst({
-      where: { id: etapaId, ordemProducao: { empresaId: user.empresaId } },
-      select: { id: true, observacaoOperador: true },
+      where: { id: body.etapaId, ordemProducao: { empresaId: user.empresaId } },
+      select: { id: true },
     })
 
     if (!etapa) {
       return reply.status(404).send({ message: 'Etapa não encontrada' })
     }
 
-    // Toggle: se já tem a tag [MATRIZ_OK], remove; senão adiciona
-    const TAG = '[MATRIZ_OK]'
-    const obsAtual = etapa.observacaoOperador || ''
-    const jaTemTag = obsAtual.includes(TAG)
-
     await prisma.etapaOrdemProducao.update({
-      where: { id: etapaId },
-      data: {
-        observacaoOperador: jaTemTag
-          ? obsAtual.replace(TAG, '').trim()
-          : (obsAtual ? `${obsAtual} ${TAG}` : TAG),
-      },
+      where: { id: body.etapaId },
+      data: { preImpressaoStatus: body.status || null },
     })
 
-    return { matrizOk: !jaTemTag }
+    return { preImpressaoStatus: body.status || null }
   })
 }
