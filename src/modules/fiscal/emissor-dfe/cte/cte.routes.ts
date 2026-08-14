@@ -20,6 +20,7 @@ import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
 import { cteEmissaoService } from './cte-emissao.service'
 import { gerarDactePdf } from './cte-dacte-pdf.service'
+import { parseNFeXml, autoCadastrarParticipante } from './cte-importar-nfe.service'
 import { ErroFiscal, CodigoErroFiscal } from '../../erros'
 import type { DadosCTe } from './cte-xml-builder'
 
@@ -392,6 +393,87 @@ export async function cteRoutes(app: FastifyInstance) {
     }
 
     return { encontrado: false }
+  })
+
+  // ==========================================================================
+  // POST /cte/importar-nfe — Importar NF-e (XML) para gerar CT-e automático
+  // ==========================================================================
+  app.post('/cte/importar-nfe', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = z.object({
+        xml: z.string().min(100, 'XML inválido ou vazio'),
+      }).parse(request.body)
+
+      // Parsear XML da NF-e
+      const dados = parseNFeXml(body.xml)
+
+      if (!dados.chaveAcesso) {
+        return reply.status(422).send({ message: 'Não foi possível extrair a chave de acesso do XML' })
+      }
+
+      // Auto-cadastrar remetente e destinatário
+      const remetenteId = await autoCadastrarParticipante(user.empresaId, dados.remetente)
+      const destinatarioId = await autoCadastrarParticipante(user.empresaId, dados.destinatario)
+
+      // Buscar defaults da empresa
+      const empresa = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+        select: { rntrc: true, serieCTe: true, uf: true },
+      })
+
+      const parametros = await prisma.parametro.findMany({
+        where: { empresaId: user.empresaId, chave: { startsWith: 'cte.' } },
+      })
+      const params: Record<string, string> = {}
+      for (const p of parametros) params[p.chave] = p.valor
+
+      return {
+        sucesso: true,
+        dadosExtraidos: dados,
+        cadastros: {
+          remetenteId,
+          destinatarioId,
+          remetenteCadastrado: !!remetenteId,
+          destinatarioCadastrado: !!destinatarioId,
+        },
+        ctePrePreenchido: {
+          serie: empresa?.serieCTe || 1,
+          cfop: dados.cfopSugerido,
+          naturezaOp: params['cte.naturezaOp'] || 'PRESTACAO DE SERVICO DE TRANSPORTE',
+          modal: params['cte.modal'] || '01',
+          tpServ: 0,
+          tpTom: 0, // Remetente como tomador (padrão transporte)
+          cMunIni: dados.origemCMun,
+          xMunIni: dados.origemMun,
+          ufIni: dados.origemUf,
+          cMunFim: dados.destinoCMun,
+          xMunFim: dados.destinoMun,
+          ufFim: dados.destinoUf,
+          remetente: dados.remetente,
+          destinatario: dados.destinatario,
+          infCarga: {
+            vCarga: dados.valorCarga,
+            proPred: dados.produtos,
+            pesoBruto: dados.pesoBruto,
+          },
+          nfesVinculadas: [{ chave: dados.chaveAcesso }],
+          veicNovos: dados.veiculosNovos,
+          rntrc: empresa?.rntrc || '',
+          cstIcms: params['cte.cstIcms'] || '00',
+          aliqIcms: params['cte.aliqIcms'] ? Number(params['cte.aliqIcms']) : 12,
+        },
+      }
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao processar NF-e' })
+    }
   })
 
   // ==========================================================================
