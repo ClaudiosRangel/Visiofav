@@ -424,12 +424,26 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const etapa = await prisma.etapaOrdemProducao.findFirst({
       where: { id, ordemProducao: { empresaId: user.empresaId } },
+      select: { id: true, observacaoOperador: true },
     })
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
 
+    // Preservar tags internas ([PREIMPRESS:*], [MATRIZ_OK]) ao atualizar
+    // a observação do operador — o usuário edita só o texto livre, não as tags
+    const tagsExistentes: string[] = []
+    if (etapa.observacaoOperador) {
+      const matchPreimpress = etapa.observacaoOperador.match(/\[PREIMPRESS:\w+\]/)
+      if (matchPreimpress) tagsExistentes.push(matchPreimpress[0])
+      if (etapa.observacaoOperador.includes('[MATRIZ_OK]')) tagsExistentes.push('[MATRIZ_OK]')
+    }
+    const textoLimpo = body.observacaoOperador.replace(/\[PREIMPRESS:\w+\]/g, '').replace(/\[MATRIZ_OK\]/g, '').trim()
+    const novaObs = tagsExistentes.length > 0
+      ? (textoLimpo ? `${textoLimpo} ${tagsExistentes.join(' ')}` : tagsExistentes.join(' '))
+      : textoLimpo
+
     const atualizada = await prisma.etapaOrdemProducao.update({
       where: { id },
-      data: { observacaoOperador: body.observacaoOperador },
+      data: { observacaoOperador: novaObs || null },
     })
 
     return { id: atualizada.id, observacaoOperador: atualizada.observacaoOperador }
@@ -1606,7 +1620,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             funcionarioId: e.funcionarioId,
             dataInicioReal: e.dataInicioReal,
             observacoes: e.ordemProducao.observacoes,
-            observacaoOperador: e.observacaoOperador || null,
+            observacaoOperador: (e.observacaoOperador || '').replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim() || null,
             // Campos de material (Requisito 3)
             // Tiragem: prioriza valor explícito do PDF, senão calcula Quantidade/Montagem
             tiragem: (() => {
@@ -1710,7 +1724,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           formato: papel ? extrairFormato(papel.descricaoProduto) : null,
           pesoKg: papel ? Number(papel.quantidade) : null,
           observacoes: e.ordemProducao.observacoes,
-          observacaoOperador: e.observacaoOperador || null,
+          observacaoOperador: (e.observacaoOperador || '').replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim() || null,
           centroDescricao: e.centroProducao?.descricao || null,
           // "Aguardando Cartão" sempre pertence à categoria Cortadeira,
           // independente do centro real da etapa — usa o código do
