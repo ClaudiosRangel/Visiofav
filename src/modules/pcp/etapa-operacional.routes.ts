@@ -1425,13 +1425,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     }
 
-    // Mapa: opId → array de { tipoProcessoPosicao, status }
-    const todasEtapasPorOp = new Map<string, Array<{ tipoProcessoPosicao: number; status: string }>>()
+    // Mapa: opId → array de { tipoProcessoPosicao, sequencia, status }
+    const todasEtapasPorOp = new Map<string, Array<{ tipoProcessoPosicao: number; sequencia: number; status: string }>>()
     if (opIdsNoPainel.length > 0) {
       const todasEtapas = await prisma.etapaOrdemProducao.findMany({
         where: { ordemProducaoId: { in: opIdsNoPainel } },
         select: {
           ordemProducaoId: true,
+          sequencia: true,
           status: true,
           centroProducao: { select: { tipoProcessoId: true } },
         },
@@ -1440,7 +1441,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         const tipoProcessoId = et.centroProducao?.tipoProcessoId
         const posicao = tipoProcessoId ? (tipoProcessoPosicaoMap.get(tipoProcessoId) ?? 999) : 999
         if (!todasEtapasPorOp.has(et.ordemProducaoId)) todasEtapasPorOp.set(et.ordemProducaoId, [])
-        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ tipoProcessoPosicao: posicao, status: et.status })
+        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ tipoProcessoPosicao: posicao, sequencia: et.sequencia, status: et.status })
       }
     }
 
@@ -1641,17 +1642,29 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               if (obs.includes('[MATRIZ_OK]')) return 'FINALIZADO'
               return null
             })(),
-            // Etapa anterior concluída: true se TODAS as etapas do TIPO DE PROCESSO
-            // anterior (na ordem de posição) estão CONCLUIDAS. A ordem dos processos
-            // é definida pelo campo `posicao` do TipoProcesso cadastrado.
+            // Etapa anterior concluída — lógica combinada:
+            // 1) Se há etapas de PROCESSOS ANTERIORES (posição menor): ✓ quando
+            //    TODAS estão CONCLUÍDAS (fluxo entre processos)
+            // 2) Se está no MESMO processo mas com sequência menor: ✓ quando a
+            //    etapa imediatamente anterior (mesma posição, seq menor) concluiu
+            //    (fluxo dentro do mesmo processo — ex: Cortadeira Doin → Guilhotina)
             etapaAnteriorConcluida: (() => {
               const minhaPosicao = tipoProcessoPosicaoMap.get(e.centroProducao?.tipoProcessoId || '') ?? 999
+              const minhaSequencia = e.sequencia
               const todasDaOp = todasEtapasPorOp.get(e.ordemProducaoId) || []
-              // Encontrar posições de processos anteriores (posicao < minhaPosicao)
+
+              // Caso 1: verificar processos anteriores (posição menor)
               const etapasProcessoAnterior = todasDaOp.filter(ea => ea.tipoProcessoPosicao < minhaPosicao)
-              if (etapasProcessoAnterior.length === 0) return null // é o primeiro processo, sem anterior
-              // ✓ se TODAS as etapas de processos anteriores estão CONCLUIDAS
-              return etapasProcessoAnterior.every(ea => ea.status === 'CONCLUIDA')
+              if (etapasProcessoAnterior.length > 0) {
+                // ✓ se TODAS as etapas de processos anteriores estão CONCLUIDAS
+                return etapasProcessoAnterior.every(ea => ea.status === 'CONCLUIDA')
+              }
+
+              // Caso 2: mesmo processo — verificar etapa anterior por sequência
+              const mesmoProcesso = todasDaOp.filter(ea => ea.tipoProcessoPosicao === minhaPosicao && ea.sequencia < minhaSequencia)
+              if (mesmoProcesso.length === 0) return null // primeira etapa do primeiro processo
+              const anteriorMaisProxima = mesmoProcesso.sort((a, b) => b.sequencia - a.sequencia)[0]
+              return anteriorMaisProxima.status === 'CONCLUIDA'
             })(),
             ...cores,
           }
