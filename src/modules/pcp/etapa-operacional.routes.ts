@@ -1401,6 +1401,30 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // A lógica é por Tipo de Processo (posição): o ✓ aparece quando TODAS as
     // etapas do tipo de processo anterior (na ordem de posição) estão concluídas.
     const opIdsNoPainel = [...new Set(etapasAtivas.map(e => e.ordemProducaoId))]
+
+    // Mapa de tipoProcessoId → posicao (DEVE ser construído ANTES de todasEtapasPorOp)
+    const tipoProcessoPosicaoMap = new Map<string, number>()
+    const tiposVistos = new Map<string, number>()
+    let idxTipo = 0
+    for (const centro of centros) {
+      if (centro.tipoProcessoId && !tiposVistos.has(centro.tipoProcessoId)) {
+        tiposVistos.set(centro.tipoProcessoId, centro.tipoProcesso?.posicao ?? idxTipo)
+        idxTipo++
+      }
+    }
+    const posicoes = [...tiposVistos.values()]
+    const todasIguais = posicoes.length > 1 && posicoes.every(p => p === posicoes[0])
+    if (todasIguais) {
+      let idx = 0
+      for (const [tpId] of tiposVistos) {
+        tipoProcessoPosicaoMap.set(tpId, idx++)
+      }
+    } else {
+      for (const [tpId, pos] of tiposVistos) {
+        tipoProcessoPosicaoMap.set(tpId, pos)
+      }
+    }
+
     // Mapa: opId → array de { tipoProcessoPosicao, status }
     const todasEtapasPorOp = new Map<string, Array<{ tipoProcessoPosicao: number; status: string }>>()
     if (opIdsNoPainel.length > 0) {
@@ -1417,33 +1441,6 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         const posicao = tipoProcessoId ? (tipoProcessoPosicaoMap.get(tipoProcessoId) ?? 999) : 999
         if (!todasEtapasPorOp.has(et.ordemProducaoId)) todasEtapasPorOp.set(et.ordemProducaoId, [])
         todasEtapasPorOp.get(et.ordemProducaoId)!.push({ tipoProcessoPosicao: posicao, status: et.status })
-      }
-    }
-    // Mapa de tipoProcessoId → posicao (para lookup rápido nas etapas ativas)
-    // Constrói a partir dos centros já carregados. Se os valores de posicao do
-    // TipoProcesso forem todos iguais (migração antiga), gera um índice
-    // sequencial baseado na ordem de aparição (que já vem ordenada).
-    const tipoProcessoPosicaoMap = new Map<string, number>()
-    const tiposVistos = new Map<string, number>()
-    let idxTipo = 0
-    for (const centro of centros) {
-      if (centro.tipoProcessoId && !tiposVistos.has(centro.tipoProcessoId)) {
-        tiposVistos.set(centro.tipoProcessoId, centro.tipoProcesso?.posicao ?? idxTipo)
-        idxTipo++
-      }
-    }
-    // Verificar se todas posições são iguais (ex: todos 0)
-    const posicoes = [...tiposVistos.values()]
-    const todasIguais = posicoes.length > 1 && posicoes.every(p => p === posicoes[0])
-    if (todasIguais) {
-      // Usar índice sequencial na ordem de aparição dos centros
-      let idx = 0
-      for (const [tpId] of tiposVistos) {
-        tipoProcessoPosicaoMap.set(tpId, idx++)
-      }
-    } else {
-      for (const [tpId, pos] of tiposVistos) {
-        tipoProcessoPosicaoMap.set(tpId, pos)
       }
     }
 
