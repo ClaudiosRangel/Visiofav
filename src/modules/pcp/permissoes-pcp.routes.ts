@@ -247,11 +247,8 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
       status: z.enum(['FINALIZADO', 'METADE', 'PROBLEMA']).optional().nullable(),
     }).parse(request.body)
 
-    // Verificar permissão de pré-impressão
-    const permissoes = await getPermissoes(user.empresaId, user.id)
-    if (!permissoes.isPreImpressao && !['SUPER_ADMIN', 'ADMIN'].includes((user as any).perfil)) {
-      return reply.status(403).send({ message: 'Apenas funcionários de pré-impressão podem usar esta ação' })
-    }
+    // Qualquer usuário com acesso ao módulo PCP pode definir status de pré-impressão
+    // (a restrição anterior por isPreImpressao impedia operadores de marcar)
 
     // Verificar que a etapa pertence à empresa
     const etapa = await prisma.etapaOrdemProducao.findFirst({
