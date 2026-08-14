@@ -331,6 +331,10 @@ model Produto {
   classificacaoPcp               String?  @map("classificacao_pcp") @db.VarChar(20) // MATERIA_PRIMA, INTERMEDIARIO, PRODUTO_ACABADO, EMBALAGEM, INSUMO
   tipoFisico                     String?  @map("tipo_fisico") @db.VarChar(20) // UNIDADE_PADRAO, FISICO_LINEAR, FISICO_SUPERFICIAL, LIQUIDO, PESO
   exigeLote                      Boolean  @default(false) @map("exige_lote")
+  familia                        String?  @map("familia") @db.VarChar(60)
+  subFamilia                     String?  @map("sub_familia") @db.VarChar(60)
+  classificacaoArmazenagemId     String?  @map("classificacao_armazenagem_id")
+  ambienteExigido                String?  @map("ambiente_exigido") @db.VarChar(30) // SECO, REFRIGERADO, CONGELADO
   // Tolerância de quantidade na conferência de entrada — percentual de desvio
   // aceito automaticamente sem gerar divergência. Null usa o padrão da empresa.
   toleranciaQuantidadePercentual Decimal? @map("tolerancia_quantidade_percentual") @db.Decimal(5, 2)
@@ -1441,6 +1445,8 @@ model Deposito {
   cidade               String?          @db.VarChar(100)
   uf                   String?          @db.VarChar(2)
   status               Boolean          @default(true)
+  bloqueado            Boolean          @default(false)
+  motivoBloqueio       String?          @map("motivo_bloqueio") @db.VarChar(200)
   criadoEm             DateTime         @default(now()) @map("criado_em")
   empresaId            String?          @map("empresa_id")
   formatoEnderecoId    String?          @map("formato_endereco_id")
@@ -1459,6 +1465,10 @@ model Zona {
   depositoId        String?          @map("deposito_id")
   deposito          Deposito?        @relation(fields: [depositoId], references: [id])
   status            Boolean          @default(true)
+  bloqueado         Boolean          @default(false)
+  motivoBloqueio    String?          @map("motivo_bloqueio") @db.VarChar(200)
+  quarentena        Boolean          @default(false)
+  tipoArea          String?          @map("tipo_area") @db.VarChar(30) // NORMAL, QUARENTENA, DEVOLUCAO, CROSS_DOCKING, TRANSIT_POINT
   criadoEm          DateTime         @default(now()) @map("criado_em")
   empresaId         String?          @map("empresa_id")
   formatoEnderecoId String?          @map("formato_endereco_id")
@@ -1515,7 +1525,7 @@ model Endereco {
   codigoNivel            String?               @map("codigo_nivel") @db.VarChar(10)
   codigoApto             String?               @map("codigo_apto") @db.VarChar(10)
   enderecoCompleto       String?               @map("endereco_completo") @db.VarChar(60)
-  tipo                   String                @default("ARMAZENAGEM") @db.VarChar(20) // ARMAZENAGEM, PICKING, DOCA, LIVRE, BLOQUEADO
+  tipo                   String                @default("ARMAZENAGEM") @db.VarChar(20) // ARMAZENAGEM, PICKING, DOCA, LIVRE, BLOQUEADO, TRANSIT_POINT
   codigoBarras           String?               @map("codigo_barras") @db.VarChar(30)
   areaArmazenagem        String?               @map("area_armazenagem") @db.VarChar(20) // PULMAO, PICKING
   centroDistribuicaoId   String?               @map("centro_distribuicao_id")
@@ -1532,6 +1542,11 @@ model Endereco {
   classificacaoProdutoId String?               @map("classificacao_produto_id")
   classificacaoProduto   ClassificacaoProduto? @relation(fields: [classificacaoProdutoId], references: [id])
   status                 Boolean               @default(true)
+  bloqueado              Boolean               @default(false)
+  motivoBloqueio         String?               @map("motivo_bloqueio") @db.VarChar(200)
+  quarentena             Boolean               @default(false)
+  maxSkusMisto           Int?                  @map("max_skus_misto")
+  inventarioAtivo        Boolean               @default(false) @map("inventario_ativo")
   criadoEm               DateTime              @default(now()) @map("criado_em")
   empresaId              String?               @map("empresa_id")
 
@@ -1549,6 +1564,8 @@ model SaldoEndereco {
   quantidade   Decimal   @db.Decimal(12, 4)
   lote         String?   @db.VarChar(30)
   validade     DateTime?
+  bloqueado    Boolean   @default(false)
+  motivoBloqueioLote String? @map("motivo_bloqueio_lote") @db.VarChar(200)
   atualizadoEm DateTime  @updatedAt @map("atualizado_em")
   empresaId    String?   @map("empresa_id")
 
@@ -1801,6 +1818,9 @@ model Sku {
   sequencia    Int
   descricao    String?  @db.VarChar(200)
   codigoBarra  String?  @map("codigo_barra") @db.VarChar(30)
+  tipoCodigoBarra String? @map("tipo_codigo_barra") @db.VarChar(20) // EAN13, EAN14_DUN, CODE128, DISPLAY, ITF14
+  codigoBarraDun  String? @map("codigo_barra_dun") @db.VarChar(30) // DUN-14 (caixa/fardo)
+  codigoBarraDisplay String? @map("codigo_barra_display") @db.VarChar(30) // Display/embalagem promocional
   unidade      String   @db.VarChar(6)
   qtdEmbalagem Int      @default(1) @map("qtd_embalagem")
   largura      Decimal? @db.Decimal(10, 3)
@@ -1877,6 +1897,106 @@ model ItemInventario {
   contadoEm      DateTime?  @map("contado_em")
 
   @@map("item_inventario")
+}
+
+// ============================================================================
+// WMS — CONFIGURAÇÃO STANDALONE (Integração com ERP Externo)
+// ============================================================================
+
+model ConfigWmsStandalone {
+  id                        String   @id @default(uuid())
+  empresaId                 String   @unique @map("empresa_id")
+  modoOperacao              String   @default("ERP_COMPLETO") @map("modo_operacao") @db.VarChar(20) // ERP_COMPLETO, WMS_STANDALONE
+  integracaoAtiva           Boolean  @default(false) @map("integracao_ativa")
+  sistemaExterno            String?  @map("sistema_externo") @db.VarChar(100) // SAP, TOTVS, SANKHYA, OMIE, BLING, OUTRO
+  urlCallbackErp            String?  @map("url_callback_erp") @db.VarChar(500)
+  masterProduto             String   @default("ERP_EXTERNO") @map("master_produto") @db.VarChar(20) // ERP_EXTERNO, WMS, DUAL
+  sincronizacaoEstoque      String   @default("WMS_PARA_ERP") @map("sincronizacao_estoque") @db.VarChar(20) // WMS_PARA_ERP, BIDIRECIONAL
+  autenticacaoOperador      String   @default("PIN_TERMINAL") @map("autenticacao_operador") @db.VarChar(20) // PIN_TERMINAL, LOGIN_SENHA, SSO_EXTERNO
+  produtoExigeCamposFiscais Boolean  @default(false) @map("produto_exige_campos_fiscais")
+  permiteCriarProdutoUI     Boolean  @default(false) @map("permite_criar_produto_ui")
+  criadoEm                  DateTime @default(now()) @map("criado_em")
+  atualizadoEm              DateTime @updatedAt @map("atualizado_em")
+
+  @@map("config_wms_standalone")
+}
+
+model PedidoExpedicaoWms {
+  id            String   @id @default(uuid())
+  empresaId     String   @map("empresa_id")
+  numero        Int
+  referencia    String   @db.VarChar(100) // Referência do ERP externo
+  clienteNome   String?  @map("cliente_nome") @db.VarChar(200)
+  clienteDoc    String?  @map("cliente_doc") @db.VarChar(20)
+  prioridade    String   @default("NORMAL") @db.VarChar(10) // BAIXA, NORMAL, ALTA, URGENTE
+  status        String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_SEPARACAO, SEPARADO, EXPEDIDO, CANCELADO
+  observacao    String?  @db.Text
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+
+  itens ItemPedidoExpedicaoWms[]
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, status])
+  @@map("pedido_expedicao_wms")
+}
+
+model ItemPedidoExpedicaoWms {
+  id                    String             @id @default(uuid())
+  pedidoExpedicaoWmsId  String             @map("pedido_expedicao_wms_id")
+  pedidoExpedicaoWms    PedidoExpedicaoWms @relation(fields: [pedidoExpedicaoWmsId], references: [id], onDelete: Cascade)
+  produtoId             String             @map("produto_id")
+  quantidade            Decimal            @db.Decimal(12, 4)
+  quantidadeSeparada    Decimal            @default(0) @map("quantidade_separada") @db.Decimal(12, 4)
+
+  @@map("item_pedido_expedicao_wms")
+}
+
+// ============================================================================
+// WMS — BLOQUEIO HIERÁRQUICO E QUARENTENA
+// ============================================================================
+
+model BloqueioHierarquico {
+  id             String   @id @default(uuid())
+  empresaId      String   @map("empresa_id")
+  nivel          String   @db.VarChar(20) // DEPOSITO, ZONA, RUA, PREDIO, NIVEL, PRODUTO, LOTE
+  // Identificadores do nível (preencher conforme o nível)
+  depositoId     String?  @map("deposito_id")
+  zonaId         String?  @map("zona_id")
+  rua            String?  @db.VarChar(10)
+  predio         String?  @db.VarChar(10)
+  codigoNivel    String?  @map("codigo_nivel") @db.VarChar(10)
+  produtoId      String?  @map("produto_id")
+  lote           String?  @db.VarChar(30)
+  // Dados do bloqueio
+  motivo         String   @db.VarChar(200)
+  tipo           String   @default("MANUTENCAO") @db.VarChar(30) // MANUTENCAO, INVENTARIO, QUARENTENA, RECALL, AVARIA, OUTRO
+  bloqueadoPorId String   @map("bloqueado_por_id")
+  bloqueadoEm    DateTime @default(now()) @map("bloqueado_em")
+  liberadoPorId  String?  @map("liberado_por_id")
+  liberadoEm     DateTime? @map("liberado_em")
+  ativo          Boolean  @default(true)
+
+  @@index([empresaId, ativo])
+  @@index([empresaId, nivel, ativo])
+  @@map("bloqueio_hierarquico")
+}
+
+model MudancaPicking {
+  id                    String    @id @default(uuid())
+  empresaId             String    @map("empresa_id")
+  produtoId             String    @map("produto_id")
+  enderecoOrigemId      String    @map("endereco_origem_id")
+  enderecoDestinoId     String    @map("endereco_destino_id")
+  status                String    @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_ANDAMENTO, CONCLUIDA, CANCELADA
+  quantidadeTransferida Decimal?  @map("quantidade_transferida") @db.Decimal(12, 4)
+  solicitadoPorId       String    @map("solicitado_por_id")
+  solicitadoEm          DateTime  @default(now()) @map("solicitado_em")
+  concluidoEm           DateTime? @map("concluido_em")
+  observacao            String?   @db.Text
+
+  @@index([empresaId, status])
+  @@map("mudanca_picking")
 }
 
 // ============================================================================
@@ -1962,6 +2082,7 @@ model DadosLogisticosArmazenagem {
   enderecoFixoId  String?  @map("endereco_fixo_id")
   tipoNorma       String   @default("FEFO") @db.VarChar(10) // FEFO, FIFO, LIFO
   pulmaoRegulador Int      @default(0) @map("pulmao_regulador")
+  pulmaoReguladorDepositoId String? @map("pulmao_regulador_deposito_id") // ID do depósito regulador externo
   nivelMinPP      Int      @default(0) @map("nivel_min_pp")
   nivelMaxPP      Int      @default(0) @map("nivel_max_pp")
   nivelMaxBlocado Int      @default(0) @map("nivel_max_blocado")
@@ -1978,12 +2099,14 @@ model DadosLogisticosPicking {
   skuSeq                Int      @map("sku_seq")
   sequencia             Int
   enderecoPickingId     String?  @map("endereco_picking_id")
-  tipoPicking           String   @default("NORMAL") @db.VarChar(20) // NORMAL, FLOW_RACK
+  tipoPicking           String   @default("NORMAL") @db.VarChar(20) // NORMAL, FLOW_RACK, VIRTUAL
   capacidade            Decimal  @default(0) @db.Decimal(12, 4)
   pontoReposicao        Decimal  @default(0) @map("ponto_reposicao") @db.Decimal(12, 4)
   pontoReposicaoPercent Decimal  @default(0) @map("ponto_reposicao_percent") @db.Decimal(5, 2)
   pontoReposicaoDias    Int      @default(0) @map("ponto_reposicao_dias")
   modoAbastecimento     String   @default("VERIFICAR_PK") @map("modo_abastecimento") @db.VarChar(20)
+  pickingVirtual        Boolean  @default(false) @map("picking_virtual")
+  descricaoVirtual      String?  @map("descricao_virtual") @db.VarChar(200) // Descrição/orientação para separador
   criadoEm              DateTime @default(now()) @map("criado_em")
   atualizadoEm          DateTime @updatedAt @map("atualizado_em")
 
@@ -2393,6 +2516,8 @@ model EtapaOrdemProducao {
   // fila — a reordenação automática (por número de OP, depois data de
   // entrega) só rearranja as etapas SEM esta flag.
   ordemManual            Boolean          @default(false) @map("ordem_manual")
+  // Status de pré-impressão: FINALIZADO, METADE, PROBLEMA ou null (sem marcação)
+  preImpressaoStatus     String?          @map("pre_impressao_status") @db.VarChar(20)
 
   apontamentosEtapa ApontamentoEtapa[]
 

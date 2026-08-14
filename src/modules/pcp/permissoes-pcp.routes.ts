@@ -238,7 +238,7 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
 
   // =========================================================================
   // POST /api/pcp/programacao/pintar-matriz — Define status de pré-impressão
-  // da etapa. Status possíveis: FINALIZADO, METADE, PROBLEMA, null (remover).
+  // da etapa. Usa campo dedicado `preImpressaoStatus` (não mais tags em observacaoOperador).
   // =========================================================================
   app.post('/programacao/pintar-matriz', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
@@ -247,33 +247,19 @@ export async function permissoesPcpRoutes(app: FastifyInstance) {
       status: z.enum(['FINALIZADO', 'METADE', 'PROBLEMA']).optional().nullable(),
     }).parse(request.body)
 
-    // Qualquer usuário com acesso ao módulo PCP pode definir status de pré-impressão
-    // (a restrição anterior por isPreImpressao impedia operadores de marcar)
-
     // Verificar que a etapa pertence à empresa
     const etapa = await prisma.etapaOrdemProducao.findFirst({
       where: { id: body.etapaId, ordemProducao: { empresaId: user.empresaId } },
-      select: { id: true, observacaoOperador: true },
+      select: { id: true },
     })
 
     if (!etapa) {
       return reply.status(404).send({ message: 'Etapa não encontrada' })
     }
 
-    let obsAtual = etapa.observacaoOperador || ''
-    // Remover tags legadas e novas
-    obsAtual = obsAtual.replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim()
-
-    if (body.status) {
-      const TAG = `[PREIMPRESS:${body.status}]`
-      obsAtual = obsAtual ? `${obsAtual} ${TAG}` : TAG
-    }
-
-    console.log(`[pintar-matriz] etapaId=${body.etapaId} status=${body.status} obsAntes="${etapa.observacaoOperador}" obsDepois="${obsAtual}"`)
-
     await prisma.etapaOrdemProducao.update({
       where: { id: body.etapaId },
-      data: { observacaoOperador: obsAtual || null },
+      data: { preImpressaoStatus: body.status || null },
     })
 
     return { preImpressaoStatus: body.status || null }

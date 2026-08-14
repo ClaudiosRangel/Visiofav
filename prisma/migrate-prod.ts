@@ -2132,6 +2132,10 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "ordem_manual" BOOLEAN NOT NULL DEFAULT false`)
   console.log('✅ PCP — Ordenação automática da fila: coluna ordem_manual criada')
 
+  // PCP — Status de pré-impressão (campo dedicado, substitui tags em observacaoOperador)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "pre_impressao_status" VARCHAR(20)`)
+  console.log('✅ PCP — Coluna pre_impressao_status criada em etapa_ordem_producao')
+
   // ===================================================================
   // PCP — Cadastro de Tipo de Processo (substitui o enum fixo tipoMaquina)
   // ===================================================================
@@ -2410,6 +2414,160 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_veiculo_cte_empresa" ON "veiculo_cte"("empresa_id")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_veiculo_cte_doc" ON "veiculo_cte"("documento_fiscal_id")`)
   console.log('✅ CT-e: tabela veiculo_cte criada')
+
+  // =========================================================================
+  // WMS — BLOQUEIO HIERÁRQUICO, QUARENTENA, COMPATIBILIDADE, PICKING AVANÇADO
+  // (Requisitos RF001-RF012, documento Germano/Alexander 06/08/2026)
+  // =========================================================================
+
+  // Deposito — campos de bloqueio
+  await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "motivo_bloqueio" VARCHAR(200)`)
+
+  // Zona — campos de bloqueio, quarentena, tipo de área
+  await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "motivo_bloqueio" VARCHAR(200)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "quarentena" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "tipo_area" VARCHAR(30)`)
+
+  // Endereco — campos de bloqueio, quarentena, pulmão misto, inventário ativo
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "motivo_bloqueio" VARCHAR(200)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "quarentena" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "max_skus_misto" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "inventario_ativo" BOOLEAN DEFAULT false`)
+
+  // SaldoEndereco — bloqueio por lote
+  await prisma.$executeRawUnsafe(`ALTER TABLE "saldo_endereco" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "saldo_endereco" ADD COLUMN IF NOT EXISTS "motivo_bloqueio_lote" VARCHAR(200)`)
+
+  // Produto — família, subfamília, compatibilidade
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "familia" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "sub_familia" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "classificacao_armazenagem_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "ambiente_exigido" VARCHAR(30)`)
+
+  // Tabela BloqueioHierarquico
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "bloqueio_hierarquico" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nivel" VARCHAR(20) NOT NULL,
+      "deposito_id" TEXT,
+      "zona_id" TEXT,
+      "rua" VARCHAR(10),
+      "predio" VARCHAR(10),
+      "codigo_nivel" VARCHAR(10),
+      "produto_id" TEXT,
+      "lote" VARCHAR(30),
+      "motivo" VARCHAR(200) NOT NULL,
+      "tipo" VARCHAR(30) NOT NULL DEFAULT 'MANUTENCAO',
+      "bloqueado_por_id" TEXT NOT NULL,
+      "bloqueado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "liberado_por_id" TEXT,
+      "liberado_em" TIMESTAMP(3),
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT "bloqueio_hierarquico_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_bloqueio_hierarquico_empresa_ativo" ON "bloqueio_hierarquico"("empresa_id", "ativo")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_bloqueio_hierarquico_empresa_nivel_ativo" ON "bloqueio_hierarquico"("empresa_id", "nivel", "ativo")`)
+
+  // Tabela MudancaPicking (DE/PARA)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "mudanca_picking" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "endereco_origem_id" TEXT NOT NULL,
+      "endereco_destino_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "quantidade_transferida" DECIMAL(12,4),
+      "solicitado_por_id" TEXT NOT NULL,
+      "solicitado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "concluido_em" TIMESTAMP(3),
+      "observacao" TEXT,
+      CONSTRAINT "mudanca_picking_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mudanca_picking_empresa_status" ON "mudanca_picking"("empresa_id", "status")`)
+
+  console.log('✅ WMS Bloqueio Hierárquico, Quarentena e Picking Avançado: tabelas e colunas criadas')
+
+  // =========================================================================
+  // WMS — ITENS FINAIS: Picking Virtual, Códigos de Barras, Pulmão Regulador, Reabastecimento Modo 2
+  // =========================================================================
+
+  // DadosLogisticosPicking — picking virtual
+  await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_picking" ADD COLUMN IF NOT EXISTS "picking_virtual" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_picking" ADD COLUMN IF NOT EXISTS "descricao_virtual" VARCHAR(200)`)
+
+  // SKU — tipos de código de barras diferenciados
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "tipo_codigo_barra" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "codigo_barra_dun" VARCHAR(30)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "codigo_barra_display" VARCHAR(30)`)
+
+  // DadosLogisticosArmazenagem — pulmão regulador em outro depósito
+  await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_armazenagem" ADD COLUMN IF NOT EXISTS "pulmao_regulador_deposito_id" TEXT`)
+
+  console.log('✅ WMS Itens Finais: Picking Virtual, Códigos de Barras, Pulmão Regulador')
+
+  // =========================================================================
+  // WMS STANDALONE — Configuração de Integração com ERP Externo
+  // =========================================================================
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "config_wms_standalone" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "modo_operacao" VARCHAR(20) NOT NULL DEFAULT 'ERP_COMPLETO',
+      "integracao_ativa" BOOLEAN NOT NULL DEFAULT false,
+      "sistema_externo" VARCHAR(100),
+      "url_callback_erp" VARCHAR(500),
+      "master_produto" VARCHAR(20) NOT NULL DEFAULT 'ERP_EXTERNO',
+      "sincronizacao_estoque" VARCHAR(20) NOT NULL DEFAULT 'WMS_PARA_ERP',
+      "autenticacao_operador" VARCHAR(20) NOT NULL DEFAULT 'PIN_TERMINAL',
+      "produto_exige_campos_fiscais" BOOLEAN NOT NULL DEFAULT false,
+      "permite_criar_produto_ui" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "config_wms_standalone_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "config_wms_standalone_empresa_id_key" UNIQUE ("empresa_id")
+    )
+  `)
+  console.log('✅ WMS Standalone: tabela config_wms_standalone criada')
+
+  // PedidoExpedicaoWms — expedição independente do PedidoVenda
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pedido_expedicao_wms" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "referencia" VARCHAR(100) NOT NULL,
+      "cliente_nome" VARCHAR(200),
+      "cliente_doc" VARCHAR(20),
+      "prioridade" VARCHAR(10) NOT NULL DEFAULT 'NORMAL',
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "observacao" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "pedido_expedicao_wms_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "pedido_expedicao_wms_empresa_id_numero_key" ON "pedido_expedicao_wms"("empresa_id", "numero")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pedido_expedicao_wms_empresa_id_status_idx" ON "pedido_expedicao_wms"("empresa_id", "status")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_pedido_expedicao_wms" (
+      "id" TEXT NOT NULL,
+      "pedido_expedicao_wms_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "quantidade" DECIMAL(12,4) NOT NULL,
+      "quantidade_separada" DECIMAL(12,4) NOT NULL DEFAULT 0,
+      CONSTRAINT "item_pedido_expedicao_wms_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  console.log('✅ WMS Standalone: tabelas pedido_expedicao_wms criadas')
 
   console.log('✅ All migrations applied successfully')
 }

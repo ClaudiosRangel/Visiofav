@@ -1647,15 +1647,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             materialEncomendado: temMaterialEncomendado(e),
             tipoOp: extrairTipoOpObs(e.ordemProducao.observacoes),
             matriz: extrairMatrizObs(e.ordemProducao.observacoes),
-            // Status de pré-impressão: FINALIZADO, METADE, PROBLEMA ou null
-            preImpressaoStatus: (() => {
+            // Status de pré-impressão: lê diretamente do campo dedicado
+            preImpressaoStatus: e.preImpressaoStatus || (() => {
+              // Fallback: verificar tags legadas no observacaoOperador (migração)
               const obs = e.observacaoOperador || ''
               const match = obs.match(/\[PREIMPRESS:(\w+)\]/)
-              if (match) {
-                console.log(`[painel] etapa opNumero=${e.ordemProducao.referenciaExterna || e.ordemProducao.numero} preimpress=${match[1]} obs="${obs.substring(0, 60)}"`)
-                return match[1]
-              }
-              // Legado: [MATRIZ_OK] = FINALIZADO
+              if (match) return match[1]
               if (obs.includes('[MATRIZ_OK]')) return 'FINALIZADO'
               return null
             })(),
