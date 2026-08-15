@@ -141,7 +141,7 @@ export class CTeEmissaoService {
       xml: xmlGerado,
       pfxBuffer: certificado.pfxBuffer,
       senha: certificado.senha,
-      tagParaAssinar: 'infCTe',
+      tagParaAssinar: 'infCte',
     })
 
     // 4. Criar registro do documento fiscal no banco (status PENDENTE)
@@ -212,6 +212,77 @@ export class CTeEmissaoService {
           status: 'PENDENTE',
           documentoFiscalId: documentoFiscal.id,
           chaveAcesso,
+        }
+      }
+      throw err
+    }
+  }
+
+  /**
+   * Transmite um CT-e já existente (DIGITADA) — sem criar novo DocumentoFiscal.
+   * Usado pela rota /cte/:id/transmitir após gravação prévia.
+   */
+  async transmitirExistente(params: {
+    empresaId: string
+    documentoFiscalId: string
+    dadosCTe: DadosCTe
+    forcarContingencia?: boolean
+  }): Promise<EmissaoCTeResult & { xmlAssinado?: string }> {
+    const { empresaId, documentoFiscalId, dadosCTe, forcarContingencia } = params
+    const cnpjEmitente = dadosCTe.emitente.cnpj
+    const ufEmitente = dadosCTe.emitente.endereco.uf
+
+    // 1. Gerar XML
+    const xmlGerado = buildCTeXml(dadosCTe)
+    const chaveAcesso = this.extrairChaveAcesso(xmlGerado)
+
+    // 2. Validar XML contra schema XSD
+    const validacao = validarXML(xmlGerado, 'CTE')
+    if (!validacao.valido) {
+      throw new ErroFiscal(
+        CodigoErroFiscal.XML_INVALIDO_XSD,
+        `Validação XSD do CT-e falhou: ${validacao.erros.map(e => e.mensagem).join('; ')}`,
+        { erros: validacao.erros }
+      )
+    }
+
+    // 3. Obter certificado e assinar XML
+    const certificado = await certificadoService.obterParaAssinatura(cnpjEmitente, empresaId)
+    const { xmlAssinado } = assinarXML({
+      xml: xmlGerado,
+      pfxBuffer: certificado.pfxBuffer,
+      senha: certificado.senha,
+      tagParaAssinar: 'infCte',
+    })
+
+    // 4. Transmitir à SEFAZ
+    try {
+      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado, ServicoSefaz.CTE_AUTORIZACAO)
+      falhasConsecutivas.set(empresaId, 0)
+
+      if (resposta.codigoStatus === 103 && resposta.protocolo) {
+        const respostaConsulta = await this.consultarResultadoLote(
+          resposta.protocolo, ufEmitente, certificado,
+        )
+        const result = await this.processarRespostaSefaz(
+          respostaConsulta, documentoFiscalId, chaveAcesso, xmlAssinado
+        )
+        return { ...result, xmlAssinado }
+      }
+
+      const result = await this.processarRespostaSefaz(
+        resposta, documentoFiscalId, chaveAcesso, xmlAssinado
+      )
+      return { ...result, xmlAssinado }
+    } catch (err) {
+      if (err instanceof ErroFiscal && this.isFalhaComunicacao(err)) {
+        this.registrarFalhaComunicacao(empresaId)
+        return {
+          sucesso: false,
+          status: 'PENDENTE',
+          documentoFiscalId,
+          chaveAcesso,
+          xmlAssinado,
         }
       }
       throw err

@@ -41,6 +41,7 @@ model Empresa {
   certificadoPfx   String? @map("certificado_pfx") @db.Text
   senhaCertificado String? @map("senha_certificado") @db.VarChar(200)
   ambienteNFe      Int     @default(2) @map("ambiente_nfe")
+  ambienteCTe      Int     @default(2) @map("ambiente_cte")
   serieNFe         Int     @default(1) @map("serie_nfe")
   proximoNumeroNFe Int     @default(1) @map("proximo_numero_nfe")
   serieCTe         Int     @default(1) @map("serie_cte")

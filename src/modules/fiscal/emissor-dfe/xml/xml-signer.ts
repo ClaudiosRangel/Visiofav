@@ -133,7 +133,7 @@ export function assinarXML(params: AssinaturaParams): ResultadoAssinatura {
     )
   }
 
-  const tagsSuportadas = ['infNFe', 'infCTe', 'infMDFe', 'infEvento', 'infInut']
+  const tagsSuportadas = ['infNFe', 'infCTe', 'infCte', 'infMDFe', 'infEvento', 'infInut']
   if (!tagsSuportadas.includes(tagParaAssinar)) {
     throw new ErroFiscal(
       CodigoErroFiscal.XML_INVALIDO_XSD,

@@ -2569,6 +2569,12 @@ async function main() {
   `)
   console.log('✅ WMS Standalone: tabelas pedido_expedicao_wms criadas')
 
+  // =========================================================================
+  // Empresa — campo ambiente_cte separado (CT-e pode estar em ambiente diferente de NF-e)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "ambiente_cte" INTEGER DEFAULT 2`)
+  console.log('✅ Empresa: campo ambiente_cte adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 

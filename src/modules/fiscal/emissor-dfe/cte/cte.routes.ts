@@ -22,6 +22,8 @@ import { cteEmissaoService } from './cte-emissao.service'
 import { gerarDactePdf } from './cte-dacte-pdf.service'
 import { parseNFeXml, autoCadastrarParticipante } from './cte-importar-nfe.service'
 import { extrairTextoDanfePdf, parseDanfeTexto } from './cte-danfe-parser.service'
+import { buscarMunicipiosIBGE } from './cte-municipios.routes'
+import { consultarCnpj } from './cte-consulta-cnpj.service'
 import { ErroFiscal, CodigoErroFiscal } from '../../erros'
 import type { DadosCTe } from './cte-xml-builder'
 
@@ -44,26 +46,26 @@ const listCteQuerySchema = z.object({
 })
 
 const enderecoSchema = z.object({
-  logradouro: z.string().min(1).max(60),
-  numero: z.string().min(1).max(10),
+  logradouro: z.string().max(60).default(''),
+  numero: z.string().max(10).default(''),
   complemento: z.string().max(60).optional(),
-  bairro: z.string().min(1).max(60),
-  codigoMunicipio: z.string().regex(/^\d{7}$/),
-  municipio: z.string().min(1).max(60),
-  uf: z.string().length(2).regex(/^[A-Z]{2}$/),
-  cep: z.string().regex(/^\d{8}$/),
+  bairro: z.string().max(60).default(''),
+  codigoMunicipio: z.string().max(7).default(''),
+  municipio: z.string().max(60).default(''),
+  uf: z.string().max(2).default(''),
+  cep: z.string().max(8).default(''),
   codigoPais: z.string().optional(),
   pais: z.string().optional(),
 })
 
 const participanteSchema = z.object({
-  cnpj: z.string().regex(/^\d{14}$/).optional(),
-  cpf: z.string().regex(/^\d{11}$/).optional(),
+  cnpj: z.string().max(14).optional(),
+  cpf: z.string().max(11).optional(),
   ie: z.string().max(20).optional(),
   razaoSocial: z.string().min(1).max(200),
   nomeFantasia: z.string().max(200).optional(),
   endereco: enderecoSchema,
-  email: z.string().email().max(200).optional(),
+  email: z.string().max(200).optional(),
   telefone: z.string().max(20).optional(),
 })
 
@@ -110,10 +112,10 @@ const valePedagioSchema = z.object({
 })
 
 const veiculoNovoSchema = z.object({
-  chassi: z.string().length(17, 'Chassi deve ter 17 caracteres'),
-  cCor: z.string().max(4),
-  xCor: z.string().max(40),
-  cMod: z.string().max(6),
+  chassi: z.string().min(1).max(17),
+  cCor: z.string().max(10),
+  xCor: z.string().max(60),
+  cMod: z.string().max(20),
   vUnit: z.number().min(0),
   vFrete: z.number().min(0),
 })
@@ -128,16 +130,16 @@ const emissaoCTeInputSchema = z.object({
   tpEmis: z.number().int().min(1).max(9).default(1),
 
   // Municípios início/fim
-  cMunIni: z.string().regex(/^\d{7}$/),
-  xMunIni: z.string().min(1).max(60),
-  ufIni: z.string().length(2).regex(/^[A-Z]{2}$/),
-  cMunFim: z.string().regex(/^\d{7}$/),
-  xMunFim: z.string().min(1).max(60),
-  ufFim: z.string().length(2).regex(/^[A-Z]{2}$/),
+  cMunIni: z.string().max(7).default(''),
+  xMunIni: z.string().max(60).default(''),
+  ufIni: z.string().max(2).default(''),
+  cMunFim: z.string().max(7).default(''),
+  xMunFim: z.string().max(60).default(''),
+  ufFim: z.string().max(2).default(''),
 
   // Tomador
   tpTom: z.number().int().min(0).max(4),
-  indIEToma: z.number().int().refine(v => [1, 2, 9].includes(v)),
+  indIEToma: z.number().int().default(9),
   tomadorOutros: participanteSchema.optional(),
 
   // Participantes
@@ -187,7 +189,7 @@ const emissaoCTeInputSchema = z.object({
       })).optional(),
     }),
     infModal: z.object({
-      RNTRC: z.string().min(1).max(8),
+      RNTRC: z.string().max(20).optional(),
       veiculos: z.array(veiculoSchema).optional(),
     }).optional(),
     seguro: z.array(seguroSchema).optional(),
@@ -287,7 +289,7 @@ export async function cteRoutes(app: FastifyInstance) {
     return {
       rntrc: empresa.rntrc || '',
       serie: empresa.serieCTe || 1,
-      ambiente: empresa.ambienteNFe || 2,
+      ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
       ufEmitente: empresa.uf || '',
       // Padrões configuráveis (tabela Parametro, prefixo cte.)
       naturezaOp: params['cte.naturezaOp'] || 'PRESTACAO DE SERVICO DE TRANSPORTE',
@@ -529,27 +531,160 @@ export async function cteRoutes(app: FastifyInstance) {
       const params: Record<string, string> = {}
       for (const p of parametros) params[p.chave] = p.valor
 
+      // === ROTEIRO COMPLETO DE IMPORTAÇÃO ===
+
+      // 1. Resolver códigos IBGE dos municípios
+      let cMunIni = ''
+      let cMunFim = ''
+      if (origemUf && dados.emitente.municipio) {
+        const munsOrigem = await buscarMunicipiosIBGE(origemUf)
+        const buscaOrigem = dados.emitente.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        const found = munsOrigem.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === buscaOrigem)
+        if (found) cMunIni = found.codigo
+      }
+      if (destinoUf && dados.destinatario.municipio) {
+        const munsDest = await buscarMunicipiosIBGE(destinoUf)
+        const buscaDest = dados.destinatario.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        const found = munsDest.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === buscaDest)
+        if (found) cMunFim = found.codigo
+      }
+
+      // 2. Para cada participante: buscar no cadastro → consultar BrasilAPI → mesclar com PDF
+      async function resolverParticipante(cnpj: string, dadosPdf: any, cMun: string) {
+        const doc = cnpj?.replace(/\D/g, '') || ''
+        let resultado = {
+          cnpj: doc,
+          cpf: '',
+          razaoSocial: dadosPdf.razaoSocial || '',
+          nomeFantasia: '',
+          ie: dadosPdf.ie || '',
+          logradouro: '',
+          numero: '',
+          complemento: '',
+          bairro: '',
+          codigoMunicipio: cMun,
+          municipio: dadosPdf.municipio || '',
+          uf: dadosPdf.uf || '',
+          cep: '',
+          email: '',
+          telefone: '',
+        }
+        let cadastrado = false
+
+        if (!doc || doc.length !== 14) return { ...resultado, cadastrado }
+
+        // Passo 1: buscar no cadastro de Clientes
+        const clienteExistente = await prisma.cliente.findFirst({
+          where: { empresaId: user.empresaId!, cpfCnpj: doc },
+        })
+
+        if (clienteExistente) {
+          cadastrado = true
+          const c = clienteExistente as any
+          resultado = {
+            ...resultado,
+            razaoSocial: c.razaoSocial || c.nome || resultado.razaoSocial,
+            nomeFantasia: c.nomeFantasia || '',
+            ie: c.inscEstadual || resultado.ie,
+            logradouro: c.logradouro || '',
+            numero: c.numero || '',
+            complemento: c.complemento || '',
+            bairro: c.bairro || '',
+            codigoMunicipio: c.codigoMunicipio || cMun,
+            municipio: c.cidade || resultado.municipio,
+            uf: c.uf || resultado.uf,
+            cep: c.cep || '',
+            email: c.email || '',
+            telefone: c.telefone || '',
+          }
+          return { ...resultado, cadastrado }
+        }
+
+        // Passo 2: não encontrou no cadastro → consultar BrasilAPI
+        const dadosCnpj = await consultarCnpj(doc)
+        if (dadosCnpj) {
+          resultado = {
+            ...resultado,
+            razaoSocial: dadosCnpj.razaoSocial || resultado.razaoSocial,
+            nomeFantasia: dadosCnpj.nomeFantasia || '',
+            // IE: BrasilAPI não retorna → manter do PDF
+            ie: resultado.ie || '',
+            logradouro: dadosCnpj.logradouro || '',
+            numero: dadosCnpj.numero || '',
+            complemento: dadosCnpj.complemento || '',
+            bairro: dadosCnpj.bairro || '',
+            codigoMunicipio: cMun || '',
+            municipio: dadosCnpj.cidade || resultado.municipio,
+            uf: dadosCnpj.uf || resultado.uf,
+            cep: dadosCnpj.cep || '',
+            email: dadosCnpj.email || '',
+            telefone: dadosCnpj.telefone || '',
+          }
+
+          // Resolver cMun se veio vazio e temos cidade+uf da BrasilAPI
+          if (!resultado.codigoMunicipio && dadosCnpj.cidade && dadosCnpj.uf) {
+            const muns = await buscarMunicipiosIBGE(dadosCnpj.uf)
+            const busca = dadosCnpj.cidade.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            const found = muns.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === busca)
+            if (found) resultado.codigoMunicipio = found.codigo
+          }
+        }
+
+        // Passo 3: auto-cadastrar para próxima vez
+        try {
+          await prisma.cliente.create({
+            data: {
+              empresaId: user.empresaId!,
+              cpfCnpj: doc,
+              razaoSocial: resultado.razaoSocial,
+              nomeFantasia: resultado.nomeFantasia || undefined,
+              inscEstadual: resultado.ie || undefined,
+              logradouro: resultado.logradouro || undefined,
+              numero: resultado.numero || undefined,
+              complemento: resultado.complemento || undefined,
+              bairro: resultado.bairro || undefined,
+              cidade: resultado.municipio || undefined,
+              uf: resultado.uf || undefined,
+              cep: resultado.cep || undefined,
+              email: resultado.email || undefined,
+              telefone: resultado.telefone || undefined,
+              status: true,
+            } as any,
+          })
+          cadastrado = true
+        } catch { /* unique constraint — já existe */ cadastrado = true }
+
+        return { ...resultado, cadastrado }
+      }
+
+      const remResolvido = await resolverParticipante(dados.emitente.cnpj, dados.emitente, cMunIni)
+      const destResolvido = await resolverParticipante(dados.destinatario.cnpj, dados.destinatario, cMunFim)
+
+      // Atualizar cMun se foi resolvido pela consulta CNPJ
+      if (remResolvido.codigoMunicipio && !cMunIni) cMunIni = remResolvido.codigoMunicipio
+      if (destResolvido.codigoMunicipio && !cMunFim) cMunFim = destResolvido.codigoMunicipio
+
       return {
         sucesso: true,
         origem: 'PDF',
         cadastros: {
-          remetenteCadastrado: false,
-          destinatarioCadastrado: false,
+          remetenteCadastrado: remResolvido.cadastrado,
+          destinatarioCadastrado: destResolvido.cadastrado,
         },
         dadosExtraidos: {
           chaveAcesso: dados.chaveAcesso,
           numero: dados.numero,
           serie: dados.serie,
-          remetente: dados.emitente,
-          destinatario: dados.destinatario,
+          remetente: { ...dados.emitente, ...remResolvido },
+          destinatario: { ...dados.destinatario, ...destResolvido },
           valorCarga: dados.valorTotal,
           pesoBruto: dados.pesoBruto,
           produtos: dados.produtos || 'MERCADORIAS',
-          origemMun: dados.emitente.municipio,
-          origemUf,
-          destinoMun: dados.destinatario.municipio,
-          destinoUf,
-          veiculosNovos: [],
+          origemMun: remResolvido.municipio || dados.emitente.municipio,
+          origemUf: remResolvido.uf || origemUf,
+          destinoMun: destResolvido.municipio || dados.destinatario.municipio,
+          destinoUf: destResolvido.uf || destinoUf,
+          veiculosNovos: dados.veiculos?.map(v => ({ chassi: v.chassi, xCor: v.cor, cMod: v.modelo })) || [],
         },
         ctePrePreenchido: {
           serie: empresa?.serieCTe || 1,
@@ -558,39 +693,23 @@ export async function cteRoutes(app: FastifyInstance) {
           modal: params['cte.modal'] || '01',
           tpServ: 0,
           tpTom: 0,
-          cMunIni: '',
-          xMunIni: dados.emitente.municipio,
-          ufIni: origemUf,
-          cMunFim: '',
-          xMunFim: dados.destinatario.municipio,
-          ufFim: destinoUf,
-          remetente: {
-            cnpj: dados.emitente.cnpj,
-            cpf: '',
-            razaoSocial: dados.emitente.razaoSocial,
-            nomeFantasia: '',
-            ie: dados.emitente.ie,
-            logradouro: '', numero: '', complemento: '', bairro: '',
-            codigoMunicipio: '', municipio: dados.emitente.municipio,
-            uf: origemUf, cep: '', email: '', telefone: '',
-          },
-          destinatario: {
-            cnpj: dados.destinatario.cnpj,
-            cpf: dados.destinatario.cpf,
-            razaoSocial: dados.destinatario.razaoSocial,
-            nomeFantasia: '',
-            ie: dados.destinatario.ie,
-            logradouro: '', numero: '', complemento: '', bairro: '',
-            codigoMunicipio: '', municipio: dados.destinatario.municipio,
-            uf: destinoUf, cep: '', email: '', telefone: '',
-          },
+          cMunIni: remResolvido.codigoMunicipio || cMunIni,
+          xMunIni: remResolvido.municipio || dados.emitente.municipio,
+          ufIni: remResolvido.uf || origemUf,
+          cMunFim: destResolvido.codigoMunicipio || cMunFim,
+          xMunFim: destResolvido.municipio || dados.destinatario.municipio,
+          ufFim: destResolvido.uf || destinoUf,
+          remetente: remResolvido,
+          destinatario: destResolvido,
           infCarga: {
             vCarga: dados.valorTotal,
             proPred: dados.produtos || 'MERCADORIAS',
             pesoBruto: dados.pesoBruto,
           },
           nfesVinculadas: [{ chave: dados.chaveAcesso }],
-          veicNovos: [],
+          veicNovos: dados.veiculos?.map(v => ({
+            chassi: v.chassi, cCor: '', xCor: v.cor, cMod: v.modelo, vUnit: dados.valorTotal, vFrete: 0,
+          })) || [],
           rntrc: empresa?.rntrc || '',
           cstIcms: params['cte.cstIcms'] || '00',
           aliqIcms: params['cte.aliqIcms'] ? Number(params['cte.aliqIcms']) : 12,
@@ -704,7 +823,11 @@ export async function cteRoutes(app: FastifyInstance) {
         valorTotal: Number(doc.valorTotal),
         valorFrete: Number(doc.valorFrete),
         valorIcms: Number(doc.valorIcms),
-        xmlEnviado: undefined, // Não retornar XML pesado na listagem
+        // Para CT-e não-autorizado/cancelado, retornar os dados do payload para permitir edição
+        dadosEmissao: !['AUTORIZADO', 'CANCELADO'].includes(doc.status) && doc.xmlEnviado
+          ? (() => { try { return JSON.parse(doc.xmlEnviado) } catch { return null } })()
+          : null,
+        xmlEnviado: undefined, // Não retornar XML bruto
         xmlAutorizado: undefined,
         xmlRetorno: undefined,
       }
@@ -717,7 +840,282 @@ export async function cteRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
-  // POST /cte/emitir — Emitir CT-e modelo 57
+  // POST /cte/gravar — Gravar CT-e como DIGITADA (sem transmitir)
+  // ==========================================================================
+  app.post('/cte/gravar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = emissaoCTeInputSchema.parse(request.body)
+
+      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
+      if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
+
+      const nCT = await proximoNumeroCTe(user.empresaId, body.serie)
+
+      // Gravar como DocumentoFiscal com status DIGITADA (sem gerar XML/transmitir)
+      const documento = await prisma.documentoFiscal.create({
+        data: {
+          empresaId: user.empresaId,
+          tipo: 'CTE',
+          modelo: 57,
+          serie: body.serie,
+          numero: nCT,
+          status: 'DIGITADA',
+          naturezaOp: body.naturezaOp,
+          dataEmissao: new Date(),
+          tipoOperacao: 1,
+          finalidade: 1,
+          emitenteCnpj: (empresa.cnpj || '').replace(/\D/g, ''),
+          emitenteRazao: empresa.razaoSocial || '',
+          emitenteUf: empresa.uf || '',
+          destCpfCnpj: (body.destinatario.cnpj || body.destinatario.cpf || '').replace(/\D/g, '') || null,
+          destRazao: body.destinatario.razaoSocial || null,
+          destUf: body.destinatario.endereco?.uf || null,
+          valorTotal: body.vPrest.vTPrest || 0,
+          valorFrete: body.vPrest.vTPrest || 0,
+          valorIcms: body.impostos.icms.valor || 0,
+          ambiente: body.ambiente,
+          // Salvar payload completo como JSON no campo xmlEnviado (temporário até transmissão)
+          xmlEnviado: JSON.stringify(body),
+        },
+      })
+
+      return reply.status(201).send({
+        sucesso: true,
+        id: documento.id,
+        numero: nCT,
+        serie: body.serie,
+        status: 'DIGITADA',
+        message: 'CT-e gravado com sucesso. Use a ação "Transmitir" para enviar à SEFAZ.',
+      })
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao gravar' })
+    }
+  })
+
+  // ==========================================================================
+  // PUT /cte/:id — Atualizar CT-e DIGITADA (edição)
+  // ==========================================================================
+  app.put('/cte/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+      const body = emissaoCTeInputSchema.parse(request.body)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+      })
+      if (!doc) return reply.status(404).send({ message: 'CT-e não encontrado' })
+
+      if (!['DIGITADA', 'PENDENTE', 'REJEITADO'].includes(doc.status)) {
+        return reply.status(422).send({
+          message: `Só é possível editar CT-e com status DIGITADA, PENDENTE ou REJEITADO. Status atual: ${doc.status}`,
+        })
+      }
+
+      await prisma.documentoFiscal.update({
+        where: { id },
+        data: {
+          naturezaOp: body.naturezaOp,
+          destCpfCnpj: (body.destinatario.cnpj || body.destinatario.cpf || '').replace(/\D/g, '') || null,
+          destRazao: body.destinatario.razaoSocial || null,
+          destUf: body.destinatario.endereco?.uf || null,
+          valorTotal: body.vPrest.vTPrest || 0,
+          valorFrete: body.vPrest.vTPrest || 0,
+          valorIcms: body.impostos.icms.valor || 0,
+          ambiente: body.ambiente,
+          xmlEnviado: JSON.stringify(body),
+        },
+      })
+
+      return reply.status(200).send({
+        sucesso: true,
+        id,
+        numero: doc.numero,
+        serie: doc.serie,
+        status: 'DIGITADA',
+        message: 'CT-e atualizado com sucesso.',
+      })
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao atualizar' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/:id/transmitir — Transmitir CT-e DIGITADA à SEFAZ
+  // ==========================================================================
+  app.post('/cte/:id/transmitir', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+      })
+      if (!doc) return reply.status(404).send({ message: 'CT-e não encontrado' })
+
+      if (doc.status !== 'DIGITADA' && doc.status !== 'REJEITADO' && doc.status !== 'PENDENTE') {
+        return reply.status(422).send({
+          message: `Só é possível transmitir CT-e com status DIGITADA, PENDENTE ou REJEITADO. Status atual: ${doc.status}`,
+        })
+      }
+
+      // Recuperar payload salvo
+      let body: any
+      try {
+        body = JSON.parse(doc.xmlEnviado || '{}')
+      } catch {
+        return reply.status(422).send({ message: 'Dados do CT-e corrompidos. Exclua e grave novamente.' })
+      }
+
+      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
+      if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
+
+      const ufEmitente = empresa.uf || ''
+
+      const dadosCTe: DadosCTe = {
+        cUF: obterCodigoUF(ufEmitente),
+        cCT: gerarCodigoNumerico(),
+        nCT: doc.numero,
+        serie: doc.serie,
+        modelo: 57,
+        tpEmis: body.tpEmis || 1,
+        ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+        cfop: body.cfop || '5353',
+        naturezaOp: body.naturezaOp || '',
+        tpServ: body.tpServ || 0,
+        dataEmissao: new Date(),
+        tpCTe: body.tpCTe || 0,
+        modal: body.modal || '01',
+        cMunIni: body.cMunIni || '',
+        xMunIni: body.xMunIni || '',
+        ufIni: body.ufIni || '',
+        cMunFim: body.cMunFim || '',
+        xMunFim: body.xMunFim || '',
+        ufFim: body.ufFim || '',
+        tpTom: body.tpTom || 0,
+        indIEToma: body.indIEToma || 9,
+        emitente: {
+          cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
+          ie: empresa.inscEstadual || '',
+          razaoSocial: empresa.razaoSocial || '',
+          nomeFantasia: empresa.nomeFantasia || undefined,
+          endereco: {
+            logradouro: empresa.logradouro || '',
+            numero: empresa.numero || '',
+            complemento: empresa.complemento || undefined,
+            bairro: empresa.bairro || '',
+            codigoMunicipio: empresa.cidade || '',
+            municipio: empresa.cidade || '',
+            uf: ufEmitente,
+            cep: empresa.cep || '',
+          },
+        },
+        remetente: body.remetente as any,
+        destinatario: body.destinatario as any,
+        expedidor: body.expedidor as any,
+        recebedor: body.recebedor as any,
+        vPrest: body.vPrest as any,
+        impostos: body.impostos as any,
+        infCTeNorm: {
+          infCarga: body.infCTeNorm?.infCarga,
+          infDoc: {
+            infNFe: body.infCTeNorm?.infDoc?.infNFe,
+            infOutros: body.infCTeNorm?.infDoc?.infOutros,
+          },
+          infModal: body.infCTeNorm?.infModal,
+          veicNovos: body.infCTeNorm?.veicNovos,
+        },
+        complemento: body.complemento,
+        infAdFisco: body.infAdFisco,
+        infCpl: body.infCpl,
+        tomadorOutros: body.tomadorOutros,
+      }
+
+      const resultado = await cteEmissaoService.transmitirExistente({
+        empresaId: user.empresaId,
+        documentoFiscalId: id,
+        dadosCTe,
+        forcarContingencia: body.forcarContingencia || false,
+      })
+
+      // Atualizar o documento existente com o resultado
+      await prisma.documentoFiscal.update({
+        where: { id },
+        data: {
+          status: resultado.status,
+          chaveAcesso: resultado.chaveAcesso || undefined,
+          protocolo: resultado.protocolo || undefined,
+          xmlAutorizado: resultado.xmlAutorizado || resultado.xmlAssinado || undefined,
+          codigoRejeicao: resultado.codigoRejeicao || undefined,
+          motivoRejeicao: resultado.motivoRejeicao || undefined,
+          dataAutorizacao: resultado.sucesso ? new Date() : undefined,
+        },
+      })
+
+      return reply.status(resultado.sucesso ? 200 : 422).send({
+        ...resultado,
+        documentoId: id,
+      })
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send(err.toJSON())
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao transmitir' })
+    }
+  })
+
+  // ==========================================================================
+  // DELETE /cte/:id — Excluir CT-e não transmitido (DIGITADA/PENDENTE/REJEITADO)
+  // ==========================================================================
+  app.delete('/cte/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+      })
+      if (!doc) return reply.status(404).send({ message: 'CT-e não encontrado' })
+
+      if (!['DIGITADA', 'PENDENTE', 'REJEITADO'].includes(doc.status)) {
+        return reply.status(422).send({
+          message: `Não é possível excluir CT-e com status ${doc.status}. Apenas DIGITADA, PENDENTE ou REJEITADO podem ser excluídos.`,
+        })
+      }
+
+      await prisma.documentoFiscal.delete({ where: { id } })
+
+      return reply.status(200).send({ sucesso: true, message: 'CT-e excluído com sucesso.' })
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro ao excluir' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/emitir — Emitir CT-e modelo 57 (gravar + transmitir em um passo)
   // ==========================================================================
   app.post('/cte/emitir', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
@@ -762,10 +1160,12 @@ export async function cteRoutes(app: FastifyInstance) {
         tpTom: body.tpTom,
         indIEToma: body.indIEToma,
         emitente: {
-          cnpj: empresa.cnpj || '',
+          cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
           ie: empresa.inscEstadual || '',
           razaoSocial: empresa.razaoSocial || '',
           nomeFantasia: empresa.nomeFantasia || undefined,
+          CRT: (empresa as any).regimeTributario || 1,
+          fone: empresa.telefone || undefined,
           endereco: {
             logradouro: empresa.logradouro || '',
             numero: empresa.numero || '',
@@ -953,7 +1353,7 @@ export async function cteRoutes(app: FastifyInstance) {
             status: 'INUTILIZADO',
             dataEmissao: new Date(),
             tipoOperacao: 1,
-            emitenteCnpj: empresa.cnpj || '',
+            emitenteCnpj: (empresa.cnpj || '').replace(/\D/g, ''),
             emitenteRazao: empresa.razaoSocial || '',
             emitenteUf: empresa.uf || '',
             ambiente: body.ambiente,

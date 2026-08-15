@@ -88,6 +88,10 @@ export interface DadosEmitenteCTe {
   razaoSocial: string
   nomeFantasia?: string
   endereco: EnderecoCTe
+  /** Código de Regime Tributário (1=Simples Nacional, 2=SN Excesso Sublimite, 3=Regime Normal) */
+  CRT?: number
+  /** Telefone do emitente */
+  fone?: string
 }
 
 export interface DadosParticipanteCTe {
@@ -389,6 +393,7 @@ function buildIde(dados: DadosCTe, chaveAcesso: string): string {
 <cMunFim>${dados.cMunFim}</cMunFim>
 <xMunFim>${escXml(dados.xMunFim)}</xMunFim>
 <UFFim>${dados.ufFim}</UFFim>
+<retira>1</retira>
 <indIEToma>${dados.indIEToma}</indIEToma>
 `
   xml += buildTomador(dados)
@@ -457,7 +462,7 @@ function buildCompl(compl: DadosComplementoCTe | undefined): string {
 
 function buildEmit(emit: DadosEmitenteCTe): string {
   const end = emit.endereco
-  return `<emit>
+  let xml = `<emit>
 <CNPJ>${emit.cnpj}</CNPJ>
 <IE>${emit.ie}</IE>
 <xNome>${escXml(emit.razaoSocial)}</xNome>
@@ -469,8 +474,9 @@ ${end.complemento ? `<xCpl>${escXml(end.complemento)}</xCpl>\n` : ''}<xBairro>${
 <xMun>${escXml(end.municipio)}</xMun>
 <CEP>${end.cep}</CEP>
 <UF>${end.uf}</UF>
-</enderEmit>
-</emit>`
+${emit.fone ? `<fone>${emit.fone}</fone>\n` : ''}</enderEmit>
+${emit.CRT ? `<CRT>${emit.CRT}</CRT>\n` : ''}</emit>`
+  return xml
 }
 
 function buildParticipante(tag: string, part: DadosParticipanteCTe): string {
@@ -664,11 +670,11 @@ function buildInfCTeNorm(infCTeNorm: DadosInfCTeNorm): string {
   let xml = '<infCTeNorm>\n'
   xml += buildInfCarga(infCTeNorm.infCarga)
   xml += buildInfDoc(infCTeNorm.infDoc)
-  if (infCTeNorm.veicNovos && infCTeNorm.veicNovos.length > 0) {
-    xml += buildVeicNovos(infCTeNorm.veicNovos)
-  }
   if (infCTeNorm.infModal) {
     xml += buildInfModal(infCTeNorm.infModal)
+  }
+  if (infCTeNorm.veicNovos && infCTeNorm.veicNovos.length > 0) {
+    xml += buildVeicNovos(infCTeNorm.veicNovos)
   }
   xml += '</infCTeNorm>'
   return xml
@@ -834,11 +840,18 @@ export function buildCTeXml(dados: DadosCTe): string {
 
   const infCte = parts.filter(Boolean).join('\n')
 
+  // Gerar QR Code URL (infCTeSupl)
+  const ambiente = dados.ambiente
+  const urlQrCode = ambiente === 1
+    ? `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=1`
+    : `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=2`
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <CTe xmlns="http://www.portalfiscal.inf.br/cte">
 <infCte versao="4.00" Id="CTe${chaveAcesso}">
 ${infCte}
 </infCte>
+<infCTeSupl><qrCodCTe>${escXml(urlQrCode)}</qrCodCTe></infCTeSupl>
 </CTe>`
 }
 

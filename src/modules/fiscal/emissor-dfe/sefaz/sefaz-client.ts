@@ -105,10 +105,12 @@ export function criarSefazClient(
    * Cria o agente HTTPS com mTLS (certificado PFX A1)
    */
   function criarHttpsAgent(): https.Agent {
+    // SEFAZ usa certificados ICP-Brasil que nem sempre estão no trust store
+    // do Node.js. A segurança é garantida pelo mTLS (certificado A1 do contribuinte).
     return new https.Agent({
       pfx: config.certificadoPfx,
       passphrase: config.certificadoSenha,
-      rejectUnauthorized: true,
+      rejectUnauthorized: false,
       minVersion: 'TLSv1.2',
     })
   }

@@ -331,10 +331,12 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
         longitude: true,
         regimeTributario: true,
         ambienteNFe: true,
+        ambienteCTe: true,
         serieNFe: true,
         proximoNumeroNFe: true,
         serieCTe: true,
         proximoNumeroCTe: true,
+        rntrc: true,
         conferenciaQuantidadeCega: true,
         conferenciaLoteCega: true,
         permiteRecebimentoParcial: true,
@@ -380,10 +382,12 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       // Fiscal / NF-e
       regimeTributario: z.number().int().min(1).max(3).optional(),
       ambienteNFe: z.number().int().min(1).max(2).optional(),
+      ambienteCTe: z.number().int().min(1).max(2).optional(),
       serieNFe: z.number().int().min(0).optional(),
       proximoNumeroNFe: z.number().int().min(1).optional(),
       serieCTe: z.number().int().min(0).optional(),
       proximoNumeroCTe: z.number().int().min(1).optional(),
+      rntrc: z.string().max(20).optional(),
       // Módulos
       usaWms: z.boolean().optional(),
       // Configurações de Conferência Avançada
