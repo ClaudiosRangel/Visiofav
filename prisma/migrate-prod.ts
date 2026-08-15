@@ -2575,6 +2575,12 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "ambiente_cte" INTEGER DEFAULT 2`)
   console.log('✅ Empresa: campo ambiente_cte adicionado')
 
+  // =========================================================================
+  // Cliente — campo codigo_municipio (IBGE) para CT-e
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "codigo_municipio" VARCHAR(7)`)
+  console.log('✅ Cliente: campo codigo_municipio adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 
