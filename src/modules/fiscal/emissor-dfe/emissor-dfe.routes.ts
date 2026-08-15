@@ -22,6 +22,7 @@ import { nfceEmissaoService } from './nfce/nfce-emissao.service'
 import { danfePdfService } from './nfe/danfe-pdf.service'
 import { cteRoutes } from './cte/cte.routes'
 import { cteTabelaFreteRoutes } from './cte/cte-tabela-frete.routes'
+import { cteMunicipiosRoutes } from './cte/cte-municipios.routes'
 import { exportacaoXmlRoutes } from './exportacao-xml.routes'
 import {
   cancelar,
@@ -72,6 +73,9 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
 
   // Registrar rotas de Tabela de Frete CT-e
   app.register(cteTabelaFreteRoutes)
+
+  // Busca de municípios IBGE
+  app.register(cteMunicipiosRoutes)
 
   // Exportação de XMLs em lote (ZIP para contador)
   app.register(exportacaoXmlRoutes)
