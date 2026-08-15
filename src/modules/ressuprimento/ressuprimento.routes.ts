@@ -199,4 +199,106 @@ export async function ressuprimentoRoutes(app: FastifyInstance) {
 
     return { message: 'Ressuprimento executado', quantidade: body.quantidade }
   })
+
+  // GET /pendentes-demanda — MODO 2: calcula reposição apenas para atender pedidos pendentes
+  // (não completa o picking — só comanda o necessário para a separação imediata)
+  app.get('/pendentes-demanda', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+
+    // Buscar ondas de separação ativas (AGUARDANDO_SEPARACAO ou EM_SEPARACAO)
+    const ondasAtivas = await prisma.ondaSeparacao.findMany({
+      where: { empresaId: user.empresaId, status: { in: ['AGUARDANDO_SEPARACAO', 'EM_SEPARACAO'] } },
+      include: {
+        ordens: { include: { itens: { select: { produtoId: true, quantidadeSolicitada: true, enderecoOrigemId: true } } } },
+      },
+    })
+
+    // Agregar demanda por produto em endereços de picking
+    const demandaPorProdutoPicking = new Map<string, { produtoId: string; enderecoPickingId: string; quantidadeNecessaria: number }>()
+
+    for (const onda of ondasAtivas) {
+      for (const ordem of onda.ordens) {
+        for (const item of ordem.itens) {
+          // Verificar se o endereço de origem é picking
+          const endereco = await prisma.endereco.findFirst({
+            where: { id: item.enderecoOrigemId, tipo: 'PICKING' },
+            select: { id: true },
+          })
+          if (!endereco) continue
+
+          const chave = `${item.produtoId}_${item.enderecoOrigemId}`
+          const existente = demandaPorProdutoPicking.get(chave)
+          if (existente) {
+            existente.quantidadeNecessaria += Number(item.quantidadeSolicitada)
+          } else {
+            demandaPorProdutoPicking.set(chave, {
+              produtoId: item.produtoId,
+              enderecoPickingId: item.enderecoOrigemId,
+              quantidadeNecessaria: Number(item.quantidadeSolicitada),
+            })
+          }
+        }
+      }
+    }
+
+    // Para cada demanda, verificar se o saldo no picking é suficiente
+    const pendentes: Array<{
+      produtoId: string
+      enderecoPickingId: string
+      enderecoPickingCompleto: string
+      saldoAtual: number
+      demandaPedidos: number
+      deficit: number
+      pulmao: { enderecoId: string; enderecoCompleto: string; saldoDisponivel: number } | null
+    }> = []
+
+    for (const [, demanda] of demandaPorProdutoPicking) {
+      const saldo = await prisma.saldoEndereco.aggregate({
+        where: { enderecoId: demanda.enderecoPickingId, produtoId: demanda.produtoId, quantidade: { gt: 0 } },
+        _sum: { quantidade: true },
+      })
+      const saldoAtual = Number(saldo._sum.quantidade ?? 0)
+      const deficit = demanda.quantidadeNecessaria - saldoAtual
+
+      if (deficit > 0) {
+        const enderecoPicking = await prisma.endereco.findUnique({
+          where: { id: demanda.enderecoPickingId },
+          select: { enderecoCompleto: true },
+        })
+
+        // Buscar pulmão com saldo
+        const pulmao = await prisma.saldoEndereco.findFirst({
+          where: {
+            produtoId: demanda.produtoId,
+            quantidade: { gt: 0 },
+            endereco: { tipo: 'ARMAZENAGEM' },
+            enderecoId: { not: demanda.enderecoPickingId },
+          },
+          include: { endereco: { select: { id: true, enderecoCompleto: true } } },
+          orderBy: { quantidade: 'desc' },
+        })
+
+        pendentes.push({
+          produtoId: demanda.produtoId,
+          enderecoPickingId: demanda.enderecoPickingId,
+          enderecoPickingCompleto: enderecoPicking?.enderecoCompleto ?? '',
+          saldoAtual,
+          demandaPedidos: demanda.quantidadeNecessaria,
+          deficit,
+          pulmao: pulmao ? {
+            enderecoId: pulmao.endereco.id,
+            enderecoCompleto: pulmao.endereco.enderecoCompleto ?? '',
+            saldoDisponivel: Number(pulmao.quantidade),
+          } : null,
+        })
+      }
+    }
+
+    return {
+      modo: 'DEMANDA_IMEDIATA',
+      data: pendentes,
+      total: pendentes.length,
+      descricao: 'Reposição calculada apenas para atender pedidos de separação pendentes (não completa o picking)',
+    }
+  })
 }

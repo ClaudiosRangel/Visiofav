@@ -105,9 +105,19 @@ export async function inventarioRoutes(app: FastifyInstance) {
       include: { itens: true },
     })
 
+    // Bloquear endereços para movimentação durante o inventário (RF012 - Extra)
+    const enderecoIds = [...new Set(saldos.map((s) => s.enderecoId))]
+    if (enderecoIds.length > 0) {
+      await prisma.endereco.updateMany({
+        where: { id: { in: enderecoIds } },
+        data: { inventarioAtivo: true },
+      })
+    }
+
     return reply.status(201).send({
       ...inventario,
       totalItens: inventario.itens.length,
+      enderecosBlockeados: enderecoIds.length,
     })
   })
 
@@ -274,6 +284,15 @@ export async function inventarioRoutes(app: FastifyInstance) {
 
       // Concluir inventário
       await tx.inventario.update({ where: { id }, data: { status: 'CONCLUIDO', concluidoEm: new Date() } })
+
+      // Desbloquear endereços do inventário
+      const enderecoIdsInventario = [...new Set(inventario.itens.map((i) => i.enderecoId))]
+      if (enderecoIdsInventario.length > 0) {
+        await tx.endereco.updateMany({
+          where: { id: { in: enderecoIdsInventario } },
+          data: { inventarioAtivo: false },
+        })
+      }
     })
 
     return { message: 'Ajustes aplicados e inventário concluído', ajustesAplicados }
@@ -283,7 +302,25 @@ export async function inventarioRoutes(app: FastifyInstance) {
   app.patch('/:id/concluir', async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
 
+    // Buscar endereços do inventário para desbloquear
+    const inventario = await prisma.inventario.findUnique({
+      where: { id },
+      include: { itens: { select: { enderecoId: true } } },
+    })
+
     await prisma.inventario.update({ where: { id }, data: { status: 'CONCLUIDO', concluidoEm: new Date() } })
+
+    // Desbloquear endereços
+    if (inventario?.itens) {
+      const enderecoIds = [...new Set(inventario.itens.map((i) => i.enderecoId))]
+      if (enderecoIds.length > 0) {
+        await prisma.endereco.updateMany({
+          where: { id: { in: enderecoIds } },
+          data: { inventarioAtivo: false },
+        })
+      }
+    }
+
     return { message: 'Inventário concluído' }
   })
 }

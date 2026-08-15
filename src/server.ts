@@ -138,6 +138,10 @@ import { patioRoutes } from './modules/patio/patio.routes'
 import { chamadaDocaRoutes } from './modules/patio/chamada-doca.routes'
 import { painelOperacionalRoutes } from './modules/painel-operacional/painel-operacional.routes'
 import { multiCdRoutes } from './modules/multi-cd/multi-cd.routes'
+import { bloqueioWmsRoutes } from './modules/bloqueio-wms/bloqueio-wms.routes'
+import { wmsStandaloneConfigRoutes } from './modules/wms-standalone/wms-standalone.routes'
+import { wmsApiIntegracaoRoutes } from './modules/wms-standalone/wms-api-integracao.routes'
+import { wmsAuthRoutes } from './modules/wms-standalone/wms-auth.routes'
 
 // Fase 3 — Diferenciar WMS
 import { demandaRoutes } from './modules/demanda/demanda.routes'
@@ -227,8 +231,10 @@ async function bootstrap() {
   })
 
   // ── Segurança: Rate Limiting global (proteção contra brute-force e DDoS) ──
+  // Em desenvolvimento (localhost), limite mais alto para não bloquear testes
+  const isDev = !process.env.NODE_ENV || process.env.NODE_ENV !== 'production'
   await app.register(rateLimit, {
-    max: 200,
+    max: isDev ? 1000 : 200,
     timeWindow: '1 minute',
     // Limites mais restritivos aplicados por rota abaixo
   })
@@ -350,6 +356,14 @@ async function bootstrap() {
   await app.register(chamadaDocaRoutes, { prefix: '/api/patio/chamada-doca' })
   await app.register(painelOperacionalRoutes, { prefix: '/api/painel-operacional' })
   await app.register(multiCdRoutes, { prefix: '/api/multi-cd' })
+
+  // Fase 2.5 — Bloqueio Hierárquico, Quarentena, Compatibilidade, Picking Avançado
+  await app.register(bloqueioWmsRoutes, { prefix: '/api/bloqueio-wms' })
+
+  // WMS Standalone — Configuração e API de Integração
+  await app.register(wmsStandaloneConfigRoutes, { prefix: '/api/wms-standalone' })
+  await app.register(wmsApiIntegracaoRoutes, { prefix: '/api/v1/wms' })
+  await app.register(wmsAuthRoutes, { prefix: '/api/wms-auth' })
 
   // Fase 3 — Diferenciar WMS
   await app.register(demandaRoutes, { prefix: '/api/demanda' })
