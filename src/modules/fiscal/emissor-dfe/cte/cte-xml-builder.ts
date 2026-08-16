@@ -490,6 +490,7 @@ function buildParticipante(tag: string, part: DadosParticipanteCTe): string {
   }
 
   if (part.ie) xml += `<IE>${part.ie}</IE>\n`
+  // Em homologação (tpAmb=2), xNome deve ser literal de homologação
   xml += `<xNome>${escXml(part.razaoSocial)}</xNome>\n`
   // xFant é permitido apenas em <rem>, não em <dest>
   if (part.nomeFantasia && tag === 'rem') xml += `<xFant>${escXml(part.nomeFantasia)}</xFant>\n`
@@ -859,7 +860,24 @@ export function buildCTeXml(dados: DadosCTe): string {
   // Nota: urlQrCode já contém &amp; escapado, não usar escXml nela
   const xml = `<CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte versao="4.00" Id="CTe${chaveAcesso}">${infCte}</infCte><infCTeSupl><qrCodCTe>${urlQrCode}</qrCodCTe></infCTeSupl></CTe>`
   // Remover quebras de linha e espaços entre tags
-  return xml.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
+  let finalXml = xml.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
+
+  // Em homologação (tpAmb=2), substituir xNome do rem e dest pela literal obrigatória
+  if (dados.ambiente === 2) {
+    const homoNome = 'CTE EMITIDO EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
+    // Substituir xNome dentro de <rem>...</rem>
+    finalXml = finalXml.replace(
+      /(<rem>.*?<xNome>)(.*?)(<\/xNome>)/,
+      `$1${homoNome}$3`
+    )
+    // Substituir xNome dentro de <dest>...</dest>
+    finalXml = finalXml.replace(
+      /(<dest>.*?<xNome>)(.*?)(<\/xNome>)/,
+      `$1${homoNome}$3`
+    )
+  }
+
+  return finalXml
 }
 
 export { UF_CODES }
