@@ -842,18 +842,23 @@ export function buildCTeXml(dados: DadosCTe): string {
   parts.push(buildVPrest(dados.vPrest))
   parts.push(buildImp(dados.impostos))
   parts.push(buildInfCTeNorm(dados.infCTeNorm))
+  // infAdic fica APÓS infCTeNorm no schema CT-e 4.0
+  parts.push(buildInfAdic(dados.infAdFisco, dados.infCpl))
 
   const infCte = parts.filter(Boolean).join('')
 
   // Gerar QR Code URL (infCTeSupl)
+  // Homologação: https://svrs.rs.gov.br (sem path)
+  // Produção: https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=CHAVE&tpAmb=1
   const ambiente = dados.ambiente
   const urlQrCode = ambiente === 1
-    ? `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=1`
-    : `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=2`
+    ? `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&amp;tpAmb=1`
+    : `https://svrs.rs.gov.br`
 
   // XML minificado (sem quebras de linha) — exigido pela SEFAZ para assinatura válida
   // Não incluir <?xml?> pois o CT-e vai dentro do envelope SOAP que já tem o seu
-  const xml = `<CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte versao="4.00" Id="CTe${chaveAcesso}">${infCte}</infCte><infCTeSupl><qrCodCTe>${escXml(urlQrCode)}</qrCodCTe></infCTeSupl></CTe>`
+  // Nota: urlQrCode já contém &amp; escapado, não usar escXml nela
+  const xml = `<CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte versao="4.00" Id="CTe${chaveAcesso}">${infCte}</infCte><infCTeSupl><qrCodCTe>${urlQrCode}</qrCodCTe></infCTeSupl></CTe>`
   // Remover quebras de linha e espaços entre tags
   return xml.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
 }
