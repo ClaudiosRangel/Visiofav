@@ -56,17 +56,8 @@ function normalizarTimeout(timeoutMs: number): number {
 function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
-  return [
-    '<?xml version="1.0" encoding="utf-8"?>',
-    '<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">',
-    '  <soap12:Header/>',
-    '  <soap12:Body>',
-    `    <${tagDadosMsg} xmlns="${namespace}">`,
-    `      ${xmlPayload}`,
-    `    </${tagDadosMsg}>`,
-    '  </soap12:Body>',
-    '</soap12:Envelope>',
-  ].join('\n')
+  // Envelope SOAP minificado (sem quebras de linha)
+  return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Header/><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${xmlPayload}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
 }
 
 /**

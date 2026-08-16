@@ -838,7 +838,7 @@ export function buildCTeXml(dados: DadosCTe): string {
   parts.push(buildInfCTeNorm(dados.infCTeNorm))
   parts.push(buildInfAdic(dados.infAdFisco, dados.infCpl))
 
-  const infCte = parts.filter(Boolean).join('\n')
+  const infCte = parts.filter(Boolean).join('')
 
   // Gerar QR Code URL (infCTeSupl)
   const ambiente = dados.ambiente
@@ -846,13 +846,10 @@ export function buildCTeXml(dados: DadosCTe): string {
     ? `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=1`
     : `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=2`
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<CTe xmlns="http://www.portalfiscal.inf.br/cte">
-<infCte versao="4.00" Id="CTe${chaveAcesso}">
-${infCte}
-</infCte>
-<infCTeSupl><qrCodCTe>${escXml(urlQrCode)}</qrCodCTe></infCTeSupl>
-</CTe>`
+  // XML minificado (sem quebras de linha) — exigido pela SEFAZ para assinatura válida
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte versao="4.00" Id="CTe${chaveAcesso}">${infCte}</infCte><infCTeSupl><qrCodCTe>${escXml(urlQrCode)}</qrCodCTe></infCTeSupl></CTe>`
+  // Remover quebras de linha e espaços entre tags
+  return xml.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
 }
 
 export { UF_CODES }
