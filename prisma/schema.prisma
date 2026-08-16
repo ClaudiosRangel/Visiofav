@@ -22,6 +22,7 @@ model Empresa {
   complemento  String?  @db.VarChar(100)
   bairro       String?  @db.VarChar(100)
   cidade       String?  @db.VarChar(100)
+  codigoMunicipio String? @map("codigo_municipio") @db.VarChar(7)
   uf           String?  @db.VarChar(2)
   cep          String?  @db.VarChar(10)
   telefone     String?  @db.VarChar(20)

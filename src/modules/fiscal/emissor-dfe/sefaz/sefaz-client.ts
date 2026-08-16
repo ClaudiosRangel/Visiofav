@@ -171,11 +171,36 @@ export function criarSefazClient(
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve(responseBody)
           } else {
+            // Tentar extrair cStat/xMotivo da resposta SOAP mesmo em erro HTTP
+            let mensagem = `SEFAZ retornou HTTP ${res.statusCode}`
+            let detalhes: Record<string, unknown> = { statusCode: res.statusCode }
+
+            // Extrair cStat e xMotivo se presentes na resposta
+            const cStatMatch = responseBody.match(/<cStat>(\d+)<\/cStat>/)
+            const xMotivoMatch = responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)
+            if (cStatMatch && xMotivoMatch) {
+              mensagem = `Rejeição SEFAZ (cStat ${cStatMatch[1]}): ${xMotivoMatch[1]}`
+              detalhes = { statusCode: res.statusCode, cStat: cStatMatch[1], xMotivo: xMotivoMatch[1] }
+            } else if (xMotivoMatch) {
+              mensagem = `SEFAZ: ${xMotivoMatch[1]}`
+              detalhes = { statusCode: res.statusCode, xMotivo: xMotivoMatch[1] }
+            } else {
+              // Tentar extrair SOAP Fault
+              const faultMatch = responseBody.match(/<(?:soap[12]?:)?Reason[^>]*>([^<]+)/i) ||
+                responseBody.match(/<faultstring>([^<]+)/i)
+              if (faultMatch) {
+                mensagem = `SEFAZ SOAP Fault: ${faultMatch[1]}`
+                detalhes = { statusCode: res.statusCode, fault: faultMatch[1] }
+              } else {
+                detalhes.body = responseBody.substring(0, 500)
+              }
+            }
+
             reject(
               new ErroFiscal(
                 CodigoErroFiscal.SEFAZ_REJEICAO,
-                `SEFAZ retornou HTTP ${res.statusCode}`,
-                { statusCode: res.statusCode, body: responseBody }
+                mensagem,
+                detalhes
               )
             )
           }

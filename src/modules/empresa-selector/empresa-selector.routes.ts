@@ -336,6 +336,7 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
         proximoNumeroNFe: true,
         serieCTe: true,
         proximoNumeroCTe: true,
+        codigoMunicipio: true,
         rntrc: true,
         conferenciaQuantidadeCega: true,
         conferenciaLoteCega: true,
@@ -387,6 +388,7 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
       proximoNumeroNFe: z.number().int().min(1).optional(),
       serieCTe: z.number().int().min(0).optional(),
       proximoNumeroCTe: z.number().int().min(1).optional(),
+      codigoMunicipio: z.string().max(7).optional(),
       rntrc: z.string().max(20).optional(),
       // Módulos
       usaWms: z.boolean().optional(),

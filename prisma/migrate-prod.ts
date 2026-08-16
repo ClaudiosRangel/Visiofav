@@ -2576,6 +2576,12 @@ async function main() {
   console.log('✅ Empresa: campo ambiente_cte adicionado')
 
   // =========================================================================
+  // Empresa — campo codigo_municipio (IBGE) para CT-e emitente
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "codigo_municipio" VARCHAR(7)`)
+  console.log('✅ Empresa: campo codigo_municipio adicionado')
+
+  // =========================================================================
   // Cliente — campo codigo_municipio (IBGE) para CT-e
   // =========================================================================
   await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "codigo_municipio" VARCHAR(7)`)
