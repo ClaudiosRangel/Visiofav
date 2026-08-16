@@ -70,9 +70,10 @@ function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
 
-  // CT-e: envelope com cteCabecMsg no Header e namespace prefixado
+  // CT-e 4.00: envelope SEM cteCabecMsg no Header (removido na versão 4.00,
+  // assim como na NF-e 4.00). O SVRS retorna HTTP 400 se receber esse cabeçalho obsoleto.
   if (isServicoCTe(servico)) {
-    return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:cte="${namespace}"><soap12:Header><cte:cteCabecMsg><cte:versaoDados>4.00</cte:versaoDados></cte:cteCabecMsg></soap12:Header><soap12:Body><cte:${tagDadosMsg}>${xmlPayload}</cte:${tagDadosMsg}></soap12:Body></soap12:Envelope>`
+    return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:cte="${namespace}"><soap12:Header/><soap12:Body><cte:${tagDadosMsg}>${xmlPayload}</cte:${tagDadosMsg}></soap12:Body></soap12:Envelope>`
   }
 
   // NF-e: envelope padrão sem Header
