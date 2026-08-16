@@ -55,14 +55,15 @@ function normalizarTimeout(timeoutMs: number): number {
  */
 function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
+  const tagDadosMsg = obterTagDadosMsg(servico)
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
     '<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">',
     '  <soap12:Header/>',
     '  <soap12:Body>',
-    `    <nfeDadosMsg xmlns="${namespace}">`,
+    `    <${tagDadosMsg} xmlns="${namespace}">`,
     `      ${xmlPayload}`,
-    '    </nfeDadosMsg>',
+    `    </${tagDadosMsg}>`,
     '  </soap12:Body>',
     '</soap12:Envelope>',
   ].join('\n')
@@ -75,7 +76,29 @@ function obterNamespaceServico(servico: ServicoSefaz): string {
   if (servico === ServicoSefaz.DISTRIBUICAO_DFE) {
     return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe'
   }
+  // CT-e: namespaces específicos
+  if (servico === ServicoSefaz.CTE_AUTORIZACAO) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4'
+  }
+  if (servico === ServicoSefaz.CTE_RET_AUTORIZACAO) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4'
+  }
+  if (servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4'
+  }
   return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4'
+}
+
+function obterTagDadosMsg(servico: ServicoSefaz): string {
+  // CT-e usa cteDadosMsg, NF-e usa nfeDadosMsg
+  if (
+    servico === ServicoSefaz.CTE_AUTORIZACAO ||
+    servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
+    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO
+  ) {
+    return 'cteDadosMsg'
+  }
+  return 'nfeDadosMsg'
 }
 
 /**
