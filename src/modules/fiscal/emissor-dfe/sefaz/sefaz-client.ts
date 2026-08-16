@@ -183,7 +183,7 @@ export function criarSefazClient(
                 mensagem = `SEFAZ SOAP Fault: ${faultMatch[1]}`
                 detalhes = { statusCode: res.statusCode, fault: faultMatch[1] }
               } else {
-                detalhes.body = responseBody.substring(0, 500)
+                detalhes.body = responseBody.substring(0, 1000)
               }
             }
 
