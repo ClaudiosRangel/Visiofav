@@ -25,7 +25,7 @@ import { extrairTextoDanfePdf, parseDanfeTexto } from './cte-danfe-parser.servic
 import { buscarMunicipiosIBGE } from './cte-municipios.routes'
 import { consultarCnpj } from './cte-consulta-cnpj.service'
 import { ErroFiscal, CodigoErroFiscal } from '../../erros'
-import type { DadosCTe } from './cte-xml-builder'
+import { buildCTeXml, type DadosCTe } from './cte-xml-builder'
 
 // === Schemas Zod ===
 
@@ -1080,6 +1080,108 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(422).send(err.toJSON())
       }
       return reply.status(500).send({ message: err.message || 'Erro ao transmitir' })
+    }
+  })
+
+  // ==========================================================================
+  // GET /cte/:id/preview-xml — Visualizar XML que será enviado à SEFAZ (sem transmitir)
+  // ==========================================================================
+  app.get('/cte/:id/preview-xml', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+      })
+      if (!doc) return reply.status(404).send({ message: 'CT-e não encontrado' })
+
+      // Recuperar payload salvo
+      let body: any
+      try {
+        body = JSON.parse(doc.xmlEnviado || '{}')
+      } catch {
+        return reply.status(422).send({ message: 'Dados do CT-e corrompidos.' })
+      }
+
+      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
+      if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
+
+      const ufEmitente = empresa.uf || ''
+
+      const dadosCTe: DadosCTe = {
+        cUF: obterCodigoUF(ufEmitente),
+        cCT: gerarCodigoNumerico(),
+        nCT: doc.numero,
+        serie: doc.serie,
+        modelo: 57,
+        tpEmis: body.tpEmis || 1,
+        ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+        cfop: body.cfop || '5353',
+        naturezaOp: body.naturezaOp || '',
+        tpServ: body.tpServ || 0,
+        dataEmissao: new Date(),
+        tpCTe: body.tpCTe || 0,
+        modal: body.modal || '01',
+        cMunIni: body.cMunIni || '',
+        xMunIni: body.xMunIni || '',
+        ufIni: body.ufIni || '',
+        cMunFim: body.cMunFim || '',
+        xMunFim: body.xMunFim || '',
+        ufFim: body.ufFim || '',
+        tpTom: body.tpTom || 0,
+        indIEToma: body.indIEToma || 9,
+        emitente: {
+          cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
+          ie: empresa.inscEstadual || '',
+          razaoSocial: empresa.razaoSocial || '',
+          nomeFantasia: empresa.nomeFantasia || undefined,
+          endereco: {
+            logradouro: empresa.logradouro || '',
+            numero: empresa.numero || '',
+            complemento: empresa.complemento || undefined,
+            bairro: empresa.bairro || '',
+            codigoMunicipio: empresa.cidade || '',
+            municipio: empresa.cidade || '',
+            uf: ufEmitente,
+            cep: empresa.cep || '',
+          },
+        },
+        remetente: body.remetente as any,
+        destinatario: body.destinatario as any,
+        expedidor: body.expedidor as any,
+        recebedor: body.recebedor as any,
+        vPrest: body.vPrest as any,
+        impostos: body.impostos as any,
+        infCTeNorm: {
+          infCarga: body.infCTeNorm?.infCarga,
+          infDoc: {
+            infNFe: body.infCTeNorm?.infDoc?.infNFe,
+            infOutros: body.infCTeNorm?.infDoc?.infOutros,
+          },
+          infModal: body.infCTeNorm?.infModal,
+          veicNovos: body.infCTeNorm?.veicNovos,
+        },
+        complemento: body.complemento,
+        infAdFisco: body.infAdFisco,
+        infCpl: body.infCpl,
+        tomadorOutros: body.tomadorOutros,
+      }
+
+      const xml = buildCTeXml(dadosCTe)
+
+      reply.header('Content-Type', 'application/xml; charset=utf-8')
+      reply.header('Content-Disposition', `inline; filename="CTe-${doc.numero}-${doc.serie}-preview.xml"`)
+      return reply.send(xml)
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send(err.toJSON())
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao gerar preview' })
     }
   })
 
