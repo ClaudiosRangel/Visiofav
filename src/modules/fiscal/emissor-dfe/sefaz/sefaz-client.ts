@@ -189,10 +189,15 @@ export function criarSefazClient(
       // DEBUG temporário — remover após resolver o HTTP 400 do CT-e
       console.log('[SEFAZ-DEBUG] URL:', url)
       console.log('[SEFAZ-DEBUG] Content-Type:', contentType)
+      console.log('[SEFAZ-DEBUG] Content-Length header:', options.headers!['Content-Length'])
+      console.log('[SEFAZ-DEBUG] Body byteLength:', Buffer.byteLength(body, 'utf-8'))
+      console.log('[SEFAZ-DEBUG] Body charLength:', body.length)
       console.log('[SEFAZ-DEBUG] PFX Buffer?', Buffer.isBuffer(config.certificadoPfx), 'size:', config.certificadoPfx?.length)
       console.log('[SEFAZ-DEBUG] Envelope (primeiros 600 chars):', body.substring(0, 600))
+      console.log('[SEFAZ-DEBUG] Envelope (ultimos 200 chars):', body.substring(body.length - 200))
       console.log('[SEFAZ-DEBUG] Envelope contém <Signature>?', body.includes('<Signature'))
       console.log('[SEFAZ-DEBUG] Envelope contém cteCabecMsg?', body.includes('cteCabecMsg'))
+      console.log('[SEFAZ-DEBUG] Envelope contém <?xml?', body.includes('<?xml'))
 
       const req = https.request(options, (res) => {
         const chunks: Buffer[] = []
@@ -206,6 +211,8 @@ export function criarSefazClient(
 
           // DEBUG temporário — log da resposta
           console.log('[SEFAZ-DEBUG] HTTP Status:', res.statusCode)
+          console.log('[SEFAZ-DEBUG] Response headers:', JSON.stringify(res.headers))
+          console.log('[SEFAZ-DEBUG] Response body length:', responseBody.length)
           console.log('[SEFAZ-DEBUG] Response body (primeiros 1000 chars):', responseBody.substring(0, 1000))
 
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
