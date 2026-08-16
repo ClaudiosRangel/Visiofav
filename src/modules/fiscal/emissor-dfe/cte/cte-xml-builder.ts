@@ -816,9 +816,14 @@ export function buildCTeXml(dados: DadosCTe): string {
     cCT: dados.cCT,
   })
 
+  // Incluir infCpl como xObs no complemento (XSD não tem infAdic separado no CT-e 4.0)
+  const complementoFinal = dados.complemento
+    ? { ...dados.complemento, xObs: dados.complemento.xObs || dados.infCpl || undefined }
+    : dados.infCpl ? { xObs: dados.infCpl } : undefined
+
   const parts: string[] = [
     buildIde(dados, chaveAcesso),
-    buildCompl(dados.complemento),
+    buildCompl(complementoFinal as any),
     buildEmit(dados.emitente),
     buildParticipante('rem', dados.remetente),
   ]
@@ -836,7 +841,6 @@ export function buildCTeXml(dados: DadosCTe): string {
   parts.push(buildParticipante('dest', dados.destinatario))
   parts.push(buildVPrest(dados.vPrest))
   parts.push(buildImp(dados.impostos))
-  parts.push(buildInfAdic(dados.infAdFisco, dados.infCpl))
   parts.push(buildInfCTeNorm(dados.infCTeNorm))
 
   const infCte = parts.filter(Boolean).join('')
