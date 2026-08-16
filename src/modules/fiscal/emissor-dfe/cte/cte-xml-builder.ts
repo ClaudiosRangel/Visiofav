@@ -475,7 +475,7 @@ ${end.complemento ? `<xCpl>${escXml(end.complemento)}</xCpl>\n` : ''}<xBairro>${
 <CEP>${end.cep}</CEP>
 <UF>${end.uf}</UF>
 ${emit.fone ? `<fone>${emit.fone}</fone>\n` : ''}</enderEmit>
-${emit.CRT ? `<CRT>${emit.CRT}</CRT>\n` : ''}</emit>`
+<CRT>${emit.CRT || 1}</CRT></emit>`
   return xml
 }
 
@@ -491,7 +491,8 @@ function buildParticipante(tag: string, part: DadosParticipanteCTe): string {
 
   if (part.ie) xml += `<IE>${part.ie}</IE>\n`
   xml += `<xNome>${escXml(part.razaoSocial)}</xNome>\n`
-  if (part.nomeFantasia) xml += `<xFant>${escXml(part.nomeFantasia)}</xFant>\n`
+  // xFant é permitido apenas em <rem>, não em <dest>
+  if (part.nomeFantasia && tag === 'rem') xml += `<xFant>${escXml(part.nomeFantasia)}</xFant>\n`
   if (part.telefone) xml += `<fone>${part.telefone}</fone>\n`
 
   xml += `<ender${tag === 'rem' ? 'Reme' : 'Dest'}>\n`
@@ -685,9 +686,9 @@ function buildVeicNovos(veiculos: VeiculoNovoCTe[]): string {
   for (const v of veiculos) {
     xml += '<veicNovos>\n'
     xml += `<chassi>${escXml(v.chassi)}</chassi>\n`
-    xml += `<cCor>${escXml(v.cCor)}</cCor>\n`
-    xml += `<xCor>${escXml(v.xCor)}</xCor>\n`
-    xml += `<cMod>${escXml(v.cMod)}</cMod>\n`
+    xml += `<cCor>${escXml(v.cCor).substring(0, 4)}</cCor>\n`
+    xml += `<xCor>${escXml(v.xCor).substring(0, 40)}</xCor>\n`
+    xml += `<cMod>${escXml(v.cMod).substring(0, 6)}</cMod>\n`
     xml += `<vUnit>${fmtDec(v.vUnit)}</vUnit>\n`
     xml += `<vFrete>${fmtDec(v.vFrete)}</vFrete>\n`
     xml += '</veicNovos>\n'
@@ -835,8 +836,8 @@ export function buildCTeXml(dados: DadosCTe): string {
   parts.push(buildParticipante('dest', dados.destinatario))
   parts.push(buildVPrest(dados.vPrest))
   parts.push(buildImp(dados.impostos))
-  parts.push(buildInfCTeNorm(dados.infCTeNorm))
   parts.push(buildInfAdic(dados.infAdFisco, dados.infCpl))
+  parts.push(buildInfCTeNorm(dados.infCTeNorm))
 
   const infCte = parts.filter(Boolean).join('')
 
