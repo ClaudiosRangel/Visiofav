@@ -847,7 +847,8 @@ export function buildCTeXml(dados: DadosCTe): string {
     : `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${chaveAcesso}&tpAmb=2`
 
   // XML minificado (sem quebras de linha) — exigido pela SEFAZ para assinatura válida
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte versao="4.00" Id="CTe${chaveAcesso}">${infCte}</infCte><infCTeSupl><qrCodCTe>${escXml(urlQrCode)}</qrCodCTe></infCTeSupl></CTe>`
+  // Não incluir <?xml?> pois o CT-e vai dentro do envelope SOAP que já tem o seu
+  const xml = `<CTe xmlns="http://www.portalfiscal.inf.br/cte"><infCte versao="4.00" Id="CTe${chaveAcesso}">${infCte}</infCte><infCTeSupl><qrCodCTe>${escXml(urlQrCode)}</qrCodCTe></infCTeSupl></CTe>`
   // Remover quebras de linha e espaços entre tags
   return xml.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
 }
