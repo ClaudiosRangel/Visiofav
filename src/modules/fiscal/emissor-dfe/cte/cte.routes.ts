@@ -1015,7 +1015,7 @@ export async function cteRoutes(app: FastifyInstance) {
         indIEToma: body.indIEToma || 9,
         emitente: {
           cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
-          ie: empresa.inscEstadual || '',
+          ie: (empresa.inscEstadual || '').replace(/\D/g, ''),
           razaoSocial: empresa.razaoSocial || '',
           nomeFantasia: empresa.nomeFantasia || undefined,
           endereco: {
@@ -1137,7 +1137,7 @@ export async function cteRoutes(app: FastifyInstance) {
         indIEToma: body.indIEToma || 9,
         emitente: {
           cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
-          ie: empresa.inscEstadual || '',
+          ie: (empresa.inscEstadual || '').replace(/\D/g, ''),
           razaoSocial: empresa.razaoSocial || '',
           nomeFantasia: empresa.nomeFantasia || undefined,
           endereco: {
@@ -1263,7 +1263,7 @@ export async function cteRoutes(app: FastifyInstance) {
         indIEToma: body.indIEToma,
         emitente: {
           cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
-          ie: empresa.inscEstadual || '',
+          ie: (empresa.inscEstadual || '').replace(/\D/g, ''),
           razaoSocial: empresa.razaoSocial || '',
           nomeFantasia: empresa.nomeFantasia || undefined,
           CRT: (empresa as any).regimeTributario || 1,
