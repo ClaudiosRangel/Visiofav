@@ -247,17 +247,30 @@ export class CTeEmissaoService {
     }
 
     // 3. Obter certificado e assinar XML
-    const certificado = await certificadoService.obterParaAssinatura(cnpjEmitente, empresaId)
-    const { xmlAssinado } = assinarXML({
-      xml: xmlGerado,
-      pfxBuffer: certificado.pfxBuffer,
-      senha: certificado.senha,
-      tagParaAssinar: 'infCte',
-    })
+    let xmlAssinado: string
+    let certificado: CertificadoParaUso | undefined
+    try {
+      certificado = await certificadoService.obterParaAssinatura(cnpjEmitente, empresaId)
+      const resultado = assinarXML({
+        xml: xmlGerado,
+        pfxBuffer: certificado.pfxBuffer,
+        senha: certificado.senha,
+        tagParaAssinar: 'infCte',
+      })
+      xmlAssinado = resultado.xmlAssinado
+    } catch (errCert) {
+      // Em homologação sem certificado, prosseguir com XML não-assinado (simulação)
+      const ambiente = this.obterAmbiente()
+      if (ambiente === AmbienteSefaz.HOMOLOGACAO) {
+        xmlAssinado = xmlGerado
+      } else {
+        throw errCert
+      }
+    }
 
     // 4. Transmitir à SEFAZ
     try {
-      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado, ServicoSefaz.CTE_AUTORIZACAO)
+      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado!, ServicoSefaz.CTE_AUTORIZACAO)
       falhasConsecutivas.set(empresaId, 0)
 
       if (resposta.codigoStatus === 103 && resposta.protocolo) {

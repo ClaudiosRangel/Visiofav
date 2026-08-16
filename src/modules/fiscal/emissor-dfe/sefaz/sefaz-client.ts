@@ -23,6 +23,16 @@ import { CodigoErroFiscal, ErroFiscal } from '../../erros'
 // === Constantes ===
 
 const SOAP_CONTENT_TYPE = 'application/soap+xml; charset=utf-8'
+
+/**
+ * SOAPAction por serviço (SOAP 1.2: vai no parâmetro 'action' do Content-Type)
+ * Necessário para CT-e no SVRS — sem ele, retorna HTTP 400 com body vazio.
+ */
+const SOAP_ACTIONS: Partial<Record<ServicoSefaz, string>> = {
+  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSinc',
+  [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
+  [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
+}
 const MIN_TIMEOUT_MS = 5000
 const MAX_TIMEOUT_MS = 120000
 const DEFAULT_TIMEOUT_MS = 30000
@@ -51,13 +61,33 @@ function normalizarTimeout(timeoutMs: number): number {
 }
 
 /**
- * Envelopa o XML do payload em um envelope SOAP 1.2
+ * Envelopa o XML do payload em um envelope SOAP 1.2.
+ * Para CT-e (SVRS), o envelope inclui cteCabecMsg no Header com versaoDados,
+ * e usa namespace prefixado "cte:" conforme exigido pelo webservice.
+ * Para NF-e, mantém o formato padrão sem Header.
  */
 function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
-  // Envelope SOAP minificado (sem quebras de linha)
+
+  // CT-e: envelope com cteCabecMsg no Header e namespace prefixado
+  if (isServicoCTe(servico)) {
+    return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:cte="${namespace}"><soap12:Header><cte:cteCabecMsg><cte:versaoDados>4.00</cte:versaoDados></cte:cteCabecMsg></soap12:Header><soap12:Body><cte:${tagDadosMsg}>${xmlPayload}</cte:${tagDadosMsg}></soap12:Body></soap12:Envelope>`
+  }
+
+  // NF-e: envelope padrão sem Header
   return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Header/><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${xmlPayload}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
+}
+
+/**
+ * Verifica se o serviço é de CT-e
+ */
+function isServicoCTe(servico: ServicoSefaz): boolean {
+  return (
+    servico === ServicoSefaz.CTE_AUTORIZACAO ||
+    servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
+    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO
+  )
 }
 
 /**
@@ -132,10 +162,15 @@ export function criarSefazClient(
   /**
    * Executa uma requisição HTTPS POST com SOAP 1.2
    */
-  function executarRequisicao(url: string, body: string): Promise<string> {
+  function executarRequisicao(url: string, body: string, soapAction?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(url)
       const agent = criarHttpsAgent()
+
+      // SOAP 1.2: SOAPAction vai no parâmetro 'action' do Content-Type
+      const contentType = soapAction
+        ? `${SOAP_CONTENT_TYPE}; action="${soapAction}"`
+        : SOAP_CONTENT_TYPE
 
       const options: https.RequestOptions = {
         hostname: parsedUrl.hostname,
@@ -145,7 +180,7 @@ export function criarSefazClient(
         agent,
         timeout: timeoutMs,
         headers: {
-          'Content-Type': SOAP_CONTENT_TYPE,
+          'Content-Type': contentType,
           'Content-Length': Buffer.byteLength(body, 'utf-8'),
         },
       }
@@ -227,12 +262,12 @@ export function criarSefazClient(
   /**
    * Executa requisição com retry (3 tentativas, intervalo de 5s)
    */
-  async function executarComRetry(url: string, body: string): Promise<string> {
+  async function executarComRetry(url: string, body: string, soapAction?: string): Promise<string> {
     let ultimoErro: Error | undefined
 
     for (let tentativa = 1; tentativa <= maxRetentativas; tentativa++) {
       try {
-        return await executarRequisicao(url, body)
+        return await executarRequisicao(url, body, soapAction)
       } catch (err) {
         ultimoErro = err as Error
 
@@ -375,8 +410,9 @@ export function criarSefazClient(
   async function transmitir(xml: string, servico: ServicoSefaz): Promise<RespostaSefaz> {
     const url = urlResolver.resolverUrl(config.uf, servico, config.ambiente)
     const envelope = criarEnvelopeSoap(xml, servico)
+    const soapAction = SOAP_ACTIONS[servico]
 
-    const xmlResposta = await executarComRetry(url, envelope)
+    const xmlResposta = await executarComRetry(url, envelope, soapAction)
     const xmlResultado = extrairResultadoSoap(xmlResposta)
 
     return parsearRespostaSefaz(xmlResultado)
@@ -563,4 +599,4 @@ function identificarTipoDocumento(schema: string): string {
 }
 
 // Exportar helpers para testes
-export { normalizarTimeout, criarEnvelopeSoap, obterCodigoUF, obterUFPorChave, CODIGOS_UF }
+export { normalizarTimeout, criarEnvelopeSoap, isServicoCTe, obterCodigoUF, obterUFPorChave, CODIGOS_UF }
