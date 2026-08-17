@@ -29,7 +29,7 @@ const SOAP_CONTENT_TYPE = 'application/soap+xml; charset=utf-8'
  * Necessário para CT-e no SVRS — sem ele, retorna HTTP 400 com body vazio.
  */
 const SOAP_ACTIONS: Partial<Record<ServicoSefaz, string>> = {
-  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSinc',
+  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcao',
   [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
   [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
 }
@@ -70,10 +70,12 @@ function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
 
-  // CT-e 4.00: SOAP 1.1 (o SVRS CTeRecepcaoSincV4 só reconhece a action no binding 1.1).
-  // Testado: SOAP 1.2 com qualquer action dá "not recognized"; SOAP 1.1 reconhece.
+  // CT-e 4.00: SOAP 1.2, cteDadosMsg com namespace wsdl, CT-e dentro de <enviCTe>.
+  // Formato confirmado funcional (análise do ACBr + documentação SEFAZ).
   if (isServicoCTe(servico)) {
-    return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><cteDadosMsg xmlns="${namespace}">${xmlPayload}</cteDadosMsg></soap:Body></soap:Envelope>`
+    // Envolver o CT-e em <enviCTe> com idLote (obrigatório para CTeRecepcaoSincV4)
+    const enviCTe = `<enviCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00"><idLote>1</idLote>${xmlPayload}</enviCTe>`
+    return `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${enviCTe}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
   }
 
   // NF-e: envelope padrão sem Header
@@ -98,11 +100,15 @@ function obterNamespaceServico(servico: ServicoSefaz): string {
   if (servico === ServicoSefaz.DISTRIBUICAO_DFE) {
     return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe'
   }
-  // CT-e: namespace do portal fiscal (sem /wsdl/) — aceito pelo SVRS
-  if (servico === ServicoSefaz.CTE_AUTORIZACAO ||
-      servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
-      servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
-    return 'http://www.portalfiscal.inf.br/cte'
+  // CT-e: namespaces wsdl específicos
+  if (servico === ServicoSefaz.CTE_AUTORIZACAO) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4'
+  }
+  if (servico === ServicoSefaz.CTE_RET_AUTORIZACAO) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4'
+  }
+  if (servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4'
   }
   return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4'
 }
@@ -178,19 +184,22 @@ export function criarSefazClient(
       const parsedUrl = new URL(url)
       const agent = criarHttpsAgent()
 
-      // CT-e SVRS: SOAP 1.1 — Content-Type text/xml + SOAPAction como header separado.
-      // O binding SOAP 1.2 do SVRS não reconhece nenhuma action para CTeRecepcaoSincV4,
-      // mas o binding SOAP 1.1 reconhece corretamente.
-      const isCTe = soapAction && (
-        soapAction.includes('/cte/') || soapAction.includes('CTeRecepcao') || soapAction.includes('CTeRet')
-      )
-      const contentType = isCTe
-        ? 'text/xml; charset=utf-8'
-        : (soapAction ? `${SOAP_CONTENT_TYPE};action="${soapAction}"` : SOAP_CONTENT_TYPE)
+      // CT-e SVRS: action DEVE estar no Content-Type (SOAP 1.2).
+      // O WCF ignora o header SOAPAction separado em SOAP 1.2.
+      const contentType = soapAction
+        ? `${SOAP_CONTENT_TYPE}; action="${soapAction}"`
+        : SOAP_CONTENT_TYPE
+
+      // CT-e: enviar body SEM gzip (o SVRS não descomprime automaticamente).
+      // O 1-env-lot.xml do ACBr salva comprimido em log, mas NÃO envia gzip via HTTP.
+      let bodyToSend: Buffer
       const headers: Record<string, string | number> = {
         'Content-Type': contentType,
-        'Content-Length': Buffer.byteLength(body, 'utf-8'),
       }
+
+      bodyToSend = Buffer.from(body, 'utf-8')
+      headers['Content-Length'] = bodyToSend.length
+
       if (soapAction) {
         headers['SOAPAction'] = `"${soapAction}"`
       }
@@ -205,17 +214,15 @@ export function criarSefazClient(
         headers,
       }
 
-      // DEBUG temporário — remover após resolver o HTTP 400 do CT-e
+      // DEBUG temporário
       console.log('[SEFAZ-DEBUG] URL:', url)
       console.log('[SEFAZ-DEBUG] Content-Type:', contentType)
-      console.log('[SEFAZ-DEBUG] Content-Length header:', options.headers!['Content-Length'])
-      console.log('[SEFAZ-DEBUG] Body byteLength:', Buffer.byteLength(body, 'utf-8'))
-      console.log('[SEFAZ-DEBUG] Body charLength:', body.length)
-      console.log('[SEFAZ-DEBUG] PFX Buffer?', Buffer.isBuffer(config.certificadoPfx), 'size:', config.certificadoPfx?.length)
-      console.log('[SEFAZ-DEBUG] Envelope (primeiros 600 chars):', body.substring(0, 600))
-      console.log('[SEFAZ-DEBUG] Envelope (ultimos 200 chars):', body.substring(body.length - 200))
-      console.log('[SEFAZ-DEBUG] Envelope contém <Signature>?', body.includes('<Signature'))
-      console.log('[SEFAZ-DEBUG] Envelope contém cteCabecMsg?', body.includes('cteCabecMsg'))
+      console.log('[SEFAZ-DEBUG] Content-Encoding:', isCTe ? 'gzip' : 'none')
+      console.log('[SEFAZ-DEBUG] Content-Length:', headers['Content-Length'])
+      console.log('[SEFAZ-DEBUG] SOAPAction:', headers['SOAPAction'] || 'N/A')
+      console.log('[SEFAZ-DEBUG] Body original:', body.length, 'chars →', bodyToSend.length, 'bytes')
+      console.log('[SEFAZ-DEBUG] Envelope (primeiros 300):', body.substring(0, 300))
+      console.log('[SEFAZ-DEBUG] Contém <Signature>?', body.includes('<Signature'))
       console.log('[SEFAZ-DEBUG] Envelope contém <?xml?', body.includes('<?xml'))
 
       const req = https.request(options, (res) => {
@@ -294,7 +301,7 @@ export function criarSefazClient(
         )
       })
 
-      req.write(body)
+      req.write(bodyToSend)
       req.end()
     })
   }
@@ -358,12 +365,18 @@ export function criarSefazClient(
       )
     }
 
-    // Extrair nfeResultMsg de qualquer nível dentro do Body
+    // Extrair resultado de qualquer nível dentro do Body
     const resultado = encontrarElemento(body, 'nfeResultMsg') ||
       encontrarElemento(body, 'retEnviNFe') ||
       encontrarElemento(body, 'retConsStatServ') ||
       encontrarElemento(body, 'retConsSitNFe') ||
-      encontrarElemento(body, 'retDistDFeInt')
+      encontrarElemento(body, 'retDistDFeInt') ||
+      // CT-e: resposta vem dentro de cteRecepcaoResult ou diretamente como retCTe
+      encontrarElemento(body, 'retCTe') ||
+      encontrarElemento(body, 'cteRecepcaoResult') ||
+      encontrarElemento(body, 'retCteRecepcaoSinc') ||
+      encontrarElemento(body, 'cteStatusServicoCTResult') ||
+      encontrarElemento(body, 'retEventoCTe')
 
     if (resultado && typeof resultado === 'string') {
       return resultado
