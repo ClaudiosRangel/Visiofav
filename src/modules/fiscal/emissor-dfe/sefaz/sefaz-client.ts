@@ -70,11 +70,10 @@ function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
 
-  // CT-e 4.00: envelope sem wrapper cteDadosMsg — apenas CT-e direto no Body.
-  // O SVRS rejeita cteDadosMsg com qualquer namespace em SOAP 1.2.
-  // Formato testado localmente: HTTP 500 (aceito pelo IIS, erro de schema no XML de teste).
+  // CT-e 4.00: SOAP 1.1 (o SVRS CTeRecepcaoSincV4 só reconhece a action no binding 1.1).
+  // Testado: SOAP 1.2 com qualquer action dá "not recognized"; SOAP 1.1 reconhece.
   if (isServicoCTe(servico)) {
-    return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body>${xmlPayload}</soap:Body></soap:Envelope>`
+    return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><cteDadosMsg xmlns="${namespace}">${xmlPayload}</cteDadosMsg></soap:Body></soap:Envelope>`
   }
 
   // NF-e: envelope padrão sem Header
@@ -179,11 +178,15 @@ export function criarSefazClient(
       const parsedUrl = new URL(url)
       const agent = criarHttpsAgent()
 
-      // CT-e SVRS: SOAPAction no Content-Type (action=) — obrigatório para SOAP 1.2.
-      // Também como header separado por compatibilidade.
-      const contentType = soapAction
-        ? `${SOAP_CONTENT_TYPE};action="${soapAction}"`
-        : SOAP_CONTENT_TYPE
+      // CT-e SVRS: SOAP 1.1 — Content-Type text/xml + SOAPAction como header separado.
+      // O binding SOAP 1.2 do SVRS não reconhece nenhuma action para CTeRecepcaoSincV4,
+      // mas o binding SOAP 1.1 reconhece corretamente.
+      const isCTe = soapAction && (
+        soapAction.includes('/cte/') || soapAction.includes('CTeRecepcao') || soapAction.includes('CTeRet')
+      )
+      const contentType = isCTe
+        ? 'text/xml; charset=utf-8'
+        : (soapAction ? `${SOAP_CONTENT_TYPE};action="${soapAction}"` : SOAP_CONTENT_TYPE)
       const headers: Record<string, string | number> = {
         'Content-Type': contentType,
         'Content-Length': Buffer.byteLength(body, 'utf-8'),
