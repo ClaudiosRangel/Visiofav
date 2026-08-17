@@ -351,6 +351,19 @@ function escXml(value: string | number | undefined | null): string {
     .replace(/'/g, '&apos;')
 }
 
+/**
+ * Normaliza nome de município para padrão SEFAZ:
+ * - Maiúsculas
+ * - Remove acentos (NFD + strip combining marks)
+ */
+function normMun(value: string | undefined | null): string {
+  if (!value) return ''
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+}
+
 /** Formata número com casas decimais fixas */
 function fmtDec(value: number, decimals: number = 2): string {
   return value.toFixed(decimals)
@@ -358,7 +371,9 @@ function fmtDec(value: number, decimals: number = 2): string {
 
 /** Formata data+hora para formato CT-e: YYYY-MM-DDThh:mm:ss-03:00 */
 function fmtDataHora(date: Date): string {
-  const iso = date.toISOString().slice(0, 19)
+  // Calcular componentes em horário de Brasília (UTC-3)
+  const brDate = new Date(date.getTime() - 3 * 60 * 60 * 1000)
+  const iso = brDate.toISOString().slice(0, 19)
   return `${iso}-03:00`
 }
 
@@ -383,15 +398,15 @@ function buildIde(dados: DadosCTe, chaveAcesso: string): string {
 <procEmi>0</procEmi>
 <verProc>VisioFab-1.0.0</verProc>
 <cMunEnv>${dados.emitente.endereco.codigoMunicipio}</cMunEnv>
-<xMunEnv>${escXml(dados.emitente.endereco.municipio)}</xMunEnv>
+<xMunEnv>${normMun(dados.emitente.endereco.municipio)}</xMunEnv>
 <UFEnv>${dados.emitente.endereco.uf}</UFEnv>
 <modal>${dados.modal}</modal>
 <tpServ>${dados.tpServ}</tpServ>
 <cMunIni>${dados.cMunIni}</cMunIni>
-<xMunIni>${escXml(dados.xMunIni)}</xMunIni>
+<xMunIni>${normMun(dados.xMunIni)}</xMunIni>
 <UFIni>${dados.ufIni}</UFIni>
 <cMunFim>${dados.cMunFim}</cMunFim>
-<xMunFim>${escXml(dados.xMunFim)}</xMunFim>
+<xMunFim>${normMun(dados.xMunFim)}</xMunFim>
 <UFFim>${dados.ufFim}</UFFim>
 <retira>1</retira>
 <indIEToma>${dados.indIEToma}</indIEToma>
@@ -451,10 +466,18 @@ function buildTomador(dados: DadosCTe): string {
 }
 
 function buildCompl(compl: DadosComplementoCTe | undefined): string {
-  if (!compl) return ''
+  if (!compl) {
+    let xml = '<compl>\n'
+    xml += '<Entrega>\n<semData>\n<tpPer>0</tpPer>\n</semData>\n<semHora>\n<tpHor>0</tpHor>\n</semHora>\n</Entrega>\n'
+    xml += '</compl>'
+    return xml
+  }
   let xml = '<compl>\n'
   if (compl.xCaracAd) xml += `<xCaracAd>${escXml(compl.xCaracAd)}</xCaracAd>\n`
   if (compl.xCaracSer) xml += `<xCaracSer>${escXml(compl.xCaracSer)}</xCaracSer>\n`
+  if (compl.xEmi) xml += `<xEmi>${escXml(compl.xEmi)}</xEmi>\n`
+  // Grupo <Entrega> obrigatório (ordem XSD: xEmi → Entrega → xObs)
+  xml += '<Entrega>\n<semData>\n<tpPer>0</tpPer>\n</semData>\n<semHora>\n<tpHor>0</tpHor>\n</semHora>\n</Entrega>\n'
   if (compl.xObs) xml += `<xObs>${escXml(compl.xObs)}</xObs>\n`
   xml += '</compl>'
   return xml
@@ -471,8 +494,7 @@ ${emit.nomeFantasia ? `<xFant>${escXml(emit.nomeFantasia)}</xFant>\n` : ''}<ende
 <nro>${escXml(end.numero)}</nro>
 ${end.complemento ? `<xCpl>${escXml(end.complemento)}</xCpl>\n` : ''}<xBairro>${escXml(end.bairro)}</xBairro>
 <cMun>${end.codigoMunicipio}</cMun>
-<xMun>${escXml(end.municipio)}</xMun>
-<CEP>${end.cep}</CEP>
+<xMun>${normMun(end.municipio)}</xMun>
 <UF>${end.uf}</UF>
 ${emit.fone ? `<fone>${emit.fone}</fone>\n` : ''}</enderEmit>
 <CRT>${emit.CRT || 1}</CRT></emit>`
@@ -492,9 +514,8 @@ function buildParticipante(tag: string, part: DadosParticipanteCTe): string {
   if (part.ie) xml += `<IE>${part.ie}</IE>\n`
   // Em homologação (tpAmb=2), xNome deve ser literal de homologação
   xml += `<xNome>${escXml(part.razaoSocial)}</xNome>\n`
-  // xFant é permitido apenas em <rem>, não em <dest>
-  if (part.nomeFantasia && tag === 'rem') xml += `<xFant>${escXml(part.nomeFantasia)}</xFant>\n`
-  if (part.telefone) xml += `<fone>${part.telefone}</fone>\n`
+  // fone, xFant e email NÃO existem no schema de <rem>/<dest> do CT-e 4.00 (apenas <emit>)
+  // CEP também não existe em enderReme/enderDest no CT-e 4.00 (apenas em enderEmit)
 
   xml += `<ender${tag === 'rem' ? 'Reme' : 'Dest'}>\n`
   xml += `<xLgr>${escXml(end.logradouro)}</xLgr>\n`
@@ -502,14 +523,12 @@ function buildParticipante(tag: string, part: DadosParticipanteCTe): string {
   if (end.complemento) xml += `<xCpl>${escXml(end.complemento)}</xCpl>\n`
   xml += `<xBairro>${escXml(end.bairro)}</xBairro>\n`
   xml += `<cMun>${end.codigoMunicipio}</cMun>\n`
-  xml += `<xMun>${escXml(end.municipio)}</xMun>\n`
-  xml += `<CEP>${end.cep}</CEP>\n`
+  xml += `<xMun>${normMun(end.municipio)}</xMun>\n`
   xml += `<UF>${end.uf}</UF>\n`
   xml += `<cPais>${end.codigoPais || '1058'}</cPais>\n`
   xml += `<xPais>${escXml(end.pais || 'BRASIL')}</xPais>\n`
   xml += `</ender${tag === 'rem' ? 'Reme' : 'Dest'}>\n`
 
-  if (part.email) xml += `<email>${escXml(part.email)}</email>\n`
   xml += `</${tag}>`
   return xml
 }
@@ -531,8 +550,6 @@ function buildParticipanteGenerico(tag: string, part: DadosParticipanteCTe): str
 
   if (part.ie) xml += `<IE>${part.ie}</IE>\n`
   xml += `<xNome>${escXml(part.razaoSocial)}</xNome>\n`
-  if (part.nomeFantasia) xml += `<xFant>${escXml(part.nomeFantasia)}</xFant>\n`
-  if (part.telefone) xml += `<fone>${part.telefone}</fone>\n`
 
   xml += `<${enderTag}>\n`
   xml += `<xLgr>${escXml(end.logradouro)}</xLgr>\n`
@@ -540,14 +557,12 @@ function buildParticipanteGenerico(tag: string, part: DadosParticipanteCTe): str
   if (end.complemento) xml += `<xCpl>${escXml(end.complemento)}</xCpl>\n`
   xml += `<xBairro>${escXml(end.bairro)}</xBairro>\n`
   xml += `<cMun>${end.codigoMunicipio}</cMun>\n`
-  xml += `<xMun>${escXml(end.municipio)}</xMun>\n`
-  xml += `<CEP>${end.cep}</CEP>\n`
+  xml += `<xMun>${normMun(end.municipio)}</xMun>\n`
   xml += `<UF>${end.uf}</UF>\n`
   xml += `<cPais>${end.codigoPais || '1058'}</cPais>\n`
   xml += `<xPais>${escXml(end.pais || 'BRASIL')}</xPais>\n`
   xml += `</${enderTag}>\n`
 
-  if (part.email) xml += `<email>${escXml(part.email)}</email>\n`
   xml += `</${tag}>`
   return xml
 }
@@ -573,9 +588,7 @@ function buildVPrest(vPrest: DadosValorPrestacao): string {
 function buildImp(impostos: DadosImpostosCTe): string {
   let xml = '<imp>\n'
   xml += buildICMSCTe(impostos.icms)
-  if (impostos.vTotTrib != null) {
-    xml += `<vTotTrib>${fmtDec(impostos.vTotTrib)}</vTotTrib>\n`
-  }
+  xml += `<vTotTrib>${fmtDec(impostos.vTotTrib ?? 0)}</vTotTrib>\n`
   if (impostos.infAdFisco) {
     xml += `<infAdFisco>${escXml(impostos.infAdFisco)}</infAdFisco>\n`
   }

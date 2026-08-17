@@ -37,6 +37,8 @@ const listCteQuerySchema = z.object({
   status: z.string().optional(),
   dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dataAutorizacaoInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dataAutorizacaoFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   tomadorCpfCnpj: z.string().optional(),
   serie: z.coerce.number().int().min(0).optional(),
   numero: z.coerce.number().int().min(1).optional(),
@@ -746,6 +748,12 @@ export async function cteRoutes(app: FastifyInstance) {
         if (filtros.dataFim) where.dataEmissao.lte = new Date(`${filtros.dataFim}T23:59:59.999Z`)
       }
 
+      if (filtros.dataAutorizacaoInicio || filtros.dataAutorizacaoFim) {
+        where.dataAutorizacao = {}
+        if (filtros.dataAutorizacaoInicio) where.dataAutorizacao.gte = new Date(filtros.dataAutorizacaoInicio)
+        if (filtros.dataAutorizacaoFim) where.dataAutorizacao.lte = new Date(`${filtros.dataAutorizacaoFim}T23:59:59.999Z`)
+      }
+
       const skip = (filtros.page - 1) * filtros.limit
 
       const [dados, total] = await Promise.all([
@@ -1074,6 +1082,10 @@ export async function cteRoutes(app: FastifyInstance) {
       return reply.status(resultado.sucesso ? 200 : 422).send({
         ...resultado,
         documentoId: id,
+        // Incluir 'message' para compatibilidade com o frontend (onError procura por esse campo)
+        message: resultado.sucesso
+          ? 'CT-e autorizado com sucesso'
+          : `Rejeição SEFAZ (cStat ${resultado.codigoRejeicao}): ${resultado.motivoRejeicao || 'Motivo não informado'}`,
       })
     } catch (err: any) {
       if (err instanceof ErroFiscal) {
@@ -1295,7 +1307,7 @@ export async function cteRoutes(app: FastifyInstance) {
               dEmi: o.dEmi ? new Date(o.dEmi) : undefined,
             })),
           },
-          infModal: body.infCTeNorm.infModal,
+          infModal: body.infCTeNorm.infModal as any,
           veicNovos: body.infCTeNorm.veicNovos,
         },
         complemento: body.complemento,
@@ -1593,6 +1605,395 @@ export async function cteRoutes(app: FastifyInstance) {
         valorFrete: Number(doc.valorFrete),
       }
     } catch (err: any) {
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/:id/enviar-email — Enviar XML e DACTE por e-mail
+  // ==========================================================================
+  app.post('/cte/:id/enviar-email', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+      const body = z.object({
+        emails: z.array(z.string().email()).min(1, 'Informe ao menos um e-mail'),
+        incluirPdf: z.boolean().default(true),
+        incluirXml: z.boolean().default(true),
+      }).parse(request.body)
+
+      const doc = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId, tipo: 'CTE' },
+        include: { empresa: true },
+      })
+
+      if (!doc) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      if (doc.status !== 'AUTORIZADO' && doc.status !== 'CANCELADO') {
+        return reply.status(422).send({ message: `Só é possível enviar por e-mail CT-e AUTORIZADO ou CANCELADO. Status atual: ${doc.status}` })
+      }
+
+      // Montar anexos
+      const nodemailer = require('nodemailer')
+      const smtpHost = process.env.SMTP_HOST
+      const smtpUser = process.env.SMTP_USER
+      const smtpPass = process.env.SMTP_PASS
+      const smtpPort = Number(process.env.SMTP_PORT) || 587
+
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        return reply.status(422).send({ message: 'Configuração SMTP não encontrada. Configure SMTP_HOST, SMTP_USER e SMTP_PASS nas variáveis de ambiente.' })
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      })
+
+      const attachments: any[] = []
+
+      if (body.incluirXml && doc.xmlAutorizado) {
+        const nomeXml = doc.chaveAcesso ? `${doc.chaveAcesso}-cte.xml` : `CTe-${doc.serie}-${doc.numero}.xml`
+        attachments.push({ filename: nomeXml, content: doc.xmlAutorizado, contentType: 'application/xml' })
+      }
+
+      if (body.incluirPdf) {
+        try {
+          const pdfBuffer = await gerarDactePdf(doc, doc.empresa)
+          attachments.push({ filename: `DACTE-${doc.numero}-${doc.serie}.pdf`, content: pdfBuffer, contentType: 'application/pdf' })
+        } catch (pdfErr: any) {
+          console.warn(`[cte-email] Falha ao gerar PDF DACTE: ${pdfErr.message}`)
+        }
+      }
+
+      if (attachments.length === 0) {
+        return reply.status(422).send({ message: 'Nenhum anexo disponível para envio (XML ou PDF)' })
+      }
+
+      const from = process.env.SMTP_FROM || smtpUser
+      const empresa = doc.empresa
+      const assunto = `CT-e nº ${doc.numero} - ${empresa?.razaoSocial || 'Emitente'}`
+      const valorFormatado = Number(doc.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #1976d2;">CT-e nº ${doc.numero}</h2>
+          <table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
+            <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Chave de Acesso</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.chaveAcesso || 'N/A'}</td></tr>
+            <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Série</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.serie}</td></tr>
+            <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Valor da Prestação</td><td style="padding: 6px; border: 1px solid #ddd;">${valorFormatado}</td></tr>
+            <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Status</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.status}</td></tr>
+            <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Protocolo</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.protocolo || 'N/A'}</td></tr>
+          </table>
+          <p style="font-size: 12px; color: #666;">E-mail enviado automaticamente pelo sistema Vizor ERP.</p>
+        </div>
+      `.trim()
+
+      await transporter.sendMail({
+        from,
+        to: body.emails.join(', '),
+        subject: assunto,
+        html,
+        attachments,
+      })
+
+      return { sucesso: true, message: `E-mail enviado com sucesso para ${body.emails.join(', ')}` }
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao enviar e-mail' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/transmitir-lote — Transmitir vários CT-e em sequência
+  // ==========================================================================
+  app.post('/cte/transmitir-lote', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = z.object({
+        ids: z.array(z.string().uuid()).min(1).max(50),
+      }).parse(request.body)
+
+      const resultados: Array<{ id: string; numero?: number; sucesso: boolean; status?: string; message?: string }> = []
+
+      for (const docId of body.ids) {
+        try {
+          const doc = await prisma.documentoFiscal.findFirst({
+            where: { id: docId, empresaId: user.empresaId, tipo: 'CTE' },
+          })
+          if (!doc) {
+            resultados.push({ id: docId, sucesso: false, message: 'CT-e não encontrado' })
+            continue
+          }
+          if (!['DIGITADA', 'REJEITADO', 'PENDENTE'].includes(doc.status)) {
+            resultados.push({ id: docId, numero: doc.numero, sucesso: false, message: `Status ${doc.status} não permite transmissão` })
+            continue
+          }
+
+          let payload: any
+          try { payload = JSON.parse(doc.xmlEnviado || '{}') } catch { payload = {} }
+
+          const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
+          if (!empresa) {
+            resultados.push({ id: docId, numero: doc.numero, sucesso: false, message: 'Empresa não encontrada' })
+            continue
+          }
+
+          const ufEmitente = empresa.uf || ''
+          const dadosCTe: DadosCTe = {
+            cUF: obterCodigoUF(ufEmitente),
+            cCT: gerarCodigoNumerico(),
+            nCT: doc.numero,
+            serie: doc.serie,
+            modelo: 57,
+            tpEmis: payload.tpEmis || 1,
+            ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+            cfop: payload.cfop || '5353',
+            naturezaOp: payload.naturezaOp || '',
+            tpServ: payload.tpServ || 0,
+            dataEmissao: new Date(),
+            tpCTe: payload.tpCTe || 0,
+            modal: payload.modal || '01',
+            cMunIni: payload.cMunIni || '',
+            xMunIni: payload.xMunIni || '',
+            ufIni: payload.ufIni || '',
+            cMunFim: payload.cMunFim || '',
+            xMunFim: payload.xMunFim || '',
+            ufFim: payload.ufFim || '',
+            tpTom: payload.tpTom || 0,
+            indIEToma: payload.indIEToma || 9,
+            emitente: {
+              cnpj: (empresa.cnpj || '').replace(/\D/g, ''),
+              ie: (empresa.inscEstadual || '').replace(/\D/g, ''),
+              razaoSocial: empresa.razaoSocial || '',
+              nomeFantasia: empresa.nomeFantasia || undefined,
+              endereco: {
+                logradouro: empresa.logradouro || '',
+                numero: empresa.numero || '',
+                complemento: empresa.complemento || undefined,
+                bairro: empresa.bairro || '',
+                codigoMunicipio: empresa.codigoMunicipio || empresa.cidade || '',
+                municipio: empresa.cidade || '',
+                uf: ufEmitente,
+                cep: empresa.cep || '',
+              },
+            },
+            remetente: payload.remetente as any,
+            destinatario: payload.destinatario as any,
+            expedidor: payload.expedidor as any,
+            recebedor: payload.recebedor as any,
+            vPrest: payload.vPrest as any,
+            impostos: payload.impostos as any,
+            infCTeNorm: {
+              infCarga: payload.infCTeNorm?.infCarga,
+              infDoc: {
+                infNFe: payload.infCTeNorm?.infDoc?.infNFe,
+                infOutros: payload.infCTeNorm?.infDoc?.infOutros,
+              },
+              infModal: payload.infCTeNorm?.infModal,
+              veicNovos: payload.infCTeNorm?.veicNovos,
+            },
+            complemento: payload.complemento,
+            infAdFisco: payload.infAdFisco,
+            infCpl: payload.infCpl,
+            tomadorOutros: payload.tomadorOutros,
+          }
+
+          const resultado = await cteEmissaoService.transmitirExistente({
+            empresaId: user.empresaId,
+            documentoFiscalId: docId,
+            dadosCTe,
+            forcarContingencia: payload.forcarContingencia || false,
+          })
+
+          await prisma.documentoFiscal.update({
+            where: { id: docId },
+            data: {
+              status: resultado.status,
+              chaveAcesso: resultado.chaveAcesso || undefined,
+              protocolo: resultado.protocolo || undefined,
+              xmlAutorizado: resultado.xmlAutorizado || resultado.xmlAssinado || undefined,
+              codigoRejeicao: resultado.codigoRejeicao || undefined,
+              motivoRejeicao: resultado.motivoRejeicao || undefined,
+              dataAutorizacao: resultado.sucesso ? new Date() : undefined,
+            },
+          })
+
+          resultados.push({
+            id: docId,
+            numero: doc.numero,
+            sucesso: resultado.sucesso,
+            status: resultado.status,
+            message: resultado.sucesso ? 'Autorizado' : resultado.motivoRejeicao,
+          })
+        } catch (err: any) {
+          resultados.push({ id: docId, sucesso: false, message: err.message || 'Erro inesperado' })
+        }
+      }
+
+      const autorizados = resultados.filter(r => r.sucesso).length
+      const rejeitados = resultados.filter(r => !r.sucesso).length
+
+      return {
+        resumo: { total: body.ids.length, autorizados, rejeitados },
+        resultados,
+      }
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/enviar-email-lote — Enviar e-mail para múltiplos CT-e
+  // ==========================================================================
+  app.post('/cte/enviar-email-lote', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = z.object({
+        ids: z.array(z.string().uuid()).min(1).max(50),
+        emails: z.array(z.string().email()).min(1),
+        incluirPdf: z.boolean().default(true),
+        incluirXml: z.boolean().default(true),
+      }).parse(request.body)
+
+      const nodemailer = require('nodemailer')
+      const smtpHost = process.env.SMTP_HOST
+      const smtpUser = process.env.SMTP_USER
+      const smtpPass = process.env.SMTP_PASS
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        return reply.status(422).send({ message: 'Configuração SMTP não encontrada.' })
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: (Number(process.env.SMTP_PORT) || 587) === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      })
+
+      const resultados: Array<{ id: string; numero?: number; sucesso: boolean; message?: string }> = []
+
+      for (const docId of body.ids) {
+        try {
+          const doc = await prisma.documentoFiscal.findFirst({
+            where: { id: docId, empresaId: user.empresaId, tipo: 'CTE', status: { in: ['AUTORIZADO', 'CANCELADO'] } },
+            include: { empresa: true },
+          })
+          if (!doc) {
+            resultados.push({ id: docId, sucesso: false, message: 'CT-e não encontrado ou status inválido' })
+            continue
+          }
+
+          const attachments: any[] = []
+          if (body.incluirXml && doc.xmlAutorizado) {
+            const nomeXml = doc.chaveAcesso ? `${doc.chaveAcesso}-cte.xml` : `CTe-${doc.serie}-${doc.numero}.xml`
+            attachments.push({ filename: nomeXml, content: doc.xmlAutorizado, contentType: 'application/xml' })
+          }
+          if (body.incluirPdf) {
+            try {
+              const pdfBuf = await gerarDactePdf(doc, doc.empresa)
+              attachments.push({ filename: `DACTE-${doc.numero}-${doc.serie}.pdf`, content: pdfBuf, contentType: 'application/pdf' })
+            } catch { /* skip */ }
+          }
+
+          if (attachments.length === 0) {
+            resultados.push({ id: docId, numero: doc.numero, sucesso: false, message: 'Nenhum anexo disponível' })
+            continue
+          }
+
+          const from = process.env.SMTP_FROM || smtpUser
+          await transporter.sendMail({
+            from,
+            to: body.emails.join(', '),
+            subject: `CT-e nº ${doc.numero} - ${doc.empresa?.razaoSocial || 'Emitente'}`,
+            html: `<p>CT-e nº ${doc.numero} | Chave: ${doc.chaveAcesso || 'N/A'} | Valor: R$ ${Number(doc.valorTotal).toFixed(2)}</p>`,
+            attachments,
+          })
+
+          resultados.push({ id: docId, numero: doc.numero, sucesso: true, message: 'Enviado' })
+        } catch (err: any) {
+          resultados.push({ id: docId, sucesso: false, message: err.message })
+        }
+      }
+
+      return { resumo: { total: body.ids.length, enviados: resultados.filter(r => r.sucesso).length, falhas: resultados.filter(r => !r.sucesso).length }, resultados }
+    } catch (err: any) {
+      if (err.name === 'ZodError') return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+      return reply.status(500).send({ message: err.message || 'Erro interno' })
+    }
+  })
+
+  // ==========================================================================
+  // POST /cte/cancelar-lote — Cancelar vários CT-e autorizados
+  // ==========================================================================
+  app.post('/cte/cancelar-lote', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const body = z.object({
+        ids: z.array(z.string().uuid()).min(1).max(50),
+        justificativa: z.string().min(15).max(255),
+      }).parse(request.body)
+
+      const resultados: Array<{ id: string; numero?: number; sucesso: boolean; message?: string }> = []
+
+      for (const docId of body.ids) {
+        try {
+          const doc = await prisma.documentoFiscal.findFirst({
+            where: { id: docId, empresaId: user.empresaId, tipo: 'CTE' },
+            select: { id: true, numero: true, status: true },
+          })
+          if (!doc) {
+            resultados.push({ id: docId, sucesso: false, message: 'CT-e não encontrado' })
+            continue
+          }
+          if (doc.status !== 'AUTORIZADO') {
+            resultados.push({ id: docId, numero: doc.numero, sucesso: false, message: `Status ${doc.status} não permite cancelamento` })
+            continue
+          }
+
+          const resultado = await cteEmissaoService.cancelar({
+            documentoFiscalId: docId,
+            justificativa: body.justificativa,
+          })
+
+          resultados.push({
+            id: docId,
+            numero: doc.numero,
+            sucesso: resultado.sucesso,
+            message: resultado.sucesso ? 'Cancelado' : resultado.erros?.map(e => e.descricao).join('; '),
+          })
+        } catch (err: any) {
+          resultados.push({ id: docId, sucesso: false, message: err.message })
+        }
+      }
+
+      return { resumo: { total: body.ids.length, cancelados: resultados.filter(r => r.sucesso).length, falhas: resultados.filter(r => !r.sucesso).length }, resultados }
+    } catch (err: any) {
+      if (err.name === 'ZodError') return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
       return reply.status(500).send({ message: err.message || 'Erro interno' })
     }
   })

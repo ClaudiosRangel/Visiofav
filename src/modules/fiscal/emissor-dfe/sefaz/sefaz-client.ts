@@ -70,15 +70,19 @@ function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
 
-  // CT-e 4.00: SOAP 1.2, cteDadosMsg com namespace wsdl, CT-e dentro de <enviCTe>.
-  // Formato confirmado funcional (análise do ACBr + documentação SEFAZ).
+  // CT-e 4.00 (SVRS — CTeRecepcaoSincV4):
+  // - <cteDadosMsg> COM xmlns (sem = HTTP 400 ou cStat 244)
+  // - Conteúdo DEVE ser GZip+Base64 (plain-text = HTTP 400 com xmlns, ou cStat 244 sem xmlns)
+  // - O XML comprimido deve ser APENAS <CTe>...</CTe> (sem wrapper <enviCTe> — cStat 215 se incluir)
+  // Descoberto empiricamente em 17/08/2026 via testes sequenciais.
   if (isServicoCTe(servico)) {
-    // Envolver o CT-e em <enviCTe> com idLote (obrigatório para CTeRecepcaoSincV4)
-    const enviCTe = `<enviCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00"><idLote>1</idLote>${xmlPayload}</enviCTe>`
-    return `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${enviCTe}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
+    const zlib = require('node:zlib')
+    const comprimido = zlib.gzipSync(Buffer.from(xmlPayload, 'utf-8'))
+    const base64 = comprimido.toString('base64')
+    return `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${base64}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
   }
 
-  // NF-e: envelope padrão sem Header
+  // NF-e: envelope padrão com namespace na tag
   return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Header/><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${xmlPayload}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
 }
 
@@ -217,13 +221,19 @@ export function criarSefazClient(
       // DEBUG temporário
       console.log('[SEFAZ-DEBUG] URL:', url)
       console.log('[SEFAZ-DEBUG] Content-Type:', contentType)
-      console.log('[SEFAZ-DEBUG] Content-Encoding:', isCTe ? 'gzip' : 'none')
       console.log('[SEFAZ-DEBUG] Content-Length:', headers['Content-Length'])
       console.log('[SEFAZ-DEBUG] SOAPAction:', headers['SOAPAction'] || 'N/A')
       console.log('[SEFAZ-DEBUG] Body original:', body.length, 'chars →', bodyToSend.length, 'bytes')
       console.log('[SEFAZ-DEBUG] Envelope (primeiros 300):', body.substring(0, 300))
       console.log('[SEFAZ-DEBUG] Contém <Signature>?', body.includes('<Signature'))
       console.log('[SEFAZ-DEBUG] Envelope contém <?xml?', body.includes('<?xml'))
+
+      // Salvar envelope completo para debug (comparação com ACBr)
+      try {
+        const fs = require('node:fs')
+        fs.writeFileSync('debug-envelope-cte.xml', body, 'utf-8')
+        console.log('[SEFAZ-DEBUG] Envelope salvo em debug-envelope-cte.xml')
+      } catch { /* ignore */ }
 
       const req = https.request(options, (res) => {
         const chunks: Buffer[] = []
@@ -241,32 +251,32 @@ export function criarSefazClient(
           console.log('[SEFAZ-DEBUG] Response body length:', responseBody.length)
           console.log('[SEFAZ-DEBUG] Response body (primeiros 1000 chars):', responseBody.substring(0, 1000))
 
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          // A SEFAZ retorna HTTP 200 quando autoriza, mas pode retornar
+          // HTTP 422/500 com body XML válido contendo cStat/xMotivo de rejeição.
+          // Nesse caso, devemos tratar como resposta processável, não como erro.
+          const httpStatus = res.statusCode || 0
+
+          if (httpStatus >= 200 && httpStatus < 300) {
+            resolve(responseBody)
+          } else if ((httpStatus === 422 || httpStatus === 500) && responseBody.includes('<cStat>')) {
+            // HTTP 422/500 com resposta XML da SEFAZ contendo cStat = rejeição de negócio.
+            // Resolver normalmente para que o parser extraia cStat/xMotivo e retorne
+            // ao chamador como RespostaSefaz (não como exceção).
+            console.log(`[SEFAZ-DEBUG] HTTP ${httpStatus} com body XML válido (contém cStat) — tratando como resposta de rejeição processável`)
             resolve(responseBody)
           } else {
-            // Tentar extrair cStat/xMotivo da resposta SOAP mesmo em erro HTTP
-            let mensagem = `SEFAZ retornou HTTP ${res.statusCode}`
-            let detalhes: Record<string, unknown> = { statusCode: res.statusCode }
+            // Erro real de comunicação (sem body XML válido)
+            let mensagem = `SEFAZ retornou HTTP ${httpStatus}`
+            let detalhes: Record<string, unknown> = { statusCode: httpStatus }
 
-            // Extrair cStat e xMotivo se presentes na resposta
-            const cStatMatch = responseBody.match(/<cStat>(\d+)<\/cStat>/)
-            const xMotivoMatch = responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)
-            if (cStatMatch && xMotivoMatch) {
-              mensagem = `Rejeição SEFAZ (cStat ${cStatMatch[1]}): ${xMotivoMatch[1]}`
-              detalhes = { statusCode: res.statusCode, cStat: cStatMatch[1], xMotivo: xMotivoMatch[1] }
-            } else if (xMotivoMatch) {
-              mensagem = `SEFAZ: ${xMotivoMatch[1]}`
-              detalhes = { statusCode: res.statusCode, xMotivo: xMotivoMatch[1] }
+            // Tentar extrair SOAP Fault
+            const faultMatch = responseBody.match(/<(?:soap[12]?:)?Reason[^>]*>.*?<(?:soap[12]?:)?Text[^>]*>([^<]+)/is) ||
+              responseBody.match(/<faultstring>([^<]+)/i)
+            if (faultMatch) {
+              mensagem = `SEFAZ SOAP Fault: ${faultMatch[1].trim()}`
+              detalhes = { statusCode: httpStatus, fault: faultMatch[1].trim() }
             } else {
-              // Tentar extrair SOAP Fault
-              const faultMatch = responseBody.match(/<(?:soap[12]?:)?Reason[^>]*>([^<]+)/i) ||
-                responseBody.match(/<faultstring>([^<]+)/i)
-              if (faultMatch) {
-                mensagem = `SEFAZ SOAP Fault: ${faultMatch[1]}`
-                detalhes = { statusCode: res.statusCode, fault: faultMatch[1] }
-              } else {
-                detalhes.body = responseBody.substring(0, 1000)
-              }
+              detalhes.body = responseBody.substring(0, 1000)
             }
 
             reject(

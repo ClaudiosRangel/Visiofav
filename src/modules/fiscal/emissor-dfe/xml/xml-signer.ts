@@ -182,13 +182,28 @@ export function assinarXML(params: AssinaturaParams): ResultadoAssinatura {
     return `<X509Data><X509Certificate>${certX509Clean}</X509Certificate></X509Data>`
   }
 
-  // Computar assinatura - inserir antes do fechamento da tag pai da tag assinada
-  sig.computeSignature(xml, {
-    location: {
-      reference: `//*[local-name(.)='${tagParaAssinar}']`,
-      action: 'after',
-    },
-  })
+  // Computar assinatura.
+  // CT-e: a ordem no XSD é <CTe> → <infCte> → <infCTeSupl> → <Signature>
+  // A Signature deve ser o ÚLTIMO filho de <CTe>, após <infCTeSupl>.
+  // NF-e/MDF-e/Eventos: Signature logo após a tag assinada.
+  const isCTe = (tagParaAssinar === 'infCte' || tagParaAssinar === 'infCTe')
+  const temInfCTeSupl = isCTe && xml.includes('<infCTeSupl>')
+
+  if (temInfCTeSupl) {
+    sig.computeSignature(xml, {
+      location: {
+        reference: `//*[local-name(.)='infCTeSupl']`,
+        action: 'after',
+      },
+    })
+  } else {
+    sig.computeSignature(xml, {
+      location: {
+        reference: `//*[local-name(.)='${tagParaAssinar}']`,
+        action: 'after',
+      },
+    })
+  }
 
   const xmlAssinado = sig.getSignedXml()
 

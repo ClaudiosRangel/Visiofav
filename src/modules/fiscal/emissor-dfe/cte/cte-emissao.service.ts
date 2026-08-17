@@ -11,6 +11,7 @@
 import { prisma } from '../../../../lib/prisma'
 import { CodigoErroFiscal, ErroFiscal } from '../../erros'
 import { buildCTeXml, type DadosCTe } from './cte-xml-builder'
+import { validarCTeParaTransmissao } from './cte-validacao.service'
 import { validarXML } from '../xml/xml-validator'
 import { assinarXML } from '../xml/xml-signer'
 import { criarSefazClient, type SefazUrlResolver } from '../sefaz/sefaz-client'
@@ -115,6 +116,16 @@ export class CTeEmissaoService {
     const { empresaId, dadosCTe, forcarContingencia } = params
     const cnpjEmitente = dadosCTe.emitente.cnpj
     const ufEmitente = dadosCTe.emitente.endereco.uf
+
+    // 0. Validar campos obrigatórios antes de gerar XML
+    const validacaoPrevia = validarCTeParaTransmissao(dadosCTe)
+    if (!validacaoPrevia.valido) {
+      throw new ErroFiscal(
+        CodigoErroFiscal.CAMPOS_OBRIGATORIOS_AUSENTES,
+        `Campos obrigatórios não preenchidos: ${validacaoPrevia.erros.join('; ')}`,
+        { erros: validacaoPrevia.erros }
+      )
+    }
 
     // Verificar contingência
     const emContingencia = forcarContingencia || this.isEmContingencia(empresaId)
@@ -231,6 +242,16 @@ export class CTeEmissaoService {
     const { empresaId, documentoFiscalId, dadosCTe, forcarContingencia } = params
     const cnpjEmitente = dadosCTe.emitente.cnpj
     const ufEmitente = dadosCTe.emitente.endereco.uf
+
+    // 0. Validar campos obrigatórios antes de gerar XML
+    const validacao = validarCTeParaTransmissao(dadosCTe)
+    if (!validacao.valido) {
+      throw new ErroFiscal(
+        CodigoErroFiscal.CAMPOS_OBRIGATORIOS_AUSENTES,
+        `Campos obrigatórios não preenchidos: ${validacao.erros.join('; ')}`,
+        { erros: validacao.erros }
+      )
+    }
 
     // 1. Gerar XML
     const xmlGerado = buildCTeXml(dadosCTe)
