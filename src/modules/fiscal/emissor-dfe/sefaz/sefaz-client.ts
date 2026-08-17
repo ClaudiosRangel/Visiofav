@@ -29,9 +29,9 @@ const SOAP_CONTENT_TYPE = 'application/soap+xml; charset=utf-8'
  * Necessário para CT-e no SVRS — sem ele, retorna HTTP 400 com body vazio.
  */
 const SOAP_ACTIONS: Partial<Record<ServicoSefaz, string>> = {
-  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSinc',
+  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSincCT',
   [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
-  [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
+  [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEventoCT',
 }
 const MIN_TIMEOUT_MS = 5000
 const MAX_TIMEOUT_MS = 120000
