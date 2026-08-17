@@ -150,10 +150,21 @@ export function criarSefazClient(
    * Cria o agente HTTPS com mTLS (certificado PFX A1)
    */
   function criarHttpsAgent(): https.Agent {
-    // SEFAZ usa certificados ICP-Brasil que nem sempre estão no trust store
-    // do Node.js. A segurança é garantida pelo mTLS (certificado A1 do contribuinte).
-    // Forçar TLS 1.2 exato (sem TLS 1.3) — o IIS do SVRS pode ter problemas
-    // com mTLS em TLS 1.3 (renegociação de certificado pós-handshake não suportada em 1.3).
+    // DEBUG: validar que o PFX pode ser carregado com a senha antes de enviar
+    try {
+      const tls = require('node:tls')
+      const ctx = tls.createSecureContext({
+        pfx: config.certificadoPfx,
+        passphrase: config.certificadoSenha,
+      })
+      console.log('[SEFAZ-DEBUG] SecureContext criado com sucesso — certificado PFX válido')
+    } catch (err: any) {
+      console.error('[SEFAZ-DEBUG] ERRO ao criar SecureContext:', err.message)
+      console.error('[SEFAZ-DEBUG] Isso significa que o PFX ou a senha estão incorretos!')
+    }
+
+    console.log('[SEFAZ-DEBUG] Passphrase length:', config.certificadoSenha?.length)
+
     return new https.Agent({
       pfx: config.certificadoPfx,
       passphrase: config.certificadoSenha,
