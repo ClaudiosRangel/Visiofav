@@ -179,12 +179,11 @@ export function criarSefazClient(
       const parsedUrl = new URL(url)
       const agent = criarHttpsAgent()
 
-      // CT-e SVRS: SOAPAction APENAS como header HTTP separado (NÃO no Content-Type).
-      // O WCF do SVRS tem bindings diferentes para SOAP 1.1 e 1.2:
-      // - Com action= no Content-Type (SOAP 1.2): nenhuma action é reconhecida
-      // - Com header SOAPAction: separado (SOAP 1.1 style): action é reconhecida
-      // Usar SOAP 1.2 envelope + SOAPAction header = funciona (testado localmente com HTTP 500 validação)
-      const contentType = SOAP_CONTENT_TYPE
+      // CT-e SVRS: SOAPAction no Content-Type (action=) — obrigatório para SOAP 1.2.
+      // Também como header separado por compatibilidade.
+      const contentType = soapAction
+        ? `${SOAP_CONTENT_TYPE};action="${soapAction}"`
+        : SOAP_CONTENT_TYPE
       const headers: Record<string, string | number> = {
         'Content-Type': contentType,
         'Content-Length': Buffer.byteLength(body, 'utf-8'),
