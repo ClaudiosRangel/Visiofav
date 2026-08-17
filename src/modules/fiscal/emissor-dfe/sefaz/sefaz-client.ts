@@ -178,10 +178,12 @@ export function criarSefazClient(
       const parsedUrl = new URL(url)
       const agent = criarHttpsAgent()
 
-      // Para CT-e no SVRS: SOAPAction como header HTTP separado (não no Content-Type).
-      // O WCF do SVRS não reconhece a action quando está dentro do Content-Type SOAP 1.2,
-      // mas aceita quando enviada como header SOAPAction separado.
-      const contentType = SOAP_CONTENT_TYPE
+      // CT-e SVRS: SOAPAction enviada TANTO no Content-Type (action=) QUANTO como
+      // header HTTP separado. O WCF do SVRS precisa do action no Content-Type para
+      // SOAP 1.2, e o namespace do cteDadosMsg deve ser portalfiscal.inf.br/cte (sem /wsdl/).
+      const contentType = soapAction
+        ? `${SOAP_CONTENT_TYPE}; action="${soapAction}"`
+        : SOAP_CONTENT_TYPE
       const headers: Record<string, string | number> = {
         'Content-Type': contentType,
         'Content-Length': Buffer.byteLength(body, 'utf-8'),
