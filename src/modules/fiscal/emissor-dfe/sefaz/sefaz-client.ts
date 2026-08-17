@@ -29,10 +29,9 @@ const SOAP_CONTENT_TYPE = 'application/soap+xml; charset=utf-8'
  * Necessário para CT-e no SVRS — sem ele, retorna HTTP 400 com body vazio.
  */
 const SOAP_ACTIONS: Partial<Record<ServicoSefaz, string>> = {
-  // CT-e: temporariamente sem SOAPAction para diagnosticar se o 400 é por action inválida
-  // [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSinc',
-  // [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
-  // [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
+  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSinc',
+  [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
+  [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
 }
 const MIN_TIMEOUT_MS = 5000
 const MAX_TIMEOUT_MS = 120000
@@ -153,11 +152,14 @@ export function criarSefazClient(
   function criarHttpsAgent(): https.Agent {
     // SEFAZ usa certificados ICP-Brasil que nem sempre estão no trust store
     // do Node.js. A segurança é garantida pelo mTLS (certificado A1 do contribuinte).
+    // Forçar TLS 1.2 exato (sem TLS 1.3) — o IIS do SVRS pode ter problemas
+    // com mTLS em TLS 1.3 (renegociação de certificado pós-handshake não suportada em 1.3).
     return new https.Agent({
       pfx: config.certificadoPfx,
       passphrase: config.certificadoSenha,
       rejectUnauthorized: false,
       minVersion: 'TLSv1.2',
+      maxVersion: 'TLSv1.2',
     })
   }
 
