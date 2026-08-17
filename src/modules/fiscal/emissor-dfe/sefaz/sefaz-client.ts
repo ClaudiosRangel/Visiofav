@@ -98,15 +98,11 @@ function obterNamespaceServico(servico: ServicoSefaz): string {
   if (servico === ServicoSefaz.DISTRIBUICAO_DFE) {
     return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe'
   }
-  // CT-e: namespaces específicos
-  if (servico === ServicoSefaz.CTE_AUTORIZACAO) {
-    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4'
-  }
-  if (servico === ServicoSefaz.CTE_RET_AUTORIZACAO) {
-    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4'
-  }
-  if (servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
-    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4'
+  // CT-e: namespace do portal fiscal (sem /wsdl/) — aceito pelo SVRS
+  if (servico === ServicoSefaz.CTE_AUTORIZACAO ||
+      servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
+      servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
+    return 'http://www.portalfiscal.inf.br/cte'
   }
   return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4'
 }
