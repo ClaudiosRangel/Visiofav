@@ -112,13 +112,16 @@ function obterNamespaceServico(servico: ServicoSefaz): string {
 }
 
 function obterTagDadosMsg(servico: ServicoSefaz): string {
-  // CT-e usa cteDadosMsg, NF-e usa nfeDadosMsg
-  if (
-    servico === ServicoSefaz.CTE_AUTORIZACAO ||
-    servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
-    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO
-  ) {
-    return 'cteDadosMsg'
+  // CT-e: usa o nome da operação do webservice, NÃO "cteDadosMsg"
+  // (cteDadosMsg causa HTTP 400 no SVRS CTeRecepcaoSincV4)
+  if (servico === ServicoSefaz.CTE_AUTORIZACAO) {
+    return 'cteRecepcaoSinc'
+  }
+  if (servico === ServicoSefaz.CTE_RET_AUTORIZACAO) {
+    return 'cteRetRecepcao'
+  }
+  if (servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
+    return 'cteRecepcaoEvento'
   }
   return 'nfeDadosMsg'
 }
