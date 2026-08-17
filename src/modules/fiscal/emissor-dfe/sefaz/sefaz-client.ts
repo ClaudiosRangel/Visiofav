@@ -29,9 +29,9 @@ const SOAP_CONTENT_TYPE = 'application/soap+xml; charset=utf-8'
  * Necessário para CT-e no SVRS — sem ele, retorna HTTP 400 com body vazio.
  */
 const SOAP_ACTIONS: Partial<Record<ServicoSefaz, string>> = {
-  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSincCT',
+  [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcaoSinc',
   [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
-  [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEventoCT',
+  [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
 }
 const MIN_TIMEOUT_MS = 5000
 const MAX_TIMEOUT_MS = 120000
@@ -112,16 +112,13 @@ function obterNamespaceServico(servico: ServicoSefaz): string {
 }
 
 function obterTagDadosMsg(servico: ServicoSefaz): string {
-  // CT-e: usa o nome da operação do webservice, NÃO "cteDadosMsg"
-  // (cteDadosMsg causa HTTP 400 no SVRS CTeRecepcaoSincV4)
-  if (servico === ServicoSefaz.CTE_AUTORIZACAO) {
-    return 'cteRecepcaoSinc'
-  }
-  if (servico === ServicoSefaz.CTE_RET_AUTORIZACAO) {
-    return 'cteRetRecepcao'
-  }
-  if (servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
-    return 'cteRecepcaoEvento'
+  // CT-e usa cteDadosMsg (com SOAPAction como header HTTP separado)
+  if (
+    servico === ServicoSefaz.CTE_AUTORIZACAO ||
+    servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
+    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO
+  ) {
+    return 'cteDadosMsg'
   }
   return 'nfeDadosMsg'
 }
@@ -185,10 +182,17 @@ export function criarSefazClient(
       const parsedUrl = new URL(url)
       const agent = criarHttpsAgent()
 
-      // SOAP 1.2: SOAPAction vai no parâmetro 'action' do Content-Type
-      const contentType = soapAction
-        ? `${SOAP_CONTENT_TYPE}; action="${soapAction}"`
-        : SOAP_CONTENT_TYPE
+      // Para CT-e no SVRS: SOAPAction como header HTTP separado (não no Content-Type).
+      // O WCF do SVRS não reconhece a action quando está dentro do Content-Type SOAP 1.2,
+      // mas aceita quando enviada como header SOAPAction separado.
+      const contentType = SOAP_CONTENT_TYPE
+      const headers: Record<string, string | number> = {
+        'Content-Type': contentType,
+        'Content-Length': Buffer.byteLength(body, 'utf-8'),
+      }
+      if (soapAction) {
+        headers['SOAPAction'] = `"${soapAction}"`
+      }
 
       const options: https.RequestOptions = {
         hostname: parsedUrl.hostname,
@@ -197,10 +201,7 @@ export function criarSefazClient(
         method: 'POST',
         agent,
         timeout: timeoutMs,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': Buffer.byteLength(body, 'utf-8'),
-        },
+        headers,
       }
 
       // DEBUG temporário — remover após resolver o HTTP 400 do CT-e
