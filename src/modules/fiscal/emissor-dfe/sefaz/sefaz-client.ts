@@ -70,10 +70,10 @@ function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   const namespace = obterNamespaceServico(servico)
   const tagDadosMsg = obterTagDadosMsg(servico)
 
-  // CT-e 4.00: envelope mínimo sem xml declaration (alguns IIS ASMX rejeitam),
-  // sem namespaces extras (xsi/xsd são desnecessários para o SVRS).
+  // CT-e 4.00: mesmo formato que funciona no CTeStatusServicoV4 (HTTP 200 confirmado).
+  // Requer SOAPAction obrigatória no Content-Type para CTeRecepcaoSincV4.
   if (isServicoCTe(servico)) {
-    return `<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${xmlPayload}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
+    return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><${tagDadosMsg} xmlns="${namespace}">${xmlPayload}</${tagDadosMsg}></soap:Body></soap:Envelope>`
   }
 
   // NF-e: envelope padrão sem Header
