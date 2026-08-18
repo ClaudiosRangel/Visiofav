@@ -2605,6 +2605,25 @@ async function main() {
   `)
   console.log('✅ cor_veiculo: tabela criada')
 
+  // =========================================================================
+  // Tabela config_smtp — configuração SMTP por empresa
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "config_smtp" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      "empresa_id" TEXT NOT NULL UNIQUE REFERENCES "empresa"("id"),
+      "host" VARCHAR(200) NOT NULL,
+      "porta" INTEGER NOT NULL DEFAULT 587,
+      "usuario" VARCHAR(200) NOT NULL,
+      "senha" VARCHAR(500) NOT NULL,
+      "usar_tls" BOOLEAN NOT NULL DEFAULT true,
+      "email_from" VARCHAR(254),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT now(),
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT now()
+    )
+  `)
+  console.log('✅ config_smtp: tabela criada')
+
   console.log('✅ All migrations applied successfully')
 }
 

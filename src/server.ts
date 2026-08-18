@@ -112,6 +112,7 @@ import { formatoEnderecoRoutes } from './modules/formato-endereco/formato-endere
 import { geoRoutes } from './modules/geolocalizacao/geo.routes'
 import { cceRoutes } from './modules/cce/cce.routes'
 import { configEmailFiscalRoutes } from './modules/config-email-fiscal/config-email-fiscal.routes'
+import { configSmtpRoutes } from './modules/config-smtp/config-smtp.routes'
 import { configIntegracaoRoutes } from './modules/config-integracao/config-integracao.routes'
 import { pendenciaCceRoutes } from './modules/pendencia-cce/pendencia-cce.routes'
 import { pendenciaCceExternaRoutes } from './modules/pendencia-cce/pendencia-cce-externa.routes'
@@ -328,6 +329,7 @@ async function bootstrap() {
   await app.register(manutencaoEstoqueRoutes, { prefix: '/api/manutencao-estoque' })
   await app.register(conferenciaEntradaRoutes, { prefix: '/api/conferencia-entrada' })
   await app.register(configEmailFiscalRoutes, { prefix: '/api/config-email-fiscal' })
+  await app.register(configSmtpRoutes, { prefix: '/api/config-smtp' })
   await app.register(pendenciaCceRoutes, { prefix: '/api/pendencias-cce' })
   await app.register(filaExcecoesRoutes, { prefix: '/api/fila-excecoes' })
   await app.register(enderecamentoWmsRoutes, { prefix: '/api/enderecamento-wms' })

@@ -260,6 +260,7 @@ export async function cteRoutes(app: FastifyInstance) {
       select: {
         rntrc: true,
         serieCTe: true,
+        ambienteCTe: true,
         ambienteNFe: true,
         uf: true,
         cidade: true,
@@ -291,7 +292,7 @@ export async function cteRoutes(app: FastifyInstance) {
     return {
       rntrc: empresa.rntrc || '',
       serie: empresa.serieCTe || 1,
-      ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+      ambiente: empresa.ambienteCTe || empresa.ambienteNFe || 2,
       ufEmitente: empresa.uf || '',
       // Padrões configuráveis (tabela Parametro, prefixo cte.)
       naturezaOp: params['cte.naturezaOp'] || 'PRESTACAO DE SERVICO DE TRANSPORTE',
@@ -754,8 +755,8 @@ export async function cteRoutes(app: FastifyInstance) {
       const where: any = { empresaId: user.empresaId, tipo: 'CTE' }
 
       // Filtrar por ambiente atual da empresa (homologação só vê homologação, produção só vê produção)
-      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId }, select: { ambienteNFe: true } })
-      const ambienteAtual = (empresa as any)?.ambienteCTe || empresa?.ambienteNFe || 2
+      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId }, select: { ambienteCTe: true, ambienteNFe: true } })
+      const ambienteAtual = empresa?.ambienteCTe || empresa?.ambienteNFe || 2
       where.ambiente = ambienteAtual
 
       if (filtros.status) where.status = filtros.status.toUpperCase()
@@ -801,17 +802,38 @@ export async function cteRoutes(app: FastifyInstance) {
             contingencia: true,
             ambiente: true,
             criadoEm: true,
+            xmlEnviado: true,
           },
         }),
         prisma.documentoFiscal.count({ where }),
       ])
 
       return {
-        data: dados.map(d => ({
-          ...d,
-          tomadorRazao: d.destRazao,
-          valorTotal: Number(d.valorTotal),
-        })),
+        data: dados.map(d => {
+          // Extrair origem/destino do payload JSON
+          let origemDestino: string | null = null
+          if (d.xmlEnviado) {
+            try {
+              const payload = JSON.parse(d.xmlEnviado)
+              const munIni = payload.xMunIni || payload.municipioInicio
+              const ufIni = payload.ufInicio || payload.ufIni || ''
+              const munFim = payload.xMunFim || payload.municipioFim
+              const ufFim = payload.ufFim || ''
+              if (munIni && munFim) {
+                origemDestino = `${munIni}/${ufIni} → ${munFim}/${ufFim}`
+              } else if (munIni) {
+                origemDestino = `${munIni}/${ufIni}`
+              }
+            } catch { /* ignore parse errors */ }
+          }
+          const { xmlEnviado, ...rest } = d
+          return {
+            ...rest,
+            tomadorRazao: d.destRazao,
+            valorTotal: Number(d.valorTotal),
+            origemDestino,
+          }
+        }),
         total,
         page: filtros.page,
         limit: filtros.limit,
@@ -1028,7 +1050,7 @@ export async function cteRoutes(app: FastifyInstance) {
         serie: doc.serie,
         modelo: 57,
         tpEmis: body.tpEmis || 1,
-        ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+        ambiente: empresa.ambienteCTe || empresa.ambienteNFe || 2,
         cfop: body.cfop || '5353',
         naturezaOp: body.naturezaOp || '',
         tpServ: body.tpServ || 0,
@@ -1154,7 +1176,7 @@ export async function cteRoutes(app: FastifyInstance) {
         serie: doc.serie,
         modelo: 57,
         tpEmis: body.tpEmis || 1,
-        ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+        ambiente: empresa.ambienteCTe || empresa.ambienteNFe || 2,
         cfop: body.cfop || '5353',
         naturezaOp: body.naturezaOp || '',
         tpServ: body.tpServ || 0,
@@ -1300,7 +1322,7 @@ export async function cteRoutes(app: FastifyInstance) {
           ie: (empresa.inscEstadual || '').replace(/\D/g, ''),
           razaoSocial: empresa.razaoSocial || '',
           nomeFantasia: empresa.nomeFantasia || undefined,
-          CRT: (empresa as any).regimeTributario || 1,
+          CRT: empresa.regimeTributario || 1,
           fone: empresa.telefone || undefined,
           endereco: {
             logradouro: empresa.logradouro || '',
@@ -1671,15 +1693,18 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(422).send({ message: `Só é possível enviar por e-mail CT-e AUTORIZADO ou CANCELADO. Status atual: ${doc.status}` })
       }
 
-      // Montar anexos
+      // Buscar configuração SMTP do banco (config por empresa)
       const nodemailer = require('nodemailer')
-      const smtpHost = process.env.SMTP_HOST
-      const smtpUser = process.env.SMTP_USER
-      const smtpPass = process.env.SMTP_PASS
-      const smtpPort = Number(process.env.SMTP_PORT) || 587
+      const configSmtp = await prisma.configSmtp.findUnique({ where: { empresaId: user.empresaId } })
+
+      // Fallback para variáveis de ambiente (compatibilidade)
+      const smtpHost = configSmtp?.host || process.env.SMTP_HOST
+      const smtpUser = configSmtp?.usuario || process.env.SMTP_USER
+      const smtpPass = configSmtp?.senha || process.env.SMTP_PASS
+      const smtpPort = configSmtp?.porta || Number(process.env.SMTP_PORT) || 587
 
       if (!smtpHost || !smtpUser || !smtpPass) {
-        return reply.status(422).send({ message: 'Configuração SMTP não encontrada. Configure SMTP_HOST, SMTP_USER e SMTP_PASS nas variáveis de ambiente.' })
+        return reply.status(422).send({ message: 'Configuração SMTP não encontrada. Acesse Configurações → Email/SMTP para configurar o servidor de e-mail.' })
       }
 
       const transporter = nodemailer.createTransport({
@@ -1687,6 +1712,7 @@ export async function cteRoutes(app: FastifyInstance) {
         port: smtpPort,
         secure: smtpPort === 465,
         auth: { user: smtpUser, pass: smtpPass },
+        tls: (configSmtp?.usarTls ?? true) ? { rejectUnauthorized: false } : undefined,
       })
 
       const attachments: any[] = []
@@ -1709,7 +1735,7 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(422).send({ message: 'Nenhum anexo disponível para envio (XML ou PDF)' })
       }
 
-      const from = process.env.SMTP_FROM || smtpUser
+      const from = configSmtp?.emailFrom || process.env.SMTP_FROM || smtpUser
       const empresa = doc.empresa
       const assunto = `CT-e nº ${doc.numero} - ${empresa?.razaoSocial || 'Emitente'}`
       const valorFormatado = Number(doc.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -1717,6 +1743,7 @@ export async function cteRoutes(app: FastifyInstance) {
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #1976d2;">CT-e nº ${doc.numero}</h2>
+          <p style="margin: 0 0 12px;"><strong>${empresa?.razaoSocial || 'Emitente'}</strong>${empresa?.cnpj ? ` — CNPJ: ${empresa.cnpj}` : ''}</p>
           <table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
             <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Chave de Acesso</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.chaveAcesso || 'N/A'}</td></tr>
             <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Série</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.serie}</td></tr>
@@ -1724,7 +1751,7 @@ export async function cteRoutes(app: FastifyInstance) {
             <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Status</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.status}</td></tr>
             <tr><td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">Protocolo</td><td style="padding: 6px; border: 1px solid #ddd;">${doc.protocolo || 'N/A'}</td></tr>
           </table>
-          <p style="font-size: 12px; color: #666;">E-mail enviado automaticamente pelo sistema Vizor ERP.</p>
+          <p style="font-size: 12px; color: #666;">E-mail enviado automaticamente por ${empresa?.razaoSocial || 'Vizor ERP'}.</p>
         </div>
       `.trim()
 
@@ -1792,7 +1819,7 @@ export async function cteRoutes(app: FastifyInstance) {
             serie: doc.serie,
             modelo: 57,
             tpEmis: payload.tpEmis || 1,
-            ambiente: (empresa as any).ambienteCTe || empresa.ambienteNFe || 2,
+            ambiente: empresa.ambienteCTe || empresa.ambienteNFe || 2,
             cfop: payload.cfop || '5353',
             naturezaOp: payload.naturezaOp || '',
             tpServ: payload.tpServ || 0,
@@ -1909,18 +1936,21 @@ export async function cteRoutes(app: FastifyInstance) {
       }).parse(request.body)
 
       const nodemailer = require('nodemailer')
-      const smtpHost = process.env.SMTP_HOST
-      const smtpUser = process.env.SMTP_USER
-      const smtpPass = process.env.SMTP_PASS
+      const configSmtp = await prisma.configSmtp.findUnique({ where: { empresaId: user.empresaId } })
+      const smtpHost = configSmtp?.host || process.env.SMTP_HOST
+      const smtpUser = configSmtp?.usuario || process.env.SMTP_USER
+      const smtpPass = configSmtp?.senha || process.env.SMTP_PASS
       if (!smtpHost || !smtpUser || !smtpPass) {
-        return reply.status(422).send({ message: 'Configuração SMTP não encontrada.' })
+        return reply.status(422).send({ message: 'Configuração SMTP não encontrada. Acesse Configurações → Email/SMTP.' })
       }
 
+      const smtpPort = configSmtp?.porta || Number(process.env.SMTP_PORT) || 587
       const transporter = nodemailer.createTransport({
         host: smtpHost,
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: (Number(process.env.SMTP_PORT) || 587) === 465,
+        port: smtpPort,
+        secure: smtpPort === 465,
         auth: { user: smtpUser, pass: smtpPass },
+        tls: (configSmtp?.usarTls ?? true) ? { rejectUnauthorized: false } : undefined,
       })
 
       const resultados: Array<{ id: string; numero?: number; sucesso: boolean; message?: string }> = []
@@ -1953,7 +1983,7 @@ export async function cteRoutes(app: FastifyInstance) {
             continue
           }
 
-          const from = process.env.SMTP_FROM || smtpUser
+          const from = configSmtp?.emailFrom || process.env.SMTP_FROM || smtpUser
           await transporter.sendMail({
             from,
             to: body.emails.join(', '),

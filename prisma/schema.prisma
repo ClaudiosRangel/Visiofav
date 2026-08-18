@@ -86,6 +86,7 @@ model Empresa {
   configsConferenciaProduto ConfigConferenciaProduto[]
   configIntegracao          ConfigIntegracao?
   configEmailFiscal         ConfigEmailFiscal?
+  configSmtp                ConfigSmtp?
   pendenciasCce             PendenciaCce[]
 
   // Módulo Fiscal
@@ -3912,6 +3913,22 @@ model ConfigEmailFiscal {
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
   @@map("config_email_fiscal")
+}
+
+model ConfigSmtp {
+  id           String   @id @default(uuid())
+  empresaId    String   @unique @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  host         String   @db.VarChar(200)
+  porta        Int      @default(587)
+  usuario      String   @db.VarChar(200)
+  senha        String   @db.VarChar(500)
+  usarTls      Boolean  @default(true) @map("usar_tls")
+  emailFrom    String?  @map("email_from") @db.VarChar(254)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@map("config_smtp")
 }
 
 model PendenciaCce {
