@@ -44,11 +44,27 @@ const idParamsSchema = z.object({
 })
 
 export async function notificacaoRoutes(app: FastifyInstance) {
-  // Todas as rotas exigem autenticação (request.user populado pelo middleware global)
+  // Todas as rotas exigem autenticação
   app.addHook('onRequest', async (request, reply) => {
-    const user = (request as any).user
-    if (!user || !user.id) {
-      reply.status(401).send({ error: 'Não autenticado' })
+    // Se o firebaseAuthAdapter já populou request.user, ok
+    if ((request as any).user?.id) return
+
+    // Caso contrário, verificar JWT próprio
+    try {
+      const authHeader = request.headers.authorization
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        await request.jwtVerify()
+      } else {
+        const cookieToken = (request.cookies as any)?.['visiofab-access-token']
+        if (cookieToken) {
+          request.headers.authorization = `Bearer ${cookieToken}`
+          await request.jwtVerify()
+        } else {
+          return reply.status(401).send({ error: 'Não autenticado' })
+        }
+      }
+    } catch {
+      return reply.status(401).send({ error: 'Token inválido ou expirado' })
     }
   })
 
