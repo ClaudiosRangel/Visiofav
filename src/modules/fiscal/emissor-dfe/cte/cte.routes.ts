@@ -779,14 +779,18 @@ export async function cteRoutes(app: FastifyInstance) {
       let cMunFim = ''
       if (origemUf && dados.emitente.municipio) {
         const munsOrigem = await buscarMunicipiosIBGE(origemUf)
-        const buscaOrigem = dados.emitente.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        const buscaOrigem = dados.emitente.municipio.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         const found = munsOrigem.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === buscaOrigem)
+          || munsOrigem.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').startsWith(buscaOrigem))
+          || munsOrigem.find(m => buscaOrigem.startsWith(m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
         if (found) cMunIni = found.codigo
       }
       if (destinoUf && dados.destinatario.municipio) {
         const munsDest = await buscarMunicipiosIBGE(destinoUf)
-        const buscaDest = dados.destinatario.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        const buscaDest = dados.destinatario.municipio.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         const found = munsDest.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === buscaDest)
+          || munsDest.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').startsWith(buscaDest))
+          || munsDest.find(m => buscaDest.startsWith(m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
         if (found) cMunFim = found.codigo
       }
 
