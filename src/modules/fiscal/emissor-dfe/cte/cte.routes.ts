@@ -909,6 +909,33 @@ export async function cteRoutes(app: FastifyInstance) {
       if (remResolvido.codigoMunicipio && !cMunIni) cMunIni = remResolvido.codigoMunicipio
       if (destResolvido.codigoMunicipio && !cMunFim) cMunFim = destResolvido.codigoMunicipio
 
+      // Fallback final: se ainda não tem cMunFim, tentar resolver pelo nome do município
+      if (!cMunFim) {
+        const munNomeFim = destResolvido.municipio || dados.destinatario.municipio || ''
+        const ufFimResolv = destResolvido.uf || destinoUf || ''
+        if (munNomeFim && ufFimResolv) {
+          const munsF = await buscarMunicipiosIBGE(ufFimResolv)
+          const buscaF = munNomeFim.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          const foundF = munsF.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === buscaF)
+            || munsF.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(buscaF))
+            || munsF.find(m => buscaF.includes(m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
+          if (foundF) cMunFim = foundF.codigo
+        }
+      }
+      // Mesmo para cMunIni
+      if (!cMunIni) {
+        const munNomeIni = remResolvido.municipio || dados.emitente.municipio || ''
+        const ufIniResolv = remResolvido.uf || origemUf || ''
+        if (munNomeIni && ufIniResolv) {
+          const munsI = await buscarMunicipiosIBGE(ufIniResolv)
+          const buscaI = munNomeIni.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          const foundI = munsI.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === buscaI)
+            || munsI.find(m => m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(buscaI))
+            || munsI.find(m => buscaI.includes(m.nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
+          if (foundI) cMunIni = foundI.codigo
+        }
+      }
+
       return {
         sucesso: true,
         avisoNfeDuplicada,
