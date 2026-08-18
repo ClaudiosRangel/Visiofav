@@ -136,6 +136,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
         email: true,
         perfil: true,
         status: true,
+        avatarUrl: true,
         criadoEm: true,
         empresas: {
           select: { empresaId: true, modulos: true },
@@ -259,6 +260,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
       perfil: z.enum(['ADMIN', 'SUPERVISOR', 'OPERADOR']).optional(),
       status: z.boolean().optional(),
       senha: z.string().min(6).optional().or(z.literal('')),
+      avatarUrl: z.string().nullable().optional(),
     })
 
     const data = bodySchema.parse(request.body)
@@ -277,6 +279,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
     if (data.nome !== undefined) updateData.nome = data.nome
     if (data.perfil !== undefined) updateData.perfil = data.perfil
     if (data.status !== undefined) updateData.status = data.status
+    if (data.avatarUrl !== undefined) updateData.avatarUrl = data.avatarUrl
     if (data.senha && data.senha.length > 0) {
       updateData.senha = bcrypt.hashSync(data.senha, 10)
       updateData.senhaAlterada = true
