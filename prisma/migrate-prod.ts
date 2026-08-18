@@ -2642,6 +2642,47 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_observacao_padrao_cte_empresa_id" ON "observacao_padrao_cte"("empresa_id")`)
   console.log('✅ observacao_padrao_cte: tabela criada')
 
+  // =========================================================================
+  // Sistema de Notificações
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "notificacao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT,
+      "remetente_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "titulo" VARCHAR(200) NOT NULL,
+      "mensagem" TEXT NOT NULL,
+      "para_todas_empresas" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "notificacao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_notificacao_empresa_id" ON "notificacao"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_notificacao_remetente_id" ON "notificacao"("remetente_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "notificacao_destinatario" (
+      "id" TEXT NOT NULL,
+      "notificacao_id" TEXT NOT NULL,
+      "usuario_id" TEXT NOT NULL,
+      "lida" BOOLEAN NOT NULL DEFAULT false,
+      "lida_em" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "notificacao_destinatario_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "notificacao_destinatario_notificacao_id_usuario_id_key" ON "notificacao_destinatario"("notificacao_id", "usuario_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_notificacao_destinatario_usuario_lida" ON "notificacao_destinatario"("usuario_id", "lida")`)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "notificacao_destinatario"
+      ADD CONSTRAINT "notificacao_destinatario_notificacao_id_fkey"
+      FOREIGN KEY ("notificacao_id") REFERENCES "notificacao"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    `)
+  } catch { /* constraint já existe */ }
+  console.log('✅ notificacao + notificacao_destinatario: tabelas criadas')
+
   console.log('✅ All migrations applied successfully')
 }
 

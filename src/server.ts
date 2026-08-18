@@ -180,6 +180,9 @@ import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entre
 import { liberacaoMaterialRoutes } from './modules/liberacao-material/liberacao-material.routes'
 import { apontamentoProducaoRoutes } from './modules/apontamento-producao/apontamento-producao.routes'
 
+// Sistema de Notificações
+import { notificacaoRoutes } from './modules/notificacao/notificacao.routes'
+
 // Checkout de Apontamento — app web separado do ERP (Terminal + PIN)
 import { checkoutAuthRoutes } from './modules/checkout/checkout-auth.routes'
 import { checkoutRoutes } from './modules/checkout/checkout.routes'
@@ -254,6 +257,9 @@ async function bootstrap() {
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(usuarioRoutes, { prefix: '/api/usuarios' })
   await app.register(preferenciasRoutes, { prefix: '/api/usuarios' })
+
+  // Notificações
+  await app.register(notificacaoRoutes, { prefix: '/api/notificacoes' })
 
   // Seleção de empresa (pré-módulo — sem moduloGuard)
   await app.register(empresaSelectorRoutes, { prefix: '/api/empresas' })

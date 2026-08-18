@@ -1111,6 +1111,42 @@ model ObservacaoPadraoCte {
 }
 
 // ============================================================================
+// NOTIFICAÇÕES
+// ============================================================================
+
+model Notificacao {
+  id                String   @id @default(uuid())
+  empresaId         String?  @map("empresa_id")
+  remetenteId       String   @map("remetente_id")
+  tipo              String   @db.VarChar(20) // ALERTA, INFORMACAO, NOVIDADE, RECADO, DUVIDA
+  titulo            String   @db.VarChar(200)
+  mensagem          String   @db.Text
+  paraTodasEmpresas Boolean  @default(false) @map("para_todas_empresas")
+  criadoEm          DateTime @default(now()) @map("criado_em")
+
+  destinatarios NotificacaoDestinatario[]
+
+  @@index([empresaId])
+  @@index([remetenteId])
+  @@map("notificacao")
+}
+
+model NotificacaoDestinatario {
+  id            String    @id @default(uuid())
+  notificacaoId String    @map("notificacao_id")
+  usuarioId     String    @map("usuario_id")
+  lida          Boolean   @default(false)
+  lidaEm        DateTime? @map("lida_em")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+
+  notificacao Notificacao @relation(fields: [notificacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([notificacaoId, usuarioId])
+  @@index([usuarioId, lida])
+  @@map("notificacao_destinatario")
+}
+
+// ============================================================================
 // WMS
 // ============================================================================
 
