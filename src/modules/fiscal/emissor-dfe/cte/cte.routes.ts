@@ -1225,6 +1225,30 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(500).send({ message: 'Não foi possível gerar número único para o CT-e. Tente novamente.' })
       }
 
+      // Auto-salvar observação como padrão (se tiver infCpl e não existir igual cadastrada)
+      if (body.infCpl && body.infCpl.trim().length > 5) {
+        try {
+          const textoObs = body.infCpl.trim()
+          const existente = await prisma.observacaoPadraoCte.findFirst({
+            where: { empresaId: user.empresaId, texto: textoObs },
+          })
+          if (!existente) {
+            // Gerar próximo código sequencial OBS-N
+            const todas = await prisma.observacaoPadraoCte.findMany({
+              where: { empresaId: user.empresaId },
+              select: { codigo: true },
+            })
+            const maxNum = todas
+              .map(o => { const m = o.codigo.match(/^OBS-?(\d+)$/i); return m ? parseInt(m[1]) : 0 })
+              .reduce((max, n) => Math.max(max, n), 0)
+            const novoCodigo = `OBS${maxNum + 1}`
+            await prisma.observacaoPadraoCte.create({
+              data: { empresaId: user.empresaId, codigo: novoCodigo, texto: textoObs },
+            })
+          }
+        } catch { /* silencioso — não impedir gravação do CT-e */ }
+      }
+
       return reply.status(201).send({
         sucesso: true,
         id: documento.id,
