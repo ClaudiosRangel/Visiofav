@@ -1178,35 +1178,52 @@ export async function cteRoutes(app: FastifyInstance) {
       if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
 
       const ambienteCte = empresa.ambienteCTe || empresa.ambienteNFe || 2
-      const nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteCte)
+      let nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteCte)
 
       // Gravar como DocumentoFiscal com status DIGITADA (sem gerar XML/transmitir)
-      const documento = await prisma.documentoFiscal.create({
-        data: {
-          empresaId: user.empresaId,
-          tipo: 'CTE',
-          modelo: 57,
-          serie: body.serie,
-          numero: nCT,
-          status: 'DIGITADA',
-          naturezaOp: body.naturezaOp,
-          dataEmissao: new Date(),
-          tipoOperacao: 1,
-          finalidade: 1,
-          emitenteCnpj: (empresa.cnpj || '').replace(/\D/g, ''),
-          emitenteRazao: empresa.razaoSocial || '',
-          emitenteUf: empresa.uf || '',
-          destCpfCnpj: (body.destinatario.cnpj || body.destinatario.cpf || '').replace(/\D/g, '') || null,
-          destRazao: body.destinatario.razaoSocial || null,
-          destUf: body.destinatario.endereco?.uf || null,
-          valorTotal: body.vPrest.vTPrest || 0,
-          valorFrete: body.vPrest.vTPrest || 0,
-          valorIcms: body.impostos.icms.valor || 0,
-          ambiente: body.ambiente,
-          // Salvar payload completo como JSON no campo xmlEnviado (temporário até transmissão)
-          xmlEnviado: JSON.stringify(body),
-        },
-      })
+      // Retry em caso de unique constraint (race condition ou constraint antiga sem ambiente)
+      let documento: any = null
+      for (let tentativa = 0; tentativa < 5; tentativa++) {
+        try {
+          documento = await prisma.documentoFiscal.create({
+            data: {
+              empresaId: user.empresaId,
+              tipo: 'CTE',
+              modelo: 57,
+              serie: body.serie,
+              numero: nCT,
+              status: 'DIGITADA',
+              naturezaOp: body.naturezaOp,
+              dataEmissao: new Date(),
+              tipoOperacao: 1,
+              finalidade: 1,
+              emitenteCnpj: (empresa.cnpj || '').replace(/\D/g, ''),
+              emitenteRazao: empresa.razaoSocial || '',
+              emitenteUf: empresa.uf || '',
+              destCpfCnpj: (body.destinatario.cnpj || body.destinatario.cpf || '').replace(/\D/g, '') || null,
+              destRazao: body.destinatario.razaoSocial || null,
+              destUf: body.destinatario.endereco?.uf || null,
+              valorTotal: body.vPrest.vTPrest || 0,
+              valorFrete: body.vPrest.vTPrest || 0,
+              valorIcms: body.impostos.icms.valor || 0,
+              ambiente: body.ambiente,
+              xmlEnviado: JSON.stringify(body),
+            },
+          })
+          break // sucesso
+        } catch (createErr: any) {
+          if (createErr.code === 'P2002') {
+            // Unique constraint — incrementar número e tentar novamente
+            nCT++
+          } else {
+            throw createErr
+          }
+        }
+      }
+
+      if (!documento) {
+        return reply.status(500).send({ message: 'Não foi possível gerar número único para o CT-e. Tente novamente.' })
+      }
 
       return reply.status(201).send({
         sucesso: true,
