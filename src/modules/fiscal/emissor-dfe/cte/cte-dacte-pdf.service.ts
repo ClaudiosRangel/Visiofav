@@ -626,15 +626,15 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       pdf.fontSize(7).font('Helvetica-Bold').text(`N. ${numFormatado}`, cRX, Y + 18, { width: cRW, align: 'center' })
       pdf.fontSize(7).font('Helvetica').text(`SÉRIE: ${doc.serie}`, cRX, Y + 30, { width: cRW, align: 'center' })
 
-      Y += canH + 2
+      Y += canH + 4
 
-      // Linha tracejada de corte
+      // Linha tracejada de corte (com margem para não colar no quadro abaixo)
       pdf.save()
       pdf.dash(3, { space: 2 })
       hline(L, L + W, Y)
       pdf.undash()
       pdf.restore()
-      Y += 4
+      Y += 6
 
       // ════════════════════════════════════════════════════════════════════════
       // 2. CABEÇALHO — 3 colunas: Emitente | DACTE+dados | MODAL+QR
@@ -1046,8 +1046,9 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       pdf.text('CHAVE / DOC.e', L + 40, Y + 10)
       pdf.text('TP.DOC.', L + docColW + 3, Y + 10)
       pdf.text('CHAVE / DOC.e', L + docColW + 40, Y + 10)
+      hline(L, L + W, Y + 16) // linha horizontal separando header dos dados
 
-      let docY = Y + 17
+      let docY = Y + 18
       const maxDocsPerCol = Math.ceil(docLinhas / 2)
 
       // Coluna esquerda
