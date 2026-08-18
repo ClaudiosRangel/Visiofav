@@ -44,11 +44,10 @@ const idParamsSchema = z.object({
 })
 
 export async function notificacaoRoutes(app: FastifyInstance) {
-  // Todas as rotas exigem autenticação
+  // Todas as rotas exigem autenticação (request.user populado pelo middleware global)
   app.addHook('onRequest', async (request, reply) => {
-    try {
-      await request.jwtVerify()
-    } catch {
+    const user = (request as any).user
+    if (!user || !user.id) {
       reply.status(401).send({ error: 'Não autenticado' })
     }
   })
@@ -312,5 +311,31 @@ export async function notificacaoRoutes(app: FastifyInstance) {
     })
 
     return reply.send(usuarios)
+  })
+
+  // ─── GET /meu-perfil — Retorna dados do usuário logado (inclui avatar) ───
+  app.get('/meu-perfil', async (request, reply) => {
+    const user = request.user as { id: string }
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: user.id },
+      select: { id: true, nome: true, email: true, perfil: true, avatarUrl: true },
+    })
+    if (!usuario) return reply.status(404).send({ error: 'Usuário não encontrado' })
+    return reply.send(usuario)
+  })
+
+  // ─── PATCH /meu-avatar — Atualiza avatar do usuário (recebe base64 ou URL) ───
+  app.patch('/meu-avatar', async (request, reply) => {
+    const user = request.user as { id: string }
+    const body = z.object({
+      avatarUrl: z.string().max(500000), // base64 data:image ou URL externa
+    }).parse(request.body)
+
+    await prisma.usuario.update({
+      where: { id: user.id },
+      data: { avatarUrl: body.avatarUrl },
+    })
+
+    return reply.send({ ok: true })
   })
 }

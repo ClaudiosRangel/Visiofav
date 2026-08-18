@@ -138,6 +138,7 @@ model Usuario {
   perfil        String   @default("OPERADOR") @db.VarChar(30)
   status        Boolean  @default(true)
   senhaAlterada Boolean  @default(false) @map("senha_alterada")
+  avatarUrl     String?  @map("avatar_url") @db.Text
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 

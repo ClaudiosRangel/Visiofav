@@ -2683,6 +2683,10 @@ async function main() {
   } catch { /* constraint já existe */ }
   console.log('✅ notificacao + notificacao_destinatario: tabelas criadas')
 
+  // Usuario — avatar_url
+  await prisma.$executeRawUnsafe(`ALTER TABLE "usuario" ADD COLUMN IF NOT EXISTS "avatar_url" TEXT`)
+  console.log('✅ usuario: campo avatar_url adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 
