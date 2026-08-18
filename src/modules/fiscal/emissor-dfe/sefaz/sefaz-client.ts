@@ -74,12 +74,18 @@ function criarEnvelopeSoap(xmlPayload: string, servico: ServicoSefaz): string {
   // - <cteDadosMsg> COM xmlns (sem = HTTP 400 ou cStat 244)
   // - Conteúdo DEVE ser GZip+Base64 (plain-text = HTTP 400 com xmlns, ou cStat 244 sem xmlns)
   // - O XML comprimido deve ser APENAS <CTe>...</CTe> (sem wrapper <enviCTe> — cStat 215 se incluir)
-  // Descoberto empiricamente em 17/08/2026 via testes sequenciais.
-  if (isServicoCTe(servico)) {
+  // ATENÇÃO: GZip+Base64 é APENAS para CTeRecepcaoSincV4 (autorização).
+  // Eventos (CTeRecepcaoEventoV4) e consultas usam XML plain-text.
+  if (servico === ServicoSefaz.CTE_AUTORIZACAO) {
     const zlib = require('node:zlib')
     const comprimido = zlib.gzipSync(Buffer.from(xmlPayload, 'utf-8'))
     const base64 = comprimido.toString('base64')
     return `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${base64}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
+  }
+
+  // CT-e Eventos e Consultas: XML plain-text (sem gzip), com xmlns no cteDadosMsg
+  if (isServicoCTe(servico)) {
+    return `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><${tagDadosMsg} xmlns="${namespace}">${xmlPayload}</${tagDadosMsg}></soap12:Body></soap12:Envelope>`
   }
 
   // NF-e: envelope padrão com namespace na tag

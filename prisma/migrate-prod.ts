@@ -2587,6 +2587,24 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "codigo_municipio" VARCHAR(7)`)
   console.log('✅ Cliente: campo codigo_municipio adicionado')
 
+  // =========================================================================
+  // Tabela cor_veiculo — cadastro de cores DENATRAN para CT-e
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "cor_veiculo" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      "empresa_id" TEXT NOT NULL REFERENCES "empresa"("id"),
+      "codigo" VARCHAR(4) NOT NULL,
+      "descricao" VARCHAR(60) NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT now()
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "cor_veiculo_empresa_id_codigo_key"
+    ON "cor_veiculo" ("empresa_id", "codigo")
+  `)
+  console.log('✅ cor_veiculo: tabela criada')
+
   console.log('✅ All migrations applied successfully')
 }
 

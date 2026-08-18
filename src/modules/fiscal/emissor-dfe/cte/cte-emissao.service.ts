@@ -244,12 +244,12 @@ export class CTeEmissaoService {
     const ufEmitente = dadosCTe.emitente.endereco.uf
 
     // 0. Validar campos obrigatórios antes de gerar XML
-    const validacao = validarCTeParaTransmissao(dadosCTe)
-    if (!validacao.valido) {
+    const validacaoPrevia = validarCTeParaTransmissao(dadosCTe)
+    if (!validacaoPrevia.valido) {
       throw new ErroFiscal(
         CodigoErroFiscal.CAMPOS_OBRIGATORIOS_AUSENTES,
-        `Campos obrigatórios não preenchidos: ${validacao.erros.join('; ')}`,
-        { erros: validacao.erros }
+        `Campos obrigatórios não preenchidos: ${validacaoPrevia.erros.join('; ')}`,
+        { erros: validacaoPrevia.erros }
       )
     }
 
@@ -369,11 +369,13 @@ export class CTeEmissaoService {
       )
     }
 
-    // Obter próxima sequência de evento
-    const eventosExistentes = await prisma.eventoDocumentoFiscal.count({
-      where: { documentoFiscalId },
+    // Cancelamento sempre usa sequência 1 (só pode haver 1 cancelamento por CT-e)
+    const sequencia = 1
+
+    // Limpar eventos de cancelamento rejeitados anteriores (para não acumular lixo)
+    await prisma.eventoDocumentoFiscal.deleteMany({
+      where: { documentoFiscalId, tipoEvento: TP_EVENTO_CANCELAMENTO_CTE, status: 'REJEITADO' },
     })
-    const sequencia = eventosExistentes + 1
 
     // Gerar XML do evento de cancelamento
     const xmlEvento = this.gerarXmlCancelamentoCTe({
@@ -389,8 +391,10 @@ export class CTeEmissaoService {
     const certificado = await certificadoService.obterParaAssinatura(
       documento.emitenteCnpj, documento.empresaId
     )
+    // Minificar XML (SEFAZ CT-e não aceita whitespace entre tags — cStat 999)
+    const xmlEventoMinCanc = xmlEvento.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
     const { xmlAssinado } = assinarXML({
-      xml: xmlEvento,
+      xml: xmlEventoMinCanc,
       pfxBuffer: certificado.pfxBuffer,
       senha: certificado.senha,
       tagParaAssinar: 'infEvento',
@@ -480,11 +484,16 @@ export class CTeEmissaoService {
       )
     }
 
-    // Obter próxima sequência de evento
-    const eventosExistentes = await prisma.eventoDocumentoFiscal.count({
-      where: { documentoFiscalId },
+    // Obter próxima sequência de evento — conta apenas CC-e registradas com sucesso
+    const cceRegistradas = await prisma.eventoDocumentoFiscal.count({
+      where: { documentoFiscalId, tipoEvento: TP_EVENTO_CCE_CTE, status: 'REGISTRADO' },
     })
-    const sequencia = eventosExistentes + 1
+    const sequencia = cceRegistradas + 1
+
+    // Limpar CC-e rejeitadas anteriores
+    await prisma.eventoDocumentoFiscal.deleteMany({
+      where: { documentoFiscalId, tipoEvento: TP_EVENTO_CCE_CTE, status: 'REJEITADO' },
+    })
 
     // Gerar XML do evento de CC-e
     const xmlEvento = this.gerarXmlCartaCorrecaoCTe({
@@ -501,8 +510,10 @@ export class CTeEmissaoService {
     const certificado = await certificadoService.obterParaAssinatura(
       documento.emitenteCnpj, documento.empresaId
     )
+    // Minificar XML (SEFAZ CT-e não aceita whitespace entre tags — cStat 999)
+    const xmlEventoMinCCe = xmlEvento.replace(/>\s+</g, '><').replace(/\n/g, '').trim()
     const { xmlAssinado } = assinarXML({
-      xml: xmlEvento,
+      xml: xmlEventoMinCCe,
       pfxBuffer: certificado.pfxBuffer,
       senha: certificado.senha,
       tagParaAssinar: 'infEvento',
@@ -829,10 +840,10 @@ export class CTeEmissaoService {
     } = params
 
     const orgao = chaveAcesso.substring(0, 2)
-    const id = `ID${TP_EVENTO_CANCELAMENTO_CTE}${chaveAcesso}${String(sequencia).padStart(2, '0')}`
+    // CT-e 4.00: Id deve ter 53 dígitos após "ID" → tpEvento(6) + chCTe(44) + nSeqEvento(3)
+    const id = `ID${TP_EVENTO_CANCELAMENTO_CTE}${chaveAcesso}${String(sequencia).padStart(3, '0')}`
 
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<eventoCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
+    return `<eventoCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
 <infEvento Id="${id}">
 <cOrgao>${orgao}</cOrgao>
 <tpAmb>${ambiente}</tpAmb>
@@ -877,10 +888,10 @@ export class CTeEmissaoService {
     } = params
 
     const orgao = chaveAcesso.substring(0, 2)
-    const id = `ID${TP_EVENTO_CCE_CTE}${chaveAcesso}${String(sequencia).padStart(2, '0')}`
+    // CT-e 4.00: Id deve ter 53 dígitos após "ID" → tpEvento(6) + chCTe(44) + nSeqEvento(3)
+    const id = `ID${TP_EVENTO_CCE_CTE}${chaveAcesso}${String(sequencia).padStart(3, '0')}`
 
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<eventoCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
+    return `<eventoCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
 <infEvento Id="${id}">
 <cOrgao>${orgao}</cOrgao>
 <tpAmb>${ambiente}</tpAmb>
@@ -893,7 +904,7 @@ export class CTeEmissaoService {
 <evCCeCTe>
 <descEvento>Carta de Correcao</descEvento>
 <infCorrecao>
-<grupoAlterado>${grupoAlterado || 'ide'}</grupoAlterado>
+<grupoAlterado>${grupoAlterado || 'compl'}</grupoAlterado>
 <campoAlterado>${campoAlterado || 'xObs'}</campoAlterado>
 <valorAlterado>${textoCorrecao}</valorAlterado>
 </infCorrecao>
@@ -1128,9 +1139,11 @@ export class CTeEmissaoService {
 
   /**
    * Formata data+hora para formato SEFAZ: YYYY-MM-DDThh:mm:ss-03:00
+   * Subtrai 3h do UTC para obter hora de Brasília (evita cStat 635 "data maior que processamento")
    */
   private fmtDataHora(date: Date): string {
-    const iso = date.toISOString().slice(0, 19)
+    const brDate = new Date(date.getTime() - 3 * 60 * 60 * 1000)
+    const iso = brDate.toISOString().slice(0, 19)
     return `${iso}-03:00`
   }
 

@@ -12,26 +12,26 @@ datasource db {
 // ============================================================================
 
 model Empresa {
-  id           String   @id @default(uuid())
-  razaoSocial  String   @map("razao_social") @db.VarChar(200)
-  nomeFantasia String?  @map("nome_fantasia") @db.VarChar(200)
-  cnpj         String   @unique @db.VarChar(20)
-  inscEstadual String?  @map("insc_estadual") @db.VarChar(20)
-  logradouro   String?  @db.VarChar(200)
-  numero       String?  @db.VarChar(20)
-  complemento  String?  @db.VarChar(100)
-  bairro       String?  @db.VarChar(100)
-  cidade       String?  @db.VarChar(100)
-  codigoMunicipio String? @map("codigo_municipio") @db.VarChar(7)
-  uf           String?  @db.VarChar(2)
-  cep          String?  @db.VarChar(10)
-  telefone     String?  @db.VarChar(20)
-  email        String?  @db.VarChar(200)
-  logo         String?  @db.Text
-  usaWms       Boolean  @default(false) @map("usa_wms")
-  status       Boolean  @default(true)
-  criadoEm     DateTime @default(now()) @map("criado_em")
-  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+  id              String   @id @default(uuid())
+  razaoSocial     String   @map("razao_social") @db.VarChar(200)
+  nomeFantasia    String?  @map("nome_fantasia") @db.VarChar(200)
+  cnpj            String   @unique @db.VarChar(20)
+  inscEstadual    String?  @map("insc_estadual") @db.VarChar(20)
+  logradouro      String?  @db.VarChar(200)
+  numero          String?  @db.VarChar(20)
+  complemento     String?  @db.VarChar(100)
+  bairro          String?  @db.VarChar(100)
+  cidade          String?  @db.VarChar(100)
+  codigoMunicipio String?  @map("codigo_municipio") @db.VarChar(7)
+  uf              String?  @db.VarChar(2)
+  cep             String?  @db.VarChar(10)
+  telefone        String?  @db.VarChar(20)
+  email           String?  @db.VarChar(200)
+  logo            String?  @db.Text
+  usaWms          Boolean  @default(false) @map("usa_wms")
+  status          Boolean  @default(true)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
 
   // Geolocalização
   latitude  Decimal? @db.Decimal(10, 7)
@@ -94,6 +94,7 @@ model Empresa {
   certificadosDigitais CertificadoDigital[]
   filasContingencia    FilaContingencia[]
   logsContingencia     LogContingencia[]
+  corVeiculos          CorVeiculo[]
   apuracoesFiscais     ApuracaoFiscal[]
   naturezasOperacao    NaturezaOperacao[]
   gnres                Gnre[]
@@ -259,27 +260,27 @@ model Fornecedor {
 }
 
 model Cliente {
-  id           String   @id @default(uuid())
-  empresaId    String   @map("empresa_id")
-  empresa      Empresa  @relation(fields: [empresaId], references: [id])
-  razaoSocial  String   @map("razao_social") @db.VarChar(200)
-  nomeFantasia String?  @map("nome_fantasia") @db.VarChar(200)
-  cpfCnpj      String   @map("cpf_cnpj") @db.VarChar(20)
-  inscEstadual String?  @map("insc_estadual") @db.VarChar(20)
-  logradouro   String?  @db.VarChar(200)
-  numero       String?  @db.VarChar(20)
-  complemento  String?  @db.VarChar(100)
-  bairro       String?  @db.VarChar(100)
-  cidade       String?  @db.VarChar(100)
-  codigoMunicipio String? @map("codigo_municipio") @db.VarChar(7)
-  uf           String?  @db.VarChar(2)
-  cep          String?  @db.VarChar(10)
-  telefone     String?  @db.VarChar(20)
-  email        String?  @db.VarChar(200)
-  status       Boolean  @default(true)
-  criadoEm     DateTime @default(now()) @map("criado_em")
-  atualizadoEm DateTime @updatedAt @map("atualizado_em")
-  rotaId       String?  @map("rota_id")
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  razaoSocial     String   @map("razao_social") @db.VarChar(200)
+  nomeFantasia    String?  @map("nome_fantasia") @db.VarChar(200)
+  cpfCnpj         String   @map("cpf_cnpj") @db.VarChar(20)
+  inscEstadual    String?  @map("insc_estadual") @db.VarChar(20)
+  logradouro      String?  @db.VarChar(200)
+  numero          String?  @db.VarChar(20)
+  complemento     String?  @db.VarChar(100)
+  bairro          String?  @db.VarChar(100)
+  cidade          String?  @db.VarChar(100)
+  codigoMunicipio String?  @map("codigo_municipio") @db.VarChar(7)
+  uf              String?  @db.VarChar(2)
+  cep             String?  @db.VarChar(10)
+  telefone        String?  @db.VarChar(20)
+  email           String?  @db.VarChar(200)
+  status          Boolean  @default(true)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+  rotaId          String?  @map("rota_id")
 
   // Geolocalização
   latitude  Decimal? @db.Decimal(10, 7)
@@ -1014,25 +1015,25 @@ model NfeCteReferencia {
 
 // CT-e — Tabela de Frete (composição de valores)
 model TabelaFreteCte {
-  id              String   @id @default(uuid())
-  empresaId       String   @map("empresa_id")
-  nome            String   @db.VarChar(100)
-  descricao       String?  @db.VarChar(300)
-  ufOrigem        String?  @map("uf_origem") @db.VarChar(2)
-  ufDestino       String?  @map("uf_destino") @db.VarChar(2)
-  valorFretePeso  Decimal? @map("valor_frete_peso") @db.Decimal(12, 4) // R$/kg
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  nome             String   @db.VarChar(100)
+  descricao        String?  @db.VarChar(300)
+  ufOrigem         String?  @map("uf_origem") @db.VarChar(2)
+  ufDestino        String?  @map("uf_destino") @db.VarChar(2)
+  valorFretePeso   Decimal? @map("valor_frete_peso") @db.Decimal(12, 4) // R$/kg
   valorFreteVolume Decimal? @map("valor_frete_volume") @db.Decimal(12, 4) // R$/m³
-  valorAdValorem  Decimal? @map("valor_ad_valorem") @db.Decimal(5, 4) // % sobre valor carga
-  valorGris       Decimal? @map("valor_gris") @db.Decimal(5, 4) // % GRIS
-  valorPedagio    Decimal? @map("valor_pedagio") @db.Decimal(12, 2)
-  valorDespacho   Decimal? @map("valor_despacho") @db.Decimal(12, 2)
-  valorTDE        Decimal? @map("valor_tde") @db.Decimal(12, 2)
-  valorSuframa    Decimal? @map("valor_suframa") @db.Decimal(12, 2)
-  pesoMinimo      Decimal? @map("peso_minimo") @db.Decimal(12, 4) // kg mínimo para cobrança
-  freteMinimo     Decimal? @map("frete_minimo") @db.Decimal(12, 2) // valor mínimo cobrado
-  status          Boolean  @default(true)
-  criadoEm        DateTime @default(now()) @map("criado_em")
-  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+  valorAdValorem   Decimal? @map("valor_ad_valorem") @db.Decimal(5, 4) // % sobre valor carga
+  valorGris        Decimal? @map("valor_gris") @db.Decimal(5, 4) // % GRIS
+  valorPedagio     Decimal? @map("valor_pedagio") @db.Decimal(12, 2)
+  valorDespacho    Decimal? @map("valor_despacho") @db.Decimal(12, 2)
+  valorTDE         Decimal? @map("valor_tde") @db.Decimal(12, 2)
+  valorSuframa     Decimal? @map("valor_suframa") @db.Decimal(12, 2)
+  pesoMinimo       Decimal? @map("peso_minimo") @db.Decimal(12, 4) // kg mínimo para cobrança
+  freteMinimo      Decimal? @map("frete_minimo") @db.Decimal(12, 2) // valor mínimo cobrado
+  status           Boolean  @default(true)
+  criadoEm         DateTime @default(now()) @map("criado_em")
+  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
 
   @@index([empresaId, ufOrigem, ufDestino])
   @@map("tabela_frete_cte")
@@ -1040,15 +1041,15 @@ model TabelaFreteCte {
 
 // CT-e — Seguro da Carga
 model SeguroCte {
-  id               String   @id @default(uuid())
-  empresaId        String   @map("empresa_id")
-  documentoFiscalId String? @map("documento_fiscal_id")
-  respSeg          Int      @map("resp_seg") // 0=Remetente, 1=Expedidor, 2=Recebedor, 3=Destinatário, 4=Emitente, 5=Tomador
-  xSeg             String?  @map("x_seg") @db.VarChar(30) // Nome da seguradora
-  nApol            String?  @map("n_apol") @db.VarChar(20) // Número da apólice
-  nAver            String?  @map("n_aver") @db.VarChar(40) // Número da averbação
-  vCarga           Decimal? @map("v_carga") @db.Decimal(15, 2) // Valor da carga para seguro
-  criadoEm         DateTime @default(now()) @map("criado_em")
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  documentoFiscalId String?  @map("documento_fiscal_id")
+  respSeg           Int      @map("resp_seg") // 0=Remetente, 1=Expedidor, 2=Recebedor, 3=Destinatário, 4=Emitente, 5=Tomador
+  xSeg              String?  @map("x_seg") @db.VarChar(30) // Nome da seguradora
+  nApol             String?  @map("n_apol") @db.VarChar(20) // Número da apólice
+  nAver             String?  @map("n_aver") @db.VarChar(40) // Número da averbação
+  vCarga            Decimal? @map("v_carga") @db.Decimal(15, 2) // Valor da carga para seguro
+  criadoEm          DateTime @default(now()) @map("criado_em")
 
   @@index([empresaId])
   @@index([documentoFiscalId])
@@ -1057,15 +1058,15 @@ model SeguroCte {
 
 // CT-e — Vale-Pedágio
 model ValePedagioCte {
-  id               String   @id @default(uuid())
-  empresaId        String   @map("empresa_id")
-  documentoFiscalId String? @map("documento_fiscal_id")
-  cnpjForn         String   @map("cnpj_forn") @db.VarChar(14) // CNPJ fornecedor do vale-pedágio
-  cnpjPg           String?  @map("cnpj_pg") @db.VarChar(14) // CNPJ responsável pelo pagamento
-  cpfPg            String?  @map("cpf_pg") @db.VarChar(11)
-  nCompra          String   @map("n_compra") @db.VarChar(20) // Número do comprovante de compra
-  vValePed         Decimal  @map("v_vale_ped") @db.Decimal(12, 2) // Valor do vale-pedágio
-  criadoEm         DateTime @default(now()) @map("criado_em")
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  documentoFiscalId String?  @map("documento_fiscal_id")
+  cnpjForn          String   @map("cnpj_forn") @db.VarChar(14) // CNPJ fornecedor do vale-pedágio
+  cnpjPg            String?  @map("cnpj_pg") @db.VarChar(14) // CNPJ responsável pelo pagamento
+  cpfPg             String?  @map("cpf_pg") @db.VarChar(11)
+  nCompra           String   @map("n_compra") @db.VarChar(20) // Número do comprovante de compra
+  vValePed          Decimal  @map("v_vale_ped") @db.Decimal(12, 2) // Valor do vale-pedágio
+  criadoEm          DateTime @default(now()) @map("criado_em")
 
   @@index([empresaId])
   @@index([documentoFiscalId])
@@ -1074,18 +1075,18 @@ model ValePedagioCte {
 
 // CT-e — Veículos vinculados ao transporte
 model VeiculoCte {
-  id               String   @id @default(uuid())
-  empresaId        String   @map("empresa_id")
-  documentoFiscalId String? @map("documento_fiscal_id")
-  placa            String   @db.VarChar(7)
-  uf               String   @db.VarChar(2)
-  renavam          String?  @db.VarChar(11)
-  tpProp           Int?     @map("tp_prop") // 0=TAC Agregado, 1=TAC Independente, 2=Outros
-  cpfCnpjProp      String?  @map("cpf_cnpj_prop") @db.VarChar(14)
-  rntrcProp        String?  @map("rntrc_prop") @db.VarChar(8)
-  tpRod            String?  @map("tp_rod") @db.VarChar(2) // tipo de rodado
-  tpCar            String?  @map("tp_car") @db.VarChar(2) // tipo de carroceria
-  criadoEm         DateTime @default(now()) @map("criado_em")
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  documentoFiscalId String?  @map("documento_fiscal_id")
+  placa             String   @db.VarChar(7)
+  uf                String   @db.VarChar(2)
+  renavam           String?  @db.VarChar(11)
+  tpProp            Int?     @map("tp_prop") // 0=TAC Agregado, 1=TAC Independente, 2=Outros
+  cpfCnpjProp       String?  @map("cpf_cnpj_prop") @db.VarChar(14)
+  rntrcProp         String?  @map("rntrc_prop") @db.VarChar(8)
+  tpRod             String?  @map("tp_rod") @db.VarChar(2) // tipo de rodado
+  tpCar             String?  @map("tp_car") @db.VarChar(2) // tipo de carroceria
+  criadoEm          DateTime @default(now()) @map("criado_em")
 
   @@index([empresaId])
   @@index([documentoFiscalId])
@@ -1559,18 +1560,18 @@ model Endereco {
 }
 
 model SaldoEndereco {
-  id           String    @id @default(uuid())
-  enderecoId   String    @map("endereco_id")
-  endereco     Endereco  @relation(fields: [enderecoId], references: [id])
-  produtoId    String    @map("produto_id")
-  produto      Produto   @relation(fields: [produtoId], references: [id])
-  quantidade   Decimal   @db.Decimal(12, 4)
-  lote         String?   @db.VarChar(30)
-  validade     DateTime?
-  bloqueado    Boolean   @default(false)
-  motivoBloqueioLote String? @map("motivo_bloqueio_lote") @db.VarChar(200)
-  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
-  empresaId    String?   @map("empresa_id")
+  id                 String    @id @default(uuid())
+  enderecoId         String    @map("endereco_id")
+  endereco           Endereco  @relation(fields: [enderecoId], references: [id])
+  produtoId          String    @map("produto_id")
+  produto            Produto   @relation(fields: [produtoId], references: [id])
+  quantidade         Decimal   @db.Decimal(12, 4)
+  lote               String?   @db.VarChar(30)
+  validade           DateTime?
+  bloqueado          Boolean   @default(false)
+  motivoBloqueioLote String?   @map("motivo_bloqueio_lote") @db.VarChar(200)
+  atualizadoEm       DateTime  @updatedAt @map("atualizado_em")
+  empresaId          String?   @map("empresa_id")
 
   @@unique([enderecoId, produtoId, lote])
   @@map("saldo_endereco")
@@ -1816,30 +1817,30 @@ model OsFuncionarioWms {
 // ============================================================================
 
 model Sku {
-  id           String   @id @default(uuid())
-  produtoId    String   @map("produto_id")
-  sequencia    Int
-  descricao    String?  @db.VarChar(200)
-  codigoBarra  String?  @map("codigo_barra") @db.VarChar(30)
-  tipoCodigoBarra String? @map("tipo_codigo_barra") @db.VarChar(20) // EAN13, EAN14_DUN, CODE128, DISPLAY, ITF14
-  codigoBarraDun  String? @map("codigo_barra_dun") @db.VarChar(30) // DUN-14 (caixa/fardo)
-  codigoBarraDisplay String? @map("codigo_barra_display") @db.VarChar(30) // Display/embalagem promocional
-  unidade      String   @db.VarChar(6)
-  qtdEmbalagem Int      @default(1) @map("qtd_embalagem")
-  largura      Decimal? @db.Decimal(10, 3)
-  altura       Decimal? @db.Decimal(10, 3)
-  comprimento  Decimal? @db.Decimal(10, 3)
-  volume       Decimal? @db.Decimal(10, 6)
-  pesoLiquido  Decimal? @map("peso_liquido") @db.Decimal(10, 3)
-  pesoBruto    Decimal? @map("peso_bruto") @db.Decimal(10, 3)
-  pesoPalete   Decimal? @map("peso_palete") @db.Decimal(10, 3)
-  lastro       Int?
-  camada       Int?
-  tipoPalete   String?  @map("tipo_palete") @db.VarChar(30)
-  status       Boolean  @default(true)
-  criadoEm     DateTime @default(now()) @map("criado_em")
-  atualizadoEm DateTime @updatedAt @map("atualizado_em")
-  empresaId    String?  @map("empresa_id")
+  id                 String   @id @default(uuid())
+  produtoId          String   @map("produto_id")
+  sequencia          Int
+  descricao          String?  @db.VarChar(200)
+  codigoBarra        String?  @map("codigo_barra") @db.VarChar(30)
+  tipoCodigoBarra    String?  @map("tipo_codigo_barra") @db.VarChar(20) // EAN13, EAN14_DUN, CODE128, DISPLAY, ITF14
+  codigoBarraDun     String?  @map("codigo_barra_dun") @db.VarChar(30) // DUN-14 (caixa/fardo)
+  codigoBarraDisplay String?  @map("codigo_barra_display") @db.VarChar(30) // Display/embalagem promocional
+  unidade            String   @db.VarChar(6)
+  qtdEmbalagem       Int      @default(1) @map("qtd_embalagem")
+  largura            Decimal? @db.Decimal(10, 3)
+  altura             Decimal? @db.Decimal(10, 3)
+  comprimento        Decimal? @db.Decimal(10, 3)
+  volume             Decimal? @db.Decimal(10, 6)
+  pesoLiquido        Decimal? @map("peso_liquido") @db.Decimal(10, 3)
+  pesoBruto          Decimal? @map("peso_bruto") @db.Decimal(10, 3)
+  pesoPalete         Decimal? @map("peso_palete") @db.Decimal(10, 3)
+  lastro             Int?
+  camada             Int?
+  tipoPalete         String?  @map("tipo_palete") @db.VarChar(30)
+  status             Boolean  @default(true)
+  criadoEm           DateTime @default(now()) @map("criado_em")
+  atualizadoEm       DateTime @updatedAt @map("atualizado_em")
+  empresaId          String?  @map("empresa_id")
 
   @@map("sku")
 }
@@ -1925,17 +1926,17 @@ model ConfigWmsStandalone {
 }
 
 model PedidoExpedicaoWms {
-  id            String   @id @default(uuid())
-  empresaId     String   @map("empresa_id")
-  numero        Int
-  referencia    String   @db.VarChar(100) // Referência do ERP externo
-  clienteNome   String?  @map("cliente_nome") @db.VarChar(200)
-  clienteDoc    String?  @map("cliente_doc") @db.VarChar(20)
-  prioridade    String   @default("NORMAL") @db.VarChar(10) // BAIXA, NORMAL, ALTA, URGENTE
-  status        String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_SEPARACAO, SEPARADO, EXPEDIDO, CANCELADO
-  observacao    String?  @db.Text
-  criadoEm      DateTime @default(now()) @map("criado_em")
-  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  numero       Int
+  referencia   String   @db.VarChar(100) // Referência do ERP externo
+  clienteNome  String?  @map("cliente_nome") @db.VarChar(200)
+  clienteDoc   String?  @map("cliente_doc") @db.VarChar(20)
+  prioridade   String   @default("NORMAL") @db.VarChar(10) // BAIXA, NORMAL, ALTA, URGENTE
+  status       String   @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_SEPARACAO, SEPARADO, EXPEDIDO, CANCELADO
+  observacao   String?  @db.Text
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
   itens ItemPedidoExpedicaoWms[]
 
@@ -1945,12 +1946,12 @@ model PedidoExpedicaoWms {
 }
 
 model ItemPedidoExpedicaoWms {
-  id                    String             @id @default(uuid())
-  pedidoExpedicaoWmsId  String             @map("pedido_expedicao_wms_id")
-  pedidoExpedicaoWms    PedidoExpedicaoWms @relation(fields: [pedidoExpedicaoWmsId], references: [id], onDelete: Cascade)
-  produtoId             String             @map("produto_id")
-  quantidade            Decimal            @db.Decimal(12, 4)
-  quantidadeSeparada    Decimal            @default(0) @map("quantidade_separada") @db.Decimal(12, 4)
+  id                   String             @id @default(uuid())
+  pedidoExpedicaoWmsId String             @map("pedido_expedicao_wms_id")
+  pedidoExpedicaoWms   PedidoExpedicaoWms @relation(fields: [pedidoExpedicaoWmsId], references: [id], onDelete: Cascade)
+  produtoId            String             @map("produto_id")
+  quantidade           Decimal            @db.Decimal(12, 4)
+  quantidadeSeparada   Decimal            @default(0) @map("quantidade_separada") @db.Decimal(12, 4)
 
   @@map("item_pedido_expedicao_wms")
 }
@@ -1960,25 +1961,25 @@ model ItemPedidoExpedicaoWms {
 // ============================================================================
 
 model BloqueioHierarquico {
-  id             String   @id @default(uuid())
-  empresaId      String   @map("empresa_id")
-  nivel          String   @db.VarChar(20) // DEPOSITO, ZONA, RUA, PREDIO, NIVEL, PRODUTO, LOTE
+  id             String    @id @default(uuid())
+  empresaId      String    @map("empresa_id")
+  nivel          String    @db.VarChar(20) // DEPOSITO, ZONA, RUA, PREDIO, NIVEL, PRODUTO, LOTE
   // Identificadores do nível (preencher conforme o nível)
-  depositoId     String?  @map("deposito_id")
-  zonaId         String?  @map("zona_id")
-  rua            String?  @db.VarChar(10)
-  predio         String?  @db.VarChar(10)
-  codigoNivel    String?  @map("codigo_nivel") @db.VarChar(10)
-  produtoId      String?  @map("produto_id")
-  lote           String?  @db.VarChar(30)
+  depositoId     String?   @map("deposito_id")
+  zonaId         String?   @map("zona_id")
+  rua            String?   @db.VarChar(10)
+  predio         String?   @db.VarChar(10)
+  codigoNivel    String?   @map("codigo_nivel") @db.VarChar(10)
+  produtoId      String?   @map("produto_id")
+  lote           String?   @db.VarChar(30)
   // Dados do bloqueio
-  motivo         String   @db.VarChar(200)
-  tipo           String   @default("MANUTENCAO") @db.VarChar(30) // MANUTENCAO, INVENTARIO, QUARENTENA, RECALL, AVARIA, OUTRO
-  bloqueadoPorId String   @map("bloqueado_por_id")
-  bloqueadoEm    DateTime @default(now()) @map("bloqueado_em")
-  liberadoPorId  String?  @map("liberado_por_id")
+  motivo         String    @db.VarChar(200)
+  tipo           String    @default("MANUTENCAO") @db.VarChar(30) // MANUTENCAO, INVENTARIO, QUARENTENA, RECALL, AVARIA, OUTRO
+  bloqueadoPorId String    @map("bloqueado_por_id")
+  bloqueadoEm    DateTime  @default(now()) @map("bloqueado_em")
+  liberadoPorId  String?   @map("liberado_por_id")
   liberadoEm     DateTime? @map("liberado_em")
-  ativo          Boolean  @default(true)
+  ativo          Boolean   @default(true)
 
   @@index([empresaId, ativo])
   @@index([empresaId, nivel, ativo])
@@ -2078,20 +2079,20 @@ model PendenciaLogistica {
 // ============================================================================
 
 model DadosLogisticosArmazenagem {
-  id              String   @id @default(uuid())
-  produtoId       String   @map("produto_id")
-  skuSeq          Int      @map("sku_seq")
-  sequencia       Int
-  enderecoFixoId  String?  @map("endereco_fixo_id")
-  tipoNorma       String   @default("FEFO") @db.VarChar(10) // FEFO, FIFO, LIFO
-  pulmaoRegulador Int      @default(0) @map("pulmao_regulador")
-  pulmaoReguladorDepositoId String? @map("pulmao_regulador_deposito_id") // ID do depósito regulador externo
-  nivelMinPP      Int      @default(0) @map("nivel_min_pp")
-  nivelMaxPP      Int      @default(0) @map("nivel_max_pp")
-  nivelMaxBlocado Int      @default(0) @map("nivel_max_blocado")
-  fixo            Boolean  @default(false)
-  criadoEm        DateTime @default(now()) @map("criado_em")
-  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+  id                        String   @id @default(uuid())
+  produtoId                 String   @map("produto_id")
+  skuSeq                    Int      @map("sku_seq")
+  sequencia                 Int
+  enderecoFixoId            String?  @map("endereco_fixo_id")
+  tipoNorma                 String   @default("FEFO") @db.VarChar(10) // FEFO, FIFO, LIFO
+  pulmaoRegulador           Int      @default(0) @map("pulmao_regulador")
+  pulmaoReguladorDepositoId String?  @map("pulmao_regulador_deposito_id") // ID do depósito regulador externo
+  nivelMinPP                Int      @default(0) @map("nivel_min_pp")
+  nivelMaxPP                Int      @default(0) @map("nivel_max_pp")
+  nivelMaxBlocado           Int      @default(0) @map("nivel_max_blocado")
+  fixo                      Boolean  @default(false)
+  criadoEm                  DateTime @default(now()) @map("criado_em")
+  atualizadoEm              DateTime @updatedAt @map("atualizado_em")
 
   @@map("dados_logisticos_armazenagem")
 }
@@ -4238,6 +4239,23 @@ model LogContingencia {
 
   @@index([empresaId, timestamp])
   @@map("log_contingencia")
+}
+
+// ============================================================================
+// MÓDULO FISCAL - CADASTRO CT-e (CORES VEÍCULO)
+// ============================================================================
+
+model CorVeiculo {
+  id        String   @id @default(uuid())
+  empresaId String   @map("empresa_id")
+  codigo    String   @db.VarChar(4) // Código DENATRAN (ex: "01", "02", "PRAT")
+  descricao String   @db.VarChar(60) // Nome da cor (ex: "BRANCA", "PRATA")
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, codigo])
+  @@map("cor_veiculo")
 }
 
 // ============================================================================

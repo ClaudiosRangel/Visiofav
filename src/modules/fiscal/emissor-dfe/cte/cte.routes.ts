@@ -709,9 +709,26 @@ export async function cteRoutes(app: FastifyInstance) {
             pesoBruto: dados.pesoBruto,
           },
           nfesVinculadas: [{ chave: dados.chaveAcesso }],
-          veicNovos: dados.veiculos?.map(v => ({
-            chassi: v.chassi, cCor: '', xCor: v.cor, cMod: v.modelo, vUnit: dados.valorTotal, vFrete: 0,
-          })) || [],
+          veicNovos: await Promise.all((dados.veiculos || []).map(async (v: any) => {
+            let cCor = ''
+            if (v.cor) {
+              const corNorm = v.cor.trim().toUpperCase()
+              const corExistente = await (prisma as any).corVeiculo.findFirst({
+                where: { empresaId: user.empresaId!, descricao: corNorm },
+              })
+              if (corExistente) {
+                cCor = corExistente.codigo
+              } else {
+                // Auto-cadastrar: gerar próximo código sequencial
+                const todas = await (prisma as any).corVeiculo.findMany({ where: { empresaId: user.empresaId! }, select: { codigo: true } })
+                const maxCod = (todas as any[]).map((c: any) => parseInt(c.codigo, 10)).filter((n: number) => !isNaN(n)).reduce((m: number, n: number) => Math.max(m, n), 0)
+                const novoCodigo = String(maxCod + 1).padStart(2, '0')
+                await (prisma as any).corVeiculo.create({ data: { empresaId: user.empresaId!, codigo: novoCodigo, descricao: corNorm } })
+                cCor = novoCodigo
+              }
+            }
+            return { chassi: v.chassi, cCor, xCor: v.cor || '', cMod: v.modelo || '', vUnit: dados.valorTotal, vFrete: 0 }
+          })),
           rntrc: empresa?.rntrc || '',
           cstIcms: params['cte.cstIcms'] || '00',
           aliqIcms: params['cte.aliqIcms'] ? Number(params['cte.aliqIcms']) : 12,
@@ -735,6 +752,11 @@ export async function cteRoutes(app: FastifyInstance) {
       const filtros = listCteQuerySchema.parse(request.query)
 
       const where: any = { empresaId: user.empresaId, tipo: 'CTE' }
+
+      // Filtrar por ambiente atual da empresa (homologação só vê homologação, produção só vê produção)
+      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId }, select: { ambienteNFe: true } })
+      const ambienteAtual = (empresa as any)?.ambienteCTe || empresa?.ambienteNFe || 2
+      where.ambiente = ambienteAtual
 
       if (filtros.status) where.status = filtros.status.toUpperCase()
       if (filtros.serie != null) where.serie = filtros.serie
@@ -1363,7 +1385,12 @@ export async function cteRoutes(app: FastifyInstance) {
         justificativa: body.justificativa,
       })
 
-      return reply.status(resultado.sucesso ? 200 : 422).send(resultado)
+      if (!resultado.sucesso) {
+        const motivo = resultado.erros?.map(e => `${e.descricao} (cStat: ${e.codigo})`).join('; ') || 'Falha no cancelamento'
+        return reply.status(422).send({ ...resultado, message: motivo })
+      }
+
+      return reply.status(200).send({ ...resultado, message: 'CT-e cancelado com sucesso' })
     } catch (err: any) {
       if (err instanceof ErroFiscal) {
         return reply.status(422).send(err.toJSON())
@@ -1406,7 +1433,12 @@ export async function cteRoutes(app: FastifyInstance) {
         campoAlterado: body.campoAlterado,
       })
 
-      return reply.status(resultado.sucesso ? 200 : 422).send(resultado)
+      if (!resultado.sucesso) {
+        const motivo = resultado.erros?.map(e => `${e.descricao} (cStat: ${e.codigo})`).join('; ') || 'Falha na CC-e'
+        return reply.status(422).send({ ...resultado, message: motivo })
+      }
+
+      return reply.status(200).send({ ...resultado, message: 'Carta de Correção registrada com sucesso' })
     } catch (err: any) {
       if (err instanceof ErroFiscal) {
         return reply.status(422).send(err.toJSON())
