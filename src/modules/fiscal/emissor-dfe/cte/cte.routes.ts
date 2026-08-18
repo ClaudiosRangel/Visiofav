@@ -997,10 +997,8 @@ export async function cteRoutes(app: FastifyInstance) {
 
       const where: any = { empresaId: user.empresaId, tipo: 'CTE' }
 
-      // Filtrar por ambiente atual da empresa (homologação só vê homologação, produção só vê produção)
-      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId }, select: { ambienteCTe: true, ambienteNFe: true } })
-      const ambienteAtual = empresa?.ambienteCTe || empresa?.ambienteNFe || 2
-      where.ambiente = ambienteAtual
+      // Nota: não filtra por ambiente na listagem — mostra CT-e de homologação E produção.
+      // O filtro de ambiente é aplicado apenas na transmissão e na verificação de NF-e duplicada.
 
       if (filtros.status) where.status = filtros.status.toUpperCase()
       if (filtros.serie != null) where.serie = filtros.serie
