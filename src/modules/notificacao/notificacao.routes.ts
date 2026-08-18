@@ -8,6 +8,7 @@
  * - PATCH  /notificacoes/ler-todas — Marca todas como lidas
  * - POST   /notificacoes           — Envia notificação (usuário → usuários da mesma empresa ou admin)
  * - POST   /notificacoes/admin     — Envia notificação (SUPER_ADMIN → empresas)
+ * - GET    /usuarios               — Lista usuários da mesma empresa (para multiselect de destinatários)
  */
 
 import { FastifyInstance } from 'fastify'
@@ -170,10 +171,10 @@ export async function notificacaoRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Usuário sem empresa associada' })
     }
 
-    // Validar destinatários: devem pertencer à mesma empresa OU ser SUPER_ADMIN (para DUVIDA)
+    // Validar destinatários: buscar por id e verificar que existem e estão ativos
     const destinatarios = await prisma.usuario.findMany({
-      where: { id: { in: body.destinatarioIds }, ativo: true },
-      select: { id: true, empresaId: true, perfil: true },
+      where: { id: { in: body.destinatarioIds }, status: true },
+      select: { id: true, perfil: true, empresas: { select: { empresaId: true } } },
     })
 
     if (destinatarios.length === 0) {
@@ -183,7 +184,8 @@ export async function notificacaoRoutes(app: FastifyInstance) {
     // Validar que destinatários são da mesma empresa ou SUPER_ADMIN
     for (const dest of destinatarios) {
       const isAdmin = dest.perfil === 'SUPER_ADMIN'
-      const mesmaEmpresa = dest.empresaId === user.empresaId
+      const empresasDest = dest.empresas.map(e => e.empresaId)
+      const mesmaEmpresa = user.empresaId ? empresasDest.includes(user.empresaId) : false
       if (!isAdmin && !mesmaEmpresa) {
         return reply.status(403).send({
           error: 'Destinatários devem pertencer à mesma empresa (exceto Admin Vizor para tipo DUVIDA)',
@@ -223,18 +225,32 @@ export async function notificacaoRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Informe empresaIds ou marque paraTodasEmpresas' })
     }
 
-    // Buscar usuários destinatários
-    let whereUsuarios: any = { ativo: true }
-    if (!body.paraTodasEmpresas && body.empresaIds) {
-      whereUsuarios.empresaId = { in: body.empresaIds }
+    // Buscar usuários destinatários via UsuarioEmpresa
+    let usuarioIds: string[] = []
+
+    if (body.paraTodasEmpresas) {
+      // Todos os usuários ativos
+      const usuarios = await prisma.usuario.findMany({
+        where: { status: true },
+        select: { id: true },
+      })
+      usuarioIds = usuarios.map(u => u.id)
+    } else {
+      // Usuários das empresas selecionadas
+      const vinculos = await prisma.usuarioEmpresa.findMany({
+        where: { empresaId: { in: body.empresaIds! } },
+        select: { usuarioId: true },
+      })
+      const idsUnicos = [...new Set(vinculos.map(v => v.usuarioId))]
+      // Filtrar só ativos
+      const ativos = await prisma.usuario.findMany({
+        where: { id: { in: idsUnicos }, status: true },
+        select: { id: true },
+      })
+      usuarioIds = ativos.map(u => u.id)
     }
 
-    const usuarios = await prisma.usuario.findMany({
-      where: whereUsuarios,
-      select: { id: true },
-    })
-
-    if (usuarios.length === 0) {
+    if (usuarioIds.length === 0) {
       return reply.status(400).send({ error: 'Nenhum usuário ativo encontrado para os critérios' })
     }
 
@@ -247,13 +263,54 @@ export async function notificacaoRoutes(app: FastifyInstance) {
         mensagem: body.mensagem,
         paraTodasEmpresas: body.paraTodasEmpresas,
         destinatarios: {
-          create: usuarios.map(u => ({
-            usuarioId: u.id,
+          create: usuarioIds.map(uid => ({
+            usuarioId: uid,
           })),
         },
       },
     })
 
-    return reply.status(201).send({ id: notificacao.id, totalDestinatarios: usuarios.length })
+    return reply.status(201).send({ id: notificacao.id, totalDestinatarios: usuarioIds.length })
+  })
+
+  // ─── GET /usuarios — Lista usuários disponíveis como destinatários ───
+  app.get('/usuarios', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string; perfil?: string }
+
+    if (user.perfil === 'SUPER_ADMIN') {
+      // Admin vê todos
+      const usuarios = await prisma.usuario.findMany({
+        where: { status: true, id: { not: user.id } },
+        select: { id: true, nome: true, email: true, perfil: true },
+        orderBy: { nome: 'asc' },
+      })
+      return reply.send(usuarios)
+    }
+
+    if (!user.empresaId) {
+      return reply.send([])
+    }
+
+    // Usuário normal: vê colegas da mesma empresa + admins
+    const vinculos = await prisma.usuarioEmpresa.findMany({
+      where: { empresaId: user.empresaId },
+      select: { usuarioId: true },
+    })
+    const colegaIds = vinculos.map(v => v.usuarioId).filter(id => id !== user.id)
+
+    // Também incluir SUPER_ADMINs (para dúvidas ao admin)
+    const admins = await prisma.usuario.findMany({
+      where: { perfil: 'SUPER_ADMIN', status: true },
+      select: { id: true },
+    })
+    const todosIds = [...new Set([...colegaIds, ...admins.map(a => a.id)])]
+
+    const usuarios = await prisma.usuario.findMany({
+      where: { id: { in: todosIds }, status: true },
+      select: { id: true, nome: true, email: true, perfil: true },
+      orderBy: { nome: 'asc' },
+    })
+
+    return reply.send(usuarios)
   })
 }
