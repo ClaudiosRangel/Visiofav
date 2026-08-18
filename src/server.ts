@@ -191,7 +191,7 @@ import { registerTenantContext } from './middleware/tenant-context'
 import { registerSecurityAuditHook } from './middleware/security-audit'
 import multipart from '@fastify/multipart'
 
-const app = Fastify({ logger: true })
+const app = Fastify({ logger: true, bodyLimit: 5 * 1024 * 1024 }) // 5MB para suportar upload de avatar base64
 
 async function bootstrap() {
   // ── Segurança: JWT_SECRET obrigatório em produção ──
