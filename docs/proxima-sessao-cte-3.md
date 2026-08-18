@@ -78,10 +78,10 @@ Persistir como parâmetros (`cte.dacteModelo`, `cte.dacteOrientacao`).
 
 ## Status
 
-- [ ] Item 1 — Municípios por UF
-- [ ] Item 2 — Busca participantes
-- [ ] Item 3 — Observações cadastráveis
-- [ ] Item 4 — Consultar SEFAZ
-- [ ] Item 5 — DACTE M1 retrato
-- [ ] Item 6 — DACTE M2 (ACBr)
-- [ ] Item 7 — Config preferência
+- [x] Item 1 — Municípios por UF (já implementado em sessão anterior)
+- [x] Item 2 — Busca participantes (backend + frontend)
+- [x] Item 3 — Observações cadastráveis (backend + frontend + tela CRUD)
+- [x] Item 4 — Consultar SEFAZ (backend + hook frontend)
+- [x] Item 5 — DACTE M1 retrato (suporte a orientação dinâmica)
+- [x] Item 6 — DACTE M2 (ACBr) — modelo 2 com canhoto, QR Code, layout retrato
+- [x] Item 7 — Config preferência (parâmetros cte.dacteModelo + cte.dacteOrientacao)

@@ -32,6 +32,7 @@ const SOAP_ACTIONS: Partial<Record<ServicoSefaz, string>> = {
   [ServicoSefaz.CTE_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoSincV4/cteRecepcao',
   [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRetRecepcaoV4/cteRetRecepcao',
   [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4/cteRecepcaoEvento',
+  [ServicoSefaz.CTE_CONSULTA]: 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4/cteConsultaCT',
 }
 const MIN_TIMEOUT_MS = 5000
 const MAX_TIMEOUT_MS = 120000
@@ -99,7 +100,8 @@ function isServicoCTe(servico: ServicoSefaz): boolean {
   return (
     servico === ServicoSefaz.CTE_AUTORIZACAO ||
     servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
-    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO
+    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO ||
+    servico === ServicoSefaz.CTE_CONSULTA
   )
 }
 
@@ -120,6 +122,9 @@ function obterNamespaceServico(servico: ServicoSefaz): string {
   if (servico === ServicoSefaz.CTE_RECEPCAO_EVENTO) {
     return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4'
   }
+  if (servico === ServicoSefaz.CTE_CONSULTA) {
+    return 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4'
+  }
   return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4'
 }
 
@@ -128,7 +133,8 @@ function obterTagDadosMsg(servico: ServicoSefaz): string {
   if (
     servico === ServicoSefaz.CTE_AUTORIZACAO ||
     servico === ServicoSefaz.CTE_RET_AUTORIZACAO ||
-    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO
+    servico === ServicoSefaz.CTE_RECEPCAO_EVENTO ||
+    servico === ServicoSefaz.CTE_CONSULTA
   ) {
     return 'cteDadosMsg'
   }

@@ -96,6 +96,7 @@ model Empresa {
   filasContingencia    FilaContingencia[]
   logsContingencia     LogContingencia[]
   corVeiculos          CorVeiculo[]
+  observacoesPadraoCte ObservacaoPadraoCte[]
   apuracoesFiscais     ApuracaoFiscal[]
   naturezasOperacao    NaturezaOperacao[]
   gnres                Gnre[]
@@ -1092,6 +1093,21 @@ model VeiculoCte {
   @@index([empresaId])
   @@index([documentoFiscalId])
   @@map("veiculo_cte")
+}
+
+model ObservacaoPadraoCte {
+  id        String   @id @default(uuid())
+  empresaId String   @map("empresa_id")
+  codigo    String   @db.VarChar(20)
+  texto     String   @db.Text
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId])
+  @@map("observacao_padrao_cte")
 }
 
 // ============================================================================

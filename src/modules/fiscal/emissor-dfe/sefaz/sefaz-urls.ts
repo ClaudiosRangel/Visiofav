@@ -520,6 +520,7 @@ const URLS_CTE: UrlsPorAmbiente = {
     [ServicoSefaz.CTE_AUTORIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoSincV4/CTeRecepcaoSincV4.asmx',
     [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'https://cte.svrs.rs.gov.br/ws/CTeRetRecepcaoV4/CTeRetRecepcaoV4.asmx',
     [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'https://cte.svrs.rs.gov.br/ws/CTeRecepcaoEventoV4/CTeRecepcaoEventoV4.asmx',
+    [ServicoSefaz.CTE_CONSULTA]: 'https://cte.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
   },
   homologacao: {
     [ServicoSefaz.AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoSincV4/CTeRecepcaoSincV4.asmx',
@@ -531,6 +532,7 @@ const URLS_CTE: UrlsPorAmbiente = {
     [ServicoSefaz.CTE_AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoSincV4/CTeRecepcaoSincV4.asmx',
     [ServicoSefaz.CTE_RET_AUTORIZACAO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRetRecepcaoV4/CTeRetRecepcaoV4.asmx',
     [ServicoSefaz.CTE_RECEPCAO_EVENTO]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeRecepcaoEventoV4/CTeRecepcaoEventoV4.asmx',
+    [ServicoSefaz.CTE_CONSULTA]: 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
   },
 }
 

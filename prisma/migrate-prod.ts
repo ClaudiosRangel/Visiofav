@@ -2624,6 +2624,24 @@ async function main() {
   `)
   console.log('✅ config_smtp: tabela criada')
 
+  // =========================================================================
+  // CT-e — Observações Padrão Cadastráveis
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "observacao_padrao_cte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(20) NOT NULL,
+      "texto" TEXT NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "observacao_padrao_cte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "observacao_padrao_cte_empresa_id_codigo_key" ON "observacao_padrao_cte"("empresa_id", "codigo")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_observacao_padrao_cte_empresa_id" ON "observacao_padrao_cte"("empresa_id")`)
+  console.log('✅ observacao_padrao_cte: tabela criada')
+
   console.log('✅ All migrations applied successfully')
 }
 

@@ -26,6 +26,10 @@ import { buscarMunicipiosIBGE } from './cte-municipios.routes'
 import { consultarCnpj } from './cte-consulta-cnpj.service'
 import { ErroFiscal, CodigoErroFiscal } from '../../erros'
 import { buildCTeXml, type DadosCTe } from './cte-xml-builder'
+import { criarSefazClient, type SefazUrlResolver } from '../sefaz/sefaz-client'
+import { obterUrlWebserviceCTe } from '../sefaz/sefaz-urls'
+import { AmbienteSefaz, ServicoSefaz, type SefazConfig } from '../sefaz/tipos'
+import { certificadoService } from '../../certificado/certificado.service'
 
 // === Schemas Zod ===
 
@@ -301,6 +305,8 @@ export async function cteRoutes(app: FastifyInstance) {
       aliqIcms: params['cte.aliqIcms'] ? Number(params['cte.aliqIcms']) : 12,
       seguradora: params['cte.seguradora'] || '',
       apolice: params['cte.apolice'] || '',
+      dacteModelo: params['cte.dacteModelo'] || '1',
+      dacteOrientacao: params['cte.dacteOrientacao'] || 'retrato',
     }
   })
 
@@ -333,6 +339,95 @@ export async function cteRoutes(app: FastifyInstance) {
     }
 
     return { sucesso: true }
+  })
+
+  // ==========================================================================
+  // GET /cte/buscar-participantes?q=HAVASA — Busca por razão social (autocomplete)
+  // ==========================================================================
+  app.get('/cte/buscar-participantes', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const { q } = z.object({ q: z.string().min(2) }).parse(request.query)
+    const busca = q.trim()
+
+    // Buscar em Clientes
+    const clientes = await prisma.cliente.findMany({
+      where: {
+        empresaId: user.empresaId,
+        OR: [
+          { razaoSocial: { contains: busca, mode: 'insensitive' } },
+          { nomeFantasia: { contains: busca, mode: 'insensitive' } },
+          { cpfCnpj: { contains: busca } },
+        ],
+      },
+      take: 10,
+    })
+
+    // Buscar em Fornecedores
+    const fornecedores = await prisma.fornecedor.findMany({
+      where: {
+        empresaId: user.empresaId,
+        OR: [
+          { razaoSocial: { contains: busca, mode: 'insensitive' } },
+          { nomeFantasia: { contains: busca, mode: 'insensitive' } },
+          { cnpj: { contains: busca } },
+        ],
+      },
+      take: 10,
+    })
+
+    const resultados = [
+      ...clientes.map((c: any) => ({
+        tipo: 'cliente' as const,
+        id: c.id,
+        cnpj: c.cpfCnpj || '',
+        razaoSocial: c.razaoSocial || '',
+        nomeFantasia: c.nomeFantasia || '',
+        ie: c.inscEstadual || '',
+        logradouro: c.logradouro || '',
+        numero: c.numero || '',
+        complemento: c.complemento || '',
+        bairro: c.bairro || '',
+        codigoMunicipio: c.codigoMunicipio || '',
+        municipio: c.cidade || '',
+        uf: c.uf || '',
+        cep: c.cep || '',
+        email: c.email || '',
+        telefone: c.telefone || '',
+      })),
+      ...fornecedores.map((f: any) => ({
+        tipo: 'fornecedor' as const,
+        id: f.id,
+        cnpj: f.cnpj || '',
+        razaoSocial: f.razaoSocial || '',
+        nomeFantasia: f.nomeFantasia || '',
+        ie: f.inscEstadual || '',
+        logradouro: f.logradouro || '',
+        numero: f.numero || '',
+        complemento: f.complemento || '',
+        bairro: f.bairro || '',
+        codigoMunicipio: '',
+        municipio: f.cidade || '',
+        uf: f.uf || '',
+        cep: f.cep || '',
+        email: f.email || '',
+        telefone: f.telefone || '',
+      })),
+    ]
+
+    // Remover duplicados (mesmo CNPJ aparecendo como cliente E fornecedor)
+    const vistos = new Set<string>()
+    const unicos = resultados.filter(r => {
+      const chave = r.cnpj || r.razaoSocial
+      if (vistos.has(chave)) return false
+      vistos.add(chave)
+      return true
+    })
+
+    return unicos.slice(0, 15)
   })
 
   // ==========================================================================
@@ -399,6 +494,104 @@ export async function cteRoutes(app: FastifyInstance) {
     }
 
     return { encontrado: false }
+  })
+
+  // ==========================================================================
+  // GET /cte/observacoes-padrao — Listar observações padrão da empresa
+  // ==========================================================================
+  app.get('/cte/observacoes-padrao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const observacoes = await prisma.observacaoPadraoCte.findMany({
+      where: { empresaId: user.empresaId },
+      orderBy: { codigo: 'asc' },
+    })
+
+    return observacoes
+  })
+
+  // ==========================================================================
+  // POST /cte/observacoes-padrao — Criar observação padrão
+  // ==========================================================================
+  app.post('/cte/observacoes-padrao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const body = z.object({
+      codigo: z.string().min(1).max(20),
+      texto: z.string().min(1),
+    }).parse(request.body)
+
+    const existente = await prisma.observacaoPadraoCte.findUnique({
+      where: { empresaId_codigo: { empresaId: user.empresaId, codigo: body.codigo } },
+    })
+    if (existente) {
+      return reply.status(409).send({ message: `Código "${body.codigo}" já existe` })
+    }
+
+    const obs = await prisma.observacaoPadraoCte.create({
+      data: { empresaId: user.empresaId, codigo: body.codigo, texto: body.texto },
+    })
+
+    return obs
+  })
+
+  // ==========================================================================
+  // PUT /cte/observacoes-padrao/:id — Atualizar observação padrão
+  // ==========================================================================
+  app.put('/cte/observacoes-padrao/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({
+      codigo: z.string().min(1).max(20).optional(),
+      texto: z.string().min(1).optional(),
+      ativo: z.boolean().optional(),
+    }).parse(request.body)
+
+    const obs = await prisma.observacaoPadraoCte.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+    if (!obs) {
+      return reply.status(404).send({ message: 'Observação não encontrada' })
+    }
+
+    const atualizada = await prisma.observacaoPadraoCte.update({
+      where: { id },
+      data: { ...body },
+    })
+
+    return atualizada
+  })
+
+  // ==========================================================================
+  // DELETE /cte/observacoes-padrao/:id — Excluir observação padrão
+  // ==========================================================================
+  app.delete('/cte/observacoes-padrao/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const obs = await prisma.observacaoPadraoCte.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+    if (!obs) {
+      return reply.status(404).send({ message: 'Observação não encontrada' })
+    }
+
+    await prisma.observacaoPadraoCte.delete({ where: { id } })
+    return { sucesso: true }
   })
 
   // ==========================================================================
@@ -1380,6 +1573,80 @@ export async function cteRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
+  // POST /cte/:id/consultar-sefaz — Consulta situação real do CT-e na SEFAZ
+  // ==========================================================================
+  app.post('/cte/:id/consultar-sefaz', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) {
+      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    }
+
+    try {
+      const { id } = idParamsSchema.parse(request.params)
+
+      const documento = await prisma.documentoFiscal.findFirst({
+        where: { id, empresaId: user.empresaId },
+        select: { id: true, chaveAcesso: true, emitenteCnpj: true, emitenteUf: true, ambiente: true },
+      })
+
+      if (!documento) {
+        return reply.status(404).send({ message: 'CT-e não encontrado' })
+      }
+
+      if (!documento.chaveAcesso) {
+        return reply.status(422).send({ message: 'CT-e não possui chave de acesso (nunca foi transmitido)' })
+      }
+
+      // Montar XML de consulta CT-e
+      const ambiente = documento.ambiente || Number(process.env.SEFAZ_AMBIENTE) || 2
+      const xmlConsulta = `<consSitCTe xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00"><tpAmb>${ambiente}</tpAmb><xServ>CONSULTAR</xServ><chCTe>${documento.chaveAcesso}</chCTe></consSitCTe>`
+
+      // Obter certificado
+      const certificado = await certificadoService.obterParaAssinatura(
+        documento.emitenteCnpj, user.empresaId
+      )
+
+      const ambienteSefaz = ambiente === 1 ? AmbienteSefaz.PRODUCAO : AmbienteSefaz.HOMOLOGACAO
+
+      const sefazConfig: SefazConfig = {
+        ambiente: ambienteSefaz,
+        uf: documento.emitenteUf || 'RJ',
+        timeoutMs: 30000,
+        maxRetentativas: 2,
+        intervaloRetentativaMs: 3000,
+        certificadoPfx: certificado.pfxBuffer,
+        certificadoSenha: certificado.senha,
+      }
+
+      const urlResolver: SefazUrlResolver = {
+        resolverUrl: (_uf: string, svc: ServicoSefaz, _amb: number) => {
+          return obterUrlWebserviceCTe(svc, ambienteSefaz)
+        },
+      }
+
+      const client = criarSefazClient(sefazConfig, urlResolver)
+      const resposta = await client.transmitir(xmlConsulta, ServicoSefaz.CTE_CONSULTA)
+
+      return {
+        sucesso: true,
+        cStat: resposta.codigoStatus,
+        xMotivo: resposta.motivoStatus,
+        protocolo: resposta.protocolo || null,
+        dataRecebimento: resposta.dataRecebimento || null,
+      }
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) {
+        return reply.status(422).send({
+          message: err.message,
+          codigo: err.codigo,
+          detalhes: err.detalhes,
+        })
+      }
+      return reply.status(500).send({ message: err.message || 'Erro ao consultar SEFAZ' })
+    }
+  })
+
+  // ==========================================================================
   // POST /cte/:id/cancelar — Cancelar CT-e autorizado
   // ==========================================================================
   app.post('/cte/:id/cancelar', async (request, reply) => {
@@ -1556,6 +1823,12 @@ export async function cteRoutes(app: FastifyInstance) {
     try {
       const { id } = idParamsSchema.parse(request.params)
 
+      // Query params opcionais para override de modelo/orientação
+      const query = z.object({
+        modelo: z.enum(['1', '2']).optional(),
+        orientacao: z.enum(['retrato', 'paisagem']).optional(),
+      }).parse(request.query)
+
       const doc = await prisma.documentoFiscal.findFirst({
         where: { id, empresaId: user.empresaId, tipo: 'CTE' },
         include: { empresa: true },
@@ -1571,7 +1844,20 @@ export async function cteRoutes(app: FastifyInstance) {
         })
       }
 
-      const pdfBuffer = await gerarDactePdf(doc, doc.empresa)
+      // Buscar preferência da empresa (pode ser overridden via query params)
+      let modelo = query.modelo
+      let orientacao = query.orientacao
+      if (!modelo || !orientacao) {
+        const parametros = await prisma.parametro.findMany({
+          where: { empresaId: user.empresaId, chave: { in: ['cte.dacteModelo', 'cte.dacteOrientacao'] } },
+        })
+        const paramsMap: Record<string, string> = {}
+        for (const p of parametros) paramsMap[p.chave] = p.valor
+        if (!modelo) modelo = (paramsMap['cte.dacteModelo'] || '1') as '1' | '2'
+        if (!orientacao) orientacao = (paramsMap['cte.dacteOrientacao'] || 'retrato') as 'retrato' | 'paisagem'
+      }
+
+      const pdfBuffer = await gerarDactePdf(doc, doc.empresa, { modelo, orientacao })
 
       reply.header('Content-Type', 'application/pdf')
       reply.header('Content-Disposition', `inline; filename="DACTE-${doc.numero}-${doc.serie}.pdf"`)

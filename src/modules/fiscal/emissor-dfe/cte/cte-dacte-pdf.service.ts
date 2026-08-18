@@ -131,12 +131,31 @@ async function gerarQrCode(texto: string): Promise<Buffer> {
 
 // === Geração do PDF ===
 
-export async function gerarDactePdf(doc: DocumentoCTe, empresa: EmpresaCTe): Promise<Buffer> {
+export interface DacteOptions {
+  modelo?: '1' | '2'
+  orientacao?: 'retrato' | 'paisagem'
+}
+
+export async function gerarDactePdf(doc: DocumentoCTe, empresa: EmpresaCTe, options?: DacteOptions): Promise<Buffer> {
+  const modelo = options?.modelo || '1'
+  const orientacao = options?.orientacao || 'retrato'
+
+  // Modelo 2 (estilo ACBr) — sempre retrato por padrão
+  if (modelo === '2') {
+    return gerarDacteModelo2(doc, empresa, orientacao)
+  }
+
+  // Modelo 1 — paisagem (original) ou retrato
+  return gerarDacteModelo1(doc, empresa, orientacao)
+}
+
+async function gerarDacteModelo1(doc: DocumentoCTe, empresa: EmpresaCTe, orientacao: 'retrato' | 'paisagem'): Promise<Buffer> {
   return new Promise(async (resolve, reject) => {
     try {
+      const layout = orientacao === 'paisagem' ? 'landscape' : 'portrait'
       const pdf = new PDFDocument({
         size: 'A4',
-        layout: 'landscape',
+        layout,
         margins: { top: 15, bottom: 15, left: 15, right: 15 },
         info: {
           Title: `DACTE - CT-e ${doc.numero}`,
@@ -150,8 +169,10 @@ export async function gerarDactePdf(doc: DocumentoCTe, empresa: EmpresaCTe): Pro
       pdf.on('end', () => resolve(Buffer.concat(chunks)))
       pdf.on('error', reject)
 
-      // Dimensões úteis (A4 landscape)
-      const W = 842 - 30  // largura útil
+      // Dimensões úteis (A4 dinâmico por orientação)
+      const pageW = orientacao === 'paisagem' ? 842 : 595
+      const pageH = orientacao === 'paisagem' ? 595 : 842
+      const W = pageW - 30  // largura útil
       const L = 15         // margem esquerda
       const R = L + W      // margem direita
       let Y = 15           // posição Y corrente
@@ -511,4 +532,313 @@ function renderParticipanteDireto(
   pdf.fontSize(6.5).font('Helvetica')
   pdf.text(`${docStr}  ${ie ? 'IE: ' + ie : ''}`, x + 4, y + 19, { width: w - 8 })
   pdf.text(`${logr}${nro ? ', ' + nro : ''} - ${bairro} - ${mun}/${uf}`, x + 4, y + 27, { width: w - 8 })
+}
+
+// ==========================================================================
+// DACTE MODELO 2 — Estilo ACBr (retrato com canhoto no topo)
+// ==========================================================================
+
+async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orientacao: 'retrato' | 'paisagem'): Promise<Buffer> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const layout = orientacao === 'paisagem' ? 'landscape' : 'portrait'
+      const pdf = new PDFDocument({
+        size: 'A4',
+        layout,
+        margins: { top: 10, bottom: 10, left: 10, right: 10 },
+        info: {
+          Title: `DACTE - CT-e ${doc.numero}`,
+          Author: empresa.razaoSocial,
+          Subject: 'Documento Auxiliar do Conhecimento de Transporte Eletrônico',
+        },
+      })
+
+      const chunks: Buffer[] = []
+      pdf.on('data', (chunk) => chunks.push(chunk))
+      pdf.on('end', () => resolve(Buffer.concat(chunks)))
+      pdf.on('error', reject)
+
+      const pageW = orientacao === 'paisagem' ? 842 : 595
+      const W = pageW - 20
+      const L = 10
+      let Y = 10
+
+      const xmlAuth = doc.xmlAutorizado || ''
+      const modalNomes: Record<string, string> = { '01': 'RODOVIÁRIO', '02': 'AÉREO', '03': 'AQUAVIÁRIO', '04': 'FERROVIÁRIO', '05': 'DUTOVIÁRIO', '06': 'MULTIMODAL' }
+      const modal = xml(xmlAuth, 'modal')
+
+      // ===== CANHOTO (topo) =====
+      const canH = 50
+      pdf.rect(L, Y, W, canH).stroke()
+      pdf.fontSize(6).font('Helvetica')
+      pdf.text('DECLARO QUE RECEBI OS VOLUMES DESTE CONHECIMENTO EM PERFEITO ESTADO PELO QUE DOU POR CUMPRIDO O PRESENTE CONTRATO DE TRANSPORTE', L + 4, Y + 3, { width: W - 100 })
+      pdf.fontSize(6).text('NOME:', L + 4, Y + 16)
+      pdf.text('RG', L + 250, Y + 16)
+      pdf.text('ASSINATURA / CARIMBO', L + 4, Y + 38)
+
+      // CT-e / Número / Série no canhoto (direita)
+      const canRight = L + W - 90
+      pdf.rect(canRight, Y, 90, canH).stroke()
+      pdf.fontSize(8).font('Helvetica-Bold').text('CT-e', canRight + 4, Y + 5)
+      pdf.fontSize(9).text(`N. ${String(doc.numero).padStart(9, '0')}`, canRight + 4, Y + 18)
+      pdf.fontSize(7).font('Helvetica').text(`SÉRIE: ${doc.serie}`, canRight + 4, Y + 32)
+
+      Y += canH + 5
+
+      // Linha tracejada de destaque (corte)
+      pdf.moveTo(L, Y - 2).lineTo(L + W, Y - 2).dash(3, { space: 2 }).stroke()
+      pdf.undash()
+
+      // ===== CABEÇALHO DO EMITENTE =====
+      const headH = 80
+      pdf.rect(L, Y, W, headH).stroke()
+
+      // Dividir em 3 colunas: emitente | DACTE+dados | QR Code + barcode
+      const h1W = W * 0.38
+      const h2W = W * 0.35
+      const h3W = W * 0.27
+      pdf.moveTo(L + h1W, Y).lineTo(L + h1W, Y + headH).stroke()
+      pdf.moveTo(L + h1W + h2W, Y).lineTo(L + h1W + h2W, Y + headH).stroke()
+
+      // Col1: Emitente
+      pdf.fontSize(9).font('Helvetica-Bold').text(empresa.razaoSocial, L + 4, Y + 4, { width: h1W - 8 })
+      let eY = Y + 16
+      pdf.fontSize(6.5).font('Helvetica')
+      const endLinha = `${empresa.logradouro || ''}${empresa.numero ? ', ' + empresa.numero : ''}`
+      pdf.text(endLinha, L + 4, eY, { width: h1W - 8 }); eY += 8
+      pdf.text(`CEP: ${empresa.cep || ''} - ${empresa.bairro || ''}`, L + 4, eY); eY += 8
+      pdf.text(`${empresa.cidade || ''} - ${empresa.uf || ''}`, L + 4, eY); eY += 8
+      pdf.text(`CNPJ: ${formatCnpj(empresa.cnpj)}`, L + 4, eY); eY += 8
+      pdf.text(`INSCRIÇÃO ESTADUAL: ${empresa.inscEstadual || ''}`, L + 4, eY); eY += 8
+      if (empresa.telefone) pdf.text(`TELEFONE: ${empresa.telefone}`, L + 4, eY)
+
+      // Col2: DACTE + modelo + série + número + folha + data
+      const c2X = L + h1W + 4
+      pdf.fontSize(7).font('Helvetica-Bold').text('Documento Auxiliar do Conhecimento de Transporte Eletrônico', c2X, Y + 3, { width: h2W - 8, align: 'center' })
+      pdf.fontSize(6).font('Helvetica')
+      // Tabela mini: MODELO | SÉRIE | NÚMERO | FOLHA | DATA/HORA EMISSÃO
+      const tabY = Y + 16
+      const colW = (h2W - 8) / 5
+      pdf.text('MODELO', c2X, tabY, { width: colW, align: 'center' })
+      pdf.text('SÉRIE', c2X + colW, tabY, { width: colW, align: 'center' })
+      pdf.text('NÚMERO', c2X + colW * 2, tabY, { width: colW, align: 'center' })
+      pdf.text('FOLHA', c2X + colW * 3, tabY, { width: colW, align: 'center' })
+      pdf.text('DATA E HORA DE EMISSÃO', c2X + colW * 4, tabY, { width: colW, align: 'center' })
+      pdf.fontSize(8).font('Helvetica-Bold')
+      pdf.text('57', c2X, tabY + 9, { width: colW, align: 'center' })
+      pdf.text(String(doc.serie), c2X + colW, tabY + 9, { width: colW, align: 'center' })
+      pdf.text(String(doc.numero).padStart(9, '0'), c2X + colW * 2, tabY + 9, { width: colW, align: 'center' })
+      pdf.text('01/01', c2X + colW * 3, tabY + 9, { width: colW, align: 'center' })
+      pdf.text(formatDataHora(doc.dataEmissao), c2X + colW * 4, tabY + 9, { width: colW, align: 'center' })
+
+      // Chave de acesso
+      pdf.fontSize(6).font('Helvetica').text('Chave de acesso', c2X, tabY + 25)
+      if (doc.chaveAcesso) {
+        pdf.fontSize(7).font('Helvetica-Bold').text(formatChave(doc.chaveAcesso), c2X, tabY + 33, { width: h2W - 8 })
+      }
+      // Consulta autenticidade
+      pdf.fontSize(5.5).font('Helvetica').text('Consulte a autenticidade no portal nacional do CT-e, no site da Sefaz Autorizadora, ou em http://www.cte.fazenda.gov.br/portal', c2X, tabY + 45, { width: h2W - 8 })
+      // Protocolo
+      pdf.fontSize(6).text('PROTOCOLO DE AUTORIZAÇÃO', c2X, tabY + 56)
+      const protoStr = doc.protocolo ? `${doc.protocolo}  ${doc.dataAutorizacao ? formatDataHora(doc.dataAutorizacao) : ''}` : '-'
+      pdf.fontSize(7).font('Helvetica-Bold').text(protoStr, c2X + 130, tabY + 56)
+
+      // Col3: MODAL + QR Code
+      const c3X = L + h1W + h2W + 4
+      pdf.fontSize(8).font('Helvetica-Bold').text('MODAL', c3X, Y + 3, { width: h3W - 8, align: 'right' })
+      pdf.fontSize(9).text(modalNomes[modal] || 'RODOVIÁRIO', c3X, Y + 13, { width: h3W - 8, align: 'right' })
+
+      if (doc.chaveAcesso) {
+        const qrUrl = doc.ambiente === 1
+          ? `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${doc.chaveAcesso}&tpAmb=1`
+          : `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${doc.chaveAcesso}&tpAmb=2`
+        const qrBuf = await gerarQrCode(qrUrl)
+        if (qrBuf.length > 0) {
+          pdf.image(qrBuf, c3X + (h3W - 60) / 2, Y + 26, { width: 50, height: 50 })
+        }
+      }
+
+      Y += headH + 3
+
+      // ===== TIPO CT-e / CFOP / ORIGEM / DESTINO =====
+      const tipoH = 28
+      pdf.rect(L, Y, W, tipoH).stroke()
+      const cfop = xml(xmlAuth, 'CFOP')
+      const natOp = xml(xmlAuth, 'natOp') || doc.naturezaOp || ''
+      const tpCTe = xml(xmlAuth, 'tpCTe') || '0'
+      const tpServ = xml(xmlAuth, 'tpServ') || '0'
+      const tpCTeNomes: Record<string, string> = { '0': 'Normal', '1': 'Complemento', '2': 'Anulação', '3': 'Substituto' }
+      const tpServNomes: Record<string, string> = { '0': 'Normal', '1': 'Subcontratação', '2': 'Redespacho', '3': 'Redesp. Intermediário' }
+
+      pdf.fontSize(6).font('Helvetica')
+      pdf.text('TIPO DO CT-e', L + 4, Y + 2)
+      pdf.text('TIPO DO SERVIÇO', L + 100, Y + 2)
+      pdf.text('TOMADOR', L + 200, Y + 2)
+      pdf.text('CFOP', L + 320, Y + 2)
+      pdf.fontSize(7).font('Helvetica-Bold')
+      pdf.text(tpCTeNomes[tpCTe] || 'Normal', L + 4, Y + 10)
+      pdf.text(tpServNomes[tpServ] || 'Normal', L + 100, Y + 10)
+      const indToma = xml(xmlAuth, 'toma3') ? xml(xmlBloco(xmlAuth, 'toma3'), 'toma') : xml(xmlBloco(xmlAuth, 'toma4'), 'toma')
+      const tomaNomes: Record<string, string> = { '0': 'Remetente', '1': 'Expedidor', '2': 'Recebedor', '3': 'Destinatário', '4': 'Outros' }
+      pdf.text(tomaNomes[indToma] || '-', L + 200, Y + 10)
+      pdf.text(cfop || '-', L + 320, Y + 10)
+
+      // CFOP / Natureza
+      pdf.fontSize(6).font('Helvetica').text('NATUREZA DA OPERAÇÃO', L + 4, Y + 19)
+      pdf.fontSize(7).font('Helvetica-Bold').text(natOp.substring(0, 60), L + 120, Y + 19)
+
+      // Origem / Destino
+      const xMunIni = xml(xmlAuth, 'xMunIni')
+      const ufIni = xml(xmlAuth, 'UFIni')
+      const xMunFim = xml(xmlAuth, 'xMunFim')
+      const ufFim = xml(xmlAuth, 'UFFim')
+      const cMunIni = xml(xmlAuth, 'cMunIni')
+      const cMunFim = xml(xmlAuth, 'cMunFim')
+
+      pdf.fontSize(6).font('Helvetica').text('MUNICÍPIO DE INÍCIO', L + 380, Y + 2)
+      pdf.text('MUNICÍPIO DE TÉRMINO', L + 380, Y + 14)
+      pdf.fontSize(7).font('Helvetica-Bold')
+      pdf.text(`${xMunIni} - ${ufIni} - ${cMunIni}`, L + 460, Y + 2)
+      pdf.text(`${xMunFim} - ${ufFim} - ${cMunFim}`, L + 460, Y + 14)
+
+      Y += tipoH + 3
+
+      // ===== REMETENTE / DESTINATÁRIO =====
+      const partH = 38
+      pdf.rect(L, Y, W / 2 - 1, partH).stroke()
+      pdf.rect(L + W / 2 + 1, Y, W / 2 - 1, partH).stroke()
+      renderParticipanteBloco(pdf, 'REMETENTE', xmlAuth, 'rem', 'enderReme', L, Y, W / 2 - 1)
+      renderParticipanteBloco(pdf, 'DESTINATÁRIO', xmlAuth, 'dest', 'enderDest', L + W / 2 + 1, Y, W / 2 - 1)
+      Y += partH + 3
+
+      // ===== EXPEDIDOR / RECEBEDOR =====
+      const blocoExped = xmlBloco(xmlAuth, 'exped')
+      const blocoReceb = xmlBloco(xmlAuth, 'receb')
+      if (blocoExped || blocoReceb) {
+        pdf.rect(L, Y, W / 2 - 1, partH).stroke()
+        pdf.rect(L + W / 2 + 1, Y, W / 2 - 1, partH).stroke()
+        if (blocoExped) renderParticipanteDireto(pdf, 'EXPEDIDOR', blocoExped, 'enderExped', L, Y, W / 2 - 1)
+        if (blocoReceb) renderParticipanteDireto(pdf, 'RECEBEDOR', blocoReceb, 'enderReceb', L + W / 2 + 1, Y, W / 2 - 1)
+        Y += partH + 3
+      }
+
+      // ===== PRODUTO / CARGA =====
+      const cargaH = 28
+      pdf.rect(L, Y, W, cargaH).stroke()
+      pdf.fontSize(6).font('Helvetica').text('PRODUTO PREDOMINANTE', L + 4, Y + 2)
+      const proPred = xml(xmlAuth, 'proPred')
+      const vCarga = xml(xmlAuth, 'vCarga')
+      pdf.fontSize(7).font('Helvetica-Bold').text(proPred, L + 100, Y + 2)
+      pdf.fontSize(6).font('Helvetica').text('VALOR TOTAL DA MERCADORIA', L + 4, Y + 12)
+      pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vCarga) || 0)}`, L + 130, Y + 12)
+      // Quantidades
+      pdf.fontSize(6).font('Helvetica').text('UNIDADE:', L + 300, Y + 12)
+      const qRegex2 = /<infQ>[\s\S]*?<tpMed>([^<]*)<\/tpMed>[\s\S]*?<qCarga>([^<]*)<\/qCarga>[\s\S]*?<\/infQ>/g
+      let qm2
+      let qX = L + 340
+      while ((qm2 = qRegex2.exec(xmlAuth)) !== null) {
+        pdf.fontSize(7).font('Helvetica').text(`${parseFloat(qm2[2]).toFixed(0)} ${qm2[1]}`, qX, Y + 12)
+        qX += 80
+      }
+      Y += cargaH + 3
+
+      // ===== COMPONENTES DO VALOR =====
+      const valH = 30
+      pdf.rect(L, Y, W, valH).stroke()
+      pdf.fontSize(6).font('Helvetica').text('COMPONENTES DO VALOR DA PRESTAÇÃO DE SERVIÇO', L + 4, Y + 2, { width: W - 8, align: 'center' })
+      // Tabela: NOME | VALOR | NOME | VALOR | NOME | VALOR | VALOR TOTAL
+      const comps2: Array<{ nome: string; valor: string }> = []
+      const compRegex2 = /<Comp>[\s\S]*?<xNome>([^<]*)<\/xNome>[\s\S]*?<vComp>([^<]*)<\/vComp>[\s\S]*?<\/Comp>/g
+      let cm2
+      while ((cm2 = compRegex2.exec(xmlAuth)) !== null) {
+        comps2.push({ nome: cm2[1], valor: cm2[2] })
+      }
+      let cX = L + 4
+      for (const comp of comps2.slice(0, 3)) {
+        pdf.fontSize(6).font('Helvetica').text(comp.nome, cX, Y + 12)
+        pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(comp.valor))}`, cX, Y + 20)
+        cX += 130
+      }
+      const vTPrest = xml(xmlAuth, 'vTPrest') || String(Number(doc.valorTotal).toFixed(2))
+      const vRec = xml(xmlAuth, 'vRec') || vTPrest
+      pdf.fontSize(6).font('Helvetica').text('VALOR TOTAL DO SERVIÇO', L + W - 140, Y + 12)
+      pdf.fontSize(8).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vTPrest))}`, L + W - 140, Y + 20)
+      Y += valH + 3
+
+      // ===== ICMS =====
+      const icmsH = 22
+      pdf.rect(L, Y, W, icmsH).stroke()
+      pdf.fontSize(6).font('Helvetica').text('INFORMAÇÕES RELATIVAS AO IMPOSTO', L + 4, Y + 2, { width: W - 8, align: 'center' })
+      const cst = xml(xmlAuth, 'CST')
+      const vBC = xml(xmlAuth, 'vBC')
+      const pICMS = xml(xmlAuth, 'pICMS')
+      const vICMS = xml(xmlAuth, 'vICMS')
+      pdf.fontSize(6).text('SITUAÇÃO TRIBUTÁRIA', L + 4, Y + 12)
+      pdf.fontSize(7).font('Helvetica-Bold').text(`${cst} - ICMS ${cst === '40' ? 'ISENTA' : cst === '41' ? 'NÃO TRIBUTADO' : ''}`, L + 80, Y + 12)
+      pdf.fontSize(6).font('Helvetica').text('BASE DE CÁLCULO', L + 250, Y + 12)
+      pdf.text('ALÍQ. ICMS', L + 350, Y + 12)
+      pdf.text('VALOR ICMS', L + 430, Y + 12)
+      pdf.text('VALOR FISCAL', L + 510, Y + 12)
+      Y += icmsH + 3
+
+      // ===== DOCUMENTOS ORIGINÁRIOS =====
+      const chavesNFe: string[] = []
+      const regexChave = /<chave>(\d{44})<\/chave>/g
+      let matchC
+      while ((matchC = regexChave.exec(xmlAuth)) !== null) chavesNFe.push(matchC[1])
+
+      if (chavesNFe.length > 0) {
+        const docH = 18 + Math.min(chavesNFe.length, 5) * 10
+        pdf.rect(L, Y, W, docH).stroke()
+        pdf.fontSize(6).font('Helvetica').text('DOCUMENTOS ORIGINÁRIOS', L + 4, Y + 2, { width: W - 8, align: 'center' })
+        let dY = Y + 12
+        pdf.fontSize(6).text('TP DOC.', L + 4, dY)
+        pdf.text('CHAVE/DOC.', L + 60, dY)
+        dY += 9
+        for (const ch of chavesNFe.slice(0, 5)) {
+          pdf.fontSize(7).font('Helvetica')
+          pdf.text('NF-e', L + 4, dY)
+          pdf.text(formatChave(ch), L + 60, dY, { width: W - 80 })
+          dY += 10
+        }
+        Y += docH + 3
+      }
+
+      // ===== OBSERVAÇÕES =====
+      const xObs = xml(xmlAuth, 'xObs')
+      const infCpl = xml(xmlAuth, 'infCpl')
+      const obs = xObs || infCpl
+      if (obs) {
+        const obsH = 25
+        pdf.rect(L, Y, W, obsH).stroke()
+        pdf.fontSize(6).font('Helvetica').text('OBSERVAÇÕES', L + 4, Y + 2, { width: W - 8, align: 'center' })
+        pdf.fontSize(7).text(obs.substring(0, 400), L + 4, Y + 11, { width: W - 10 })
+        Y += obsH + 3
+      }
+
+      // ===== TARJA HOMOLOGAÇÃO =====
+      if (doc.ambiente === 2) {
+        pdf.save()
+        pdf.fontSize(24).font('Helvetica-Bold').fillColor('red').opacity(0.3)
+        pdf.text('CT-e SEM VALOR FISCAL - AMBIENTE DE HOMOLOGAÇÃO', L + 20, 400, { width: W - 40, align: 'center' })
+        pdf.restore()
+      }
+
+      // ===== TARJA CANCELAMENTO =====
+      if (doc.status === 'CANCELADO') {
+        pdf.save()
+        pdf.fontSize(32).font('Helvetica-Bold').fillColor('red').opacity(0.25)
+        pdf.text('CANCELADO', L + 100, 380, { width: W - 200, align: 'center' })
+        pdf.restore()
+      }
+
+      // ===== Rodapé =====
+      pdf.fontSize(5).font('Helvetica').fillColor('black').opacity(1)
+        .text('Projeto ACBr — www.projetoacbr.com.br | Vizor ERP', L, 820, { width: W, align: 'center' })
+
+      pdf.end()
+    } catch (err) {
+      reject(err)
+    }
+  })
 }

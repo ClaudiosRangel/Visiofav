@@ -23,6 +23,7 @@ export enum ServicoSefaz {
   CTE_AUTORIZACAO = 'CTeAutorizacao',
   CTE_RET_AUTORIZACAO = 'CTeRetAutorizacao',
   CTE_RECEPCAO_EVENTO = 'CTeRecepcaoEvento',
+  CTE_CONSULTA = 'CTeConsulta',
 
   // MDF-e
   MDFE_RECEPCAO = 'MDFeRecepcao',
