@@ -365,7 +365,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     const apontamentosEtapa = etapaIds.length > 0
       ? await prisma.apontamentoEtapa.findMany({
           where: { etapaOrdemProducaoId: { in: etapaIds } },
-          orderBy: { criadoEm: 'asc' },
+          orderBy: { dataHora: 'asc' },
         })
       : []
 
@@ -373,7 +373,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     const liberacoes = await prisma.liberacaoMaterial.findMany({
       where: { ordemProducaoId: id },
       orderBy: { criadoEm: 'asc' },
-      include: { itens: { select: { descricao: true, quantidadeSolicitada: true } } },
+      include: { itens: { select: { quantidadeSolicitada: true, itemOrdemProducao: { select: { descricaoProduto: true } } } } },
     })
 
     // 4. Buscar nomes de usuários envolvidos
@@ -463,7 +463,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
       eventos.push({
         tipo: 'apontamento',
-        data: ap.criadoEm.toISOString(),
+        data: ap.dataHora.toISOString(),
         titulo,
         descricao: ap.observacao || null,
         usuario: ap.funcionarioId ? (usuarioMap.get(ap.funcionarioId) || null) : null,
@@ -474,7 +474,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     // Liberações de material
     for (const lib of liberacoes) {
-      const materiaisResumo = lib.itens.slice(0, 3).map((i: any) => i.descricao || 'item').join(', ')
+      const materiaisResumo = lib.itens.slice(0, 3).map((i: any) => i.itemOrdemProducao?.descricaoProduto || 'item').join(', ')
       eventos.push({
         tipo: 'liberacao',
         data: lib.criadoEm.toISOString(),

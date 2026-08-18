@@ -126,6 +126,39 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     )
     await prisma.$transaction(updates)
 
+    // Log de auditoria — reordenação de fila
+    // Loga apenas na OP da etapa efetivamente arrastada (se informada),
+    // senão loga para cada OP distinta envolvida.
+    if (body.etapaMovidaId) {
+      const etapaMovida = etapas.find(e => e.id === body.etapaMovidaId)
+      if (etapaMovida) {
+        const novaPosicao = body.etapaIds.indexOf(body.etapaMovidaId) + 1
+        await prisma.logOrdemProducao.create({
+          data: {
+            ordemProducaoId: etapaMovida.ordemProducaoId,
+            statusAnterior: '',
+            statusNovo: '',
+            usuarioId: user.id,
+            observacao: `Fila reordenada: etapa movida para posição ${novaPosicao}`,
+          },
+        })
+      }
+    } else {
+      // Sem etapaMovidaId, loga para cada OP única
+      const opsUnicas = [...new Set(etapas.map(e => e.ordemProducaoId))]
+      for (const opId of opsUnicas) {
+        await prisma.logOrdemProducao.create({
+          data: {
+            ordemProducaoId: opId,
+            statusAnterior: '',
+            statusNovo: '',
+            usuarioId: user.id,
+            observacao: `Fila reordenada manualmente`,
+          },
+        })
+      }
+    }
+
     return { success: true, reordenadas: body.etapaIds.length }
   })
 
@@ -979,6 +1012,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const query = z.object({
       opId: z.string().uuid().optional(),
       opNumero: z.string().optional(),
+      acoes: z.string().optional(), // CSV de tipos de ação: transicao,postergar,mover,desmembrar,preimpressao,reordenar,editar,reextrair,manual,producao,cancelamento
       page: z.coerce.number().min(1).default(1),
       limit: z.coerce.number().min(1).max(100).default(50),
     }).parse(request.query)
@@ -996,6 +1030,54 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           { numero: isNaN(Number(query.opNumero)) ? undefined : Number(query.opNumero) },
           { referenciaExterna: { contains: query.opNumero, mode: 'insensitive' } },
         ].filter(Boolean),
+      }
+    }
+
+    // Filtro por tipo de ação (baseado no conteúdo da observação e statusAnterior/statusNovo)
+    if (query.acoes) {
+      const acoesList = query.acoes.split(',').map(a => a.trim().toLowerCase())
+      const orConditions: any[] = []
+
+      for (const acao of acoesList) {
+        switch (acao) {
+          case 'transicao':
+            orConditions.push({ statusAnterior: { not: '' }, statusNovo: { not: '' }, observacao: { not: { contains: 'forçad' } } })
+            break
+          case 'postergar':
+            orConditions.push({ observacao: { contains: 'postergada', mode: 'insensitive' } })
+            break
+          case 'mover':
+            orConditions.push({ observacao: { contains: 'movida para centro', mode: 'insensitive' } })
+            break
+          case 'desmembrar':
+            orConditions.push({ observacao: { contains: 'desmembrada', mode: 'insensitive' } })
+            break
+          case 'preimpressao':
+            orConditions.push({ observacao: { contains: 'Pré-impressão', mode: 'insensitive' } })
+            break
+          case 'reordenar':
+            orConditions.push({ observacao: { contains: 'Fila reordenada', mode: 'insensitive' } })
+            break
+          case 'editar':
+            orConditions.push({ observacao: { contains: 'Campos alterados', mode: 'insensitive' } })
+            break
+          case 'reextrair':
+            orConditions.push({ observacao: { contains: 'Re-extração', mode: 'insensitive' } })
+            break
+          case 'manual':
+            orConditions.push({ observacao: { contains: 'adicionada manualmente', mode: 'insensitive' } })
+            break
+          case 'producao':
+            orConditions.push({ observacao: { contains: 'Quantidade produzida', mode: 'insensitive' } })
+            break
+          case 'cancelamento':
+            orConditions.push({ statusNovo: 'CANCELADA' })
+            break
+        }
+      }
+
+      if (orConditions.length > 0) {
+        where.OR = orConditions
       }
     }
 
