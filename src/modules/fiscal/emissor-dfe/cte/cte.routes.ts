@@ -223,9 +223,11 @@ export type EmissaoCTeInput = z.infer<typeof emissaoCTeInputSchema>
 
 // === Helpers ===
 
-async function proximoNumeroCTe(empresaId: string, serie: number): Promise<number> {
+async function proximoNumeroCTe(empresaId: string, serie: number, ambiente?: number): Promise<number> {
+  const where: any = { empresaId, tipo: 'CTE', serie }
+  if (ambiente) where.ambiente = ambiente
   const ultimo = await prisma.documentoFiscal.findFirst({
-    where: { empresaId, tipo: 'CTE', serie },
+    where,
     orderBy: { numero: 'desc' },
     select: { numero: true },
   })
@@ -997,8 +999,10 @@ export async function cteRoutes(app: FastifyInstance) {
 
       const where: any = { empresaId: user.empresaId, tipo: 'CTE' }
 
-      // Nota: não filtra por ambiente na listagem — mostra CT-e de homologação E produção.
-      // O filtro de ambiente é aplicado apenas na transmissão e na verificação de NF-e duplicada.
+      // Filtrar por ambiente da empresa (produção só vê produção, homologação só vê homologação)
+      const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId }, select: { ambienteCTe: true, ambienteNFe: true } })
+      const ambienteAtual = empresa?.ambienteCTe || empresa?.ambienteNFe || 2
+      where.ambiente = ambienteAtual
 
       if (filtros.status) where.status = filtros.status.toUpperCase()
       if (filtros.serie != null) where.serie = filtros.serie
@@ -1079,6 +1083,7 @@ export async function cteRoutes(app: FastifyInstance) {
         page: filtros.page,
         limit: filtros.limit,
         totalPages: Math.ceil(total / filtros.limit),
+        ambiente: ambienteAtual,
       }
     } catch (err: any) {
       if (err.name === 'ZodError') {
@@ -1147,7 +1152,8 @@ export async function cteRoutes(app: FastifyInstance) {
       const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId } })
       if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
 
-      const nCT = await proximoNumeroCTe(user.empresaId, body.serie)
+      const ambienteCte = empresa.ambienteCTe || empresa.ambienteNFe || 2
+      const nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteCte)
 
       // Gravar como DocumentoFiscal com status DIGITADA (sem gerar XML/transmitir)
       const documento = await prisma.documentoFiscal.create({
@@ -1534,7 +1540,8 @@ export async function cteRoutes(app: FastifyInstance) {
       }
 
       const ufEmitente = empresa.uf || ''
-      const nCT = await proximoNumeroCTe(user.empresaId, body.serie)
+      const ambienteEmissao = empresa.ambienteCTe || empresa.ambienteNFe || 2
+      const nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteEmissao)
 
       const dadosCTe: DadosCTe = {
         cUF: obterCodigoUF(ufEmitente),
