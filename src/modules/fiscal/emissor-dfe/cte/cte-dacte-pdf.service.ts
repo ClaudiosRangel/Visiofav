@@ -536,6 +536,7 @@ function renderParticipanteDireto(
 
 // ==========================================================================
 // DACTE MODELO 2 — Estilo ACBr (retrato com canhoto no topo)
+// Referência visual: layout oficial ACBr conforme Manual de Orientações DACTE
 // ==========================================================================
 
 async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orientacao: 'retrato' | 'paisagem'): Promise<Buffer> {
@@ -545,12 +546,8 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       const pdf = new PDFDocument({
         size: 'A4',
         layout,
-        margins: { top: 10, bottom: 10, left: 10, right: 10 },
-        info: {
-          Title: `DACTE - CT-e ${doc.numero}`,
-          Author: empresa.razaoSocial,
-          Subject: 'Documento Auxiliar do Conhecimento de Transporte Eletrônico',
-        },
+        margins: { top: 8, bottom: 8, left: 8, right: 8 },
+        info: { Title: `DACTE - CT-e ${doc.numero}`, Author: empresa.razaoSocial },
       })
 
       const chunks: Buffer[] = []
@@ -559,282 +556,351 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       pdf.on('error', reject)
 
       const pageW = orientacao === 'paisagem' ? 842 : 595
-      const W = pageW - 20
-      const L = 10
-      let Y = 10
-
+      const W = pageW - 16
+      const L = 8
+      let Y = 8
       const xmlAuth = doc.xmlAutorizado || ''
-      const modalNomes: Record<string, string> = { '01': 'RODOVIÁRIO', '02': 'AÉREO', '03': 'AQUAVIÁRIO', '04': 'FERROVIÁRIO', '05': 'DUTOVIÁRIO', '06': 'MULTIMODAL' }
+
+      // Helpers locais
+      const F = (size: number) => pdf.fontSize(size)
+      const B = () => pdf.font('Helvetica-Bold')
+      const N = () => pdf.font('Helvetica')
+      const box = (x: number, y: number, w: number, h: number) => pdf.rect(x, y, w, h).stroke()
+      const vline = (x: number, y1: number, y2: number) => pdf.moveTo(x, y1).lineTo(x, y2).stroke()
+      const hline = (x1: number, x2: number, y: number) => pdf.moveTo(x1, y).lineTo(x2, y).stroke()
+
+      // Dados do XML
       const modal = xml(xmlAuth, 'modal')
+      const modalNomes: Record<string, string> = { '01': 'RODOVIÁRIO', '02': 'AÉREO', '03': 'AQUAVIÁRIO', '04': 'FERROVIÁRIO', '05': 'DUTOVIÁRIO', '06': 'MULTIMODAL' }
+      const cfop = xml(xmlAuth, 'CFOP') || '5353'
+      const natOp = xml(xmlAuth, 'natOp') || doc.naturezaOp || 'PRESTACAO DE SERVICO DE TRANSPORTE'
+      const tpCTe = xml(xmlAuth, 'tpCTe') || '0'
+      const tpServ = xml(xmlAuth, 'tpServ') || '0'
+      const xMunIni = xml(xmlAuth, 'xMunIni')
+      const ufIni = xml(xmlAuth, 'UFIni')
+      const cMunIni = xml(xmlAuth, 'cMunIni')
+      const xMunFim = xml(xmlAuth, 'xMunFim')
+      const ufFim = xml(xmlAuth, 'UFFim')
+      const cMunFim = xml(xmlAuth, 'cMunFim')
+      const tpCTeNomes: Record<string, string> = { '0': 'Normal', '1': 'Complemento', '2': 'Anulação', '3': 'Substituto' }
+      const tpServNomes: Record<string, string> = { '0': 'Normal', '1': 'Subcontratação', '2': 'Redespacho', '3': 'Redesp.Intermediário' }
 
-      // ===== CANHOTO (topo) =====
-      const canH = 50
-      pdf.rect(L, Y, W, canH).stroke()
-      pdf.fontSize(6).font('Helvetica')
-      pdf.text('DECLARO QUE RECEBI OS VOLUMES DESTE CONHECIMENTO EM PERFEITO ESTADO PELO QUE DOU POR CUMPRIDO O PRESENTE CONTRATO DE TRANSPORTE', L + 4, Y + 3, { width: W - 100 })
-      pdf.fontSize(6).text('NOME:', L + 4, Y + 16)
-      pdf.text('RG', L + 250, Y + 16)
-      pdf.text('ASSINATURA / CARIMBO', L + 4, Y + 38)
+      // ════════════════════════════════════════════════════════════════════════
+      // 1. CANHOTO
+      // ════════════════════════════════════════════════════════════════════════
+      const canH = 48
+      box(L, Y, W, canH)
+      const canRightW = 95
+      vline(L + W - canRightW, Y, Y + canH)
 
-      // CT-e / Número / Série no canhoto (direita)
-      const canRight = L + W - 90
-      pdf.rect(canRight, Y, 90, canH).stroke()
-      pdf.fontSize(8).font('Helvetica-Bold').text('CT-e', canRight + 4, Y + 5)
-      pdf.fontSize(9).text(`N. ${String(doc.numero).padStart(9, '0')}`, canRight + 4, Y + 18)
-      pdf.fontSize(7).font('Helvetica').text(`SÉRIE: ${doc.serie}`, canRight + 4, Y + 32)
+      F(5.5); N()
+      pdf.text('DECLARO QUE RECEBI OS VOLUMES DESTE CONHECIMENTO EM PERFEITO ESTADO PELO QUE DOU POR CUMPRIDO O PRESENTE CONTRATO DE TRANSPORTE', L + 3, Y + 3, { width: W - canRightW - 6 })
+      F(6); pdf.text('NOME:', L + 3, Y + 16)
+      pdf.text('RG', L + 200, Y + 16)
+      hline(L, L + W - canRightW, Y + 30)
+      pdf.text('ASSINATURA / CARIMBO', L + 3, Y + 33)
 
-      Y += canH + 5
+      // Box direita do canhoto: CT-e / N. / SÉRIE
+      const cRX = L + W - canRightW + 3
+      F(9); B(); pdf.text('CT-e', cRX, Y + 5)
+      F(8); pdf.text(`N. ${String(doc.numero).padStart(9, '0')}`, cRX, Y + 18)
+      F(7); N(); pdf.text(`SÉRIE: ${doc.serie}`, cRX, Y + 32)
 
-      // Linha tracejada de destaque (corte)
-      pdf.moveTo(L, Y - 2).lineTo(L + W, Y - 2).dash(3, { space: 2 }).stroke()
-      pdf.undash()
+      Y += canH + 4
+      // Linha tracejada de corte
+      pdf.save(); pdf.dash(2, { space: 2 }); hline(L, L + W, Y - 2); pdf.undash(); pdf.restore()
 
-      // ===== CABEÇALHO DO EMITENTE =====
-      const headH = 80
-      pdf.rect(L, Y, W, headH).stroke()
-
-      // Dividir em 3 colunas: emitente | DACTE+dados | QR Code + barcode
-      const h1W = W * 0.38
-      const h2W = W * 0.35
-      const h3W = W * 0.27
-      pdf.moveTo(L + h1W, Y).lineTo(L + h1W, Y + headH).stroke()
-      pdf.moveTo(L + h1W + h2W, Y).lineTo(L + h1W + h2W, Y + headH).stroke()
+      // ════════════════════════════════════════════════════════════════════════
+      // 2. CABEÇALHO: Emitente | DACTE + dados | MODAL + QR Code
+      // ════════════════════════════════════════════════════════════════════════
+      const headH = 95
+      box(L, Y, W, headH)
+      const col1 = W * 0.36
+      const col2 = W * 0.38
+      const col3 = W * 0.26
+      vline(L + col1, Y, Y + headH)
+      vline(L + col1 + col2, Y, Y + headH)
 
       // Col1: Emitente
-      pdf.fontSize(9).font('Helvetica-Bold').text(empresa.razaoSocial, L + 4, Y + 4, { width: h1W - 8 })
-      let eY = Y + 16
-      pdf.fontSize(6.5).font('Helvetica')
-      const endLinha = `${empresa.logradouro || ''}${empresa.numero ? ', ' + empresa.numero : ''}`
-      pdf.text(endLinha, L + 4, eY, { width: h1W - 8 }); eY += 8
-      pdf.text(`CEP: ${empresa.cep || ''} - ${empresa.bairro || ''}`, L + 4, eY); eY += 8
-      pdf.text(`${empresa.cidade || ''} - ${empresa.uf || ''}`, L + 4, eY); eY += 8
+      let eY = Y + 4
+      F(9); B(); pdf.text(empresa.razaoSocial, L + 4, eY, { width: col1 - 8 }); eY += 12
+      F(6.5); N()
+      const endLine1 = `${empresa.logradouro || ''}${empresa.numero ? ', ' + empresa.numero : ''}`
+      pdf.text(endLine1, L + 4, eY, { width: col1 - 8 }); eY += 8
+      if (empresa.bairro) { pdf.text(empresa.bairro, L + 4, eY); eY += 8 }
+      pdf.text(`CEP: ${empresa.cep || ''} - ${empresa.cidade || ''} - ${empresa.uf || ''}`, L + 4, eY); eY += 8
       pdf.text(`CNPJ: ${formatCnpj(empresa.cnpj)}`, L + 4, eY); eY += 8
       pdf.text(`INSCRIÇÃO ESTADUAL: ${empresa.inscEstadual || ''}`, L + 4, eY); eY += 8
       if (empresa.telefone) pdf.text(`TELEFONE: ${empresa.telefone}`, L + 4, eY)
 
-      // Col2: DACTE + modelo + série + número + folha + data
-      const c2X = L + h1W + 4
-      pdf.fontSize(7).font('Helvetica-Bold').text('Documento Auxiliar do Conhecimento de Transporte Eletrônico', c2X, Y + 3, { width: h2W - 8, align: 'center' })
-      pdf.fontSize(6).font('Helvetica')
-      // Tabela mini: MODELO | SÉRIE | NÚMERO | FOLHA | DATA/HORA EMISSÃO
-      const tabY = Y + 16
-      const colW = (h2W - 8) / 5
-      pdf.text('MODELO', c2X, tabY, { width: colW, align: 'center' })
-      pdf.text('SÉRIE', c2X + colW, tabY, { width: colW, align: 'center' })
-      pdf.text('NÚMERO', c2X + colW * 2, tabY, { width: colW, align: 'center' })
-      pdf.text('FOLHA', c2X + colW * 3, tabY, { width: colW, align: 'center' })
-      pdf.text('DATA E HORA DE EMISSÃO', c2X + colW * 4, tabY, { width: colW, align: 'center' })
-      pdf.fontSize(8).font('Helvetica-Bold')
-      pdf.text('57', c2X, tabY + 9, { width: colW, align: 'center' })
-      pdf.text(String(doc.serie), c2X + colW, tabY + 9, { width: colW, align: 'center' })
-      pdf.text(String(doc.numero).padStart(9, '0'), c2X + colW * 2, tabY + 9, { width: colW, align: 'center' })
-      pdf.text('01/01', c2X + colW * 3, tabY + 9, { width: colW, align: 'center' })
-      pdf.text(formatDataHora(doc.dataEmissao), c2X + colW * 4, tabY + 9, { width: colW, align: 'center' })
+      // Col2: DACTE + dados
+      const c2X = L + col1 + 3
+      const c2W = col2 - 6
+      F(7); B(); pdf.text('Documento Auxiliar do Conhecimento de Transporte', c2X, Y + 3, { width: c2W, align: 'center' })
+
+      // Mini-tabela: MODELO | SÉRIE | NÚMERO | FOLHA | DATA E HORA
+      const tabY2 = Y + 14
+      const cW = c2W / 5
+      F(5); N()
+      pdf.text('MODELO', c2X, tabY2, { width: cW, align: 'center' })
+      pdf.text('SÉRIE', c2X + cW, tabY2, { width: cW, align: 'center' })
+      pdf.text('NÚMERO', c2X + cW * 2, tabY2, { width: cW, align: 'center' })
+      pdf.text('FOLHA', c2X + cW * 3, tabY2, { width: cW, align: 'center' })
+      pdf.text('DATA E HORA', c2X + cW * 4, tabY2, { width: cW, align: 'center' })
+      F(7); B()
+      pdf.text('57', c2X, tabY2 + 8, { width: cW, align: 'center' })
+      pdf.text(String(doc.serie), c2X + cW, tabY2 + 8, { width: cW, align: 'center' })
+      pdf.text(String(doc.numero).padStart(9, '0'), c2X + cW * 2, tabY2 + 8, { width: cW, align: 'center' })
+      pdf.text('01/01', c2X + cW * 3, tabY2 + 8, { width: cW, align: 'center' })
+      F(6); N(); pdf.text(formatDataHora(doc.dataEmissao), c2X + cW * 4, tabY2 + 8, { width: cW, align: 'center' })
 
       // Chave de acesso
-      pdf.fontSize(6).font('Helvetica').text('Chave de acesso', c2X, tabY + 25)
+      F(5); N(); pdf.text('Chave de acesso', c2X, tabY2 + 22)
       if (doc.chaveAcesso) {
-        pdf.fontSize(7).font('Helvetica-Bold').text(formatChave(doc.chaveAcesso), c2X, tabY + 33, { width: h2W - 8 })
+        F(6); B(); pdf.text(formatChave(doc.chaveAcesso), c2X, tabY2 + 30, { width: c2W, characterSpacing: 0.2 })
       }
+
       // Consulta autenticidade
-      pdf.fontSize(5.5).font('Helvetica').text('Consulte a autenticidade no portal nacional do CT-e, no site da Sefaz Autorizadora, ou em http://www.cte.fazenda.gov.br/portal', c2X, tabY + 45, { width: h2W - 8 })
+      F(5); N(); pdf.text('Consulte a autenticidade no portal nacional do CT-e, no site da Sefaz', c2X, tabY2 + 42, { width: c2W })
+      pdf.text('Autorizadora, ou em http://www.cte.fazenda.gov.br/portal', c2X, tabY2 + 49, { width: c2W })
+
       // Protocolo
-      pdf.fontSize(6).text('PROTOCOLO DE AUTORIZAÇÃO', c2X, tabY + 56)
-      const protoStr = doc.protocolo ? `${doc.protocolo}  ${doc.dataAutorizacao ? formatDataHora(doc.dataAutorizacao) : ''}` : '-'
-      pdf.fontSize(7).font('Helvetica-Bold').text(protoStr, c2X + 130, tabY + 56)
+      F(5); pdf.text('PROTOCOLO DE AUTORIZAÇÃO', c2X, tabY2 + 60)
+      const protoStr = doc.protocolo ? `${doc.protocolo}  ${doc.dataAutorizacao ? formatDataHora(doc.dataAutorizacao) : ''}` : ''
+      F(6); B(); pdf.text(protoStr, c2X + 120, tabY2 + 60, { width: c2W - 120 })
 
       // Col3: MODAL + QR Code
-      const c3X = L + h1W + h2W + 4
-      pdf.fontSize(8).font('Helvetica-Bold').text('MODAL', c3X, Y + 3, { width: h3W - 8, align: 'right' })
-      pdf.fontSize(9).text(modalNomes[modal] || 'RODOVIÁRIO', c3X, Y + 13, { width: h3W - 8, align: 'right' })
+      const c3X = L + col1 + col2 + 3
+      const c3W = col3 - 6
+      F(8); B(); pdf.text('MODAL', c3X, Y + 4, { width: c3W, align: 'center' })
+      F(9); pdf.text(modalNomes[modal] || 'RODOVIÁRIO', c3X, Y + 15, { width: c3W, align: 'center' })
 
       if (doc.chaveAcesso) {
-        const qrUrl = doc.ambiente === 1
-          ? `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${doc.chaveAcesso}&tpAmb=1`
-          : `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${doc.chaveAcesso}&tpAmb=2`
+        const qrUrl = `https://dfe-portal.svrs.rs.gov.br/cte/qrCode?chCTe=${doc.chaveAcesso}&tpAmb=${doc.ambiente}`
         const qrBuf = await gerarQrCode(qrUrl)
         if (qrBuf.length > 0) {
-          pdf.image(qrBuf, c3X + (h3W - 60) / 2, Y + 26, { width: 50, height: 50 })
+          const qrSize = Math.min(55, c3W - 10)
+          pdf.image(qrBuf, c3X + (c3W - qrSize) / 2, Y + 30, { width: qrSize, height: qrSize })
         }
       }
 
-      Y += headH + 3
+      Y += headH + 2
 
-      // ===== TIPO CT-e / CFOP / ORIGEM / DESTINO =====
-      const tipoH = 28
-      pdf.rect(L, Y, W, tipoH).stroke()
-      const cfop = xml(xmlAuth, 'CFOP')
-      const natOp = xml(xmlAuth, 'natOp') || doc.naturezaOp || ''
-      const tpCTe = xml(xmlAuth, 'tpCTe') || '0'
-      const tpServ = xml(xmlAuth, 'tpServ') || '0'
-      const tpCTeNomes: Record<string, string> = { '0': 'Normal', '1': 'Complemento', '2': 'Anulação', '3': 'Substituto' }
-      const tpServNomes: Record<string, string> = { '0': 'Normal', '1': 'Subcontratação', '2': 'Redespacho', '3': 'Redesp. Intermediário' }
+      // ════════════════════════════════════════════════════════════════════════
+      // 3. TIPO CT-e | TIPO SERVIÇO | TOMADOR | CFOP + Origem/Destino
+      // ════════════════════════════════════════════════════════════════════════
+      const tipoH = 34
+      box(L, Y, W, tipoH)
+      const halfW = W / 2
 
-      pdf.fontSize(6).font('Helvetica')
-      pdf.text('TIPO DO CT-e', L + 4, Y + 2)
-      pdf.text('TIPO DO SERVIÇO', L + 100, Y + 2)
+      F(5); N()
+      pdf.text('TIPO DO CT-e', L + 3, Y + 2)
+      pdf.text('TIPO DO SERVIÇO', L + 80, Y + 2)
       pdf.text('TOMADOR', L + 200, Y + 2)
-      pdf.text('CFOP', L + 320, Y + 2)
-      pdf.fontSize(7).font('Helvetica-Bold')
-      pdf.text(tpCTeNomes[tpCTe] || 'Normal', L + 4, Y + 10)
-      pdf.text(tpServNomes[tpServ] || 'Normal', L + 100, Y + 10)
-      const indToma = xml(xmlAuth, 'toma3') ? xml(xmlBloco(xmlAuth, 'toma3'), 'toma') : xml(xmlBloco(xmlAuth, 'toma4'), 'toma')
-      const tomaNomes: Record<string, string> = { '0': 'Remetente', '1': 'Expedidor', '2': 'Recebedor', '3': 'Destinatário', '4': 'Outros' }
-      pdf.text(tomaNomes[indToma] || '-', L + 200, Y + 10)
-      pdf.text(cfop || '-', L + 320, Y + 10)
+      pdf.text('CFOP', L + 290, Y + 2)
+      pdf.text('MUNICÍPIO DE INÍCIO', L + halfW, Y + 2)
+      F(6.5); B()
+      pdf.text(tpCTeNomes[tpCTe] || 'Normal', L + 3, Y + 9)
+      pdf.text(tpServNomes[tpServ] || 'Normal', L + 80, Y + 9)
+      pdf.text('Remetente', L + 200, Y + 9)
+      pdf.text(cfop, L + 290, Y + 9)
+      pdf.text(`${xMunIni} - ${ufIni} - ${cMunIni}`, L + halfW, Y + 9)
 
-      // CFOP / Natureza
-      pdf.fontSize(6).font('Helvetica').text('NATUREZA DA OPERAÇÃO', L + 4, Y + 19)
-      pdf.fontSize(7).font('Helvetica-Bold').text(natOp.substring(0, 60), L + 120, Y + 19)
+      // Linha 2: Natureza + Município de término
+      hline(L, L + W, Y + 18)
+      F(5); N()
+      pdf.text('NATUREZA DA OPERAÇÃO', L + 3, Y + 20)
+      pdf.text('MUNICÍPIO DE TÉRMINO', L + halfW, Y + 20)
+      F(6.5); B()
+      pdf.text(natOp.substring(0, 50), L + 120, Y + 20)
+      pdf.text(`${xMunFim} - ${ufFim} - ${cMunFim}`, L + halfW + 110, Y + 20)
 
-      // Origem / Destino
-      const xMunIni = xml(xmlAuth, 'xMunIni')
-      const ufIni = xml(xmlAuth, 'UFIni')
-      const xMunFim = xml(xmlAuth, 'xMunFim')
-      const ufFim = xml(xmlAuth, 'UFFim')
-      const cMunIni = xml(xmlAuth, 'cMunIni')
-      const cMunFim = xml(xmlAuth, 'cMunFim')
+      Y += tipoH + 2
 
-      pdf.fontSize(6).font('Helvetica').text('MUNICÍPIO DE INÍCIO', L + 380, Y + 2)
-      pdf.text('MUNICÍPIO DE TÉRMINO', L + 380, Y + 14)
-      pdf.fontSize(7).font('Helvetica-Bold')
-      pdf.text(`${xMunIni} - ${ufIni} - ${cMunIni}`, L + 460, Y + 2)
-      pdf.text(`${xMunFim} - ${ufFim} - ${cMunFim}`, L + 460, Y + 14)
+      // ════════════════════════════════════════════════════════════════════════
+      // 4. REMETENTE | DESTINATÁRIO
+      // ════════════════════════════════════════════════════════════════════════
+      const partH = 42
+      box(L, Y, halfW - 1, partH)
+      box(L + halfW + 1, Y, halfW - 1, partH)
 
-      Y += tipoH + 3
+      function renderPartic(tag: string, enderTag: string, x: number, w: number, label: string) {
+        const bloco = xmlBloco(xmlAuth, tag)
+        F(5); N(); pdf.text(label, x + 3, Y + 2)
+        if (!bloco) return
+        const nome = xml(bloco, 'xNome')
+        const cnpj = xml(bloco, 'CNPJ')
+        const cpf = xml(bloco, 'CPF')
+        const ie = xml(bloco, 'IE')
+        const ender = xmlBloco(bloco, enderTag)
+        const logr = xml(ender, 'xLgr')
+        const nro = xml(ender, 'nro')
+        const bairro = xml(ender, 'xBairro')
+        const mun = xml(ender, 'xMun')
+        const uf = xml(ender, 'UF')
+        const docStr = cnpj ? formatCnpj(cnpj) : cpf ? formatCpfCnpj(cpf) : ''
 
-      // ===== REMETENTE / DESTINATÁRIO =====
-      const partH = 38
-      pdf.rect(L, Y, W / 2 - 1, partH).stroke()
-      pdf.rect(L + W / 2 + 1, Y, W / 2 - 1, partH).stroke()
-      renderParticipanteBloco(pdf, 'REMETENTE', xmlAuth, 'rem', 'enderReme', L, Y, W / 2 - 1)
-      renderParticipanteBloco(pdf, 'DESTINATÁRIO', xmlAuth, 'dest', 'enderDest', L + W / 2 + 1, Y, W / 2 - 1)
-      Y += partH + 3
-
-      // ===== EXPEDIDOR / RECEBEDOR =====
-      const blocoExped = xmlBloco(xmlAuth, 'exped')
-      const blocoReceb = xmlBloco(xmlAuth, 'receb')
-      if (blocoExped || blocoReceb) {
-        pdf.rect(L, Y, W / 2 - 1, partH).stroke()
-        pdf.rect(L + W / 2 + 1, Y, W / 2 - 1, partH).stroke()
-        if (blocoExped) renderParticipanteDireto(pdf, 'EXPEDIDOR', blocoExped, 'enderExped', L, Y, W / 2 - 1)
-        if (blocoReceb) renderParticipanteDireto(pdf, 'RECEBEDOR', blocoReceb, 'enderReceb', L + W / 2 + 1, Y, W / 2 - 1)
-        Y += partH + 3
+        F(6); B(); pdf.text(nome, x + 3, Y + 9, { width: w - 6 })
+        F(5.5); N()
+        pdf.text(`CNPJ: ${docStr}  IE: ${ie || ''}`, x + 3, Y + 18, { width: w - 6 })
+        pdf.text(`${logr}${nro ? ', ' + nro : ''} - ${bairro} - ${mun}/${uf}`, x + 3, Y + 26, { width: w - 6 })
       }
 
-      // ===== PRODUTO / CARGA =====
-      const cargaH = 28
-      pdf.rect(L, Y, W, cargaH).stroke()
-      pdf.fontSize(6).font('Helvetica').text('PRODUTO PREDOMINANTE', L + 4, Y + 2)
+      renderPartic('rem', 'enderReme', L, halfW - 1, 'REMETENTE:')
+      renderPartic('dest', 'enderDest', L + halfW + 1, halfW - 1, 'DESTINATÁRIO:')
+      Y += partH + 2
+
+      // ════════════════════════════════════════════════════════════════════════
+      // 5. PRODUTO PREDOMINANTE | VALOR | UNIDADE
+      // ════════════════════════════════════════════════════════════════════════
+      const prodH = 22
+      box(L, Y, W, prodH)
       const proPred = xml(xmlAuth, 'proPred')
       const vCarga = xml(xmlAuth, 'vCarga')
-      pdf.fontSize(7).font('Helvetica-Bold').text(proPred, L + 100, Y + 2)
-      pdf.fontSize(6).font('Helvetica').text('VALOR TOTAL DA MERCADORIA', L + 4, Y + 12)
-      pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vCarga) || 0)}`, L + 130, Y + 12)
-      // Quantidades
-      pdf.fontSize(6).font('Helvetica').text('UNIDADE:', L + 300, Y + 12)
-      const qRegex2 = /<infQ>[\s\S]*?<tpMed>([^<]*)<\/tpMed>[\s\S]*?<qCarga>([^<]*)<\/qCarga>[\s\S]*?<\/infQ>/g
-      let qm2
-      let qX = L + 340
-      while ((qm2 = qRegex2.exec(xmlAuth)) !== null) {
-        pdf.fontSize(7).font('Helvetica').text(`${parseFloat(qm2[2]).toFixed(0)} ${qm2[1]}`, qX, Y + 12)
-        qX += 80
-      }
-      Y += cargaH + 3
+      F(5); N()
+      pdf.text('PRODUTO PREDOMINANTE', L + 3, Y + 2)
+      pdf.text('VALOR TOTAL DA MERCADORIA', L + 200, Y + 2)
+      pdf.text('UNIDADE:', L + 380, Y + 2)
+      F(6.5); B()
+      pdf.text(proPred, L + 110, Y + 2)
+      pdf.text(`R$ ${formatMoeda(parseFloat(vCarga) || 0)}`, L + 320, Y + 2)
 
-      // ===== COMPONENTES DO VALOR =====
+      // Peso bruto
+      const qInfos: string[] = []
+      const qRegex = /<infQ>[\s\S]*?<tpMed>([^<]*)<\/tpMed>[\s\S]*?<qCarga>([^<]*)<\/qCarga>[\s\S]*?<\/infQ>/g
+      let qm
+      while ((qm = qRegex.exec(xmlAuth)) !== null) {
+        qInfos.push(`${parseFloat(qm[2]).toFixed(2)} ${qm[1]}`)
+      }
+      F(6); N(); pdf.text(qInfos.join('  |  '), L + 420, Y + 2, { width: W - 430 })
+
+      Y += prodH + 2
+
+      // ════════════════════════════════════════════════════════════════════════
+      // 6. COMPONENTES DO VALOR DA PRESTAÇÃO DE SERVIÇO
+      // ════════════════════════════════════════════════════════════════════════
       const valH = 30
-      pdf.rect(L, Y, W, valH).stroke()
-      pdf.fontSize(6).font('Helvetica').text('COMPONENTES DO VALOR DA PRESTAÇÃO DE SERVIÇO', L + 4, Y + 2, { width: W - 8, align: 'center' })
-      // Tabela: NOME | VALOR | NOME | VALOR | NOME | VALOR | VALOR TOTAL
+      box(L, Y, W, valH)
+      F(5); N(); pdf.text('COMPONENTES DO VALOR DA PRESTAÇÃO DE SERVIÇO', L + 3, Y + 2, { width: W - 6, align: 'center' })
+
+      const vTPrest = xml(xmlAuth, 'vTPrest') || String(Number(doc.valorTotal || 0).toFixed(2))
+      const vRec = xml(xmlAuth, 'vRec') || vTPrest
+
+      // Componentes
       const comps2: Array<{ nome: string; valor: string }> = []
       const compRegex2 = /<Comp>[\s\S]*?<xNome>([^<]*)<\/xNome>[\s\S]*?<vComp>([^<]*)<\/vComp>[\s\S]*?<\/Comp>/g
       let cm2
-      while ((cm2 = compRegex2.exec(xmlAuth)) !== null) {
-        comps2.push({ nome: cm2[1], valor: cm2[2] })
-      }
-      let cX = L + 4
-      for (const comp of comps2.slice(0, 3)) {
-        pdf.fontSize(6).font('Helvetica').text(comp.nome, cX, Y + 12)
-        pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(comp.valor))}`, cX, Y + 20)
-        cX += 130
-      }
-      const vTPrest = xml(xmlAuth, 'vTPrest') || String(Number(doc.valorTotal).toFixed(2))
-      const vRec = xml(xmlAuth, 'vRec') || vTPrest
-      pdf.fontSize(6).font('Helvetica').text('VALOR TOTAL DO SERVIÇO', L + W - 140, Y + 12)
-      pdf.fontSize(8).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vTPrest))}`, L + W - 140, Y + 20)
-      Y += valH + 3
+      while ((cm2 = compRegex2.exec(xmlAuth)) !== null) comps2.push({ nome: cm2[1], valor: cm2[2] })
 
-      // ===== ICMS =====
+      let cX = L + 3
+      F(5); N()
+      for (const comp of comps2.slice(0, 3)) {
+        pdf.text(comp.nome, cX, Y + 11)
+        F(6.5); B(); pdf.text(`R$ ${formatMoeda(parseFloat(comp.valor))}`, cX, Y + 19); F(5); N()
+        cX += 120
+      }
+
+      // Valor Total e Valor a Receber (alinhados à direita)
+      F(5); N(); pdf.text('VALOR TOTAL DO SERVIÇO', L + W - 140, Y + 11)
+      F(7); B(); pdf.text(`R$ ${formatMoeda(parseFloat(vTPrest) || 0)}`, L + W - 140, Y + 19)
+      Y += valH + 2
+
+      // ════════════════════════════════════════════════════════════════════════
+      // 7. INFORMAÇÕES RELATIVAS AO IMPOSTO
+      // ════════════════════════════════════════════════════════════════════════
       const icmsH = 22
-      pdf.rect(L, Y, W, icmsH).stroke()
-      pdf.fontSize(6).font('Helvetica').text('INFORMAÇÕES RELATIVAS AO IMPOSTO', L + 4, Y + 2, { width: W - 8, align: 'center' })
+      box(L, Y, W, icmsH)
+      F(5); N(); pdf.text('INFORMAÇÕES RELATIVAS AO IMPOSTO', L + 3, Y + 2, { width: W - 6, align: 'center' })
+
       const cst = xml(xmlAuth, 'CST')
       const vBC = xml(xmlAuth, 'vBC')
       const pICMS = xml(xmlAuth, 'pICMS')
       const vICMS = xml(xmlAuth, 'vICMS')
-      pdf.fontSize(6).text('SITUAÇÃO TRIBUTÁRIA', L + 4, Y + 12)
-      pdf.fontSize(7).font('Helvetica-Bold').text(`${cst} - ICMS ${cst === '40' ? 'ISENTA' : cst === '41' ? 'NÃO TRIBUTADO' : ''}`, L + 80, Y + 12)
-      pdf.fontSize(6).font('Helvetica').text('BASE DE CÁLCULO', L + 250, Y + 12)
-      pdf.text('ALÍQ. ICMS', L + 350, Y + 12)
-      pdf.text('VALOR ICMS', L + 430, Y + 12)
-      pdf.text('VALOR FISCAL', L + 510, Y + 12)
-      Y += icmsH + 3
+      const cstNomes: Record<string, string> = { '00': 'ICMS', '40': 'ISENTA', '41': 'NÃO TRIBUTADO', '60': 'ICMS COBRADO ANT. POR ST', '90': 'OUTROS', 'SN': 'SIMPLES NACIONAL' }
 
-      // ===== DOCUMENTOS ORIGINÁRIOS =====
+      F(5); N()
+      pdf.text('SITUAÇÃO TRIBUTÁRIA', L + 3, Y + 11)
+      pdf.text('BASE DE CÁLCULO', L + 180, Y + 11)
+      pdf.text('ALÍQ. ICMS', L + 300, Y + 11)
+      pdf.text('VALOR ICMS', L + 380, Y + 11)
+      pdf.text('VALOR FISCAL', L + 470, Y + 11)
+      F(6); B()
+      pdf.text(`${cst} - ${cstNomes[cst] || 'ICMS'}`, L + 70, Y + 11)
+      if (vBC) pdf.text(`R$ ${formatMoeda(parseFloat(vBC))}`, L + 230, Y + 11)
+      if (pICMS) pdf.text(`${pICMS}%`, L + 340, Y + 11)
+      if (vICMS) pdf.text(`R$ ${formatMoeda(parseFloat(vICMS))}`, L + 420, Y + 11)
+
+      Y += icmsH + 2
+
+      // ════════════════════════════════════════════════════════════════════════
+      // 8. DOCUMENTOS ORIGINÁRIOS
+      // ════════════════════════════════════════════════════════════════════════
       const chavesNFe: string[] = []
       const regexChave = /<chave>(\d{44})<\/chave>/g
       let matchC
       while ((matchC = regexChave.exec(xmlAuth)) !== null) chavesNFe.push(matchC[1])
 
-      if (chavesNFe.length > 0) {
-        const docH = 18 + Math.min(chavesNFe.length, 5) * 10
-        pdf.rect(L, Y, W, docH).stroke()
-        pdf.fontSize(6).font('Helvetica').text('DOCUMENTOS ORIGINÁRIOS', L + 4, Y + 2, { width: W - 8, align: 'center' })
-        let dY = Y + 12
-        pdf.fontSize(6).text('TP DOC.', L + 4, dY)
-        pdf.text('CHAVE/DOC.', L + 60, dY)
+      const docH = 14 + Math.min(chavesNFe.length, 6) * 9
+      box(L, Y, W, docH)
+      F(5); N(); pdf.text('DOCUMENTOS ORIGINÁRIOS', L + 3, Y + 2, { width: W - 6, align: 'center' })
+      F(5); pdf.text('TP.DOC.', L + 3, Y + 11); pdf.text('CHAVE/DOC.', L + 60, Y + 11)
+      let dY = Y + 19
+      for (const ch of chavesNFe.slice(0, 6)) {
+        F(6); N(); pdf.text('NF-e', L + 3, dY); pdf.text(formatChave(ch), L + 60, dY, { width: W - 70 })
         dY += 9
-        for (const ch of chavesNFe.slice(0, 5)) {
-          pdf.fontSize(7).font('Helvetica')
-          pdf.text('NF-e', L + 4, dY)
-          pdf.text(formatChave(ch), L + 60, dY, { width: W - 80 })
-          dY += 10
-        }
-        Y += docH + 3
       }
+      Y += docH + 2
 
-      // ===== OBSERVAÇÕES =====
+      // ════════════════════════════════════════════════════════════════════════
+      // 9. OBSERVAÇÕES
+      // ════════════════════════════════════════════════════════════════════════
       const xObs = xml(xmlAuth, 'xObs')
       const infCpl = xml(xmlAuth, 'infCpl')
-      const obs = xObs || infCpl
-      if (obs) {
-        const obsH = 25
-        pdf.rect(L, Y, W, obsH).stroke()
-        pdf.fontSize(6).font('Helvetica').text('OBSERVAÇÕES', L + 4, Y + 2, { width: W - 8, align: 'center' })
-        pdf.fontSize(7).text(obs.substring(0, 400), L + 4, Y + 11, { width: W - 10 })
-        Y += obsH + 3
-      }
+      const obs = xObs || infCpl || ''
+      const obsH = 30
+      box(L, Y, W, obsH)
+      F(5); N(); pdf.text('OBSERVAÇÕES', L + 3, Y + 2, { width: W - 6, align: 'center' })
+      F(6); pdf.text(obs.substring(0, 300), L + 3, Y + 11, { width: W - 10 })
+      Y += obsH + 2
 
-      // ===== TARJA HOMOLOGAÇÃO =====
+      // ════════════════════════════════════════════════════════════════════════
+      // TARJA DE HOMOLOGAÇÃO
+      // ════════════════════════════════════════════════════════════════════════
       if (doc.ambiente === 2) {
         pdf.save()
-        pdf.fontSize(24).font('Helvetica-Bold').fillColor('red').opacity(0.3)
-        pdf.text('CT-e SEM VALOR FISCAL - AMBIENTE DE HOMOLOGAÇÃO', L + 20, 400, { width: W - 40, align: 'center' })
+        pdf.fontSize(22).font('Helvetica-Bold').fillColor('red').opacity(0.3)
+        const tarjaY = Y + 20
+        pdf.text('CT-e SEM VALOR FISCAL - AMBIENTE DE HOMOLOGAÇÃO', L + 20, tarjaY, { width: W - 40, align: 'center' })
         pdf.restore()
       }
 
-      // ===== TARJA CANCELAMENTO =====
       if (doc.status === 'CANCELADO') {
         pdf.save()
-        pdf.fontSize(32).font('Helvetica-Bold').fillColor('red').opacity(0.25)
-        pdf.text('CANCELADO', L + 100, 380, { width: W - 200, align: 'center' })
+        pdf.fontSize(30).font('Helvetica-Bold').fillColor('red').opacity(0.25)
+        pdf.text('CANCELADO', L + 100, Y + 40, { width: W - 200, align: 'center' })
         pdf.restore()
       }
 
-      // ===== Rodapé =====
-      pdf.fontSize(5).font('Helvetica').fillColor('black').opacity(1)
-        .text('Projeto ACBr — www.projetoacbr.com.br | Vizor ERP', L, 820, { width: W, align: 'center' })
+      // ════════════════════════════════════════════════════════════════════════
+      // MODAL RODOVIÁRIO (se houver)
+      // ════════════════════════════════════════════════════════════════════════
+      const rodoBloco = xmlBloco(xmlAuth, 'rodo')
+      if (rodoBloco && Y < 700) {
+        Y += 60 // pular espaço da tarja
+        const rntrc = xml(rodoBloco, 'RNTRC')
+        const rodoH = 22
+        box(L, Y, W, rodoH)
+        F(5); N(); pdf.text('DADOS ESPECÍFICOS DO MODAL RODOVIÁRIO', L + 3, Y + 2, { width: W - 6, align: 'center' })
+        F(5); pdf.text('RNTRC DA EMPRESA', L + 3, Y + 11)
+        F(6.5); B(); pdf.text(rntrc || '', L + 80, Y + 11)
+        Y += rodoH + 2
+      }
+
+      // ════════════════════════════════════════════════════════════════════════
+      // RODAPÉ
+      // ════════════════════════════════════════════════════════════════════════
+      F(5.5); N(); pdf.fillColor('black').opacity(1)
+      pdf.text('Projeto ACBr — www.projetoacbr.com.br | Vizor ERP', L, 820, { width: W, align: 'center' })
 
       pdf.end()
     } catch (err) {
