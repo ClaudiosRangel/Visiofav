@@ -270,16 +270,24 @@ export function parseDanfeTexto(texto: string): DadosDanfeExtraidos {
   const chassisEncontrados = [...new Set([...texto.matchAll(chassiRegex)].map(m => m[1]))]
   
   for (const chassi of chassisEncontrados) {
-    // Buscar modelo próximo ao chassi
-    let modelo = ''
-    const modeloMatch = texto.match(/(?:Modelo|MODELO)[:\s]*([A-Za-z0-9\/\s]+?)(?:\n|Chassi|CHASSI)/i)
-      || texto.match(/(?:Honda|Toyota|VW|Chevrolet|Fiat|Hyundai|Nissan|Renault|Jeep)\/(?:Modelo\s*)?([A-Za-z0-9\s]+?)(?:\n|Chassi)/i)
-    if (modeloMatch) modelo = modeloMatch[1]?.trim() || ''
+    // Buscar contexto ao redor do chassi (500 chars antes e depois) para localizar modelo e cor
+    const chassiIdx = texto.indexOf(chassi)
+    const contexto = texto.substring(Math.max(0, chassiIdx - 200), Math.min(texto.length, chassiIdx + 500))
 
-    // Buscar cor
+    // Buscar modelo no contexto próximo ao chassi
+    let modelo = ''
+    const modeloMatch = contexto.match(/(?:Veiculo|Veículo|Modelo)[:\s]*(?:Honda|Toyota|VW|Chevrolet|Fiat|Hyundai|Nissan|Renault|Jeep|Ford|Mitsubishi)?[\/\s]*([A-Za-z0-9\s.]+?)(?:\n|Chassi|Renavam|Motor)/i)
+      || contexto.match(/(?:Honda|Toyota|VW|Chevrolet|Fiat|Hyundai|Nissan|Renault|Jeep|Ford|Mitsubishi)\/(?:Modelo\s*)?([A-Za-z0-9\s.]+?)(?:\n|Chassi|Renavam)/i)
+    if (modeloMatch) modelo = modeloMatch[1]?.trim().substring(0, 30) || ''
+
+    // Buscar cor externa no contexto próximo ao chassi
     let cor = ''
-    const corMatch = texto.match(/(?:Cor\s*(?:externa|Ext)?)[:\s]*([A-ZÀ-Ú\s]+?)(?:\s{2,}|\n|Cor\s*Int)/i)
-    if (corMatch) cor = corMatch[1].trim()
+    const corMatch = contexto.match(/Cor\s*(?:externa|Ext\.?)\s*[:.]?\s*([A-ZÀ-Úa-zà-ú\s]+?)(?:\s{2,}|\n|Cor\s*Int|Num)/i)
+    if (corMatch) {
+      cor = corMatch[1].trim().toUpperCase()
+      // Limitar a 20 chars e remover palavras que não são cor (segurança contra captura de endereço)
+      if (cor.length > 20) cor = cor.substring(0, 20).trim()
+    }
 
     veiculos.push({ chassi, modelo, cor })
   }

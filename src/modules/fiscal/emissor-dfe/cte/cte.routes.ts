@@ -223,11 +223,11 @@ export type EmissaoCTeInput = z.infer<typeof emissaoCTeInputSchema>
 
 // === Helpers ===
 
-async function proximoNumeroCTe(empresaId: string, serie: number, ambiente?: number): Promise<number> {
-  const where: any = { empresaId, tipo: 'CTE', serie }
-  if (ambiente) where.ambiente = ambiente
+async function proximoNumeroCTe(empresaId: string, serie: number): Promise<number> {
+  // Busca o último número independente do ambiente, pois a constraint unique
+  // do banco é [empresaId, tipo, serie, numero] sem incluir ambiente.
   const ultimo = await prisma.documentoFiscal.findFirst({
-    where,
+    where: { empresaId, tipo: 'CTE', serie },
     orderBy: { numero: 'desc' },
     select: { numero: true },
   })
@@ -1153,7 +1153,7 @@ export async function cteRoutes(app: FastifyInstance) {
       if (!empresa) return reply.status(404).send({ message: 'Empresa não encontrada' })
 
       const ambienteCte = empresa.ambienteCTe || empresa.ambienteNFe || 2
-      const nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteCte)
+      const nCT = await proximoNumeroCTe(user.empresaId, body.serie)
 
       // Gravar como DocumentoFiscal com status DIGITADA (sem gerar XML/transmitir)
       const documento = await prisma.documentoFiscal.create({
@@ -1541,7 +1541,7 @@ export async function cteRoutes(app: FastifyInstance) {
 
       const ufEmitente = empresa.uf || ''
       const ambienteEmissao = empresa.ambienteCTe || empresa.ambienteNFe || 2
-      const nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteEmissao)
+      const nCT = await proximoNumeroCTe(user.empresaId, body.serie)
 
       const dadosCTe: DadosCTe = {
         cUF: obterCodigoUF(ufEmitente),
