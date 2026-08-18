@@ -602,24 +602,25 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       // ════════════════════════════════════════════════════════════════════════
       const canH = 48
       box(L, Y, W, canH)
-      const canRightW = 100
-      vline(L + W - canRightW, Y, Y + canH)
+      const canRightW = 95
+      const canLeftW = W - canRightW
+      vline(L + canLeftW, Y, Y + canH)
 
       pdf.fontSize(5.5).font('Helvetica')
-      pdf.text('DECLARO QUE RECEBI OS VOLUMES DESTE CONHECIMENTO EM PERFEITO ESTADO PELO QUE DOU POR CUMPRIDO O PRESENTE CONTRATO DE TRANSPORTE', L + 3, Y + 3, { width: W - canRightW - 6 })
+      pdf.text('DECLARO QUE RECEBI OS VOLUMES DESTE CONHECIMENTO EM PERFEITO ESTADO PELO QUE DOU POR CUMPRIDO O PRESENTE CONTRATO DE TRANSPORTE', L + 3, Y + 3, { width: canLeftW - 6 })
 
       pdf.fontSize(6).font('Helvetica')
       pdf.text('NOME:', L + 3, Y + 15)
-      pdf.text('RG:', L + (W - canRightW) * 0.6, Y + 15)
+      pdf.text('RG:', L + canLeftW * 0.6, Y + 15)
 
-      hline(L + 3, L + W - canRightW - 3, Y + 25)
+      hline(L + 3, L + canLeftW - 3, Y + 25)
 
       pdf.fontSize(5.5).font('Helvetica')
       pdf.text('DATA/HORA DA ENTREGA: ___/___/___  ___:___', L + 3, Y + 28)
-      pdf.text('ASSINATURA / CARIMBO', L + (W - canRightW) * 0.55, Y + 28)
+      pdf.text('ASSINATURA / CARIMBO', L + canLeftW * 0.55, Y + 28)
 
       // Box direita do canhoto
-      const cRX = L + W - canRightW + 3
+      const cRX = L + canLeftW + 3
       const cRW = canRightW - 6
       pdf.fontSize(10).font('Helvetica-Bold').text('CT-e', cRX, Y + 4, { width: cRW, align: 'center' })
       pdf.fontSize(7).font('Helvetica-Bold').text(`N. ${numFormatado}`, cRX, Y + 18, { width: cRW, align: 'center' })
@@ -673,7 +674,7 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       pdf.text('SÉRIE', c2X + mtColW, mtY, { width: mtColW, align: 'center' })
       pdf.text('NÚMERO', c2X + mtColW * 2, mtY, { width: mtColW, align: 'center' })
       pdf.text('FOLHA', c2X + mtColW * 3, mtY, { width: mtColW, align: 'center' })
-      pdf.text('DATA/HORA EMISSÃO', c2X + mtColW * 4, mtY, { width: mtColW, align: 'center' })
+      pdf.text('DATA/HORA', c2X + mtColW * 4, mtY, { width: mtColW, align: 'center' })
 
       hline(c2X, c2X + c2W, mtY + 7)
 
@@ -682,10 +683,10 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       pdf.text(String(doc.serie), c2X + mtColW, mtY + 9, { width: mtColW, align: 'center' })
       pdf.text(numFormatado, c2X + mtColW * 2, mtY + 9, { width: mtColW, align: 'center' })
       pdf.text('01/01', c2X + mtColW * 3, mtY + 9, { width: mtColW, align: 'center' })
-      pdf.fontSize(6).font('Helvetica-Bold').text(formatDataHora(doc.dataEmissao), c2X + mtColW * 4, mtY + 9, { width: mtColW, align: 'center' })
+      pdf.fontSize(5.5).font('Helvetica').text(formatDataHora(doc.dataEmissao), c2X + mtColW * 4, mtY + 9, { width: mtColW, align: 'center' })
 
       // Código de barras Code128 da chave
-      let barcodeY = mtY + 20
+      let barcodeY = mtY + 24
       if (doc.chaveAcesso) {
         const barBuf = await gerarBarcode(doc.chaveAcesso)
         if (barBuf.length > 0) {
@@ -954,24 +955,31 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       const vtAreaW = 160         // espaço para totais
       const compColW = comps.length > 0 ? Math.min(compAreaW / Math.min(comps.length, 3), 130) : 130
 
+      hline(L, L + W, Y + 9) // linha horizontal abaixo do título
+
       // Labels e valores dos componentes
       let compX = L + 3
       pdf.fontSize(5).font('Helvetica')
-      for (const comp of comps.slice(0, 3)) {
-        pdf.text('NOME', compX, Y + 10)
-        pdf.text('VALOR', compX + compColW * 0.6, Y + 10)
-        pdf.fontSize(6).font('Helvetica').text(comp.nome, compX, Y + 17)
-        pdf.fontSize(6.5).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(comp.valor) || 0)}`, compX + compColW * 0.6, Y + 17)
+      for (let ci = 0; ci < comps.slice(0, 3).length; ci++) {
+        const comp = comps[ci]
+        if (ci > 0) vline(L + compColW * ci, Y + 9, Y + compH) // linhas verticais entre colunas
         pdf.fontSize(5).font('Helvetica')
-        compX += compColW
+        pdf.text('NOME', L + compColW * ci + 3, Y + 10)
+        pdf.text('VALOR', L + compColW * ci + compColW * 0.6, Y + 10)
+        pdf.fontSize(6).font('Helvetica').text(comp.nome, L + compColW * ci + 3, Y + 18)
+        pdf.fontSize(6.5).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(comp.valor) || 0)}`, L + compColW * ci + compColW * 0.6, Y + 18)
       }
 
+      // Linha vertical antes dos totais
+      const vtX = L + W - vtAreaW
+      vline(vtX, Y + 9, Y + compH)
+      vline(vtX + 80, Y + 9, Y + compH)
+
       // Valor total do serviço + valor a receber (lado direito)
-      const vtX = L + W - vtAreaW + 3
-      pdf.fontSize(5).font('Helvetica').text('VALOR TOTAL DO SERVIÇO', vtX, Y + 10)
-      pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vTPrest) || 0)}`, vtX, Y + 17)
-      pdf.fontSize(5).font('Helvetica').text('VALOR A RECEBER', vtX + 80, Y + 10)
-      pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vRec) || 0)}`, vtX + 80, Y + 17)
+      pdf.fontSize(5).font('Helvetica').text('VALOR TOTAL DO SERVIÇO', vtX + 3, Y + 10)
+      pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vTPrest) || 0)}`, vtX + 3, Y + 18)
+      pdf.fontSize(5).font('Helvetica').text('VALOR A RECEBER', vtX + 83, Y + 10)
+      pdf.fontSize(7).font('Helvetica-Bold').text(`R$ ${formatMoeda(parseFloat(vRec) || 0)}`, vtX + 83, Y + 18)
 
       Y += compH + 2
 
@@ -991,6 +999,7 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       const icLabels = ['SITUAÇÃO TRIBUTÁRIA', 'BASE DE CÁLCULO', 'ALÍQ. ICMS', 'VALOR ICMS', 'VALOR FISCAL']
       icLabels.forEach((lbl, i) => {
         label(lbl, L + icColW * i + 3, Y + 10)
+        if (i > 0) vline(L + icColW * i, Y + 9, Y + icmsH) // linhas verticais separadoras
       })
 
       const cstNomes: Record<string, string> = { '00': 'Tributação Normal', '40': 'Isenta', '41': 'Não Tributado', '60': 'ICMS cobrado ant.', '90': 'Outros', 'SN': 'Simples Nacional' }
@@ -1028,6 +1037,10 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
 
       // Cabeçalho da tabela (2 colunas lado a lado)
       const docColW = W / 2
+      hline(L, L + W, Y + 9) // linha horizontal abaixo do título
+      vline(L + 35, Y + 9, Y + docH) // separar TP.DOC da CHAVE (coluna esquerda)
+      vline(L + docColW, Y + 9, Y + docH) // divisória central
+      vline(L + docColW + 35, Y + 9, Y + docH) // separar TP.DOC da CHAVE (coluna direita)
       pdf.fontSize(5).font('Helvetica')
       pdf.text('TP.DOC.', L + 3, Y + 10)
       pdf.text('CHAVE / DOC.e', L + 40, Y + 10)
