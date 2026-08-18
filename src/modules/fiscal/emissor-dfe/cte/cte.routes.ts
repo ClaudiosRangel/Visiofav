@@ -326,6 +326,8 @@ export async function cteRoutes(app: FastifyInstance) {
       aliqIcms: z.number().min(0).max(100).optional(),
       seguradora: z.string().max(30).optional(),
       apolice: z.string().max(20).optional(),
+      dacteModelo: z.enum(['1', '2']).optional(),
+      dacteOrientacao: z.enum(['retrato', 'paisagem']).optional(),
     }).parse(request.body)
 
     // Salvar cada campo como parâmetro
