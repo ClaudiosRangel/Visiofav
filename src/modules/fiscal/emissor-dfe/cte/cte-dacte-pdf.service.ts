@@ -900,7 +900,7 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       // RODAPÉ
       // ════════════════════════════════════════════════════════════════════════
       F(5.5); N(); pdf.fillColor('black').opacity(1)
-      pdf.text('Projeto ACBr — www.projetoacbr.com.br | Vizor ERP', L, 820, { width: W, align: 'center' })
+      pdf.text('DACTE gerado pelo Vizor ERP — www.vizorerp.com.br', L, 820, { width: W, align: 'center' })
 
       pdf.end()
     } catch (err) {
