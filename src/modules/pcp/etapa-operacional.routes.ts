@@ -921,6 +921,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }
     const query = z.object({
       opId: z.string().uuid().optional(),
+      opNumero: z.string().optional(),
       page: z.coerce.number().min(1).default(1),
       limit: z.coerce.number().min(1).max(100).default(50),
     }).parse(request.query)
@@ -930,6 +931,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }
     if (query.opId) {
       where.ordemProducaoId = query.opId
+    }
+    if (query.opNumero) {
+      where.ordemProducao = {
+        ...where.ordemProducao,
+        OR: [
+          { numero: isNaN(Number(query.opNumero)) ? undefined : Number(query.opNumero) },
+          { referenciaExterna: { contains: query.opNumero, mode: 'insensitive' } },
+        ].filter(Boolean),
+      }
     }
 
     const skip = (query.page - 1) * query.limit

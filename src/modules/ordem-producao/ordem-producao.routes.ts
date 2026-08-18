@@ -7,6 +7,7 @@ import { getOpPdfPath, getOpsPdfDir, salvarOpPdf, carregarOpPdf, opTemPdf, remov
 import {
   validarTransicaoStatus,
   getTransicoesPermitidas,
+  getTransicoesForcadas,
   proximoNumeroOp,
   explodirBomParaOp,
   gerarEtapasOp,
@@ -1097,6 +1098,109 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     })
 
     return { message: `OP #${op.numero} cancelada com sucesso` }
+  })
+
+  // =========================================================================
+  // PATCH /api/ordens-producao/:id/forcar-status — Transição forçada (SUPER_ADMIN)
+  // Permite alterar o status de uma OP concluída/cancelada para qualquer outro.
+  // =========================================================================
+  app.patch('/:id/forcar-status', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      status: z.string(),
+      motivoAlteracao: z.string().min(10, 'Motivo deve ter pelo menos 10 caracteres'),
+      emailAdmin: z.string().min(1),
+      senhaAdmin: z.string().min(1),
+    }).parse(request.body)
+
+    // Verificar credenciais do admin
+    const bcrypt = await import('bcryptjs')
+    let admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
+    if (!admin) {
+      admin = await prisma.usuario.findFirst({
+        where: { email: { contains: body.emailAdmin, mode: 'insensitive' } },
+      })
+    }
+    if (!admin) {
+      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+    }
+    const senhaValida = bcrypt.default.compareSync(body.senhaAdmin, admin.senha)
+    if (!senhaValida) {
+      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+    }
+    if (admin.perfil !== 'SUPER_ADMIN') {
+      return reply.status(403).send({ message: 'Apenas SUPER_ADMIN pode forçar transição de status' })
+    }
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, numero: true, status: true, empresaId: true, referenciaExterna: true },
+    })
+
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    if (op.status === body.status) {
+      return reply.status(400).send({ message: `OP já está no status ${body.status}` })
+    }
+
+    // Validar que o novo status é um status válido do sistema
+    const statusValidos = getTransicoesForcadas(op.status)
+    if (!statusValidos.includes(body.status)) {
+      return reply.status(400).send({ message: `Status '${body.status}' não é um status válido do sistema` })
+    }
+
+    const statusAnterior = op.status
+    const dataUpdate: any = { status: body.status }
+
+    // Se está voltando de CONCLUIDA, limpar dataFimReal
+    if (statusAnterior === 'CONCLUIDA' && body.status !== 'CONCLUIDA') {
+      dataUpdate.dataFimReal = null
+    }
+    // Se está indo para CONCLUIDA, setar dataFimReal
+    if (body.status === 'CONCLUIDA') {
+      dataUpdate.dataFimReal = new Date()
+    }
+    // Se está voltando para antes de EM_PRODUCAO, limpar dataInicioReal
+    if (['RASCUNHO', 'PLANEJADA', 'PROGRAMADA', 'LIBERADA'].includes(body.status) && statusAnterior === 'EM_PRODUCAO') {
+      dataUpdate.dataInicioReal = null
+    }
+    // Se está indo para EM_PRODUCAO, setar dataInicioReal
+    if (body.status === 'EM_PRODUCAO') {
+      dataUpdate.dataInicioReal = new Date()
+    }
+    // Se estiver saindo de CANCELADA, limpar motivoCancelamento
+    if (statusAnterior === 'CANCELADA' && body.status !== 'CANCELADA') {
+      dataUpdate.motivoCancelamento = null
+    }
+    // Se está indo para CANCELADA, a motivoAlteracao serve como motivo
+    if (body.status === 'CANCELADA') {
+      dataUpdate.motivoCancelamento = body.motivoAlteracao
+    }
+
+    await prisma.ordemProducao.update({
+      where: { id },
+      data: dataUpdate,
+    })
+
+    // Log de auditoria
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: id,
+        usuarioId: admin.id,
+        statusAnterior,
+        statusNovo: body.status,
+        observacao: `Transição forçada por ${admin.nome} (${admin.email}): ${statusAnterior} → ${body.status}. Motivo: ${body.motivoAlteracao}`,
+      },
+    })
+
+    return {
+      message: `OP #${op.referenciaExterna || op.numero} alterada de ${statusAnterior} para ${body.status}`,
+      statusAnterior,
+      statusNovo: body.status,
+    }
   })
 
   // =========================================================================

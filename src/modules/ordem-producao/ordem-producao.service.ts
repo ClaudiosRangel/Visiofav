@@ -14,6 +14,11 @@ const TRANSICOES_VALIDAS: Record<string, string[]> = {
   CANCELADA: [],
 }
 
+/**
+ * Todos os status possíveis de uma OP — usado para transição forçada (SUPER_ADMIN).
+ */
+const TODOS_STATUS = ['RASCUNHO', 'PLANEJADA', 'PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO', 'CONCLUIDA', 'CANCELADA']
+
 export function validarTransicaoStatus(statusAtual: string, statusNovo: string): boolean {
   const permitidos = TRANSICOES_VALIDAS[statusAtual]
   if (!permitidos) return false
@@ -22,6 +27,14 @@ export function validarTransicaoStatus(statusAtual: string, statusNovo: string):
 
 export function getTransicoesPermitidas(statusAtual: string): string[] {
   return TRANSICOES_VALIDAS[statusAtual] || []
+}
+
+/**
+ * Retorna todos os status para os quais uma OP pode ir via transição forçada (SUPER_ADMIN).
+ * Exclui o status atual.
+ */
+export function getTransicoesForcadas(statusAtual: string): string[] {
+  return TODOS_STATUS.filter(s => s !== statusAtual)
 }
 
 /**
