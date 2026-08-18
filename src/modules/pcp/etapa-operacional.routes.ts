@@ -341,6 +341,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       novasEtapas.push(nova)
     }
 
+    // Log de auditoria — desmembramento
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        statusAnterior: etapa.status,
+        statusNovo: etapa.status,
+        usuarioId: user.id,
+        observacao: `Etapa "${etapa.descricao}" desmembrada em ${novasEtapas.length} partes: ${novasEtapas.map(e => `${Number(e.quantidadePrevista)} un`).join(', ')}`,
+      },
+    })
+
     return reply.status(201).send({
       message: `Etapa desmembrada em ${novasEtapas.length} partes`,
       etapaOriginalId: id,
@@ -554,6 +565,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       },
     })
 
+    // Log de auditoria
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: body.opId,
+        statusAnterior: op.status,
+        statusNovo: op.status,
+        usuarioId: user.id,
+        observacao: `Entrega postergada: ${op.dataEntregaPrevista ? new Date(op.dataEntregaPrevista).toLocaleDateString('pt-BR') : '—'} → ${new Date(body.novaDataEntrega).toLocaleDateString('pt-BR')} (${(op.vezesPostergada || 0) + 1}ª vez)`,
+      },
+    })
+
     return {
       id: atualizada.id,
       dataEntregaPrevista: atualizada.dataEntregaPrevista,
@@ -661,6 +683,19 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     }
 
+    // Log de auditoria — re-extração de PDF
+    if (novasTags.length > 0 || materiaisAtualizados) {
+      await prisma.logOrdemProducao.create({
+        data: {
+          ordemProducaoId: op.id,
+          statusAnterior: '',
+          statusNovo: '',
+          usuarioId: user.id,
+          observacao: `Re-extração de PDF: ${novasTags.length} tags atualizadas${materiaisAtualizados ? `, ${dados.materiais.length} materiais reprocessados` : ''}`,
+        },
+      })
+    }
+
     return {
       opNumero: op.referenciaExterna || op.numero,
       tipoOp: dados.observacoes.tipoOp || null,
@@ -711,6 +746,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const atualizada = await prisma.etapaOrdemProducao.update({
       where: { id },
       data: { centroProducaoId: body.centroProducaoId, ordemManual: false, posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
+    })
+
+    // Log de auditoria — mover etapa entre centros
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        statusAnterior: etapa.status,
+        statusNovo: etapa.status,
+        usuarioId: user.id,
+        observacao: `Etapa "${etapa.descricao}" movida para centro ${centro.codigo || centro.descricao}`,
+      },
     })
 
     return { id: atualizada.id, centroProducaoId: atualizada.centroProducaoId }
@@ -773,6 +819,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         centroProducaoId: body.centroProducaoId,
         status: 'PENDENTE',
         posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
+      },
+    })
+
+    // Log de auditoria — adição manual à fila
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: op.id,
+        statusAnterior: op.status,
+        statusNovo: op.status,
+        usuarioId: user.id,
+        observacao: `Etapa adicionada manualmente à fila: "${descricaoEtapa}"`,
       },
     })
 

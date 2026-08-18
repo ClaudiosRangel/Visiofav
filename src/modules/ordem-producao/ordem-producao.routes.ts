@@ -327,6 +327,181 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/ordens-producao/:id/historico — Timeline completa da OP
+  // Unifica logs de transição, apontamentos de etapa, liberações de material
+  // e marcos importantes numa lista cronológica.
+  // =========================================================================
+  app.get('/:id/historico', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!await verificarAcessoMenu(user.empresaId, user.id, user.perfil, 'ordens-producao', 'visualizar')) {
+      return reply.status(403).send({ message: 'Sem permissão para visualizar ordens de produção' })
+    }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: {
+        id: true, numero: true, referenciaExterna: true, status: true,
+        origemImportacao: true, criadoEm: true, dataInicioReal: true, dataFimReal: true,
+        observacoes: true, produtoId: true, clienteId: true,
+      },
+    })
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    // 1. Logs de transição de status
+    const logs = await prisma.logOrdemProducao.findMany({
+      where: { ordemProducaoId: id },
+      orderBy: { criadoEm: 'asc' },
+    })
+
+    // 2. Apontamentos de etapa (granulares)
+    const etapas = await prisma.etapaOrdemProducao.findMany({
+      where: { ordemProducaoId: id },
+      select: { id: true, descricao: true, sequencia: true, centroProducao: { select: { codigo: true, descricao: true } } },
+    })
+    const etapaIds = etapas.map(e => e.id)
+    const apontamentosEtapa = etapaIds.length > 0
+      ? await prisma.apontamentoEtapa.findMany({
+          where: { etapaOrdemProducaoId: { in: etapaIds } },
+          orderBy: { criadoEm: 'asc' },
+        })
+      : []
+
+    // 3. Liberações de material
+    const liberacoes = await prisma.liberacaoMaterial.findMany({
+      where: { ordemProducaoId: id },
+      orderBy: { criadoEm: 'asc' },
+      include: { itens: { select: { descricao: true, quantidadeSolicitada: true } } },
+    })
+
+    // 4. Buscar nomes de usuários envolvidos
+    const todosUsuarioIds = [
+      ...logs.map(l => l.usuarioId),
+      ...apontamentosEtapa.map(a => a.funcionarioId).filter(Boolean),
+    ].filter(Boolean) as string[]
+    const uniqueUsuarioIds = [...new Set(todosUsuarioIds)]
+    const usuarios = uniqueUsuarioIds.length > 0
+      ? await prisma.usuario.findMany({ where: { id: { in: uniqueUsuarioIds } }, select: { id: true, nome: true } })
+      : []
+    const usuarioMap = new Map(usuarios.map(u => [u.id, u.nome]))
+
+    // Mapa de etapas
+    const etapaMap = new Map(etapas.map(e => [e.id, e]))
+
+    // Montar timeline unificada
+    type EventoTimeline = {
+      tipo: string
+      data: string
+      titulo: string
+      descricao: string | null
+      usuario: string | null
+      cor: string
+      icone: string
+    }
+
+    const eventos: EventoTimeline[] = []
+
+    // Evento de criação da OP
+    eventos.push({
+      tipo: 'criacao',
+      data: op.criadoEm.toISOString(),
+      titulo: `OP criada${op.origemImportacao === 'PDF_GPRINT' ? ' (importação PDF GPrint)' : op.origemImportacao === 'AVULSA' ? ' (avulsa)' : ''}`,
+      descricao: null,
+      usuario: null,
+      cor: 'blue',
+      icone: 'plus',
+    })
+
+    // Logs de transição
+    for (const log of logs) {
+      eventos.push({
+        tipo: 'transicao',
+        data: log.criadoEm.toISOString(),
+        titulo: `Status: ${log.statusAnterior || '—'} → ${log.statusNovo}`,
+        descricao: log.observacao,
+        usuario: usuarioMap.get(log.usuarioId) || null,
+        cor: log.statusNovo === 'CANCELADA' ? 'red' : log.statusNovo === 'CONCLUIDA' ? 'green' : log.statusNovo === 'EM_PRODUCAO' ? 'orange' : 'blue',
+        icone: log.statusNovo === 'CANCELADA' ? 'x' : log.statusNovo === 'CONCLUIDA' ? 'check' : 'arrow-right',
+      })
+    }
+
+    // Apontamentos de etapa
+    for (const ap of apontamentosEtapa) {
+      const etapa = etapaMap.get(ap.etapaOrdemProducaoId)
+      const centroNome = etapa?.centroProducao?.codigo || etapa?.centroProducao?.descricao || ''
+      const etapaDesc = etapa?.descricao || `Etapa ${etapa?.sequencia || '?'}`
+
+      let titulo = ''
+      let cor = 'gray'
+      let icone = 'note'
+      switch (ap.tipo) {
+        case 'PRODUCAO':
+          titulo = `Produção: ${Number(ap.quantidadeProduzida || 0).toLocaleString('pt-BR')} un — ${etapaDesc} (${centroNome})`
+          cor = 'green'
+          icone = 'hammer'
+          break
+        case 'PERDA':
+          titulo = `Perda: ${Number(ap.quantidadePerda || 0).toLocaleString('pt-BR')} un — ${etapaDesc} (${centroNome})`
+          cor = 'red'
+          icone = 'alert'
+          break
+        case 'PARADA':
+          titulo = `Parada: ${ap.motivoParada || 'sem motivo'} — ${etapaDesc} (${centroNome})`
+          cor = 'yellow'
+          icone = 'pause'
+          break
+        case 'RETOMADA':
+          titulo = `Retomada — ${etapaDesc} (${centroNome})`
+          cor = 'teal'
+          icone = 'play'
+          break
+        default:
+          titulo = `${ap.tipo} — ${etapaDesc} (${centroNome})`
+      }
+
+      eventos.push({
+        tipo: 'apontamento',
+        data: ap.criadoEm.toISOString(),
+        titulo,
+        descricao: ap.observacao || null,
+        usuario: ap.funcionarioId ? (usuarioMap.get(ap.funcionarioId) || null) : null,
+        cor,
+        icone,
+      })
+    }
+
+    // Liberações de material
+    for (const lib of liberacoes) {
+      const materiaisResumo = lib.itens.slice(0, 3).map((i: any) => i.descricao || 'item').join(', ')
+      eventos.push({
+        tipo: 'liberacao',
+        data: lib.criadoEm.toISOString(),
+        titulo: `Liberação de material — ${lib.status}`,
+        descricao: materiaisResumo + (lib.itens.length > 3 ? ` (+${lib.itens.length - 3} itens)` : ''),
+        usuario: null,
+        cor: lib.status === 'ENTREGUE' ? 'green' : lib.status === 'CANCELADA' ? 'red' : 'cyan',
+        icone: 'package',
+      })
+    }
+
+    // Ordenar por data
+    eventos.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
+
+    return {
+      op: {
+        id: op.id,
+        numero: op.referenciaExterna || String(op.numero),
+        status: op.status,
+        origemImportacao: op.origemImportacao,
+      },
+      eventos,
+      totalEventos: eventos.length,
+    }
+  })
+
+  // =========================================================================
   // POST /api/ordens-producao — Criar OP
   // =========================================================================
   app.post('/', async (request, reply) => {
@@ -819,6 +994,20 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
         referenciaExterna: true, origemImportacao: true, criadoPorId: true, criadoEm: true, atualizadoEm: true,
       },
     })
+
+    // Log de auditoria — edição parcial
+    const camposAlterados = Object.keys(data).filter(k => k !== 'observacoes').join(', ')
+    if (camposAlterados) {
+      await prisma.logOrdemProducao.create({
+        data: {
+          ordemProducaoId: id,
+          statusAnterior: op.status,
+          statusNovo: op.status,
+          usuarioId: user.id,
+          observacao: `Campos alterados: ${camposAlterados}${body.prioridade ? ` (prioridade: ${body.prioridade})` : ''}${body.quantidade ? ` (quantidade: ${body.quantidade})` : ''}`,
+        },
+      })
+    }
 
     return atualizada
   })

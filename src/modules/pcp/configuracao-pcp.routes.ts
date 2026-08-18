@@ -256,6 +256,23 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
       data: { preImpressaoStatus: body.status || null },
     })
 
+    // Log de auditoria — pré-impressão
+    const etapaComOp = await prisma.etapaOrdemProducao.findFirst({
+      where: { id: body.etapaId },
+      select: { ordemProducaoId: true, descricao: true },
+    })
+    if (etapaComOp) {
+      await prisma.logOrdemProducao.create({
+        data: {
+          ordemProducaoId: etapaComOp.ordemProducaoId,
+          statusAnterior: '',
+          statusNovo: '',
+          usuarioId: user.id,
+          observacao: `Pré-impressão: ${body.status || 'limpo'} — ${etapaComOp.descricao}`,
+        },
+      })
+    }
+
     return { preImpressaoStatus: body.status || null }
   })
 }
