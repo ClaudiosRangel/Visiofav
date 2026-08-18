@@ -615,6 +615,27 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(422).send({ message: 'Não foi possível extrair a chave de acesso do XML' })
       }
 
+      // Verificar se a chave já está vinculada a algum CT-e (exceto cancelados, mesmo ambiente)
+      const empresaAmb = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+        select: { ambienteCTe: true, ambienteNFe: true },
+      })
+      const ambienteAtual = empresaAmb?.ambienteCTe || empresaAmb?.ambienteNFe || 2
+
+      const cteExistente = await prisma.documentoFiscal.findFirst({
+        where: {
+          empresaId: user.empresaId,
+          tipo: 'CTE',
+          ambiente: ambienteAtual,
+          status: { notIn: ['CANCELADO'] },
+          xmlEnviado: { contains: dados.chaveAcesso },
+        },
+        select: { id: true, numero: true, serie: true, status: true },
+      })
+      const avisoNfeDuplicada = cteExistente
+        ? `Atenção: esta NF-e já está vinculada ao CT-e nº ${cteExistente.numero} / série ${cteExistente.serie} (${cteExistente.status}).`
+        : null
+
       // Auto-cadastrar remetente e destinatário
       const remetenteId = await autoCadastrarParticipante(user.empresaId, dados.remetente)
       const destinatarioId = await autoCadastrarParticipante(user.empresaId, dados.destinatario)
@@ -633,6 +654,7 @@ export async function cteRoutes(app: FastifyInstance) {
 
       return {
         sucesso: true,
+        avisoNfeDuplicada,
         dadosExtraidos: dados,
         cadastros: {
           remetenteId,
@@ -710,6 +732,27 @@ export async function cteRoutes(app: FastifyInstance) {
           textoExtraido: texto.substring(0, 500),
         })
       }
+
+      // Verificar se a chave já está vinculada a algum CT-e (exceto cancelados, mesmo ambiente)
+      const empresaAmbPdf = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+        select: { ambienteCTe: true, ambienteNFe: true },
+      })
+      const ambienteAtualPdf = empresaAmbPdf?.ambienteCTe || empresaAmbPdf?.ambienteNFe || 2
+
+      const cteExistentePdf = await prisma.documentoFiscal.findFirst({
+        where: {
+          empresaId: user.empresaId,
+          tipo: 'CTE',
+          ambiente: ambienteAtualPdf,
+          status: { notIn: ['CANCELADO'] },
+          xmlEnviado: { contains: dados.chaveAcesso },
+        },
+        select: { id: true, numero: true, serie: true, status: true },
+      })
+      const avisoNfeDuplicada = cteExistentePdf
+        ? `Atenção: esta NF-e já está vinculada ao CT-e nº ${cteExistentePdf.numero} / série ${cteExistentePdf.serie} (${cteExistentePdf.status}).`
+        : null
 
       // Montar resposta similar à importação de XML
       const origemUf = dados.emitente.uf
@@ -862,6 +905,7 @@ export async function cteRoutes(app: FastifyInstance) {
 
       return {
         sucesso: true,
+        avisoNfeDuplicada,
         origem: 'PDF',
         cadastros: {
           remetenteCadastrado: remResolvido.cadastrado,
