@@ -2687,6 +2687,16 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "usuario" ADD COLUMN IF NOT EXISTS "avatar_url" TEXT`)
   console.log('✅ usuario: campo avatar_url adicionado')
 
+  // DocumentoFiscal — alterar unique constraint para incluir ambiente
+  // (permite mesmo número em homologação e produção separadamente)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "documento_fiscal" DROP CONSTRAINT IF EXISTS "documento_fiscal_empresa_id_tipo_serie_numero_key"`)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "documento_fiscal_empresa_id_tipo_serie_numero_ambiente_key" ON "documento_fiscal"("empresa_id", "tipo", "serie", "numero", "ambiente")`)
+    console.log('✅ documento_fiscal: unique constraint atualizada para incluir ambiente')
+  } catch (e: any) {
+    console.log('⚠️ Alteração constraint documento_fiscal skipped:', e.message?.substring(0, 100))
+  }
+
   console.log('✅ All migrations applied successfully')
 }
 

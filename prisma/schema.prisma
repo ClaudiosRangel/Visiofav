@@ -4145,7 +4145,7 @@ model DocumentoFiscal {
   filasContingencia FilaContingencia[]
   mapasCarregamento MapaCarregamentoNf[]
 
-  @@unique([empresaId, tipo, serie, numero])
+  @@unique([empresaId, tipo, serie, numero, ambiente])
   @@index([empresaId, status])
   @@index([empresaId, dataEmissao])
   @@index([chaveAcesso])
