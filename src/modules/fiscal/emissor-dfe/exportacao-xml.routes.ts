@@ -163,30 +163,30 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
     }
     const zipBuffer = criarZipSimples(files)
 
-    // Enviar por e-mail via SMTP (se configurado)
+    // Enviar por e-mail via SMTP
     try {
-      const configSmtp = await prisma.parametro.findMany({
-        where: { empresaId: user.empresaId, chave: { startsWith: 'smtp.' } },
-      })
-      const smtp: Record<string, string> = {}
-      for (const p of configSmtp) smtp[p.chave] = p.valor
+      const smtpHost = process.env.SMTP_HOST
+      const smtpUser = process.env.SMTP_USER
+      const smtpPass = process.env.SMTP_PASS
+      const smtpPort = Number(process.env.SMTP_PORT || 587)
+      const smtpFrom = process.env.SMTP_FROM || smtpUser
 
-      if (!smtp['smtp.host'] || !smtp['smtp.user']) {
-        return reply.status(422).send({ message: 'SMTP não configurado. Configure em Fiscal → Utilitários → Config. CT-e ou entre em contato com o suporte.' })
+      if (!smtpHost || !smtpUser) {
+        return reply.status(422).send({ message: 'SMTP não configurado. Configure as variáveis SMTP_HOST, SMTP_USER e SMTP_PASS no servidor.' })
       }
 
       const nodemailer = require('nodemailer')
       const transporter = nodemailer.createTransport({
-        host: smtp['smtp.host'],
-        port: Number(smtp['smtp.port'] || 587),
-        secure: smtp['smtp.secure'] === 'true',
-        auth: { user: smtp['smtp.user'], pass: smtp['smtp.pass'] },
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPass },
       })
 
       const nomeZip = `Arquivos_${body.tipo}_${body.dataInicio}_a_${body.dataFim}.zip`
 
       await transporter.sendMail({
-        from: smtp['smtp.from'] || smtp['smtp.user'],
+        from: smtpFrom,
         to: body.emails.join(', '),
         subject: `Arquivos Fiscais — ${body.tipo} — Período ${body.dataInicio} a ${body.dataFim}`,
         text: `Segue em anexo os arquivos fiscais do período ${body.dataInicio} a ${body.dataFim}.\n\nTotal: ${documentos.length} documento(s).\n\nEnviado automaticamente pelo Vizor ERP.`,
