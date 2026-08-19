@@ -474,6 +474,23 @@ async function bootstrap() {
   const BUILD_DATE = new Date().toISOString()
   app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString(), buildDate: BUILD_DATE }))
 
+  // Rota administrativa para corrigir constraint do DocumentoFiscal (inclui ambiente)
+  // Chamar uma vez: POST /api/fix-constraint-ambiente
+  app.post('/api/fix-constraint-ambiente', async (request, reply) => {
+    try {
+      const { prisma: p } = await import('./lib/prisma')
+      // Dropar constraint antiga
+      await p.$executeRawUnsafe(`ALTER TABLE "documento_fiscal" DROP CONSTRAINT IF EXISTS "documento_fiscal_empresa_id_tipo_serie_numero_key"`)
+      // Dropar índice antigo (pode ter sido criado como index em vez de constraint)
+      await p.$executeRawUnsafe(`DROP INDEX IF EXISTS "documento_fiscal_empresa_id_tipo_serie_numero_key"`)
+      // Criar novo índice unique incluindo ambiente
+      await p.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "documento_fiscal_empresa_id_tipo_serie_numero_ambiente_key" ON "documento_fiscal"("empresa_id", "tipo", "serie", "numero", "ambiente")`)
+      return { sucesso: true, message: 'Constraint atualizada com sucesso. Agora produção e homologação têm numeração independente.' }
+    } catch (err: any) {
+      return reply.status(500).send({ message: err.message })
+    }
+  })
+
   // ── REMOVIDO: Endpoints admin com senha hardcoded (vulnerabilidade de segurança) ──
   // Os endpoints /api/admin/fix-columns, /api/admin/fix-admin e /api/admin/cleanup
   // foram removidos por expor senhas no código-fonte e permitir destruição de dados.
