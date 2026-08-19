@@ -9,9 +9,6 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
 
-// archiver não tem ESM export compatível com tsx — usar require
-const archiver = require('archiver') as typeof import('archiver')
-
 const filtrosSchema = z.object({
   tipo: z.string().default('TODOS'),
   dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -79,29 +76,106 @@ export async function exportarXmlRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Nenhum documento com XML encontrado no período' })
     }
 
-    // Gerar ZIP em memória
-    reply.header('Content-Type', 'application/zip')
-    reply.header('Content-Disposition', `attachment; filename="XMLs_${filtros.tipo}_${filtros.dataInicio}_a_${filtros.dataFim}.zip"`)
-
-    const archive = archiver('zip', { zlib: { level: 5 } })
-    const chunks: Buffer[] = []
-
-    archive.on('data', (chunk) => chunks.push(chunk))
-    archive.on('end', () => {
-      reply.send(Buffer.concat(chunks))
-    })
-    archive.on('error', (err) => {
-      reply.status(500).send({ message: 'Erro ao gerar ZIP: ' + err.message })
-    })
-
+    // Gerar ZIP usando formato simples (concatenar XMLs comprimidos individualmente)
+    // Usar estrutura ZIP mínima nativa
+    const files: Array<{ name: string; content: Buffer }> = []
     for (const doc of docs) {
       if (!doc.xmlAutorizado) continue
       const nomeArquivo = doc.chaveAcesso
         ? `${doc.chaveAcesso}-${doc.tipo.toLowerCase()}.xml`
         : `${doc.tipo}-${doc.serie}-${doc.numero}.xml`
-      archive.append(doc.xmlAutorizado, { name: nomeArquivo })
+      files.push({ name: nomeArquivo, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
     }
 
-    await archive.finalize()
+    // Criar ZIP minimal usando o formato ZIP padrão (store, sem compressão para simplicidade)
+    const zipBuffer = criarZipSimples(files)
+
+    reply.header('Content-Type', 'application/zip')
+    reply.header('Content-Disposition', `attachment; filename="XMLs_${filtros.tipo}_${filtros.dataInicio}_a_${filtros.dataFim}.zip"`)
+    return reply.send(zipBuffer)
   })
+}
+
+/**
+ * Cria um ZIP mínimo (método STORE, sem compressão) usando apenas Buffer.
+ * Compatível com qualquer descompactador padrão.
+ */
+function criarZipSimples(files: Array<{ name: string; content: Buffer }>): Buffer {
+  const localHeaders: Buffer[] = []
+  const centralHeaders: Buffer[] = []
+  let offset = 0
+
+  for (const file of files) {
+    const nameBuffer = Buffer.from(file.name, 'utf-8')
+    const content = file.content
+    const crc = crc32(content)
+
+    // Local file header (30 bytes + name + content)
+    const localHeader = Buffer.alloc(30)
+    localHeader.writeUInt32LE(0x04034b50, 0)  // signature
+    localHeader.writeUInt16LE(20, 4)           // version needed
+    localHeader.writeUInt16LE(0, 6)            // flags
+    localHeader.writeUInt16LE(0, 8)            // compression (STORE)
+    localHeader.writeUInt16LE(0, 10)           // mod time
+    localHeader.writeUInt16LE(0, 12)           // mod date
+    localHeader.writeUInt32LE(crc, 14)         // crc-32
+    localHeader.writeUInt32LE(content.length, 18) // compressed size
+    localHeader.writeUInt32LE(content.length, 22) // uncompressed size
+    localHeader.writeUInt16LE(nameBuffer.length, 26) // filename length
+    localHeader.writeUInt16LE(0, 28)           // extra field length
+
+    const localEntry = Buffer.concat([localHeader, nameBuffer, content])
+    localHeaders.push(localEntry)
+
+    // Central directory header (46 bytes + name)
+    const centralHeader = Buffer.alloc(46)
+    centralHeader.writeUInt32LE(0x02014b50, 0)  // signature
+    centralHeader.writeUInt16LE(20, 4)           // version made by
+    centralHeader.writeUInt16LE(20, 6)           // version needed
+    centralHeader.writeUInt16LE(0, 8)            // flags
+    centralHeader.writeUInt16LE(0, 10)           // compression
+    centralHeader.writeUInt16LE(0, 12)           // mod time
+    centralHeader.writeUInt16LE(0, 14)           // mod date
+    centralHeader.writeUInt32LE(crc, 16)         // crc-32
+    centralHeader.writeUInt32LE(content.length, 20) // compressed size
+    centralHeader.writeUInt32LE(content.length, 24) // uncompressed size
+    centralHeader.writeUInt16LE(nameBuffer.length, 28) // filename length
+    centralHeader.writeUInt16LE(0, 30)           // extra field length
+    centralHeader.writeUInt16LE(0, 32)           // comment length
+    centralHeader.writeUInt16LE(0, 34)           // disk number
+    centralHeader.writeUInt16LE(0, 36)           // internal attributes
+    centralHeader.writeUInt32LE(0, 38)           // external attributes
+    centralHeader.writeUInt32LE(offset, 42)      // local header offset
+
+    centralHeaders.push(Buffer.concat([centralHeader, nameBuffer]))
+    offset += localEntry.length
+  }
+
+  const centralDir = Buffer.concat(centralHeaders)
+  const centralDirOffset = offset
+
+  // End of central directory (22 bytes)
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)        // signature
+  eocd.writeUInt16LE(0, 4)                  // disk number
+  eocd.writeUInt16LE(0, 6)                  // central dir disk
+  eocd.writeUInt16LE(files.length, 8)       // entries on this disk
+  eocd.writeUInt16LE(files.length, 10)      // total entries
+  eocd.writeUInt32LE(centralDir.length, 12) // central dir size
+  eocd.writeUInt32LE(centralDirOffset, 16)  // central dir offset
+  eocd.writeUInt16LE(0, 20)                 // comment length
+
+  return Buffer.concat([...localHeaders, centralDir, eocd])
+}
+
+/** CRC-32 simples para ZIP */
+function crc32(buf: Buffer): number {
+  let crc = 0xFFFFFFFF
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i]
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0)
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0
 }
