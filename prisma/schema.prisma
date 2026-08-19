@@ -1024,6 +1024,7 @@ model TabelaFreteCte {
   descricao        String?  @db.VarChar(300)
   ufOrigem         String?  @map("uf_origem") @db.VarChar(2)
   ufDestino        String?  @map("uf_destino") @db.VarChar(2)
+  valorFixo        Decimal? @map("valor_fixo") @db.Decimal(12, 2) // Valor fixo da prestação (se preenchido, usa direto)
   valorFretePeso   Decimal? @map("valor_frete_peso") @db.Decimal(12, 4) // R$/kg
   valorFreteVolume Decimal? @map("valor_frete_volume") @db.Decimal(12, 4) // R$/m³
   valorAdValorem   Decimal? @map("valor_ad_valorem") @db.Decimal(5, 4) // % sobre valor carga

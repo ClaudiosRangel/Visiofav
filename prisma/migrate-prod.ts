@@ -2697,6 +2697,10 @@ async function main() {
     console.log('⚠️ Alteração constraint documento_fiscal skipped:', e.message?.substring(0, 100))
   }
 
+  // TabelaFreteCte — campo valor_fixo
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_frete_cte" ADD COLUMN IF NOT EXISTS "valor_fixo" DECIMAL(12,2)`)
+  console.log('✅ tabela_frete_cte: campo valor_fixo adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 
