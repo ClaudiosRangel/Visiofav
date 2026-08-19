@@ -62,9 +62,7 @@ export async function fiscalRoutes(app: FastifyInstance) {
   // Importação de XML (upload, listagem, geração de entrada)
   app.register(importacaoXmlRoutes, { prefix: '/importacao' })
 
-  // Exportar XMLs / Baixar arquivos
-  const { exportarXmlRoutes } = await import('./exportar-xml/exportar-xml.routes')
-  app.register(exportarXmlRoutes, { prefix: '/' })
+  // Exportar XMLs / Baixar arquivos (registrada via emissor-dfe.routes.ts)
 
   // Distribuição DFe (verificar/baixar NF-e/CT-e emitidas contra o CNPJ da empresa)
   app.register(distribuicaoDfeRoutes, { prefix: '/distribuicao-dfe' })
