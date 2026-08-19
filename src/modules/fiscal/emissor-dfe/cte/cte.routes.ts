@@ -224,12 +224,23 @@ export type EmissaoCTeInput = z.infer<typeof emissaoCTeInputSchema>
 // === Helpers ===
 
 async function proximoNumeroCTe(empresaId: string, serie: number, ambiente: number): Promise<number> {
-  const ultimo = await prisma.documentoFiscal.findFirst({
+  // Buscar último número no ambiente específico
+  const ultimoAmbiente = await prisma.documentoFiscal.findFirst({
     where: { empresaId, tipo: 'CTE', serie, ambiente },
     orderBy: { numero: 'desc' },
     select: { numero: true },
   })
-  return (ultimo?.numero || 0) + 1
+  // Buscar último número global (qualquer ambiente) — para evitar conflito
+  // com constraint que pode ainda não incluir ambiente
+  const ultimoGlobal = await prisma.documentoFiscal.findFirst({
+    where: { empresaId, tipo: 'CTE', serie },
+    orderBy: { numero: 'desc' },
+    select: { numero: true },
+  })
+  // Usar o maior dos dois para garantir que não conflita
+  const maxAmbiente = ultimoAmbiente?.numero || 0
+  const maxGlobal = ultimoGlobal?.numero || 0
+  return Math.max(maxAmbiente, maxGlobal) + 1
 }
 
 function gerarCodigoNumerico(): string {
