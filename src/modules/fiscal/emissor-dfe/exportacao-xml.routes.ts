@@ -66,7 +66,7 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
 
     const documentos = await prisma.documentoFiscal.findMany({
       where,
-      select: { tipo: true, serie: true, numero: true, chaveAcesso: true, xmlAutorizado: true, status: true },
+      select: { id: true, tipo: true, serie: true, numero: true, chaveAcesso: true, xmlAutorizado: true, status: true },
       orderBy: [{ tipo: 'asc' }, { numero: 'asc' }],
     })
 
@@ -80,10 +80,29 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
       if (!doc.xmlAutorizado) continue
       const pasta = doc.tipo
       const sufixo = doc.status === 'CANCELADO' ? '-cancelado' : ''
-      const nome = doc.chaveAcesso
-        ? `${doc.chaveAcesso}${sufixo}.xml`
-        : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}.xml`
-      files.push({ name: `${pasta}/${nome}`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
+      const baseName = doc.chaveAcesso
+        ? `${doc.chaveAcesso}${sufixo}`
+        : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}`
+
+      // XML
+      if (params.formato === 'xml' || params.formato === 'ambos') {
+        files.push({ name: `${pasta}/${baseName}.xml`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
+      }
+
+      // PDF (gerar DACTE on-the-fly para CT-e)
+      if ((params.formato === 'pdf' || params.formato === 'ambos') && doc.tipo === 'CTE') {
+        try {
+          const { gerarDactePdf } = await import('./cte/cte-dacte-pdf.service')
+          const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId! } })
+          if (empresa) {
+            const docCompleto = await prisma.documentoFiscal.findUnique({ where: { id: doc.id } })
+            if (docCompleto) {
+              const pdfBuffer = await gerarDactePdf(docCompleto as any, empresa as any)
+              files.push({ name: `${pasta}/${baseName}.pdf`, content: pdfBuffer })
+            }
+          }
+        } catch { /* PDF não gerado — silencioso */ }
+      }
     }
 
     // Resumo TXT
@@ -125,7 +144,7 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
 
     const documentos = await prisma.documentoFiscal.findMany({
       where,
-      select: { tipo: true, serie: true, numero: true, chaveAcesso: true, xmlAutorizado: true, status: true },
+      select: { id: true, tipo: true, serie: true, numero: true, chaveAcesso: true, xmlAutorizado: true, status: true },
       orderBy: [{ tipo: 'asc' }, { numero: 'asc' }],
     })
 
