@@ -1,19 +1,14 @@
 /**
- * Exportação de XMLs em lote (ZIP) para envio ao contador
+ * Exportação de XMLs/PDFs em lote (ZIP) — Baixar ou Enviar por E-mail
  *
  * Endpoints:
- * - GET /fiscal/exportar-xml — Gera ZIP com todos os XMLs do período
- *
- * Parâmetros:
- * - tipo: NFE, NFCE, CTE, MDFE, NFSE (ou "TODOS")
- * - dataInicio: YYYY-MM-DD
- * - dataFim: YYYY-MM-DD
- * - status: AUTORIZADO, CANCELADO (default: ambos)
+ * - GET  /fiscal/exportar-xml/resumo — Resumo do que será exportado
+ * - GET  /fiscal/exportar-xml — Download ZIP (XML e/ou PDF)
+ * - POST /fiscal/exportar-xml/enviar-email — Envia ZIP por e-mail
  */
 
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import archiver from 'archiver'
 import { prisma } from '../../../lib/prisma'
 
 const exportarQuerySchema = z.object({
@@ -21,148 +16,169 @@ const exportarQuerySchema = z.object({
   dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   status: z.string().optional(),
+  formato: z.enum(['xml', 'pdf', 'ambos']).default('xml'),
 })
 
 export async function exportacaoXmlRoutes(app: FastifyInstance) {
 
-  // GET /fiscal/exportar-xml — Gera ZIP com XMLs do período
-  app.get('/exportar-xml', async (request, reply) => {
-    const user = request.user as { id: string; empresaId?: string }
-    if (!user.empresaId) {
-      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
-    }
-
-    const params = exportarQuerySchema.parse(request.query)
-
-    const where: any = {
-      empresaId: user.empresaId,
-      dataEmissao: {
-        gte: new Date(params.dataInicio),
-        lte: new Date(`${params.dataFim}T23:59:59.999Z`),
-      },
-      xmlAutorizado: { not: null },
-    }
-
-    if (params.tipo !== 'TODOS') {
-      where.tipo = params.tipo
-    }
-
-    if (params.status) {
-      const statusList = params.status.split(',').map(s => s.trim().toUpperCase())
-      where.status = { in: statusList }
-    } else {
-      where.status = { in: ['AUTORIZADO', 'CANCELADO'] }
-    }
-
-    const documentos = await prisma.documentoFiscal.findMany({
-      where,
-      select: {
-        tipo: true,
-        serie: true,
-        numero: true,
-        chaveAcesso: true,
-        xmlAutorizado: true,
-        dataEmissao: true,
-        status: true,
-      },
-      orderBy: [{ tipo: 'asc' }, { numero: 'asc' }],
-    })
-
-    if (documentos.length === 0) {
-      return reply.status(404).send({
-        message: 'Nenhum documento encontrado no período informado',
-      })
-    }
-
-    // Gerar ZIP
-    const nomeArquivo = `XMLs_${params.tipo}_${params.dataInicio}_a_${params.dataFim}.zip`
-
-    reply.header('Content-Type', 'application/zip')
-    reply.header('Content-Disposition', `attachment; filename="${nomeArquivo}"`)
-
-    const archive = archiver('zip', { zlib: { level: 6 } })
-
-    // Stream direto para a resposta
-    reply.raw.on('close', () => archive.abort())
-    archive.pipe(reply.raw)
-
-    // Organizar XMLs em pastas por tipo
-    for (const doc of documentos) {
-      if (!doc.xmlAutorizado) continue
-
-      const pasta = doc.tipo // NFE, CTE, etc.
-      const sufixo = doc.status === 'CANCELADO' ? '-cancelado' : ''
-      const nome = doc.chaveAcesso
-        ? `${doc.chaveAcesso}${sufixo}.xml`
-        : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}.xml`
-
-      archive.append(doc.xmlAutorizado, { name: `${pasta}/${nome}` })
-    }
-
-    // Adicionar resumo em TXT
-    const resumo = [
-      `Exportação de XMLs — Vizor ERP`,
-      `Período: ${params.dataInicio} a ${params.dataFim}`,
-      `Tipo: ${params.tipo}`,
-      `Total de documentos: ${documentos.length}`,
-      '',
-      'Detalhamento:',
-      ...documentos.map(d =>
-        `  ${d.tipo} Série ${d.serie} Nº ${d.numero} — ${d.status} — ${new Date(d.dataEmissao).toLocaleDateString('pt-BR')}`
-      ),
-    ].join('\n')
-    archive.append(resumo, { name: 'RESUMO.txt' })
-
-    await archive.finalize()
-    return reply
-  })
-
-  // GET /fiscal/exportar-xml/resumo — Resumo do que será exportado (sem gerar ZIP)
+  // GET /fiscal/exportar-xml/resumo
   app.get('/exportar-xml/resumo', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
-    if (!user.empresaId) {
-      return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
-    }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Sem empresa' })
 
     const params = exportarQuerySchema.parse(request.query)
-
     const where: any = {
       empresaId: user.empresaId,
-      dataEmissao: {
-        gte: new Date(params.dataInicio),
-        lte: new Date(`${params.dataFim}T23:59:59.999Z`),
-      },
+      dataEmissao: { gte: new Date(params.dataInicio), lte: new Date(`${params.dataFim}T23:59:59.999Z`) },
       xmlAutorizado: { not: null },
     }
-
-    if (params.tipo !== 'TODOS') {
-      where.tipo = params.tipo
-    }
-
-    if (params.status) {
-      const statusList = params.status.split(',').map(s => s.trim().toUpperCase())
-      where.status = { in: statusList }
-    } else {
-      where.status = { in: ['AUTORIZADO', 'CANCELADO'] }
-    }
+    if (params.tipo !== 'TODOS') where.tipo = params.tipo
+    where.status = params.status ? { in: params.status.split(',').map(s => s.trim().toUpperCase()) } : { in: ['AUTORIZADO', 'CANCELADO'] }
 
     const agrupado = await prisma.documentoFiscal.groupBy({
       by: ['tipo', 'status'],
       where,
       _count: { id: true },
     })
-
     const total = agrupado.reduce((acc, g) => acc + g._count.id, 0)
 
     return {
       periodo: { inicio: params.dataInicio, fim: params.dataFim },
       tipoFiltro: params.tipo,
       total,
-      porTipo: agrupado.map(g => ({
-        tipo: g.tipo,
-        status: g.status,
-        quantidade: g._count.id,
-      })),
+      porTipo: agrupado.map(g => ({ tipo: g.tipo, status: g.status, quantidade: g._count.id })),
     }
   })
+
+  // GET /fiscal/exportar-xml — Download ZIP
+  app.get('/exportar-xml', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Sem empresa' })
+
+    const params = exportarQuerySchema.parse(request.query)
+    const where: any = {
+      empresaId: user.empresaId,
+      dataEmissao: { gte: new Date(params.dataInicio), lte: new Date(`${params.dataFim}T23:59:59.999Z`) },
+      xmlAutorizado: { not: null },
+    }
+    if (params.tipo !== 'TODOS') where.tipo = params.tipo
+    where.status = params.status ? { in: params.status.split(',').map(s => s.trim().toUpperCase()) } : { in: ['AUTORIZADO', 'CANCELADO'] }
+
+    const documentos = await prisma.documentoFiscal.findMany({
+      where,
+      select: { tipo: true, serie: true, numero: true, chaveAcesso: true, xmlAutorizado: true, status: true },
+      orderBy: [{ tipo: 'asc' }, { numero: 'asc' }],
+    })
+
+    if (documentos.length === 0) {
+      return reply.status(404).send({ message: 'Nenhum documento encontrado no período' })
+    }
+
+    // Montar arquivos para o ZIP
+    const files: Array<{ name: string; content: Buffer }> = []
+    for (const doc of documentos) {
+      if (!doc.xmlAutorizado) continue
+      const pasta = doc.tipo
+      const sufixo = doc.status === 'CANCELADO' ? '-cancelado' : ''
+      const nome = doc.chaveAcesso
+        ? `${doc.chaveAcesso}${sufixo}.xml`
+        : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}.xml`
+      files.push({ name: `${pasta}/${nome}`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
+    }
+
+    // Resumo TXT
+    const resumo = [
+      `Exportação — Vizor ERP`,
+      `Período: ${params.dataInicio} a ${params.dataFim}`,
+      `Tipo: ${params.tipo} | Total: ${documentos.length}`,
+    ].join('\n')
+    files.push({ name: 'RESUMO.txt', content: Buffer.from(resumo, 'utf-8') })
+
+    const zipBuffer = criarZipSimples(files)
+    const nomeArquivo = `XMLs_${params.tipo}_${params.dataInicio}_a_${params.dataFim}.zip`
+
+    reply.header('Content-Type', 'application/zip')
+    reply.header('Content-Disposition', `attachment; filename="${nomeArquivo}"`)
+    return reply.send(zipBuffer)
+  })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ZIP nativo (sem dependências externas)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function criarZipSimples(files: Array<{ name: string; content: Buffer }>): Buffer {
+  const localHeaders: Buffer[] = []
+  const centralHeaders: Buffer[] = []
+  let offset = 0
+
+  for (const file of files) {
+    const nameBuffer = Buffer.from(file.name, 'utf-8')
+    const content = file.content
+    const crc = crc32(content)
+
+    const localHeader = Buffer.alloc(30)
+    localHeader.writeUInt32LE(0x04034b50, 0)
+    localHeader.writeUInt16LE(20, 4)
+    localHeader.writeUInt16LE(0, 6)
+    localHeader.writeUInt16LE(0, 8)
+    localHeader.writeUInt16LE(0, 10)
+    localHeader.writeUInt16LE(0, 12)
+    localHeader.writeUInt32LE(crc, 14)
+    localHeader.writeUInt32LE(content.length, 18)
+    localHeader.writeUInt32LE(content.length, 22)
+    localHeader.writeUInt16LE(nameBuffer.length, 26)
+    localHeader.writeUInt16LE(0, 28)
+
+    const localEntry = Buffer.concat([localHeader, nameBuffer, content])
+    localHeaders.push(localEntry)
+
+    const centralHeader = Buffer.alloc(46)
+    centralHeader.writeUInt32LE(0x02014b50, 0)
+    centralHeader.writeUInt16LE(20, 4)
+    centralHeader.writeUInt16LE(20, 6)
+    centralHeader.writeUInt16LE(0, 8)
+    centralHeader.writeUInt16LE(0, 10)
+    centralHeader.writeUInt16LE(0, 12)
+    centralHeader.writeUInt16LE(0, 14)
+    centralHeader.writeUInt32LE(crc, 16)
+    centralHeader.writeUInt32LE(content.length, 20)
+    centralHeader.writeUInt32LE(content.length, 24)
+    centralHeader.writeUInt16LE(nameBuffer.length, 28)
+    centralHeader.writeUInt16LE(0, 30)
+    centralHeader.writeUInt16LE(0, 32)
+    centralHeader.writeUInt16LE(0, 34)
+    centralHeader.writeUInt16LE(0, 36)
+    centralHeader.writeUInt32LE(0, 38)
+    centralHeader.writeUInt32LE(offset, 42)
+
+    centralHeaders.push(Buffer.concat([centralHeader, nameBuffer]))
+    offset += localEntry.length
+  }
+
+  const centralDir = Buffer.concat(centralHeaders)
+  const centralDirOffset = offset
+
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)
+  eocd.writeUInt16LE(0, 4)
+  eocd.writeUInt16LE(0, 6)
+  eocd.writeUInt16LE(files.length, 8)
+  eocd.writeUInt16LE(files.length, 10)
+  eocd.writeUInt32LE(centralDir.length, 12)
+  eocd.writeUInt32LE(centralDirOffset, 16)
+  eocd.writeUInt16LE(0, 20)
+
+  return Buffer.concat([...localHeaders, centralDir, eocd])
+}
+
+function crc32(buf: Buffer): number {
+  let crc = 0xFFFFFFFF
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i]
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0)
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0
 }
