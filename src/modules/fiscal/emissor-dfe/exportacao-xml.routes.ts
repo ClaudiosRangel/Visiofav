@@ -152,14 +152,38 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Nenhum documento encontrado no período' })
     }
 
-    // Montar ZIP
+    // Montar ZIP (respeitando o formato: xml, pdf ou ambos)
     const files: Array<{ name: string; content: Buffer }> = []
+    const querPdf = body.formato === 'pdf' || body.formato === 'ambos'
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId! },
+      select: { id: true, razaoSocial: true, nomeFantasia: true, cnpj: true, logo: true },
+    })
+
     for (const doc of documentos) {
       if (!doc.xmlAutorizado) continue
       const pasta = doc.tipo
       const sufixo = doc.status === 'CANCELADO' ? '-cancelado' : ''
-      const nome = doc.chaveAcesso ? `${doc.chaveAcesso}${sufixo}.xml` : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}.xml`
-      files.push({ name: `${pasta}/${nome}`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
+      const baseName = doc.chaveAcesso
+        ? `${doc.chaveAcesso}${sufixo}`
+        : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}`
+
+      // XML
+      if (body.formato === 'xml' || body.formato === 'ambos') {
+        files.push({ name: `${pasta}/${baseName}.xml`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
+      }
+
+      // PDF (gerar DACTE on-the-fly para CT-e)
+      if (querPdf && doc.tipo === 'CTE' && empresa) {
+        try {
+          const { gerarDactePdf } = await import('./cte/cte-dacte-pdf.service')
+          const docCompleto = await prisma.documentoFiscal.findUnique({ where: { id: doc.id } })
+          if (docCompleto) {
+            const pdfBuffer = await gerarDactePdf(docCompleto as any, empresa)
+            files.push({ name: `${pasta}/${baseName}.pdf`, content: pdfBuffer })
+          }
+        } catch { /* PDF não gerado — silencioso */ }
+      }
     }
     const zipBuffer = criarZipSimples(files)
 
@@ -185,11 +209,34 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
 
       const nomeZip = `Arquivos_${body.tipo}_${body.dataInicio}_a_${body.dataFim}.zip`
 
+      const tipoDocLabel: Record<string, string> = {
+        NFE: 'NF-e',
+        NFCE: 'NFC-e',
+        CTE: 'CT-e',
+        MDFE: 'MDF-e',
+        NFSE: 'NFS-e',
+        TODOS: 'Documentos Fiscais',
+      }
+      const labelTipo = tipoDocLabel[body.tipo] || body.tipo
+      const nomeEmpresa = empresa?.nomeFantasia || empresa?.razaoSocial || 'Empresa'
+      const formatoLabel = body.formato === 'xml' ? 'XML' : body.formato === 'pdf' ? 'PDF' : 'XML e PDF'
+
+      const subject = `${labelTipo} — ${nomeEmpresa} — ${body.dataInicio} a ${body.dataFim}`
+      const textoEmail = [
+        `Prezado(a),`,
+        ``,
+        `Segue em anexo os arquivos ${formatoLabel} referentes à emissão de ${labelTipo} da empresa ${nomeEmpresa}, no período de ${body.dataInicio} a ${body.dataFim}.`,
+        ``,
+        `Total: ${documentos.length} documento(s).`,
+        ``,
+        `Enviado automaticamente pelo Vizor ERP.`,
+      ].join('\n')
+
       await transporter.sendMail({
         from: smtpFrom,
         to: body.emails.join(', '),
-        subject: `Arquivos Fiscais — ${body.tipo} — Período ${body.dataInicio} a ${body.dataFim}`,
-        text: `Segue em anexo os arquivos fiscais do período ${body.dataInicio} a ${body.dataFim}.\n\nTotal: ${documentos.length} documento(s).\n\nEnviado automaticamente pelo Vizor ERP.`,
+        subject,
+        text: textoEmail,
         attachments: [{ filename: nomeZip, content: zipBuffer }],
       })
 
