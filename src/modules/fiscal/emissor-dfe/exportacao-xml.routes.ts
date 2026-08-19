@@ -76,6 +76,23 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
 
     // Montar arquivos para o ZIP
     const files: Array<{ name: string; content: Buffer }> = []
+    const querPdfDownload = params.formato === 'pdf' || params.formato === 'ambos'
+
+    // Buscar empresa e configurações de layout do DACTE uma única vez
+    let empresa: any = null
+    let dacteModelo: '1' | '2' = '1'
+    let dacteOrientacao: 'retrato' | 'paisagem' = 'retrato'
+    if (querPdfDownload) {
+      empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId! } })
+      const paramsDacte = await prisma.parametro.findMany({
+        where: { empresaId: user.empresaId!, chave: { in: ['cte.dacteModelo', 'cte.dacteOrientacao'] } },
+      })
+      for (const p of paramsDacte) {
+        if (p.chave === 'cte.dacteModelo') dacteModelo = (p.valor as '1' | '2') || '1'
+        if (p.chave === 'cte.dacteOrientacao') dacteOrientacao = (p.valor as 'retrato' | 'paisagem') || 'retrato'
+      }
+    }
+
     for (const doc of documentos) {
       if (!doc.xmlAutorizado) continue
       const pasta = doc.tipo
@@ -89,17 +106,14 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
         files.push({ name: `${pasta}/${baseName}.xml`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
       }
 
-      // PDF (gerar DACTE on-the-fly para CT-e)
-      if ((params.formato === 'pdf' || params.formato === 'ambos') && doc.tipo === 'CTE') {
+      // PDF (gerar DACTE on-the-fly para CT-e, respeitando modelo/orientação configurados)
+      if (querPdfDownload && doc.tipo === 'CTE' && empresa) {
         try {
           const { gerarDactePdf } = await import('./cte/cte-dacte-pdf.service')
-          const empresa = await prisma.empresa.findUnique({ where: { id: user.empresaId! } })
-          if (empresa) {
-            const docCompleto = await prisma.documentoFiscal.findUnique({ where: { id: doc.id } })
-            if (docCompleto) {
-              const pdfBuffer = await gerarDactePdf(docCompleto as any, empresa as any)
-              files.push({ name: `${pasta}/${baseName}.pdf`, content: pdfBuffer })
-            }
+          const docCompleto = await prisma.documentoFiscal.findUnique({ where: { id: doc.id } })
+          if (docCompleto) {
+            const pdfBuffer = await gerarDactePdf(docCompleto as any, empresa as any, { modelo: dacteModelo, orientacao: dacteOrientacao })
+            files.push({ name: `${pasta}/${baseName}.pdf`, content: pdfBuffer })
           }
         } catch { /* PDF não gerado — silencioso */ }
       }
@@ -160,6 +174,19 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
       select: { id: true, razaoSocial: true, nomeFantasia: true, cnpj: true, logo: true },
     })
 
+    // Buscar configurações de layout do DACTE (modelo e orientação)
+    let dacteModelo: '1' | '2' = '1'
+    let dacteOrientacao: 'retrato' | 'paisagem' = 'retrato'
+    if (querPdf) {
+      const paramsDacte = await prisma.parametro.findMany({
+        where: { empresaId: user.empresaId!, chave: { in: ['cte.dacteModelo', 'cte.dacteOrientacao'] } },
+      })
+      for (const p of paramsDacte) {
+        if (p.chave === 'cte.dacteModelo') dacteModelo = (p.valor as '1' | '2') || '1'
+        if (p.chave === 'cte.dacteOrientacao') dacteOrientacao = (p.valor as 'retrato' | 'paisagem') || 'retrato'
+      }
+    }
+
     for (const doc of documentos) {
       if (!doc.xmlAutorizado) continue
       const pasta = doc.tipo
@@ -173,13 +200,13 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
         files.push({ name: `${pasta}/${baseName}.xml`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
       }
 
-      // PDF (gerar DACTE on-the-fly para CT-e)
+      // PDF (gerar DACTE on-the-fly para CT-e, respeitando modelo/orientação configurados)
       if (querPdf && doc.tipo === 'CTE' && empresa) {
         try {
           const { gerarDactePdf } = await import('./cte/cte-dacte-pdf.service')
           const docCompleto = await prisma.documentoFiscal.findUnique({ where: { id: doc.id } })
           if (docCompleto) {
-            const pdfBuffer = await gerarDactePdf(docCompleto as any, empresa)
+            const pdfBuffer = await gerarDactePdf(docCompleto as any, empresa, { modelo: dacteModelo, orientacao: dacteOrientacao })
             files.push({ name: `${pasta}/${baseName}.pdf`, content: pdfBuffer })
           }
         } catch { /* PDF não gerado — silencioso */ }
