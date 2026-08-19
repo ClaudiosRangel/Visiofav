@@ -101,6 +101,84 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
     reply.header('Content-Disposition', `attachment; filename="${nomeArquivo}"`)
     return reply.send(zipBuffer)
   })
+
+  // POST /fiscal/exportar-xml/enviar-email — Envia ZIP por e-mail
+  app.post('/exportar-xml/enviar-email', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Sem empresa' })
+
+    const body = z.object({
+      tipo: z.enum(['NFE', 'NFCE', 'CTE', 'MDFE', 'NFSE', 'TODOS']).default('TODOS'),
+      dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      formato: z.enum(['xml', 'pdf', 'ambos']).default('xml'),
+      emails: z.array(z.string().email()).min(1),
+    }).parse(request.body)
+
+    const where: any = {
+      empresaId: user.empresaId,
+      dataEmissao: { gte: new Date(body.dataInicio), lte: new Date(`${body.dataFim}T23:59:59.999Z`) },
+      xmlAutorizado: { not: null },
+    }
+    if (body.tipo !== 'TODOS') where.tipo = body.tipo
+    where.status = { in: ['AUTORIZADO', 'CANCELADO'] }
+
+    const documentos = await prisma.documentoFiscal.findMany({
+      where,
+      select: { tipo: true, serie: true, numero: true, chaveAcesso: true, xmlAutorizado: true, status: true },
+      orderBy: [{ tipo: 'asc' }, { numero: 'asc' }],
+    })
+
+    if (documentos.length === 0) {
+      return reply.status(404).send({ message: 'Nenhum documento encontrado no período' })
+    }
+
+    // Montar ZIP
+    const files: Array<{ name: string; content: Buffer }> = []
+    for (const doc of documentos) {
+      if (!doc.xmlAutorizado) continue
+      const pasta = doc.tipo
+      const sufixo = doc.status === 'CANCELADO' ? '-cancelado' : ''
+      const nome = doc.chaveAcesso ? `${doc.chaveAcesso}${sufixo}.xml` : `${doc.tipo}-${doc.serie}-${doc.numero}${sufixo}.xml`
+      files.push({ name: `${pasta}/${nome}`, content: Buffer.from(doc.xmlAutorizado, 'utf-8') })
+    }
+    const zipBuffer = criarZipSimples(files)
+
+    // Enviar por e-mail via SMTP (se configurado)
+    try {
+      const configSmtp = await prisma.parametro.findMany({
+        where: { empresaId: user.empresaId, chave: { startsWith: 'smtp.' } },
+      })
+      const smtp: Record<string, string> = {}
+      for (const p of configSmtp) smtp[p.chave] = p.valor
+
+      if (!smtp['smtp.host'] || !smtp['smtp.user']) {
+        return reply.status(422).send({ message: 'SMTP não configurado. Configure em Fiscal → Utilitários → Config. CT-e ou entre em contato com o suporte.' })
+      }
+
+      const nodemailer = require('nodemailer')
+      const transporter = nodemailer.createTransport({
+        host: smtp['smtp.host'],
+        port: Number(smtp['smtp.port'] || 587),
+        secure: smtp['smtp.secure'] === 'true',
+        auth: { user: smtp['smtp.user'], pass: smtp['smtp.pass'] },
+      })
+
+      const nomeZip = `Arquivos_${body.tipo}_${body.dataInicio}_a_${body.dataFim}.zip`
+
+      await transporter.sendMail({
+        from: smtp['smtp.from'] || smtp['smtp.user'],
+        to: body.emails.join(', '),
+        subject: `Arquivos Fiscais — ${body.tipo} — Período ${body.dataInicio} a ${body.dataFim}`,
+        text: `Segue em anexo os arquivos fiscais do período ${body.dataInicio} a ${body.dataFim}.\n\nTotal: ${documentos.length} documento(s).\n\nEnviado automaticamente pelo Vizor ERP.`,
+        attachments: [{ filename: nomeZip, content: zipBuffer }],
+      })
+
+      return { sucesso: true, message: `Enviado para ${body.emails.length} e-mail(s)` }
+    } catch (err: any) {
+      return reply.status(500).send({ message: `Erro ao enviar e-mail: ${err.message}` })
+    }
+  })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
