@@ -8,7 +8,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
-import * as archiver from 'archiver'
+import archiver from 'archiver'
 
 const filtrosSchema = z.object({
   tipo: z.string().default('TODOS'),
@@ -81,7 +81,7 @@ export async function exportarXmlRoutes(app: FastifyInstance) {
     reply.header('Content-Type', 'application/zip')
     reply.header('Content-Disposition', `attachment; filename="XMLs_${filtros.tipo}_${filtros.dataInicio}_a_${filtros.dataFim}.zip"`)
 
-    const archive = archiver.default('zip', { zlib: { level: 5 } })
+    const archive = archiver('zip', { zlib: { level: 5 } })
     const chunks: Buffer[] = []
 
     archive.on('data', (chunk) => chunks.push(chunk))
