@@ -8,7 +8,9 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
-import archiver from 'archiver'
+
+// archiver não tem ESM export compatível com tsx — usar require
+const archiver = require('archiver') as typeof import('archiver')
 
 const filtrosSchema = z.object({
   tipo: z.string().default('TODOS'),
