@@ -21,14 +21,25 @@ const exportarQuerySchema = z.object({
 
 export async function exportacaoXmlRoutes(app: FastifyInstance) {
 
+  // Helper: retorna o ambiente ativo da empresa (1=Produção, 2=Homologação)
+  async function getAmbienteEmpresa(empresaId: string): Promise<number> {
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: empresaId },
+      select: { ambienteCTe: true, ambienteNFe: true },
+    })
+    return (empresa?.ambienteCTe || empresa?.ambienteNFe || 2) as number
+  }
+
   // GET /fiscal/exportar-xml/resumo
   app.get('/exportar-xml/resumo', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
     if (!user.empresaId) return reply.status(403).send({ message: 'Sem empresa' })
 
     const params = exportarQuerySchema.parse(request.query)
+    const ambienteAtual = await getAmbienteEmpresa(user.empresaId)
     const where: any = {
       empresaId: user.empresaId,
+      ambiente: ambienteAtual,
       dataEmissao: { gte: new Date(params.dataInicio), lte: new Date(`${params.dataFim}T23:59:59.999Z`) },
       xmlAutorizado: { not: null },
     }
@@ -56,8 +67,10 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
     if (!user.empresaId) return reply.status(403).send({ message: 'Sem empresa' })
 
     const params = exportarQuerySchema.parse(request.query)
+    const ambienteAtual = await getAmbienteEmpresa(user.empresaId)
     const where: any = {
       empresaId: user.empresaId,
+      ambiente: ambienteAtual,
       dataEmissao: { gte: new Date(params.dataInicio), lte: new Date(`${params.dataFim}T23:59:59.999Z`) },
       xmlAutorizado: { not: null },
     }
@@ -148,8 +161,10 @@ export async function exportacaoXmlRoutes(app: FastifyInstance) {
       emails: z.array(z.string().email()).min(1),
     }).parse(request.body)
 
+    const ambienteAtual = await getAmbienteEmpresa(user.empresaId)
     const where: any = {
       empresaId: user.empresaId,
+      ambiente: ambienteAtual,
       dataEmissao: { gte: new Date(body.dataInicio), lte: new Date(`${body.dataFim}T23:59:59.999Z`) },
       xmlAutorizado: { not: null },
     }
