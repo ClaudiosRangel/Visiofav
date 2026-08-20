@@ -171,6 +171,7 @@ import { permissoesPcpRoutes } from './modules/pcp/permissoes-pcp.routes'
 import { calculoConsumoGraficoRoutes } from './modules/pcp/calculo-consumo-grafico.routes'
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
+import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
 import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
 import { adminPcpRoutes } from './modules/pcp/admin-pcp.routes'
@@ -410,6 +411,7 @@ async function bootstrap() {
   await app.register(calculoConsumoGraficoRoutes, { prefix: '/api/pcp' })
   await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
+  await app.register(timelineProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
 
   // Admin — Operações destrutivas (limpar dados)
