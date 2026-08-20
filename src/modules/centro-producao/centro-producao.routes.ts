@@ -18,6 +18,9 @@ const centroProducaoBodySchema = z.object({
   // módulo tipo-processo. Toda Máquina, Setor ou Linha precisa pertencer a
   // um Tipo de Processo, para aparecer em alguma aba do painel de Programação.
   tipoProcessoId: z.string().uuid('Tipo de Processo é obrigatório'),
+  // Turno operacional (opcional) — define horários de funcionamento da máquina.
+  // Usado pelo Gantt para projetar quando cada etapa realmente termina.
+  turnoProducaoId: z.string().uuid().optional().nullable(),
   capacidadeHora: z.number().min(0).optional().nullable(),
   custoHora: z.number().min(0).optional().nullable(),
 })
@@ -67,7 +70,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
     const [data, total] = await Promise.all([
       prisma.centroProducao.findMany({
         where,
-        include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true } } },
+        include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true } }, turnoProducao: { select: { id: true, codigo: true, descricao: true, horaInicio: true, horaFim: true, diasSemana: true } } },
         skip: (page - 1) * limit,
         take: limit,
         orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
@@ -178,6 +181,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         descricao: body.descricao,
         tipo: body.tipo,
         tipoProcessoId: body.tipoProcessoId,
+        turnoProducaoId: body.turnoProducaoId ?? undefined,
         capacidadeHora: body.capacidadeHora ?? undefined,
         custoHora: body.custoHora ?? undefined,
         posicao,
@@ -234,6 +238,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         descricao: body.descricao,
         tipo: body.tipo,
         tipoProcessoId: body.tipoProcessoId,
+        turnoProducaoId: body.turnoProducaoId ?? null,
         capacidadeHora: body.capacidadeHora ?? null,
         custoHora: body.custoHora ?? null,
       },

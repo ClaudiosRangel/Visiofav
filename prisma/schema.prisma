@@ -2297,6 +2297,10 @@ model CentroProducao {
   // reordenar as abas da Programação). Ver model TipoProcesso.
   tipoProcessoId String       @map("tipo_processo_id")
   tipoProcesso   TipoProcesso @relation(fields: [tipoProcessoId], references: [id])
+  // Turno operacional — define em quais horários/dias esta máquina opera.
+  // Se null, assume operação 24h (sem restrição de horário no Gantt).
+  turnoProducaoId String?        @map("turno_producao_id")
+  turnoProducao   TurnoProducao? @relation(fields: [turnoProducaoId], references: [id])
   capacidadeHora Decimal?     @map("capacidade_hora") @db.Decimal(12, 4)
   custoHora      Decimal?     @map("custo_hora") @db.Decimal(12, 4)
   posicao        Int          @default(0)
@@ -2367,6 +2371,8 @@ model TurnoProducao {
   status         Boolean  @default(true)
   criadoEm       DateTime @default(now()) @map("criado_em")
   atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+
+  centros CentroProducao[]
 
   @@unique([empresaId, codigo])
   @@map("turno_producao")

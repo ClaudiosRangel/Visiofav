@@ -38,6 +38,7 @@ interface EtapaTimeline {
   descricao: string
   centroProducao: string | null
   tipoProcesso: string | null
+  turno: { horaInicio: string; horaFim: string; diasSemana: number[]; duracaoMinutos: number } | null
   status: string
   // Tempos previstos (minutos)
   tempoSetupMinutos: number
@@ -82,6 +83,81 @@ interface OpTimeline {
   percentualConcluido: number
   // Etapas
   etapas: EtapaTimeline[]
+}
+
+/**
+ * Calcula a data/hora de fim real de uma operação considerando o turno da máquina.
+ * "Avança" o cursor no tempo pulando os períodos fora do expediente.
+ *
+ * Exemplo: turno 07:00-17:00 seg-sex, início segunda 15:00, duração 300min (5h).
+ * - Segunda 15:00-17:00 = 120min consumidos, sobram 180min
+ * - Terça 07:00-10:00 = 180min → termina terça 10:00
+ */
+function calcularFimComTurno(
+  inicio: Date,
+  duracaoMinutos: number,
+  turno: { horaInicio: string; horaFim: string; diasSemana: number[]; duracaoMinutos: number },
+): Date {
+  if (duracaoMinutos <= 0) return new Date(inicio)
+
+  const [hIni, mIni] = turno.horaInicio.split(':').map(Number)
+  const [hFim, mFim] = turno.horaFim.split(':').map(Number)
+  const turnoInicioMin = hIni * 60 + mIni
+  const turnoFimMin = hFim * 60 + mFim
+
+  let restante = duracaoMinutos
+  let cursor = new Date(inicio)
+
+  // Limite de segurança: máximo 365 dias de projeção
+  const maxIteracoes = 365 * 24
+  let iteracoes = 0
+
+  while (restante > 0 && iteracoes < maxIteracoes) {
+    iteracoes++
+    const diaSemana = cursor.getDay() // 0=dom, 1=seg...
+    // Converter para nosso formato (1=seg, 2=ter, ..., 7=dom)
+    const diaConvertido = diaSemana === 0 ? 7 : diaSemana
+
+    // Verificar se este dia está no turno
+    if (!turno.diasSemana.includes(diaConvertido)) {
+      // Pular para o próximo dia útil às horaInicio
+      cursor.setDate(cursor.getDate() + 1)
+      cursor.setHours(hIni, mIni, 0, 0)
+      continue
+    }
+
+    // Minuto atual do dia
+    const minAtual = cursor.getHours() * 60 + cursor.getMinutes()
+
+    // Se estamos antes do início do turno, avançar para o início
+    if (minAtual < turnoInicioMin) {
+      cursor.setHours(hIni, mIni, 0, 0)
+      continue
+    }
+
+    // Se estamos após o fim do turno, pular para o dia seguinte
+    if (minAtual >= turnoFimMin) {
+      cursor.setDate(cursor.getDate() + 1)
+      cursor.setHours(hIni, mIni, 0, 0)
+      continue
+    }
+
+    // Estamos dentro do turno — quanto tempo resta até o fim do turno?
+    const minutosAteFinTurno = turnoFimMin - minAtual
+
+    if (restante <= minutosAteFinTurno) {
+      // Cabe neste turno — avança o cursor e termina
+      cursor = new Date(cursor.getTime() + restante * 60000)
+      restante = 0
+    } else {
+      // Não cabe — consome até o fim do turno e pula para o próximo dia
+      restante -= minutosAteFinTurno
+      cursor.setDate(cursor.getDate() + 1)
+      cursor.setHours(hIni, mIni, 0, 0)
+    }
+  }
+
+  return cursor
 }
 
 export async function timelineProducaoRoutes(app: FastifyInstance) {
@@ -153,6 +229,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
                 codigo: true,
                 descricao: true,
                 tipoProcesso: { select: { codigo: true, descricao: true } },
+                turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true, duracaoMinutos: true } },
               },
             },
             apontamentosEtapa: {
@@ -211,12 +288,19 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
 
         tempoTotalPrevistoOp += totalPrevisto
 
+        // Turno da máquina (se cadastrado)
+        const turno = etapa.centroProducao?.turnoProducao || null
+
         // Início previsto desta etapa na cascata
         const inicioPrevisto = new Date(cursorPrevisto)
-        // Fim previsto = início + duração prevista
-        const fimPrevisto = new Date(inicioPrevisto.getTime() + totalPrevisto * 60000)
+        // Fim previsto = início + duração prevista, respeitando turno
+        const fimPrevisto = turno
+          ? calcularFimComTurno(inicioPrevisto, totalPrevisto, turno)
+          : new Date(inicioPrevisto.getTime() + totalPrevisto * 60000)
         // Próxima etapa começa após o fim + espera
-        cursorPrevisto = new Date(fimPrevisto.getTime() + espera * 60000)
+        cursorPrevisto = turno
+          ? calcularFimComTurno(fimPrevisto, espera, turno)
+          : new Date(fimPrevisto.getTime() + espera * 60000)
 
         // Tempo real
         let tempoRealMin: number | null = null
@@ -267,6 +351,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           descricao: etapa.descricao,
           centroProducao: etapa.centroProducao?.descricao || null,
           tipoProcesso: etapa.centroProducao?.tipoProcesso?.descricao || null,
+          turno: etapa.centroProducao?.turnoProducao || null,
           status: etapa.status,
           tempoSetupMinutos: setup,
           tempoOperacaoMinutos: operacao,

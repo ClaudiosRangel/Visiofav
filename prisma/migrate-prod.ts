@@ -2701,6 +2701,15 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_frete_cte" ADD COLUMN IF NOT EXISTS "valor_fixo" DECIMAL(12,2)`)
   console.log('✅ tabela_frete_cte: campo valor_fixo adicionado')
 
+  // =========================================================================
+  // PCP — Vincular Turno ao Centro de Produção (Gantt com horário real)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "turno_producao_id" TEXT`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD CONSTRAINT "centro_producao_turno_producao_id_fkey" FOREIGN KEY ("turno_producao_id") REFERENCES "turno_producao"("id") ON DELETE SET NULL`)
+  } catch { /* constraint já existe */ }
+  console.log('✅ CentroProducao: campo turno_producao_id (FK para TurnoProducao) adicionado')
+
   console.log('✅ All migrations applied successfully')
 }
 
