@@ -6,7 +6,7 @@ import { coordenadasOptionalSchema } from '../geolocalizacao/coord-validation'
 import { generateAccessToken, generateRefreshToken, setAuthCookies, TokenPayload } from '../../lib/auth-tokens'
 import { decidirPersistenciaLogo, filtrarEMapearEmpresasAtivas, mensagemErroLogo } from './logo-validator'
 
-const ALL_MODULOS = ['COMPRAS', 'VENDAS', 'FINANCEIRO', 'WMS', 'CTE', 'PCP', 'FISCAL'] as const
+const ALL_MODULOS = ['COMPRAS', 'VENDAS', 'FINANCEIRO', 'WMS', 'CTE', 'PCP', 'FISCAL', 'ORCAMENTO_GRAFICO'] as const
 
 const paramsSchema = z.object({
   id: z.string().uuid(),
