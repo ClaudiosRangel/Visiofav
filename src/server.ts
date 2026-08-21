@@ -172,6 +172,7 @@ import { calculoConsumoGraficoRoutes } from './modules/pcp/calculo-consumo-grafi
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
 import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
+import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
 import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
 import { adminPcpRoutes } from './modules/pcp/admin-pcp.routes'
@@ -180,6 +181,9 @@ import { ordemProducaoRoutes } from './modules/ordem-producao/ordem-producao.rou
 import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entrega.routes'
 import { liberacaoMaterialRoutes } from './modules/liberacao-material/liberacao-material.routes'
 import { apontamentoProducaoRoutes } from './modules/apontamento-producao/apontamento-producao.routes'
+
+// Orçamento Gráfico — Cadastros base de orçamento
+import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 
 // Sistema de Notificações
 import { notificacaoRoutes } from './modules/notificacao/notificacao.routes'
@@ -412,6 +416,7 @@ async function bootstrap() {
   await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
   await app.register(timelineProducaoRoutes, { prefix: '/api/pcp' })
+  await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
 
   // Admin — Operações destrutivas (limpar dados)

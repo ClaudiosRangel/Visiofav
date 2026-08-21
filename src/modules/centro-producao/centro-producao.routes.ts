@@ -23,6 +23,12 @@ const centroProducaoBodySchema = z.object({
   turnoProducaoId: z.string().uuid().optional().nullable(),
   capacidadeHora: z.number().min(0).optional().nullable(),
   custoHora: z.number().min(0).optional().nullable(),
+  // Orçamento Gráfico — velocidade e formato da folha
+  velocidade: z.number().min(0).optional().nullable(),
+  unidadeVelocidade: z.enum(['FOLHAS_HORA', 'METROS_HORA', 'UNIDADES_HORA']).optional().nullable(),
+  formatoFolhaLargura: z.number().int().min(0).optional().nullable(),
+  formatoFolhaAltura: z.number().int().min(0).optional().nullable(),
+  pincaMm: z.number().min(0).optional().nullable(),
 })
 
 const listQuerySchema = z.object({
@@ -184,6 +190,11 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         turnoProducaoId: body.turnoProducaoId ?? undefined,
         capacidadeHora: body.capacidadeHora ?? undefined,
         custoHora: body.custoHora ?? undefined,
+        velocidade: body.velocidade ?? undefined,
+        unidadeVelocidade: body.unidadeVelocidade ?? undefined,
+        formatoFolhaLargura: body.formatoFolhaLargura ?? undefined,
+        formatoFolhaAltura: body.formatoFolhaAltura ?? undefined,
+        pincaMm: body.pincaMm ?? undefined,
         posicao,
       },
     })
@@ -241,6 +252,11 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         turnoProducaoId: body.turnoProducaoId ?? null,
         capacidadeHora: body.capacidadeHora ?? null,
         custoHora: body.custoHora ?? null,
+        velocidade: body.velocidade ?? null,
+        unidadeVelocidade: body.unidadeVelocidade ?? null,
+        formatoFolhaLargura: body.formatoFolhaLargura ?? null,
+        formatoFolhaAltura: body.formatoFolhaAltura ?? null,
+        pincaMm: body.pincaMm ?? null,
       },
     })
 

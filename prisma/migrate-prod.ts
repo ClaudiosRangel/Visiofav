@@ -2710,6 +2710,144 @@ async function main() {
   } catch { /* constraint já existe */ }
   console.log('✅ CentroProducao: campo turno_producao_id (FK para TurnoProducao) adicionado')
 
+  // =========================================================================
+  // ORÇAMENTO GRÁFICO — Tabelas e colunas do módulo de orçamento gráfico
+  // =========================================================================
+
+  // 1. tipo_embalagem
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "tipo_embalagem" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(30) NOT NULL,
+      "descricao" VARCHAR(200) NOT NULL,
+      "formula_largura" TEXT NOT NULL,
+      "formula_altura" TEXT NOT NULL,
+      "parametros" JSONB NOT NULL,
+      "processos_obrigatorios" TEXT[] DEFAULT '{}',
+      "aba_colagem_mm" DECIMAL(6,2) NOT NULL DEFAULT 15,
+      "sangria_mm" DECIMAL(6,2) NOT NULL DEFAULT 3,
+      "pinca_mm" DECIMAL(6,2) NOT NULL DEFAULT 10,
+      "imagem_url" TEXT,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "tipo_embalagem_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "tipo_embalagem_empresa_id_codigo_key" ON "tipo_embalagem"("empresa_id", "codigo")`)
+  console.log('✅ tipo_embalagem criada')
+
+  // 2. preco_materia_prima
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "preco_materia_prima" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT,
+      "descricao" VARCHAR(200) NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "unidade" VARCHAR(6) NOT NULL,
+      "preco_unitario" DECIMAL(12,4) NOT NULL,
+      "fornecedor_id" TEXT,
+      "data_vigencia" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "preco_materia_prima_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  console.log('✅ preco_materia_prima criada')
+
+  // 3. parametro_perda
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "parametro_perda" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "tipo_processo_id" TEXT,
+      "centro_producao_id" TEXT,
+      "perda_fixa_folhas" INTEGER NOT NULL DEFAULT 0,
+      "perda_variavel" DECIMAL(5,2) NOT NULL DEFAULT 5,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "parametro_perda_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "parametro_perda_empresa_id_tipo_processo_id_centro_producao_id_key" ON "parametro_perda"("empresa_id", "tipo_processo_id", "centro_producao_id")`)
+  console.log('✅ parametro_perda criada')
+
+  // 4. tabela_margem
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "tabela_margem" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(100) NOT NULL,
+      "markup" DECIMAL(5,2) NOT NULL DEFAULT 30,
+      "impostos" DECIMAL(5,2) NOT NULL DEFAULT 15,
+      "comissao" DECIMAL(5,2) NOT NULL DEFAULT 5,
+      "desp_adm" DECIMAL(5,2) NOT NULL DEFAULT 5,
+      "desconto_max" DECIMAL(5,2) NOT NULL DEFAULT 10,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "tabela_margem_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "tabela_margem_empresa_id_nome_key" ON "tabela_margem"("empresa_id", "nome")`)
+  console.log('✅ tabela_margem criada')
+
+  // 5. orcamento_grafico
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "orcamento_grafico" (
+      "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+      "empresa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "versao" INTEGER NOT NULL DEFAULT 1,
+      "cliente_id" TEXT,
+      "cliente_nome" VARCHAR(200),
+      "vendedor_id" TEXT,
+      "tipo_embalagem_id" TEXT NOT NULL,
+      "medidas" JSONB NOT NULL,
+      "resultado_calculo" JSONB,
+      "papel_id" TEXT,
+      "papel_descricao" VARCHAR(200),
+      "gramatura" DECIMAL(6,2),
+      "num_cores" INTEGER NOT NULL DEFAULT 4,
+      "cores" JSONB,
+      "acabamentos" JSONB,
+      "quantidade" INTEGER NOT NULL,
+      "custo_material" DECIMAL(12,2),
+      "custo_maquina" DECIMAL(12,2),
+      "custo_acabamento" DECIMAL(12,2),
+      "custo_total" DECIMAL(12,2),
+      "preco_venda" DECIMAL(12,2),
+      "preco_unitario" DECIMAL(12,4),
+      "margem_real" DECIMAL(5,2),
+      "status" VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
+      "validade_ate" TIMESTAMP(3),
+      "motivo_recusa" TEXT,
+      "aprovado_em" TIMESTAMP(3),
+      "pedido_venda_id" TEXT,
+      "variacoes" JSONB,
+      "observacoes" TEXT,
+      "criado_por_id" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "orcamento_grafico_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "orcamento_grafico_empresa_id_numero_versao_key" ON "orcamento_grafico"("empresa_id", "numero", "versao")`)
+  // FK tipo_embalagem_id -> tipo_embalagem
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD CONSTRAINT "orcamento_grafico_tipo_embalagem_id_fkey" FOREIGN KEY ("tipo_embalagem_id") REFERENCES "tipo_embalagem"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch { /* constraint já existe */ }
+  console.log('✅ orcamento_grafico criada')
+
+  // 6. centro_producao — campos adicionais para orçamento gráfico
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "velocidade" DECIMAL(10,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "unidade_velocidade" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "formato_folha_largura" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "formato_folha_altura" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "pinca_mm" DECIMAL(6,2)`)
+  console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm adicionados')
+
   console.log('✅ All migrations applied successfully')
 }
 

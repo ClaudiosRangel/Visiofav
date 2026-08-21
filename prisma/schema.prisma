@@ -2287,26 +2287,32 @@ model DeparaProdutoFornecedor {
 // ============================================================================
 
 model CentroProducao {
-  id             String       @id @default(uuid())
-  empresaId      String       @map("empresa_id")
-  codigo         String       @db.VarChar(20)
-  descricao      String       @db.VarChar(200)
-  tipo           String       @db.VarChar(20) // MAQUINA, SETOR, LINHA
+  id              String         @id @default(uuid())
+  empresaId       String         @map("empresa_id")
+  codigo          String         @db.VarChar(20)
+  descricao       String         @db.VarChar(200)
+  tipo            String         @db.VarChar(20) // MAQUINA, SETOR, LINHA
   // Cadastro obrigatório (substitui o antigo enum fixo tipoMaquina, que
   // limitava a classificação a 5 valores hardcoded no código e não permitia
   // reordenar as abas da Programação). Ver model TipoProcesso.
-  tipoProcessoId String       @map("tipo_processo_id")
-  tipoProcesso   TipoProcesso @relation(fields: [tipoProcessoId], references: [id])
+  tipoProcessoId  String         @map("tipo_processo_id")
+  tipoProcesso    TipoProcesso   @relation(fields: [tipoProcessoId], references: [id])
   // Turno operacional — define em quais horários/dias esta máquina opera.
   // Se null, assume operação 24h (sem restrição de horário no Gantt).
   turnoProducaoId String?        @map("turno_producao_id")
   turnoProducao   TurnoProducao? @relation(fields: [turnoProducaoId], references: [id])
-  capacidadeHora Decimal?     @map("capacidade_hora") @db.Decimal(12, 4)
-  custoHora      Decimal?     @map("custo_hora") @db.Decimal(12, 4)
-  posicao        Int          @default(0)
-  status         Boolean      @default(true)
-  criadoEm       DateTime     @default(now()) @map("criado_em")
-  atualizadoEm   DateTime     @updatedAt @map("atualizado_em")
+  capacidadeHora  Decimal?       @map("capacidade_hora") @db.Decimal(12, 4)
+  custoHora       Decimal?       @map("custo_hora") @db.Decimal(12, 4)
+  // Orçamento Gráfico — velocidade e formato da folha
+  velocidade          Decimal? @db.Decimal(10, 2) // folhas/hora ou metros/hora
+  unidadeVelocidade   String?  @map("unidade_velocidade") @db.VarChar(20) // FOLHAS_HORA, METROS_HORA
+  formatoFolhaLargura Int?     @map("formato_folha_largura") // mm
+  formatoFolhaAltura  Int?     @map("formato_folha_altura") // mm
+  pincaMm             Decimal? @map("pinca_mm") @db.Decimal(6, 2) // mm
+  posicao         Int            @default(0)
+  status          Boolean        @default(true)
+  criadoEm        DateTime       @default(now()) @map("criado_em")
+  atualizadoEm    DateTime       @updatedAt @map("atualizado_em")
 
   recursos        RecursoProducao[]
   etapasRoteiro   EtapaRoteiro[]
@@ -2855,6 +2861,135 @@ model AtributoGrafico {
 
   @@unique([empresaId, produtoId])
   @@map("atributo_grafico")
+}
+
+// ============================================================================
+// ORÇAMENTO GRÁFICO
+// ============================================================================
+
+// Tipo de Embalagem ("Especialista" de cálculo)
+model TipoEmbalagem {
+  id                    String   @id @default(uuid())
+  empresaId             String   @map("empresa_id")
+  codigo                String   @db.VarChar(30)
+  descricao             String   @db.VarChar(200)
+  // Fórmulas de planificação (expressão matemática)
+  formulaLargura        String   @map("formula_largura") @db.Text
+  formulaAltura         String   @map("formula_altura") @db.Text
+  // Parâmetros exigidos pelo wizard (JSON array)
+  parametros            Json // [{nome, label, unidade, obrigatorio, default}]
+  // Processos obrigatórios (ex: ["IMPRESSAO", "CORTE_VINCO", "COLAGEM"])
+  processosObrigatorios String[] @map("processos_obrigatorios")
+  // Defaults (mm)
+  abaColagemMm          Decimal  @default(15) @map("aba_colagem_mm") @db.Decimal(6, 2)
+  sangriaMm             Decimal  @default(3) @map("sangria_mm") @db.Decimal(6, 2)
+  pincaMm               Decimal  @default(10) @map("pinca_mm") @db.Decimal(6, 2)
+  imagemUrl             String?  @map("imagem_url") @db.Text
+  status                Boolean  @default(true)
+  criadoEm              DateTime @default(now()) @map("criado_em")
+  atualizadoEm          DateTime @updatedAt @map("atualizado_em")
+
+  orcamentos OrcamentoGrafico[]
+
+  @@unique([empresaId, codigo])
+  @@map("tipo_embalagem")
+}
+
+// Preço de Matéria-Prima
+model PrecoMateriaPrima {
+  id            String   @id @default(uuid())
+  empresaId     String   @map("empresa_id")
+  produtoId     String?  @map("produto_id")
+  descricao     String   @db.VarChar(200)
+  tipo          String   @db.VarChar(20) // PAPEL, TINTA, VERNIZ, COLA, FACA, BOPP, OUTRO
+  unidade       String   @db.VarChar(6) // KG, M2, UN, LT
+  precoUnitario Decimal  @map("preco_unitario") @db.Decimal(12, 4)
+  fornecedorId  String?  @map("fornecedor_id")
+  dataVigencia  DateTime @default(now()) @map("data_vigencia")
+  status        Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+
+  @@map("preco_materia_prima")
+}
+
+// Parâmetros de Perda por Processo
+model ParametroPerda {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  tipoProcessoId   String?  @map("tipo_processo_id")
+  centroProducaoId String?  @map("centro_producao_id")
+  perdaFixaFolhas  Int      @default(0) @map("perda_fixa_folhas")
+  perdaVariavel    Decimal  @default(5) @map("perda_variavel") @db.Decimal(5, 2)
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, tipoProcessoId, centroProducaoId])
+  @@map("parametro_perda")
+}
+
+// Tabela de Margem / Política Comercial
+model TabelaMargem {
+  id          String   @id @default(uuid())
+  empresaId   String   @map("empresa_id")
+  nome        String   @db.VarChar(100)
+  markup      Decimal  @default(30) @db.Decimal(5, 2)
+  impostos    Decimal  @default(15) @db.Decimal(5, 2)
+  comissao    Decimal  @default(5) @db.Decimal(5, 2)
+  despAdm     Decimal  @default(5) @map("desp_adm") @db.Decimal(5, 2)
+  descontoMax Decimal  @default(10) @map("desconto_max") @db.Decimal(5, 2)
+  status      Boolean  @default(true)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, nome])
+  @@map("tabela_margem")
+}
+
+// O Orçamento Gráfico em si
+model OrcamentoGrafico {
+  id               String        @id @default(uuid())
+  empresaId        String        @map("empresa_id")
+  numero           Int
+  versao           Int           @default(1)
+  clienteId        String?       @map("cliente_id")
+  clienteNome      String?       @map("cliente_nome") @db.VarChar(200)
+  vendedorId       String?       @map("vendedor_id")
+  tipoEmbalagemId  String        @map("tipo_embalagem_id")
+  tipoEmbalagem    TipoEmbalagem @relation(fields: [tipoEmbalagemId], references: [id])
+  // Medidas informadas pelo vendedor (JSON)
+  medidas          Json // {L: 80, A: 150, P: 40, ...}
+  // Resultados do cálculo (JSON completo)
+  resultadoCalculo Json?         @map("resultado_calculo")
+  // Parâmetros escolhidos
+  papelId          String?       @map("papel_id")
+  papelDescricao   String?       @map("papel_descricao") @db.VarChar(200)
+  gramatura        Decimal?      @db.Decimal(6, 2)
+  numCores         Int           @default(4) @map("num_cores")
+  cores            Json? // [{nome, tipo, cobertura%}]
+  acabamentos      Json? // [{tipo, parametros}]
+  quantidade       Int
+  // Valores calculados
+  custoMaterial    Decimal?      @map("custo_material") @db.Decimal(12, 2)
+  custoMaquina     Decimal?      @map("custo_maquina") @db.Decimal(12, 2)
+  custoAcabamento  Decimal?      @map("custo_acabamento") @db.Decimal(12, 2)
+  custoTotal       Decimal?      @map("custo_total") @db.Decimal(12, 2)
+  precoVenda       Decimal?      @map("preco_venda") @db.Decimal(12, 2)
+  precoUnitario    Decimal?      @map("preco_unitario") @db.Decimal(12, 4)
+  margemReal       Decimal?      @map("margem_real") @db.Decimal(5, 2)
+  // Status e fluxo
+  status           String        @default("RASCUNHO") @db.VarChar(20)
+  validadeAte      DateTime?     @map("validade_ate")
+  motivoRecusa     String?       @map("motivo_recusa") @db.Text
+  aprovadoEm       DateTime?     @map("aprovado_em")
+  pedidoVendaId    String?       @map("pedido_venda_id")
+  // Variações de tiragem (simulações)
+  variacoes        Json? // [{quantidade, precoUnitario, precoTotal}]
+  observacoes      String?       @db.Text
+  criadoPorId      String        @map("criado_por_id")
+  criadoEm         DateTime      @default(now()) @map("criado_em")
+  atualizadoEm     DateTime      @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, numero, versao])
+  @@map("orcamento_grafico")
 }
 
 // ============================================================================
