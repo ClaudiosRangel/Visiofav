@@ -230,7 +230,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
               select: {
                 codigo: true,
                 descricao: true,
-                tipoProcesso: { select: { codigo: true, descricao: true } },
+                tipoProcesso: { select: { codigo: true, descricao: true, posicao: true } },
                 turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true, duracaoMinutos: true } },
               },
             },
@@ -445,6 +445,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           descricao: etapa.descricao,
           centroProducao: etapa.centroProducao?.descricao || null,
           tipoProcesso: etapa.centroProducao?.tipoProcesso?.descricao || null,
+          tipoProcessoPosicao: etapa.centroProducao?.tipoProcesso?.posicao ?? 999,
           turno: etapa.centroProducao?.turnoProducao || null,
           status: etapa.status,
           tempoSetupMinutos: setup,
