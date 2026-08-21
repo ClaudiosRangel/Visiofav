@@ -539,6 +539,76 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
       concluidas: timeline.filter(t => t.indicadorGeral === 'CONCLUIDO').length,
     }
 
-    return reply.send({ resumo, timeline })
+    // ═══════════════════════════════════════════════════════════════════════
+    // DETECÇÃO DE CONFLITOS — duas etapas se sobrepõem na mesma máquina
+    // ═══════════════════════════════════════════════════════════════════════
+    interface Conflito {
+      centroProducao: string
+      tipoProcesso: string
+      etapa1: { id: string; opNumero: string; descricao: string; inicioAt: string; fimAt: string }
+      etapa2: { id: string; opNumero: string; descricao: string; inicioAt: string; fimAt: string }
+      sobreposicaoMinutos: number
+    }
+
+    const conflitos: Conflito[] = []
+
+    // Coletar todas as etapas com horários previstos, agrupadas por centro
+    const etapasPorCentro = new Map<string, Array<{
+      id: string; opNumero: string; descricao: string
+      centroProducao: string; tipoProcesso: string
+      inicioMs: number; fimMs: number
+    }>>()
+
+    for (const op of timeline) {
+      for (const etapa of op.etapas) {
+        if (!etapa.centroProducao || !etapa.inicioPrevistoAt || !etapa.fimPrevistoAt) continue
+        if (etapa.status === 'CONCLUIDO') continue // ignorar etapas já terminadas
+
+        const key = etapa.centroProducao
+        if (!etapasPorCentro.has(key)) etapasPorCentro.set(key, [])
+        etapasPorCentro.get(key)!.push({
+          id: etapa.id,
+          opNumero: op.opNumero,
+          descricao: etapa.descricao,
+          centroProducao: etapa.centroProducao,
+          tipoProcesso: etapa.tipoProcesso || '',
+          inicioMs: new Date(etapa.inicioPrevistoAt).getTime(),
+          fimMs: new Date(etapa.fimPrevistoAt).getTime(),
+        })
+      }
+    }
+
+    // Detectar sobreposições em cada centro
+    for (const [centro, etapas] of etapasPorCentro) {
+      // Ordenar por início
+      etapas.sort((a, b) => a.inicioMs - b.inicioMs)
+
+      for (let i = 0; i < etapas.length - 1; i++) {
+        for (let j = i + 1; j < etapas.length; j++) {
+          const a = etapas[i]
+          const b = etapas[j]
+
+          // Se B começa depois que A termina, não há conflito com B nem com posteriores
+          if (b.inicioMs >= a.fimMs) break
+
+          // Há sobreposição: B começa antes de A terminar
+          const sobreposicaoMs = a.fimMs - b.inicioMs
+          const sobreposicaoMin = Math.round(sobreposicaoMs / 60000)
+
+          // Ignorar micro-sobreposições (< 5 min) — podem ser arredondamentos
+          if (sobreposicaoMin < 5) continue
+
+          conflitos.push({
+            centroProducao: centro,
+            tipoProcesso: a.tipoProcesso,
+            etapa1: { id: a.id, opNumero: a.opNumero, descricao: a.descricao, inicioAt: new Date(a.inicioMs).toISOString(), fimAt: new Date(a.fimMs).toISOString() },
+            etapa2: { id: b.id, opNumero: b.opNumero, descricao: b.descricao, inicioAt: new Date(b.inicioMs).toISOString(), fimAt: new Date(b.fimMs).toISOString() },
+            sobreposicaoMinutos: sobreposicaoMin,
+          })
+        }
+      }
+    }
+
+    return reply.send({ resumo: { ...resumo, conflitos: conflitos.length }, timeline, conflitos })
   })
 }
