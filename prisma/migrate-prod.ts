@@ -2848,7 +2848,177 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "pinca_mm" DECIMAL(6,2)`)
   console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm adicionados')
 
+  // =========================================================================
+  // ORÇAMENTO GRÁFICO — Seed de Tipos de Embalagem Pré-Configurados
+  // =========================================================================
+  await seedTiposEmbalagem()
+
   console.log('✅ All migrations applied successfully')
+}
+
+/**
+ * Seed idempotente dos tipos de embalagem padrão para indústria gráfica.
+ * Insere os tipos pré-configurados para cada empresa existente no banco.
+ * Se o tipo já existe (constraint unique [empresaId, codigo]), é ignorado.
+ */
+async function seedTiposEmbalagem() {
+  const tiposPadrao = [
+    {
+      codigo: 'CARTUCHO',
+      descricao: 'Cartucho Simples',
+      formulaLargura: '(L + P) * 2 + ABA',
+      formulaAltura: 'A + P * 2 + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'P', label: 'Profundidade (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'ABA', label: 'Aba de colagem (mm)', unidade: 'mm', obrigatorio: false, default: 15 },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO', 'COLAGEM'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'CARTUCHO-DUPLA',
+      descricao: 'Cartucho com Aba Dupla',
+      formulaLargura: '(L + P) * 2 + ABA * 2',
+      formulaAltura: 'A + P * 2 + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'P', label: 'Profundidade (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'ABA', label: 'Aba de colagem (mm)', unidade: 'mm', obrigatorio: false, default: 15 },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO', 'COLAGEM'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'CARTUCHO-MICRO',
+      descricao: 'Cartucho Micro-ondulado',
+      formulaLargura: '(L + P) * 2 + ABA + SANGRIA * 2',
+      formulaAltura: 'A + P + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'P', label: 'Profundidade (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'ABA', label: 'Aba de colagem (mm)', unidade: 'mm', obrigatorio: false, default: 15 },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO', 'COLAGEM'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'CAIXA-TAMPA',
+      descricao: 'Caixa Tampa e Fundo (tampa)',
+      formulaLargura: 'L + P * 2 + SANGRIA * 2',
+      formulaAltura: 'A + P * 2 + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'P', label: 'Profundidade (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'CAIXA-FUNDO',
+      descricao: 'Caixa Tampa e Fundo (fundo)',
+      formulaLargura: 'L + P * 2 + SANGRIA * 2',
+      formulaAltura: 'A + P * 2 + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'P', label: 'Profundidade (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'DISPLAY',
+      descricao: 'Display (formato livre / faca)',
+      formulaLargura: 'L + SANGRIA * 2',
+      formulaAltura: 'A + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'ROTULO',
+      descricao: 'Rótulo / Envoltório',
+      formulaLargura: 'L + SANGRIA * 2',
+      formulaAltura: 'A + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO'],
+      abaColagemMm: 15,
+      sangriaMm: 3,
+    },
+    {
+      codigo: 'SACOLA',
+      descricao: 'Sacola',
+      formulaLargura: '(L + P) * 2 + ABA + SANGRIA * 2',
+      formulaAltura: 'A + FUNDO + DOBRA + SANGRIA * 2',
+      parametros: [
+        { nome: 'L', label: 'Largura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'A', label: 'Altura (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'P', label: 'Profundidade (mm)', unidade: 'mm', obrigatorio: true },
+        { nome: 'FUNDO', label: 'Fundo (mm)', unidade: 'mm', obrigatorio: false, default: 80 },
+        { nome: 'DOBRA', label: 'Dobra (mm)', unidade: 'mm', obrigatorio: false, default: 30 },
+        { nome: 'ABA', label: 'Aba de colagem (mm)', unidade: 'mm', obrigatorio: false, default: 20 },
+        { nome: 'SANGRIA', label: 'Sangria (mm)', unidade: 'mm', obrigatorio: false, default: 3 },
+      ],
+      processosObrigatorios: ['IMPRESSAO', 'CORTE_VINCO', 'COLAGEM'],
+      abaColagemMm: 20,
+      sangriaMm: 3,
+    },
+  ]
+
+  try {
+    const empresas = await prisma.empresa.findMany({ select: { id: true } })
+
+    for (const empresa of empresas) {
+      for (const tipo of tiposPadrao) {
+        // Idempotente: só insere se não existir (unique [empresaId, codigo])
+        const existing = await prisma.tipoEmbalagem.findFirst({
+          where: { empresaId: empresa.id, codigo: tipo.codigo },
+        })
+        if (!existing) {
+          await prisma.tipoEmbalagem.create({
+            data: {
+              empresaId: empresa.id,
+              codigo: tipo.codigo,
+              descricao: tipo.descricao,
+              formulaLargura: tipo.formulaLargura,
+              formulaAltura: tipo.formulaAltura,
+              parametros: tipo.parametros,
+              processosObrigatorios: tipo.processosObrigatorios,
+              abaColagemMm: tipo.abaColagemMm,
+              sangriaMm: tipo.sangriaMm,
+            },
+          })
+        }
+      }
+    }
+    console.log(`✅ Seed tipos de embalagem: ${tiposPadrao.length} tipos verificados/criados para ${empresas.length} empresa(s)`)
+  } catch (e: any) {
+    console.log('⚠️ Seed tipos de embalagem skipped:', e.message)
+  }
 }
 
 main()

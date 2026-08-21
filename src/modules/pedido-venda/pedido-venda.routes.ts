@@ -111,7 +111,26 @@ export async function pedidoVendaRoutes(app: FastifyInstance) {
     if (!pedido) return reply.status(404).send({ message: 'Pedido não encontrado' })
     if (pedido.status !== 'RASCUNHO') return reply.status(422).send({ message: 'Apenas pedidos RASCUNHO podem ser confirmados', statusAtual: pedido.status })
 
-    return prisma.pedidoVenda.update({ where: { id }, data: { status: 'CONFIRMADO' } })
+    const pedidoAtualizado = await prisma.pedidoVenda.update({ where: { id }, data: { status: 'CONFIRMADO' } })
+
+    // Se o pedido veio de um orçamento gráfico, gerar OP automaticamente
+    let opGerada = null
+    if (pedido.origemPedido === 'ORCAMENTO_GRAFICO' && pedido.orcamentoOrigemId) {
+      try {
+        const { gerarOpFromOrcamento } = await import('../orcamento-grafico/orcamento-grafico-integracao.service')
+        opGerada = await gerarOpFromOrcamento(
+          pedido.orcamentoOrigemId,
+          id,
+          user.empresaId,
+          user.id,
+        )
+      } catch (err) {
+        // Não bloqueia a confirmação do pedido se a geração de OP falhar
+        console.error('[pedido-venda/confirmar] Erro ao gerar OP do orçamento:', err)
+      }
+    }
+
+    return { ...pedidoAtualizado, opGerada }
   })
 
   // PATCH /:id/cancelar

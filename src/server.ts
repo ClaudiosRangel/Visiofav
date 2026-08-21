@@ -182,8 +182,7 @@ import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entre
 import { liberacaoMaterialRoutes } from './modules/liberacao-material/liberacao-material.routes'
 import { apontamentoProducaoRoutes } from './modules/apontamento-producao/apontamento-producao.routes'
 
-// Orçamento Gráfico — Cadastros base de orçamento
-import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
+// Orçamento Gráfico — Cadastros base de orçamento (importado acima)
 
 // Sistema de Notificações
 import { notificacaoRoutes } from './modules/notificacao/notificacao.routes'
