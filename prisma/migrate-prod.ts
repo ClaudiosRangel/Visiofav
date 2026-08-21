@@ -2853,6 +2853,11 @@ async function main() {
   // =========================================================================
   await seedTiposEmbalagem()
 
+  // =========================================================================
+  // ORÇAMENTO GRÁFICO — Atualizar Centros de Produção com dados Calcgraf/Wega
+  // =========================================================================
+  await seedCentrosOrcamentoWega()
+
   console.log('✅ All migrations applied successfully')
 }
 
@@ -3018,6 +3023,131 @@ async function seedTiposEmbalagem() {
     console.log(`✅ Seed tipos de embalagem: ${tiposPadrao.length} tipos verificados/criados para ${empresas.length} empresa(s)`)
   } catch (e: any) {
     console.log('⚠️ Seed tipos de embalagem skipped:', e.message)
+  }
+}
+
+/**
+ * Seed idempotente: atualiza os Centros de Produção com os dados do Calcgraf
+ * da Carton Wega (velocidade, formato folha, pinça, custo/hora).
+ * 
+ * Se o centro já existe (match por descrição ILIKE), atualiza os campos de orçamento.
+ * Se não existe, cria com os dados completos.
+ */
+async function seedCentrosOrcamentoWega() {
+  const centrosWega = [
+    // IMPRESSORAS
+    { codigo: 'HEID-CD5', descricao: 'Heidelberg CD 5cores', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 440, velocidade: 6000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 720, formatoFolhaAltura: 1020, pincaMm: 13 },
+    { codigo: 'HEID-CD7', descricao: 'Heidelberg CD 7cores', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 550, velocidade: 6500, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 720, formatoFolhaAltura: 1020, pincaMm: 13 },
+    { codigo: 'KBA-75-6', descricao: 'KBA Rapida 75 6cores', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 480, velocidade: 9000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 605, formatoFolhaAltura: 750, pincaMm: 13 },
+    { codigo: 'ROLAND-RVU4', descricao: 'Roland RVU 4 cores', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 140, velocidade: 2100, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 900, formatoFolhaAltura: 1260, pincaMm: 20 },
+    { codigo: 'ROLAND-RZU2', descricao: 'Roland RZU 2cores', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 100, velocidade: 2000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 900, formatoFolhaAltura: 1260, pincaMm: 20 },
+    { codigo: 'HEID-LETTER', descricao: 'Heidelberg LeterSet', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 155, velocidade: 4000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 520, formatoFolhaAltura: 720, pincaMm: 10 },
+    { codigo: 'HEID-SM2', descricao: 'Heidelberg SM 2cores', tipo: 'MAQUINA', tipoProcessoCodigo: 'IMPRESSAO', custoHora: 155, velocidade: 4000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: 520, formatoFolhaAltura: 720, pincaMm: 10 },
+    // CORTADEIRAS
+    { codigo: 'CORT-GDE', descricao: 'Cortadeira (Grande)', tipo: 'MAQUINA', tipoProcessoCodigo: 'CORTADEIRA', custoHora: 113.21, velocidade: 3000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'CORT-PEQ', descricao: 'Cortadeira (Pequena)', tipo: 'MAQUINA', tipoProcessoCodigo: 'CORTADEIRA', custoHora: 113.21, velocidade: 3000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'GUILH-ENV', descricao: 'Guilhotina de envol', tipo: 'MAQUINA', tipoProcessoCodigo: 'CORTADEIRA', custoHora: 77.69, velocidade: 2000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'GUILH-MAI', descricao: 'Guilhotina maior', tipo: 'MAQUINA', tipoProcessoCodigo: 'CORTADEIRA', custoHora: 77.69, velocidade: 2000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'GUILH-MEN', descricao: 'Guilhotina menor', tipo: 'MAQUINA', tipoProcessoCodigo: 'CORTADEIRA', custoHora: 77.69, velocidade: 2000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    // CORTE E VINCO
+    { codigo: 'BOBST-E', descricao: 'Bobst E (Corte e Vinco)', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 300, velocidade: 5000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'BOBST-S', descricao: 'Bobst S (Corte e Vinco)', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 280, velocidade: 5000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'CVM', descricao: 'CVM (Corte e vinco)', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 86.27, velocidade: 3500, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'CVMR', descricao: 'CVMR (Corte e vinco)', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 86.27, velocidade: 3500, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    // COLAGEM
+    { codigo: 'AFT70', descricao: 'AFT70 (Coladeira)', tipo: 'MAQUINA', tipoProcessoCodigo: 'COLAGEM', custoHora: 320, velocidade: 8000, unidadeVelocidade: 'UNIDADES_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'BOBST-68', descricao: 'Bobst 68 (Coladeira)', tipo: 'MAQUINA', tipoProcessoCodigo: 'COLAGEM', custoHora: 320, velocidade: 8000, unidadeVelocidade: 'UNIDADES_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'DIANA', descricao: 'Diana (Coladeira)', tipo: 'MAQUINA', tipoProcessoCodigo: 'COLAGEM', custoHora: 350, velocidade: 10000, unidadeVelocidade: 'UNIDADES_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    // ACABAMENTO / OUTROS
+    { codigo: 'HOT-STAMP', descricao: 'Hot Stamping', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 110, velocidade: 2000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'JATO-ACOP', descricao: 'Jato (acoplagem)', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 90, velocidade: 3000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'MAZOLA', descricao: 'Mazola (acoplagem)', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 80, velocidade: 3000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'PLAST-MAI', descricao: 'Plastificadora maior', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 60, velocidade: 3000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'PLAST-MEN', descricao: 'Plastificadora menor', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 60, velocidade: 3000, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'DESTACAR', descricao: 'Destacar', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 50, velocidade: 2500, unidadeVelocidade: 'FOLHAS_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'SELAD-BOL', descricao: 'Seladora Bolsa', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 155, velocidade: 2000, unidadeVelocidade: 'UNIDADES_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'FECH-CX', descricao: 'Fechamento de Caixa', tipo: 'MAQUINA', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 155, velocidade: 3000, unidadeVelocidade: 'UNIDADES_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+    { codigo: 'SERV-MAN', descricao: 'Serviços manuais', tipo: 'SETOR', tipoProcessoCodigo: 'ACABAMENTO', custoHora: 45, velocidade: 1000, unidadeVelocidade: 'UNIDADES_HORA', formatoFolhaLargura: null, formatoFolhaAltura: null, pincaMm: null },
+  ]
+
+  try {
+    const empresas = await prisma.empresa.findMany({ select: { id: true } })
+
+    for (const empresa of empresas) {
+      let criados = 0
+      let atualizados = 0
+
+      for (const centro of centrosWega) {
+        // Buscar tipoProcesso da empresa
+        const tipoProcesso = await prisma.tipoProcesso.findFirst({
+          where: { empresaId: empresa.id, codigo: centro.tipoProcessoCodigo },
+          select: { id: true },
+        })
+        if (!tipoProcesso) continue
+
+        // Tentar encontrar centro existente por código ou descrição similar
+        let existente = await prisma.centroProducao.findFirst({
+          where: { empresaId: empresa.id, codigo: centro.codigo },
+          select: { id: true },
+        })
+
+        if (!existente) {
+          // Buscar por descrição similar (case insensitive)
+          existente = await prisma.centroProducao.findFirst({
+            where: { empresaId: empresa.id, descricao: { equals: centro.descricao, mode: 'insensitive' } },
+            select: { id: true },
+          })
+        }
+
+        if (existente) {
+          // Atualizar campos de orçamento (sem sobrescrever outros dados)
+          await prisma.centroProducao.update({
+            where: { id: existente.id },
+            data: {
+              custoHora: centro.custoHora,
+              velocidade: centro.velocidade,
+              unidadeVelocidade: centro.unidadeVelocidade,
+              formatoFolhaLargura: centro.formatoFolhaLargura,
+              formatoFolhaAltura: centro.formatoFolhaAltura,
+              pincaMm: centro.pincaMm,
+            },
+          })
+          atualizados++
+        } else {
+          // Criar novo centro
+          const ultimaPosicao = await prisma.centroProducao.findFirst({
+            where: { empresaId: empresa.id },
+            orderBy: { posicao: 'desc' },
+            select: { posicao: true },
+          })
+          const posicao = (ultimaPosicao?.posicao ?? 0) + 1
+
+          await prisma.centroProducao.create({
+            data: {
+              empresaId: empresa.id,
+              codigo: centro.codigo,
+              descricao: centro.descricao,
+              tipo: centro.tipo as any,
+              tipoProcessoId: tipoProcesso.id,
+              custoHora: centro.custoHora,
+              velocidade: centro.velocidade,
+              unidadeVelocidade: centro.unidadeVelocidade,
+              formatoFolhaLargura: centro.formatoFolhaLargura,
+              formatoFolhaAltura: centro.formatoFolhaAltura,
+              pincaMm: centro.pincaMm,
+              posicao,
+              status: true,
+            },
+          })
+          criados++
+        }
+      }
+
+      console.log(`  → Empresa ${empresa.id.slice(0, 8)}: ${criados} criados, ${atualizados} atualizados`)
+    }
+    console.log(`✅ Seed centros Wega: ${centrosWega.length} centros processados`)
+  } catch (e: any) {
+    console.log('⚠️ Seed centros Wega skipped:', e.message)
   }
 }
 
