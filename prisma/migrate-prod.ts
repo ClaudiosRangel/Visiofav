@@ -2858,6 +2858,11 @@ async function main() {
   // =========================================================================
   await seedCentrosOrcamentoWega()
 
+  // =========================================================================
+  // ORÇAMENTO GRÁFICO — Popular Preços de Matéria-Prima a partir dos PDFs de OP
+  // =========================================================================
+  await seedMateriaisFromOPs()
+
   console.log('✅ All migrations applied successfully')
 }
 
@@ -3148,6 +3153,80 @@ async function seedCentrosOrcamentoWega() {
     console.log(`✅ Seed centros Wega: ${centrosWega.length} centros processados`)
   } catch (e: any) {
     console.log('⚠️ Seed centros Wega skipped:', e.message)
+  }
+}
+
+/**
+ * Seed idempotente: extrai materiais distintos das OPs já importadas
+ * (ItemOrdemProducao) e cria registros na tabela PrecoMateriaPrima
+ * com preço = 0 (para preenchimento manual posterior).
+ *
+ * Só cria se não existir registro com mesma descrição+tipo para a empresa.
+ */
+async function seedMateriaisFromOPs() {
+  try {
+    const empresas = await prisma.empresa.findMany({ select: { id: true } })
+
+    for (const empresa of empresas) {
+      // Buscar todos os materiais distintos das OPs dessa empresa
+      const itensOP = await prisma.itemOrdemProducao.findMany({
+        where: {
+          ordemProducao: { empresaId: empresa.id },
+          tipoMaterial: { not: null },
+          descricaoProduto: { not: '' },
+        },
+        select: { descricaoProduto: true, tipoMaterial: true, unidadeMedida: true },
+        distinct: ['descricaoProduto', 'tipoMaterial'],
+      })
+
+      if (itensOP.length === 0) continue
+
+      // Buscar preços já existentes para essa empresa (para não duplicar)
+      const precosExistentes = await prisma.precoMateriaPrima.findMany({
+        where: { empresaId: empresa.id },
+        select: { descricao: true, tipo: true },
+      })
+      const existenteSet = new Set(precosExistentes.map(p => `${p.tipo}|${p.descricao.toLowerCase()}`))
+
+      let criados = 0
+      for (const item of itensOP) {
+        if (!item.tipoMaterial || !item.descricaoProduto) continue
+
+        const tipo = item.tipoMaterial // PAPEL, TINTA, VERNIZ, COLA, FACA, OUTRO
+        const descricao = item.descricaoProduto.trim()
+        const chave = `${tipo}|${descricao.toLowerCase()}`
+
+        if (existenteSet.has(chave)) continue
+
+        // Determinar unidade default pelo tipo de material
+        let unidade = 'KG'
+        if (tipo === 'TINTA') unidade = 'KG'
+        else if (tipo === 'VERNIZ') unidade = 'KG'
+        else if (tipo === 'COLA') unidade = 'KG'
+        else if (tipo === 'FACA') unidade = 'UN'
+        else if (item.unidadeMedida) unidade = item.unidadeMedida
+
+        await prisma.precoMateriaPrima.create({
+          data: {
+            empresaId: empresa.id,
+            descricao,
+            tipo: ['PAPEL', 'TINTA', 'VERNIZ', 'COLA', 'FACA', 'BOPP', 'OUTRO'].includes(tipo) ? tipo : 'OUTRO',
+            unidade,
+            precoUnitario: 0, // Preço zerado — preencher manualmente
+            dataVigencia: new Date(),
+          },
+        })
+        existenteSet.add(chave)
+        criados++
+      }
+
+      if (criados > 0) {
+        console.log(`  → Empresa ${empresa.id.slice(0, 8)}: ${criados} materiais criados a partir de OPs (preço=0, preencher manualmente)`)
+      }
+    }
+    console.log('✅ Seed materiais from OPs: concluído')
+  } catch (e: any) {
+    console.log('⚠️ Seed materiais from OPs skipped:', e.message)
   }
 }
 
