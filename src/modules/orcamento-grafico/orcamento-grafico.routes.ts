@@ -556,8 +556,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       medidas: z.record(z.number()),
       papelId: z.string().uuid().optional(),
       gramatura: z.number().positive(),
-      precoKgPapel: z.number().positive(),
-      maquinaId: z.string().uuid(),
+      precoKgPapel: z.number().positive().optional(),
+      precoKg: z.number().positive().optional(),
+      maquinaId: z.string().uuid().optional(),
       cores: z.array(z.object({
         nome: z.string(),
         tipo: z.enum(['CMYK', 'PANTONE']),
@@ -577,13 +578,25 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       tabelaMargemId: z.string().uuid().optional(),
     }).parse(request.body)
 
+    const precoKgPapel = body.precoKgPapel || body.precoKg
+    if (!precoKgPapel) return reply.status(400).send({ message: 'Preço do papel (precoKgPapel ou precoKg) é obrigatório' })
+
     // Buscar tipo de embalagem
     const tipo = await prisma.tipoEmbalagem.findFirst({ where: { id: body.tipoEmbalagemId, empresaId: user.empresaId } })
     if (!tipo) return reply.status(404).send({ message: 'Tipo de embalagem não encontrado' })
 
-    // Buscar máquina
-    const maquina = await prisma.centroProducao.findFirst({ where: { id: body.maquinaId, empresaId: user.empresaId } })
-    if (!maquina) return reply.status(404).send({ message: 'Máquina não encontrada' })
+    // Buscar máquina (específica ou primeira de impressão da empresa como default)
+    let maquina: any = null
+    if (body.maquinaId) {
+      maquina = await prisma.centroProducao.findFirst({ where: { id: body.maquinaId, empresaId: user.empresaId } })
+    }
+    if (!maquina) {
+      maquina = await prisma.centroProducao.findFirst({
+        where: { empresaId: user.empresaId, status: true, tipoProcesso: { codigo: 'IMPRESSAO' } },
+        orderBy: { posicao: 'asc' },
+      })
+    }
+    if (!maquina) return reply.status(404).send({ message: 'Nenhuma máquina de impressão encontrada. Cadastre um Centro de Produção do tipo Impressão.' })
 
     // Buscar tabela de margem (ou usar default)
     let margem = { impostos: 15, comissao: 5, despAdm: 5, markup: 30 }
@@ -611,7 +624,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         pincaMm: Number(tipo.pincaMm),
       },
       medidas: body.medidas,
-      papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
+      papel: { gramatura: body.gramatura, precoKg: precoKgPapel },
       maquinaImpressao: {
         velocidade: Number(maquina.velocidade) || 6000,
         custoHora: Number(maquina.custoHora) || 250,
