@@ -1528,7 +1528,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const centros = await prisma.centroProducao.findMany({
       where: { empresaId: user.empresaId, status: true },
-      include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } } },
+      include: {
+        tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } },
+        turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true, duracaoMinutos: true } },
+      },
       orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
     })
 
@@ -1834,6 +1837,127 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         }),
       }
     })
+
+    // =========================================================================
+    // Pós-processamento: calcular Data Prevista Conclusão para cada etapa
+    // =========================================================================
+    function calcularDataConclusao(
+      inicioRelogio: Date,
+      minutosRestantes: number,
+      turno: { horaInicio: string; horaFim: string; diasSemana: number[]; duracaoMinutos: number } | null
+    ): Date {
+      if (!turno || minutosRestantes <= 0) {
+        // Sem turno = 24h operação
+        return new Date(inicioRelogio.getTime() + minutosRestantes * 60000)
+      }
+
+      let remaining = minutosRestantes
+      let current = new Date(inicioRelogio)
+      const [hIni, mIni] = turno.horaInicio.split(':').map(Number)
+      const [hFim, mFim] = turno.horaFim.split(':').map(Number)
+      const inicioMinDia = hIni * 60 + mIni
+      const fimMinDia = hFim * 60 + mFim
+
+      // Max 365 dias para prevenir loop infinito
+      for (let safety = 0; safety < 365 * 24 * 60 && remaining > 0; safety++) {
+        const diaSemana = current.getDay() || 7 // 1=seg...7=dom
+        if (!turno.diasSemana.includes(diaSemana)) {
+          current.setDate(current.getDate() + 1)
+          current.setHours(hIni, mIni, 0, 0)
+          continue
+        }
+
+        const minutoAtual = current.getHours() * 60 + current.getMinutes()
+
+        if (minutoAtual < inicioMinDia) {
+          current.setHours(hIni, mIni, 0, 0)
+          continue
+        }
+
+        if (minutoAtual >= fimMinDia) {
+          current.setDate(current.getDate() + 1)
+          current.setHours(hIni, mIni, 0, 0)
+          continue
+        }
+
+        // Dentro do horário de trabalho — consumir minutos
+        const minutosAteFinTurno = fimMinDia - minutoAtual
+        const consumir = Math.min(remaining, minutosAteFinTurno)
+        remaining -= consumir
+        current = new Date(current.getTime() + consumir * 60000)
+      }
+
+      return current
+    }
+
+    const agora = new Date()
+    // Mapa de centroId → turno (do include que já fizemos)
+    const turnoMap = new Map(centros.map(c => [c.id, c.turnoProducao || null]))
+    // Mapa de etapaId → etapa original (para acessar tempos e dataInicioReal)
+    const etapaOriginalMap = new Map(etapasAtivas.map(e => [e.id, e]))
+
+    for (const centroPainel of painelPorCentro) {
+      const turno = turnoMap.get(centroPainel.centro.id)
+      let relogio = new Date(agora)
+
+      for (const etapa of centroPainel.etapas) {
+        const original = etapaOriginalMap.get(etapa.id)
+        if (!original) {
+          ;(etapa as any).dataPrevisaoConclusao = null
+          ;(etapa as any).statusPrazo = null
+          ;(etapa as any).tempoRestanteMin = null
+          ;(etapa as any).tempoTotalMinutos = null
+          continue
+        }
+
+        const tempoSetup = Number(original.tempoSetupMinutos) || 0
+        const tempoOperacao = Number(original.tempoOperacaoCalculado) || 0
+        const tempoTotal = tempoSetup + tempoOperacao
+        ;(etapa as any).tempoTotalMinutos = tempoTotal
+
+        if (tempoTotal <= 0) {
+          ;(etapa as any).dataPrevisaoConclusao = null
+          ;(etapa as any).statusPrazo = null
+          ;(etapa as any).tempoRestanteMin = null
+          continue
+        }
+
+        let minutosRestantes = tempoTotal
+
+        if (etapa.status === 'EM_ANDAMENTO' && original.dataInicioReal) {
+          // Subtrair tempo já decorrido
+          const elapsed = (agora.getTime() - new Date(original.dataInicioReal).getTime()) / 60000
+          minutosRestantes = Math.max(0, tempoTotal - elapsed)
+        } else if (etapa.status === 'PAUSADA') {
+          // Pausada — mantém tempo total restante (não desconta)
+          minutosRestantes = tempoTotal
+        }
+
+        ;(etapa as any).tempoRestanteMin = Math.round(minutosRestantes)
+
+        const dataPrevisao = calcularDataConclusao(relogio, minutosRestantes, turno)
+        ;(etapa as any).dataPrevisaoConclusao = dataPrevisao
+
+        // Calcular statusPrazo comparando com dataEntregaPrevista
+        if (etapa.dataEntrega) {
+          const entrega = new Date(etapa.dataEntrega)
+          const umDiaAntes = new Date(entrega.getTime() - 24 * 60 * 60 * 1000)
+
+          if (dataPrevisao > entrega) {
+            ;(etapa as any).statusPrazo = 'ATRASADO'
+          } else if (dataPrevisao > umDiaAntes) {
+            ;(etapa as any).statusPrazo = 'ATENCAO'
+          } else {
+            ;(etapa as any).statusPrazo = 'NO_PRAZO'
+          }
+        } else {
+          ;(etapa as any).statusPrazo = null
+        }
+
+        // Avançar o relógio para a próxima etapa na fila
+        relogio = dataPrevisao
+      }
+    }
 
     // OPs com material encomendado (aguardando cartão) — sempre exibir na aba CORTADEIRA
     // O cartão/bobina é sempre material da cortadeira, independente de qual etapa é a primeira
