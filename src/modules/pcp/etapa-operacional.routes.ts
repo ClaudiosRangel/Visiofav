@@ -1501,6 +1501,186 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/pcp/ordens-producao/:opId/etapas-completas
+  // Retorna todas as etapas de uma OP com centroProducao e tempos para o
+  // modal "Máquinas e Tempos"
+  // =========================================================================
+
+  app.get('/ordens-producao/:opId/etapas-completas', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { opId } = request.params as { opId: string }
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: opId, empresaId: user.empresaId },
+      select: {
+        id: true,
+        numero: true,
+        quantidade: true,
+        unidadeMedida: true,
+        dataEntregaPrevista: true,
+        dataInicioReal: true,
+        dataFimReal: true,
+        clienteId: true,
+        produtoId: true,
+        observacoes: true,
+        referenciaExterna: true,
+        prioridade: true,
+        status: true,
+        createdAt: true,
+      },
+    })
+
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    // Extrair dados da OP via tags de observações
+    function extrairTag(obs: string | null, tag: string): string | null {
+      if (!obs) return null
+      const re = new RegExp(`\\[${tag}\\]\\s*(.+?)(?:\\n|$)`)
+      const m = obs.match(re)
+      return m ? m[1].trim() : null
+    }
+
+    const clienteNome = extrairTag(op.observacoes, 'Cliente')
+    const produtoNome = extrairTag(op.observacoes, 'Produto')
+
+    // Se não veio da tag, buscar do cadastro
+    let clienteNomeFinal = clienteNome
+    let produtoNomeFinal = produtoNome
+    if (!clienteNomeFinal && op.clienteId) {
+      const cli = await prisma.cliente.findUnique({ where: { id: op.clienteId }, select: { nomeFantasia: true, razaoSocial: true } })
+      clienteNomeFinal = cli?.nomeFantasia || cli?.razaoSocial || null
+    }
+    if (!produtoNomeFinal && op.produtoId) {
+      const prod = await prisma.produto.findUnique({ where: { id: op.produtoId }, select: { nome: true, codigo: true } })
+      produtoNomeFinal = prod ? `${prod.codigo} - ${prod.nome}` : null
+    }
+
+    const etapas = await prisma.etapaOrdemProducao.findMany({
+      where: { ordemProducaoId: opId },
+      select: {
+        id: true,
+        sequencia: true,
+        descricao: true,
+        status: true,
+        centroProducaoId: true,
+        tempoSetupMinutos: true,
+        tempoOperacaoMinutos: true,
+        tempoOperacaoCalculado: true,
+        tempoEsperaMinutos: true,
+        quantidadeProduzida: true,
+        quantidadePerda: true,
+        quantidadePrevista: true,
+        dataInicioReal: true,
+        dataFimReal: true,
+        posicaoFila: true,
+        centroProducao: {
+          select: {
+            id: true,
+            codigo: true,
+            descricao: true,
+            tipoProcesso: { select: { id: true, codigo: true, descricao: true } },
+          },
+        },
+      },
+      orderBy: { sequencia: 'asc' },
+    })
+
+    // Buscar todos os centros ativos para a lista de opções (dropdown de máquinas)
+    const centrosAtivos = await prisma.centroProducao.findMany({
+      where: { empresaId: user.empresaId, status: true },
+      select: { id: true, codigo: true, descricao: true, tipoProcessoId: true },
+      orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
+    })
+
+    return {
+      op: {
+        id: op.id,
+        numero: op.numero,
+        referenciaExterna: op.referenciaExterna,
+        quantidade: Number(op.quantidade),
+        unidadeMedida: op.unidadeMedida,
+        dataEntregaPrevista: op.dataEntregaPrevista,
+        dataEmissao: op.createdAt,
+        clienteNome: clienteNomeFinal,
+        produtoNome: produtoNomeFinal,
+        prioridade: op.prioridade,
+        status: op.status,
+      },
+      etapas: etapas.map(e => ({
+        id: e.id,
+        sequencia: e.sequencia,
+        descricao: e.descricao,
+        status: e.status,
+        centroProducaoId: e.centroProducaoId,
+        centroNome: e.centroProducao ? `${e.centroProducao.codigo} - ${e.centroProducao.descricao}` : null,
+        tipoProcesso: e.centroProducao?.tipoProcesso?.descricao || null,
+        tempoSetupMinutos: Number(e.tempoSetupMinutos) || 0,
+        tempoOperacaoMinutos: Number(e.tempoOperacaoMinutos) || 0,
+        tempoOperacaoCalculado: Number(e.tempoOperacaoCalculado) || 0,
+        tempoEsperaMinutos: Number(e.tempoEsperaMinutos) || 0,
+        quantidadeProduzida: Number(e.quantidadeProduzida) || 0,
+        quantidadePerda: Number(e.quantidadePerda) || 0,
+        quantidadePrevista: Number(e.quantidadePrevista) || 0,
+        dataInicioReal: e.dataInicioReal,
+        dataFimReal: e.dataFimReal,
+      })),
+      centrosDisponiveis: centrosAtivos.map(c => ({
+        value: c.id,
+        label: `${c.codigo} - ${c.descricao}`,
+      })),
+    }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/atribuir-maquina
+  // Atualiza centroProducaoId e opcionalmente tempos de uma etapa
+  // =========================================================================
+
+  const atribuirMaquinaSchema = z.object({
+    centroProducaoId: z.string().uuid().optional(),
+    tempoSetupMinutos: z.number().min(0).optional(),
+    tempoOperacaoCalculado: z.number().min(0).optional(),
+  })
+
+  app.patch('/etapas/:id/atribuir-maquina', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = request.params as { id: string }
+    const body = atribuirMaquinaSchema.parse(request.body)
+
+    // Validar que a etapa pertence à empresa do usuário
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+      select: { id: true, status: true },
+    })
+
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    // Montar update data
+    const updateData: any = {}
+    if (body.centroProducaoId) {
+      // Validar que o centro pertence à mesma empresa
+      const centro = await prisma.centroProducao.findFirst({
+        where: { id: body.centroProducaoId, empresaId: user.empresaId },
+      })
+      if (!centro) return reply.status(400).send({ message: 'Centro de produção inválido' })
+      updateData.centroProducaoId = body.centroProducaoId
+    }
+    if (body.tempoSetupMinutos !== undefined) updateData.tempoSetupMinutos = body.tempoSetupMinutos
+    if (body.tempoOperacaoCalculado !== undefined) updateData.tempoOperacaoCalculado = body.tempoOperacaoCalculado
+
+    if (Object.keys(updateData).length === 0) {
+      return reply.status(400).send({ message: 'Nenhum campo para atualizar' })
+    }
+
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: updateData,
+    })
+
+    return { success: true, etapa: atualizada }
+  })
+
+  // =========================================================================
   // GET /api/pcp/programacao/painel — Painel operacional completo
   // =========================================================================
 
