@@ -1526,7 +1526,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         referenciaExterna: true,
         prioridade: true,
         status: true,
-        createdAt: true,
+        criadoEm: true,
       },
     })
 
@@ -1564,7 +1564,6 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         status: true,
         centroProducaoId: true,
         tempoSetupMinutos: true,
-        tempoOperacaoMinutos: true,
         tempoOperacaoCalculado: true,
         tempoEsperaMinutos: true,
         quantidadeProduzida: true,
@@ -1600,7 +1599,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         quantidade: Number(op.quantidade),
         unidadeMedida: op.unidadeMedida,
         dataEntregaPrevista: op.dataEntregaPrevista,
-        dataEmissao: op.createdAt,
+        dataEmissao: op.criadoEm,
         clienteNome: clienteNomeFinal,
         produtoNome: produtoNomeFinal,
         prioridade: op.prioridade,
@@ -1615,7 +1614,6 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         centroNome: e.centroProducao ? `${e.centroProducao.codigo} - ${e.centroProducao.descricao}` : null,
         tipoProcesso: e.centroProducao?.tipoProcesso?.descricao || null,
         tempoSetupMinutos: Number(e.tempoSetupMinutos) || 0,
-        tempoOperacaoMinutos: Number(e.tempoOperacaoMinutos) || 0,
         tempoOperacaoCalculado: Number(e.tempoOperacaoCalculado) || 0,
         tempoEsperaMinutos: Number(e.tempoEsperaMinutos) || 0,
         quantidadeProduzida: Number(e.quantidadeProduzida) || 0,
