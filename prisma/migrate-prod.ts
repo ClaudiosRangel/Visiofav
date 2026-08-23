@@ -3228,6 +3228,179 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) {
     console.log('⚠️ Seed materiais from OPs skipped:', e.message)
   }
+
+  // =========================================================================
+  // Portal do Representante — tabelas dedicadas
+  // =========================================================================
+
+  // Cliente — campo vendedor_id (opcional, sem FK formal)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "vendedor_id" TEXT`)
+
+  // RepresentanteCredencial
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "representante_credencial" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "vendedor_id" TEXT NOT NULL,
+      "email" VARCHAR(200) NOT NULL,
+      "senha_hash" TEXT NOT NULL,
+      "senha_temporaria" BOOLEAN NOT NULL DEFAULT true,
+      "status" VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+      "tentativas_login" INTEGER NOT NULL DEFAULT 0,
+      "bloqueado_ate" TIMESTAMP(3),
+      "ultimo_acesso" TIMESTAMP(3),
+      "token_refresh" TEXT,
+      "notificacao_email" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "representante_credencial_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "representante_credencial_empresa_id_email_key" ON "representante_credencial"("empresa_id", "email")`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "representante_credencial_empresa_id_vendedor_id_key" ON "representante_credencial"("empresa_id", "vendedor_id")`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "representante_credencial_vendedor_id_key" ON "representante_credencial"("vendedor_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "representante_credencial" ADD CONSTRAINT "representante_credencial_vendedor_id_fkey" FOREIGN KEY ("vendedor_id") REFERENCES "vendedor"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch (e: any) {
+    // FK já existe — idempotente
+  }
+
+  // SolicitacaoOrcamentoRep
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "solicitacao_orcamento_rep" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "representante_id" TEXT NOT NULL,
+      "vendedor_id" TEXT NOT NULL,
+      "cliente_id" TEXT,
+      "cliente_nome" VARCHAR(200),
+      "cliente_cpf_cnpj" VARCHAR(20),
+      "tipo_embalagem" VARCHAR(100) NOT NULL,
+      "medida_largura" DECIMAL(10, 2),
+      "medida_altura" DECIMAL(10, 2),
+      "medida_comprimento" DECIMAL(10, 2),
+      "quantidade" INTEGER NOT NULL,
+      "acabamentos" TEXT,
+      "observacoes" TEXT,
+      "preco_venda" DECIMAL(12, 2),
+      "preco_unitario" DECIMAL(12, 4),
+      "orcamento_grafico_id" TEXT,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "solicitacao_orcamento_rep_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "solicitacao_orcamento_rep_empresa_id_vendedor_id_status_idx" ON "solicitacao_orcamento_rep"("empresa_id", "vendedor_id", "status")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD CONSTRAINT "solicitacao_orcamento_rep_representante_id_fkey" FOREIGN KEY ("representante_id") REFERENCES "representante_credencial"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch (e: any) {
+    // FK já existe — idempotente
+  }
+
+  // NotificacaoRep
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "notificacao_rep" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "representante_id" TEXT NOT NULL,
+      "tipo" VARCHAR(30) NOT NULL,
+      "titulo" VARCHAR(200) NOT NULL,
+      "mensagem" TEXT NOT NULL,
+      "referencia" VARCHAR(100),
+      "lida" BOOLEAN NOT NULL DEFAULT false,
+      "enviada_email" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "notificacao_rep_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "notificacao_rep_empresa_id_representante_id_lida_idx" ON "notificacao_rep"("empresa_id", "representante_id", "lida")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "notificacao_rep" ADD CONSTRAINT "notificacao_rep_representante_id_fkey" FOREIGN KEY ("representante_id") REFERENCES "representante_credencial"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch (e: any) {
+    // FK já existe — idempotente
+  }
+
+  // LogAuditoriaRep
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "log_auditoria_rep" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "representante_id" TEXT,
+      "acao" VARCHAR(50) NOT NULL,
+      "detalhes" TEXT,
+      "ip" VARCHAR(45),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "log_auditoria_rep_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "log_auditoria_rep_empresa_id_representante_id_criado_em_idx" ON "log_auditoria_rep"("empresa_id", "representante_id", "criado_em")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "log_auditoria_rep" ADD CONSTRAINT "log_auditoria_rep_representante_id_fkey" FOREIGN KEY ("representante_id") REFERENCES "representante_credencial"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+  } catch (e: any) {
+    // FK já existe — idempotente
+  }
+
+  // AprovacaoClienteRep
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "aprovacao_cliente_rep" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "representante_id" TEXT NOT NULL,
+      "cliente_id" TEXT NOT NULL,
+      "tipo" VARCHAR(30) NOT NULL,
+      "dados_anteriores" JSONB,
+      "dados_novos" JSONB NOT NULL,
+      "status" VARCHAR(15) NOT NULL DEFAULT 'PENDENTE',
+      "aprovado_por_id" TEXT,
+      "observacao" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "aprovacao_cliente_rep_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "aprovacao_cliente_rep_empresa_id_status_idx" ON "aprovacao_cliente_rep"("empresa_id", "status")`)
+
+  console.log('✅ Portal do Representante: tabelas e índices criados')
+
+  // ─── Portal do Representante — Parâmetros default (idempotente) ────────────────
+  const portalRepParams = [
+    { chave: 'portal-rep.habilitado', valor: 'false' },
+    { chave: 'portal-rep.criterio-creditamento', valor: 'ENTREGUE' },
+    { chave: 'portal-rep.tipo-comissao-padrao', valor: 'FIXA' },
+    { chave: 'portal-rep.jwt-expiracao-minutos', valor: '480' },
+    { chave: 'portal-rep.refresh-expiracao-dias', valor: '30' },
+    { chave: 'portal-rep.notificacao-email', valor: 'true' },
+  ]
+
+  try {
+    const empresasParam = await prisma.empresa.findMany({ select: { id: true } })
+    let totalParamsInseridos = 0
+
+    for (const empresa of empresasParam) {
+      for (const param of portalRepParams) {
+        // Idempotente: só insere se não existir para esta empresa+chave
+        const existe = await prisma.parametro.findUnique({
+          where: { empresaId_chave: { empresaId: empresa.id, chave: param.chave } },
+          select: { id: true },
+        })
+        if (!existe) {
+          await prisma.parametro.create({
+            data: {
+              empresaId: empresa.id,
+              chave: param.chave,
+              valor: param.valor,
+            },
+          })
+          totalParamsInseridos++
+        }
+      }
+    }
+
+    console.log(`✅ Portal do Representante: ${totalParamsInseridos} parâmetros default inseridos`)
+  } catch (e: any) {
+    console.log('⚠️ Portal do Representante params skipped:', e.message)
+  }
 }
 
 main()

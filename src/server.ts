@@ -191,6 +191,9 @@ import { notificacaoRoutes } from './modules/notificacao/notificacao.routes'
 import { checkoutAuthRoutes } from './modules/checkout/checkout-auth.routes'
 import { checkoutRoutes } from './modules/checkout/checkout.routes'
 
+// Portal do Representante — módulo completo (auth separada, rotas próprias)
+import { portalRepRoutes } from './modules/portal-rep/index'
+
 import { registerTenantContext } from './middleware/tenant-context'
 import { registerSecurityAuditHook } from './middleware/security-audit'
 import multipart from '@fastify/multipart'
@@ -392,6 +395,9 @@ async function bootstrap() {
   // /pendencias-material/..., /supervisor/...).
   await app.register(checkoutAuthRoutes, { prefix: '/api/checkout' })
   await app.register(checkoutRoutes, { prefix: '/api/checkout' })
+
+  // Portal do Representante — módulo completo (autenticação JWT separada, scope 'portal-rep')
+  await app.register(portalRepRoutes, { prefix: '/api/portal-rep' })
 
   // Módulo PCP — Planejamento e Controle da Produção
   await app.register(centroProducaoRoutes, { prefix: '/api/centros-producao' })

@@ -289,6 +289,8 @@ model Cliente {
   latitude  Decimal? @db.Decimal(10, 7)
   longitude Decimal? @db.Decimal(10, 7)
 
+  vendedorId String? @map("vendedor_id")
+
   pedidosVenda         PedidoVenda[]
   orcamentos           Orcamento[]
   contasReceber        ContaReceber[]
@@ -398,9 +400,10 @@ model Vendedor {
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
-  pedidosCompra PedidoCompra[]
-  pedidosVenda  PedidoVenda[]
-  orcamentos    Orcamento[]
+  pedidosCompra           PedidoCompra[]
+  pedidosVenda            PedidoVenda[]
+  orcamentos              Orcamento[]
+  representanteCredencial RepresentanteCredencial?
 
   @@unique([empresaId, cpf])
   @@map("vendedor")
@@ -4793,4 +4796,110 @@ model SessaoTerminal {
   @@index([empresaId, status])
   @@index([centroProducaoId, status])
   @@map("sessao_terminal")
+}
+
+// ============================================================================
+// PORTAL DO REPRESENTANTE
+// ============================================================================
+
+model RepresentanteCredencial {
+  id               String    @id @default(uuid())
+  empresaId        String    @map("empresa_id")
+  vendedorId       String    @unique @map("vendedor_id")
+  vendedor         Vendedor  @relation(fields: [vendedorId], references: [id])
+  email            String    @db.VarChar(200)
+  senhaHash        String    @map("senha_hash")
+  senhaTemporaria  Boolean   @default(true) @map("senha_temporaria")
+  status           String    @default("ATIVO") @db.VarChar(10) // ATIVO, INATIVO, BLOQUEADO
+  tentativasLogin  Int       @default(0) @map("tentativas_login")
+  bloqueadoAte     DateTime? @map("bloqueado_ate")
+  ultimoAcesso     DateTime? @map("ultimo_acesso")
+  tokenRefresh     String?   @map("token_refresh") @db.Text
+  notificacaoEmail Boolean   @default(true) @map("notificacao_email")
+  criadoEm         DateTime  @default(now()) @map("criado_em")
+  atualizadoEm     DateTime  @updatedAt @map("atualizado_em")
+
+  solicitacoes  SolicitacaoOrcamentoRep[]
+  notificacoes  NotificacaoRep[]
+  logsAuditoria LogAuditoriaRep[]
+
+  @@unique([empresaId, email])
+  @@unique([empresaId, vendedorId])
+  @@map("representante_credencial")
+}
+
+model SolicitacaoOrcamentoRep {
+  id                 String                  @id @default(uuid())
+  empresaId          String                  @map("empresa_id")
+  representanteId    String                  @map("representante_id")
+  representante      RepresentanteCredencial @relation(fields: [representanteId], references: [id])
+  vendedorId         String                  @map("vendedor_id")
+  clienteId          String?                 @map("cliente_id")
+  clienteNome        String?                 @map("cliente_nome") @db.VarChar(200)
+  clienteCpfCnpj     String?                 @map("cliente_cpf_cnpj") @db.VarChar(20)
+  tipoEmbalagem      String                  @map("tipo_embalagem") @db.VarChar(100)
+  medidaLargura      Decimal?                @map("medida_largura") @db.Decimal(10, 2)
+  medidaAltura       Decimal?                @map("medida_altura") @db.Decimal(10, 2)
+  medidaComprimento  Decimal?                @map("medida_comprimento") @db.Decimal(10, 2)
+  quantidade         Int
+  acabamentos        String?                 @db.Text
+  observacoes        String?                 @db.Text
+  precoVenda         Decimal?                @map("preco_venda") @db.Decimal(12, 2)
+  precoUnitario      Decimal?                @map("preco_unitario") @db.Decimal(12, 4)
+  orcamentoGraficoId String?                 @map("orcamento_grafico_id")
+  status             String                  @default("PENDENTE") @db.VarChar(20)
+  criadoEm           DateTime                @default(now()) @map("criado_em")
+  atualizadoEm       DateTime                @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, vendedorId, status])
+  @@map("solicitacao_orcamento_rep")
+}
+
+model NotificacaoRep {
+  id              String                  @id @default(uuid())
+  empresaId       String                  @map("empresa_id")
+  representanteId String                  @map("representante_id")
+  representante   RepresentanteCredencial @relation(fields: [representanteId], references: [id])
+  tipo            String                  @db.VarChar(30)
+  titulo          String                  @db.VarChar(200)
+  mensagem        String                  @db.Text
+  referencia      String?                 @db.VarChar(100)
+  lida            Boolean                 @default(false)
+  enviadaEmail    Boolean                 @default(false) @map("enviada_email")
+  criadoEm        DateTime                @default(now()) @map("criado_em")
+
+  @@index([empresaId, representanteId, lida])
+  @@map("notificacao_rep")
+}
+
+model LogAuditoriaRep {
+  id              String                   @id @default(uuid())
+  empresaId       String                   @map("empresa_id")
+  representanteId String?                  @map("representante_id")
+  representante   RepresentanteCredencial? @relation(fields: [representanteId], references: [id])
+  acao            String                   @db.VarChar(50)
+  detalhes        String?                  @db.Text
+  ip              String?                  @db.VarChar(45)
+  criadoEm        DateTime                 @default(now()) @map("criado_em")
+
+  @@index([empresaId, representanteId, criadoEm])
+  @@map("log_auditoria_rep")
+}
+
+model AprovacaoClienteRep {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  representanteId String   @map("representante_id")
+  clienteId       String   @map("cliente_id")
+  tipo            String   @db.VarChar(30)
+  dadosAnteriores Json?    @map("dados_anteriores")
+  dadosNovos      Json     @map("dados_novos")
+  status          String   @default("PENDENTE") @db.VarChar(15)
+  aprovadoPorId   String?  @map("aprovado_por_id")
+  observacao      String?  @db.Text
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, status])
+  @@map("aprovacao_cliente_rep")
 }
