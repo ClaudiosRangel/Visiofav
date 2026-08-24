@@ -57,23 +57,29 @@ export async function login(
   app: FastifyInstance,
   email: string,
   senha: string,
-  empresaId: string,
+  empresaId: string | undefined,
   ip?: string,
 ): Promise<LoginResult> {
-  // 1. Buscar credencial
+  // 1. Buscar credencial — por email + empresaId se fornecido, senão apenas por email
+  const whereClause = empresaId
+    ? { email, empresaId }
+    : { email }
+
   const credencial = await prisma.representanteCredencial.findFirst({
-    where: { email, empresaId },
+    where: whereClause,
   })
+
+  const empresaIdReal = credencial?.empresaId ?? empresaId ?? ''
 
   if (!credencial) {
     // Registrar tentativa com representanteId null (email não encontrado)
-    await registrarLog(empresaId, null, 'LOGIN_FALHOU', 'E-mail não encontrado', ip)
+    await registrarLog(empresaIdReal, null, 'LOGIN_FALHOU', 'E-mail não encontrado', ip)
     throw { statusCode: 401, message: 'Credenciais inválidas' }
   }
 
   // 2. Verificar status
   if (credencial.status === 'INATIVO') {
-    await registrarLog(empresaId, credencial.id, 'LOGIN_FALHOU', 'Conta inativa', ip)
+    await registrarLog(empresaIdReal, credencial.id, 'LOGIN_FALHOU', 'Conta inativa', ip)
     throw { statusCode: 401, message: 'Conta inativa', code: 'CONTA_INATIVA' }
   }
 
@@ -85,7 +91,7 @@ export async function login(
         data: { status: 'ATIVO', tentativasLogin: 0, bloqueadoAte: null },
       })
     } else {
-      await registrarLog(empresaId, credencial.id, 'LOGIN_FALHOU', 'Conta bloqueada temporariamente', ip)
+      await registrarLog(empresaIdReal, credencial.id, 'LOGIN_FALHOU', 'Conta bloqueada temporariamente', ip)
       throw {
         statusCode: 401,
         message: 'Conta bloqueada temporariamente. Tente novamente em alguns minutos.',
@@ -113,7 +119,7 @@ export async function login(
         },
       })
       await registrarLog(
-        empresaId,
+        empresaIdReal,
         credencial.id,
         'BLOQUEIO',
         `Conta bloqueada após ${MAX_TENTATIVAS} tentativas consecutivas. Desbloqueio em ${BLOQUEIO_MINUTOS}min.`,
@@ -130,7 +136,7 @@ export async function login(
         data: { tentativasLogin: novasTentativas },
       })
       await registrarLog(
-        empresaId,
+        empresaIdReal,
         credencial.id,
         'LOGIN_FALHOU',
         `Senha incorreta (tentativa ${novasTentativas}/${MAX_TENTATIVAS})`,
@@ -165,7 +171,7 @@ export async function login(
   )
 
   // 6. Registrar log de sucesso
-  await registrarLog(empresaId, credencial.id, 'LOGIN', 'Login realizado com sucesso', ip)
+  await registrarLog(empresaIdReal, credencial.id, 'LOGIN', 'Login realizado com sucesso', ip)
 
   return {
     accessToken,
