@@ -243,6 +243,7 @@ export async function refreshToken(
 ): Promise<RefreshResult> {
   const credencial = await prisma.representanteCredencial.findFirst({
     where: { id: representanteId },
+    include: { vendedor: { select: { nome: true } } },
   })
 
   if (!credencial || !credencial.tokenRefresh) {
@@ -275,6 +276,8 @@ export async function refreshToken(
       empresaId: credencial.empresaId,
       vendedorId: credencial.vendedorId,
       representanteId: credencial.id,
+      nome: (credencial as any).vendedor?.nome ?? '',
+      email: credencial.email,
     },
     { expiresIn: ACCESS_TOKEN_EXPIRY },
   )

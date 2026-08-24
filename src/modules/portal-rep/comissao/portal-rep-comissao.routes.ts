@@ -15,8 +15,8 @@ import { resumoPorPeriodo, detalhamentoComissoes } from './portal-rep-comissao.s
 // ─── Schemas Zod ────────────────────────────────────────────────────────────────
 
 const resumoQuerySchema = z.object({
-  mes: z.coerce.number().int().min(1).max(12),
-  ano: z.coerce.number().int().min(2000).max(2100),
+  mes: z.coerce.number().int().min(1).max(12).optional(),
+  ano: z.coerce.number().int().min(2000).max(2100).optional(),
 })
 
 const detalheQuerySchema = z.object({
@@ -35,9 +35,11 @@ export async function portalRepComissaoRoutes(app: FastifyInstance) {
   // GET /comissoes — resumo por período
   app.get('/comissoes', { preHandler: [portalRepAuth] }, async (request, reply) => {
     const query = resumoQuerySchema.parse(request.query)
+    const mes = query.mes ?? (new Date().getMonth() + 1)
+    const ano = query.ano ?? new Date().getFullYear()
 
     try {
-      const resumo = await resumoPorPeriodo(query.mes, query.ano, request.portalRepUser)
+      const resumo = await resumoPorPeriodo(mes, ano, request.portalRepUser)
       return reply.status(200).send(resumo)
     } catch (err: any) {
       const statusCode = err.statusCode || 500
