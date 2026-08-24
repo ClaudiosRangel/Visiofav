@@ -121,6 +121,40 @@ export async function portalRepAdminRoutes(app: FastifyInstance) {
     return reply.status(200).send(representantes)
   })
 
+  // ─── GET /vendedores-disponiveis — vendedores sem conta de representante ────
+
+  app.get('/vendedores-disponiveis', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+
+    if (!user.empresaId) {
+      return reply.status(400).send({ message: 'Empresa não selecionada' })
+    }
+
+    if (!(await verificarPerfilAdmin(user.id))) {
+      return reply.status(403).send({ message: 'Apenas administradores podem acessar esta funcionalidade' })
+    }
+
+    // Buscar IDs de vendedores que já têm conta de representante
+    const jaVinculados = await prisma.representanteCredencial.findMany({
+      where: { empresaId: user.empresaId },
+      select: { vendedorId: true },
+    })
+    const idsJaVinculados = jaVinculados.map((r) => r.vendedorId)
+
+    // Buscar vendedores da empresa que ainda não têm conta
+    const vendedores = await prisma.vendedor.findMany({
+      where: {
+        empresaId: user.empresaId,
+        id: { notIn: idsJaVinculados },
+        status: 'ATIVO',
+      },
+      select: { id: true, nome: true },
+      orderBy: { nome: 'asc' },
+    })
+
+    return reply.status(200).send(vendedores)
+  })
+
   // ─── POST /representantes — criar conta ─────────────────────────────────────
 
   app.post('/representantes', async (request, reply) => {
