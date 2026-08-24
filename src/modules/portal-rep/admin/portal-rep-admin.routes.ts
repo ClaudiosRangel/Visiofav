@@ -146,7 +146,7 @@ export async function portalRepAdminRoutes(app: FastifyInstance) {
       where: {
         empresaId: user.empresaId,
         id: { notIn: idsJaVinculados },
-        status: 'ATIVO',
+        status: true,
       },
       select: { id: true, nome: true },
       orderBy: { nome: 'asc' },
