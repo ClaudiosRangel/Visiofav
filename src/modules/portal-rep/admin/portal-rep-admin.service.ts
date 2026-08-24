@@ -275,6 +275,9 @@ export async function resetarSenha(
       senhaHash,
       senhaTemporaria: true,
       tokenRefresh: null, // invalida refresh tokens existentes
+      tentativasLogin: 0, // zera tentativas ao resetar senha
+      status: 'ATIVO', // garante que não está bloqueado
+      bloqueadoAte: null,
     },
   })
 
