@@ -337,4 +337,91 @@ export async function portalRepAdminRoutes(app: FastifyInstance) {
       return reply.status(statusCode).send(response)
     }
   })
+
+  // ─── POST /solicitacoes-orcamento/:id/converter-pedido — converter em PV ────
+
+  app.post('/solicitacoes-orcamento/:id/converter-pedido', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+
+    if (!user.empresaId) {
+      return reply.status(400).send({ message: 'Empresa não selecionada' })
+    }
+
+    if (!(await verificarPerfilAdmin(user.id))) {
+      return reply.status(403).send({ message: 'Apenas administradores podem converter orçamentos' })
+    }
+
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    try {
+      // Buscar a solicitação
+      const solicitacao = await prisma.solicitacaoOrcamentoRep.findFirst({
+        where: { id, empresaId: user.empresaId },
+      })
+
+      if (!solicitacao) {
+        return reply.status(404).send({ message: 'Solicitação não encontrada' })
+      }
+
+      if (solicitacao.status !== 'CALCULADO') {
+        return reply.status(400).send({
+          message: `Solicitação precisa estar com status CALCULADO para converter em pedido. Status atual: ${solicitacao.status}`,
+        })
+      }
+
+      // Gerar número sequencial do pedido
+      const ultimoPedido = await prisma.pedidoVenda.findFirst({
+        where: { empresaId: user.empresaId },
+        orderBy: { numero: 'desc' },
+        select: { numero: true },
+      })
+      const numeroPedido = (ultimoPedido?.numero ?? 0) + 1
+
+      // Criar Pedido de Venda
+      const pedido = await prisma.pedidoVenda.create({
+        data: {
+          empresaId: user.empresaId,
+          numero: numeroPedido,
+          clienteId: solicitacao.clienteId ?? undefined,
+          vendedorId: solicitacao.vendedorId,
+          valorTotal: solicitacao.precoVenda ?? 0,
+          status: 'CONFIRMADO',
+          origemPedido: 'ORCAMENTO',
+          observacoes: `Gerado a partir da solicitação de orçamento do portal do representante (ID: ${solicitacao.id})`,
+        },
+        select: { id: true, numero: true, status: true, valorTotal: true },
+      })
+
+      // Atualizar status da solicitação para ENVIADO (indica que já virou pedido)
+      await prisma.solicitacaoOrcamentoRep.update({
+        where: { id },
+        data: { status: 'ENVIADO' },
+      })
+
+      // Criar notificação para o representante
+      try {
+        await prisma.notificacaoRep.create({
+          data: {
+            empresaId: user.empresaId,
+            representanteId: solicitacao.representanteId ?? '',
+            tipo: 'ORCAMENTO_APROVADO',
+            titulo: 'Orçamento convertido em pedido',
+            mensagem: `Seu orçamento foi aprovado e gerou o Pedido #${pedido.numero}.`,
+          },
+        })
+      } catch {
+        // Falha na notificação não bloqueia a operação
+      }
+
+      return reply.status(201).send({
+        message: `Pedido de Venda #${pedido.numero} criado com sucesso`,
+        pedido,
+      })
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro ao converter em pedido' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
 }
