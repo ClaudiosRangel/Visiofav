@@ -67,6 +67,7 @@ export async function login(
 
   const credencial = await prisma.representanteCredencial.findFirst({
     where: whereClause,
+    include: { vendedor: { select: { nome: true } } },
   })
 
   const empresaIdReal = credencial?.empresaId ?? empresaId ?? ''
@@ -166,6 +167,8 @@ export async function login(
       empresaId: credencial.empresaId,
       vendedorId: credencial.vendedorId,
       representanteId: credencial.id,
+      nome: (credencial as any).vendedor?.nome ?? '',
+      email: credencial.email,
     },
     { expiresIn: ACCESS_TOKEN_EXPIRY },
   )
