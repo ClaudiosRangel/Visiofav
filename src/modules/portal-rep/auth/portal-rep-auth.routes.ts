@@ -18,7 +18,7 @@ import { portalRepAuth } from './portal-rep-auth.middleware'
 const loginSchema = z.object({
   email: z.string().email('E-mail inválido'),
   senha: z.string().min(1, 'Senha é obrigatória'),
-  empresaId: z.string().uuid('empresaId deve ser um UUID válido'),
+  empresaId: z.string().uuid('empresaId deve ser um UUID válido').optional(),
 })
 
 const trocarSenhaSchema = z.object({
