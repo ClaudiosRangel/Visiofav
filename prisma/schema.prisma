@@ -2503,6 +2503,7 @@ model OrdemProducao {
   liberacoes          LiberacaoMaterial[]
   variacoes           VariacaoOrdemProducao[]
   programacoesEntrega ProgramacaoEntrega[]
+  reservas            ReservaProducao[]
 
   @@unique([empresaId, numero])
   @@map("ordem_producao")
@@ -2763,6 +2764,28 @@ model LogOrdemProducao {
 
   @@index([ordemProducaoId])
   @@map("log_ordem_producao")
+}
+
+/// Reserva (empenho) de estoque de material para uma OP.
+/// Criada ao gerar/liberar a OP, impede que o mesmo saldo seja prometido a
+/// outra OP. A quantidade disponível de um material = físico - Σ reservas ativas.
+/// status: ATIVA (empenhada), CONSUMIDA (baixada na produção), CANCELADA.
+model ReservaProducao {
+  id              String        @id @default(uuid())
+  empresaId       String        @map("empresa_id")
+  ordemProducaoId String        @map("ordem_producao_id")
+  ordemProducao   OrdemProducao @relation(fields: [ordemProducaoId], references: [id], onDelete: Cascade)
+  produtoId       String        @map("produto_id")
+  descricao       String?       @db.VarChar(200)
+  quantidade      Decimal       @db.Decimal(12, 4)
+  unidadeMedida   String        @map("unidade_medida") @db.VarChar(10)
+  status          String        @default("ATIVA") @db.VarChar(20) // ATIVA, CONSUMIDA, CANCELADA
+  criadoEm        DateTime      @default(now()) @map("criado_em")
+  atualizadoEm    DateTime      @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, produtoId, status])
+  @@index([ordemProducaoId])
+  @@map("reserva_producao")
 }
 
 // ============================================================================

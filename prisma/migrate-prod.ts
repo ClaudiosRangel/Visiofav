@@ -3401,6 +3401,37 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) {
     console.log('⚠️ Portal do Representante params skipped:', e.message)
   }
+
+  // =========================================================================
+  // PCP — Reserva de Produção (empenho de material por OP)
+  // =========================================================================
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "reserva_producao" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "ordem_producao_id" TEXT NOT NULL,
+        "produto_id" TEXT NOT NULL,
+        "descricao" VARCHAR(200),
+        "quantidade" DECIMAL(12, 4) NOT NULL,
+        "unidade_medida" VARCHAR(10) NOT NULL,
+        "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVA',
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "reserva_producao_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "reserva_producao_empresa_id_produto_id_status_idx" ON "reserva_producao"("empresa_id", "produto_id", "status")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "reserva_producao_ordem_producao_id_idx" ON "reserva_producao"("ordem_producao_id")`)
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "reserva_producao" ADD CONSTRAINT "reserva_producao_ordem_producao_id_fkey" FOREIGN KEY ("ordem_producao_id") REFERENCES "ordem_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    } catch (e: any) {
+      // FK já existe — idempotente
+    }
+    console.log('✅ PCP: tabela reserva_producao criada/verificada')
+  } catch (e: any) {
+    console.log('⚠️ PCP reserva_producao skipped:', e.message)
+  }
 }
 
 main()

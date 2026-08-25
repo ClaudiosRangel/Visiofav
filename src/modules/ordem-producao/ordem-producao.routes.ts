@@ -16,6 +16,7 @@ import {
 import { reordenarFilaAutomaticamente } from '../pcp/fila-ordenacao.service'
 import { verificarAcessoMenu } from '../pcp/permissoes-pcp.routes'
 import { gerarOpPdf } from './op-pdf-gerado.service'
+import { cancelarReservasOp, consumirReservasOp } from '../pcp/analise-producao/reserva-producao.service'
 
 /**
  * Extrai o nome do cliente salvo na tag [Cliente] das observações da OP.
@@ -669,6 +670,20 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
         observacao: body.observacao || body.motivoCancelamento || null,
       },
     })
+
+    // Gestão automática de reservas de material conforme a transição:
+    // - CANCELADA → libera (cancela) as reservas ativas
+    // - CONCLUIDA → marca as reservas como consumidas
+    try {
+      if (body.status === 'CANCELADA') {
+        await cancelarReservasOp(id, user.empresaId)
+      } else if (body.status === 'CONCLUIDA') {
+        await consumirReservasOp(id, user.empresaId)
+      }
+    } catch (e) {
+      // Falha na gestão de reservas não deve bloquear a transição de status
+      console.warn('[ordem-producao] Falha ao atualizar reservas na transição:', e)
+    }
 
     return { ...atualizada, transicoesPermitidas: getTransicoesPermitidas(body.status) }
   })

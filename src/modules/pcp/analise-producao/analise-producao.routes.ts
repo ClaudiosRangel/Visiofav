@@ -11,6 +11,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../../../middleware/authenticate'
 import { verificarEstoqueOp } from './verificacao-estoque.service'
+import { criarReservasOp, cancelarReservasOp } from './reserva-producao.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -28,6 +29,34 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro ao verificar estoque' })
+    }
+  })
+
+  // POST /pcp/analise-producao/:id/reservar — criar reservas de material
+  app.post('/analise-producao/:id/reservar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    try {
+      const resultado = await criarReservasOp(id, user.empresaId)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao reservar material' })
+    }
+  })
+
+  // DELETE /pcp/analise-producao/:id/reservar — cancelar reservas da OP
+  app.delete('/analise-producao/:id/reservar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    try {
+      const resultado = await cancelarReservasOp(id, user.empresaId)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao cancelar reservas' })
     }
   })
 }

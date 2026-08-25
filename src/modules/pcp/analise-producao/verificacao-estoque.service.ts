@@ -16,6 +16,7 @@
  */
 
 import { prisma } from '../../../lib/prisma'
+import { somarReservasAtivas } from './reserva-producao.service'
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export interface ResultadoVerificacaoEstoque {
 async function calcularSaldo(
   empresaId: string,
   produtoId: string,
+  opIdAtual?: string,
 ): Promise<{ fisico: number; reservado: number; origem: 'WMS' | 'ERP' | 'NENHUM' }> {
   // 1. Saldo WMS: soma de SaldoEndereco não bloqueado
   const saldosWms = await prisma.saldoEndereco.findMany({
@@ -83,13 +85,18 @@ async function calcularSaldo(
   const fisicoErp = estoqueErp ? Number(estoqueErp.quantidade) : 0
   const reservadoErp = estoqueErp ? Number(estoqueErp.reservado) : 0
 
+  // 3. Reservas de produção ATIVAS de OUTRAS OPs (empenho PCP)
+  const reservadoProducao = await somarReservasAtivas(empresaId, produtoId, opIdAtual)
+
+  // Reservado total = reservas de vendas (ERP) + reservas de produção (PCP)
+  const reservadoTotal = reservadoErp + reservadoProducao
+
   // Preferir WMS quando há saldo endereçado; senão usar ERP
   if (fisicoWms > 0) {
-    // No WMS o reservado por endereço não é modelado; usamos o reservado do ERP como aproximação
-    return { fisico: fisicoWms, reservado: reservadoErp, origem: 'WMS' }
+    return { fisico: fisicoWms, reservado: reservadoTotal, origem: 'WMS' }
   }
-  if (fisicoErp > 0 || reservadoErp > 0) {
-    return { fisico: fisicoErp, reservado: reservadoErp, origem: 'ERP' }
+  if (fisicoErp > 0 || reservadoTotal > 0) {
+    return { fisico: fisicoErp, reservado: reservadoTotal, origem: 'ERP' }
   }
   return { fisico: 0, reservado: 0, origem: 'NENHUM' }
 }
@@ -148,7 +155,7 @@ export async function verificarEstoqueOp(
       where: { id: op.produtoId },
       select: { codigo: true, nome: true },
     })
-    const saldoPa = await calcularSaldo(empresaId, op.produtoId)
+    const saldoPa = await calcularSaldo(empresaId, op.produtoId, op.id)
     const disponivelPa = Math.max(0, saldoPa.fisico - saldoPa.reservado)
     const qtdPedido = Number(op.quantidade)
     const aProduzir = Math.max(0, qtdPedido - disponivelPa)
@@ -187,7 +194,7 @@ export async function verificarEstoqueOp(
       continue
     }
 
-    const saldo = await calcularSaldo(empresaId, item.produtoComponenteId)
+    const saldo = await calcularSaldo(empresaId, item.produtoComponenteId, op.id)
     const disponivel = Math.max(0, saldo.fisico - saldo.reservado)
     const situacao = classificarSituacao(disponivel, necessario)
     const falta = Math.max(0, necessario - disponivel)
