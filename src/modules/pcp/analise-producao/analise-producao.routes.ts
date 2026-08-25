@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { authenticate } from '../../../middleware/authenticate'
 import { verificarEstoqueOp } from './verificacao-estoque.service'
 import { criarReservasOp, cancelarReservasOp } from './reserva-producao.service'
+import { calcularDataEntrega } from './calculo-data-entrega.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -57,6 +58,20 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro ao cancelar reservas' })
+    }
+  })
+
+  // GET /pcp/analise-producao/:id/data-entrega — cálculo de data com capacidade
+  app.get('/analise-producao/:id/data-entrega', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    try {
+      const resultado = await calcularDataEntrega(id, user.empresaId)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao calcular data de entrega' })
     }
   })
 }
