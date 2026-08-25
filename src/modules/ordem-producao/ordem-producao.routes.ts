@@ -15,6 +15,7 @@ import {
 } from './ordem-producao.service'
 import { reordenarFilaAutomaticamente } from '../pcp/fila-ordenacao.service'
 import { verificarAcessoMenu } from '../pcp/permissoes-pcp.routes'
+import { gerarOpPdf } from './op-pdf-gerado.service'
 
 /**
  * Extrai o nome do cliente salvo na tag [Cliente] das observações da OP.
@@ -1168,6 +1169,30 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     }
 
     return reply.type('application/pdf').send(pdfBuffer)
+  })
+
+  // =========================================================================
+  // GET /api/ordens-producao/:id/pdf-gerado — Gera PDF profissional da OP nativa
+  // =========================================================================
+  app.get('/:id/pdf-gerado', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    try {
+      const pdfBuffer = await gerarOpPdf(id, user.empresaId)
+      const op = await prisma.ordemProducao.findFirst({
+        where: { id, empresaId: user.empresaId },
+        select: { numero: true },
+      })
+      const nomeArquivo = `OP-${op?.numero ?? id}.pdf`
+      return reply
+        .type('application/pdf')
+        .header('Content-Disposition', `inline; filename="${nomeArquivo}"`)
+        .send(pdfBuffer)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao gerar PDF da OP' })
+    }
   })
 
   // =========================================================================
