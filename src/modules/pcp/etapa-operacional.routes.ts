@@ -1796,6 +1796,68 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return false
     }
 
+    // =====================================================================
+    // Availability check parcial (padrão SAP PP "partial confirmation" +
+    // Oracle GOP "split when supply meets threshold"): quando a OP tem
+    // material encomendado MAS também tem bobina em estoque, calcula quanto
+    // da tiragem o estoque cobre e libera essa parcela para produção, em vez
+    // de travar a OP inteira em "Aguardando Cartão".
+    //
+    // A fração produzível é proporcional ao kg em estoque sobre o kg total
+    // previsto (kgEstoque / (kgEstoque + kgEncomendado)). Assume bobinas
+    // intercambiáveis para o produto — decisão de negócio confirmada com o
+    // chão de fábrica (raciocínio por kg total disponível).
+    // =====================================================================
+    function analisarMaterial(e: typeof etapasAtivas[0]) {
+      const obs = e.ordemProducao.observacoes || ''
+      const bobinas: Array<{ descricao: string; kg: number; status: 'ESTOQUE' | 'ENCOMENDADO' }> = []
+      // Aceita tanto o formato com tag [Bobina] quanto a linha livre "Bobina X - ... em estoque/encomendado (N kg)"
+      const regex = /(?:\[Bobina\]\s*)?([^\n[]*?)\s*(?:em estoque|encomendad[oa])\s*\(([\d.,]+)\s*kg\)/gi
+      for (const m of obs.matchAll(regex)) {
+        const isEncomendado = /encomendad/i.test(m[0])
+        const descricao = m[1].trim()
+        if (!descricao) continue
+        bobinas.push({
+          descricao,
+          kg: parseFloat(m[2].replace(/\./g, '').replace(',', '.')),
+          status: isEncomendado ? 'ENCOMENDADO' : 'ESTOQUE',
+        })
+      }
+      const kgEstoque = bobinas.filter(b => b.status === 'ESTOQUE').reduce((a, b) => a + b.kg, 0)
+      const kgEncomendado = bobinas.filter(b => b.status === 'ENCOMENDADO').reduce((a, b) => a + b.kg, 0)
+      const kgTotal = kgEstoque + kgEncomendado
+
+      const temEncomendado = temMaterialEncomendado(e)
+      const quantidadeTotal = Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)
+
+      // Fração produzível: só faz sentido quando há encomendado E estoque E kg total conhecido.
+      let fracaoProduzivel = 1
+      if (temEncomendado && kgTotal > 0 && kgEncomendado > 0) {
+        fracaoProduzivel = Math.min(1, Math.max(0, kgEstoque / kgTotal))
+      }
+
+      const qtdProduzivel = Math.round(quantidadeTotal * fracaoProduzivel)
+      const qtdAguardando = Math.max(0, quantidadeTotal - qtdProduzivel)
+
+      // Só libera parcialmente se houver estoque de fato (kgEstoque > 0) e
+      // ainda restar algo aguardando material encomendado. Se não há estoque
+      // nenhum, a OP fica 100% retida (comportamento original).
+      const temEstoqueParcial = temEncomendado && kgEstoque > 0 && kgEncomendado > 0 && qtdProduzivel > 0
+
+      return {
+        bobinas,
+        kgEstoque,
+        kgEncomendado,
+        kgTotal,
+        temEncomendado,
+        quantidadeTotal,
+        fracaoProduzivel,
+        qtdProduzivel,
+        qtdAguardando,
+        temEstoqueParcial,
+      }
+    }
+
     // Extrai nome do cliente/produto das observações da OP (vem do PDF importado)
     function extrairClienteObs(obs: string | null): string | null {
       if (!obs) return null
@@ -1894,14 +1956,21 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     // IDs das OPs com material encomendado — essas etapas devem aparecer
     // SOMENTE na seção "Aguardando Cartão", não duplicadas nos centros normais.
-    const opsComMaterialEncomendado = new Set(
-      etapasAtivas.filter(e => temMaterialEncomendado(e)).map(e => e.ordemProducaoId)
+    //
+    // EXCEÇÃO (availability check parcial): OPs com estoque parcial
+    // (temEstoqueParcial) PERMANECEM nos centros normais com a quantidade
+    // liberada calculada — só o saldo aparece no "Aguardando Cartão". Assim,
+    // a parcela coberta pelo estoque não fica travada.
+    const opsRetencaoTotal = new Set(
+      etapasAtivas
+        .filter(e => temMaterialEncomendado(e) && !analisarMaterial(e).temEstoqueParcial)
+        .map(e => e.ordemProducaoId)
     )
 
     // Agrupa por centro
     const painelPorCentro = centros.map(centro => {
       const etapasDoCentro = etapasAtivas.filter(e =>
-        e.centroProducaoId === centro.id && !opsComMaterialEncomendado.has(e.ordemProducaoId)
+        e.centroProducaoId === centro.id && !opsRetencaoTotal.has(e.ordemProducaoId)
       )
 
       const emAndamento = etapasDoCentro.filter(e => e.status === 'EM_ANDAMENTO')
@@ -1975,6 +2044,19 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             formato: extrairFormatoObs(e.ordemProducao.observacoes) || (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
             pesoKg: papel ? Number(papel.quantidade) : null,
             materialEncomendado: temMaterialEncomendado(e),
+            // Availability check parcial: quando a OP tem estoque parcial, o
+            // card no centro mostra quanto está liberado vs aguardando material.
+            liberacaoParcial: (() => {
+              const m = analisarMaterial(e)
+              if (!m.temEstoqueParcial) return null
+              return {
+                quantidadeLiberada: m.qtdProduzivel,
+                quantidadeAguardando: m.qtdAguardando,
+                kgEstoque: m.kgEstoque,
+                kgEncomendado: m.kgEncomendado,
+                percentualLiberado: Math.round(m.fracaoProduzivel * 100),
+              }
+            })(),
             tipoOp: extrairTipoOpObs(e.ordemProducao.observacoes),
             matriz: extrairMatrizObs(e.ordemProducao.observacoes),
             // Status de pré-impressão: lê diretamente do campo dedicado
@@ -2143,21 +2225,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       .filter(e => temMaterialEncomendado(e))
       .map(e => {
         const papel = e.ordemProducao.itens?.[0] || null
-        // Extrair detalhes das bobinas (estoque vs encomendadas) das observações
-        const bobinas: Array<{ descricao: string; kg: number; status: 'ESTOQUE' | 'ENCOMENDADO' }> = []
-        if (e.ordemProducao.observacoes) {
-          const matches = e.ordemProducao.observacoes.matchAll(/\[Bobina\]\s*(.+?)\s*(?:em estoque|encomendad[oa])\s*\(([\d.,]+)\s*kg\)/gi)
-          for (const m of matches) {
-            const isEncomendado = /encomendad/i.test(m[0])
-            bobinas.push({
-              descricao: m[1].trim(),
-              kg: parseFloat(m[2].replace('.', '').replace(',', '.')),
-              status: isEncomendado ? 'ENCOMENDADO' : 'ESTOQUE',
-            })
-          }
-        }
-        const kgEstoque = bobinas.filter(b => b.status === 'ESTOQUE').reduce((a, b) => a + b.kg, 0)
-        const kgEncomendado = bobinas.filter(b => b.status === 'ENCOMENDADO').reduce((a, b) => a + b.kg, 0)
+        const m = analisarMaterial(e)
+        const { bobinas, kgEstoque, kgEncomendado } = m
+
+        // Quando há estoque parcial, a OP já aparece no centro produzindo a
+        // parcela liberada — aqui listamos SÓ o saldo que aguarda material.
+        // Sem estoque parcial (retenção total), mostra a quantidade cheia.
+        const quantidadeExibida = m.temEstoqueParcial ? m.qtdAguardando : Number(e.ordemProducao.quantidade)
 
         return {
           id: e.id,
@@ -2166,7 +2240,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           descricao: e.descricao,
           cliente: extrairClienteObs(e.ordemProducao.observacoes) || (e.ordemProducao.clienteId ? clienteMap.get(e.ordemProducao.clienteId) || null : null),
           produto: extrairProdutoObs(e.ordemProducao.observacoes) || (e.ordemProducao.produtoId ? produtoMap.get(e.ordemProducao.produtoId) || null : null),
-          quantidade: Number(e.ordemProducao.quantidade),
+          quantidade: quantidadeExibida,
           unidade: e.ordemProducao.unidadeMedida,
           prioridade: e.ordemProducao.prioridade,
           dataEntrega: e.ordemProducao.dataEntregaPrevista,
@@ -2184,6 +2258,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           bobinas,
           kgEstoque,
           kgEncomendado,
+          // Liberação parcial: sinaliza ao frontend que a OP não está 100%
+          // retida — parte já está produzindo nos centros normais.
+          liberacaoParcial: m.temEstoqueParcial,
+          quantidadeLiberada: m.temEstoqueParcial ? m.qtdProduzivel : 0,
+          quantidadeTotal: m.quantidadeTotal,
+          percentualLiberado: m.temEstoqueParcial ? Math.round(m.fracaoProduzivel * 100) : 0,
         }
       })
       // Deduplica por OP (pode ter múltiplas etapas da mesma OP)
