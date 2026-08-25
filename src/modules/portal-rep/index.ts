@@ -15,6 +15,7 @@ import { portalRepComissaoRoutes } from './comissao/portal-rep-comissao.routes'
 import { portalRepClientesRoutes } from './clientes/portal-rep-clientes.routes'
 import { portalRepNotificacaoRoutes } from './notificacoes/portal-rep-notificacao.routes'
 import { portalRepAdminRoutes } from './admin/portal-rep-admin.routes'
+import { portalRepCatalogoRoutes } from './catalogo/portal-rep-catalogo.routes'
 
 export async function portalRepRoutes(app: FastifyInstance) {
   // Autenticação (login, refresh, troca de senha)
@@ -37,4 +38,7 @@ export async function portalRepRoutes(app: FastifyInstance) {
 
   // Admin — rotas internas do ERP (autenticação interna, não do portal)
   await app.register(portalRepAdminRoutes, { prefix: '/admin' })
+
+  // Catálogo (tipos de embalagem, acabamentos) para solicitações
+  await app.register(portalRepCatalogoRoutes, { prefix: '/catalogo' })
 }
