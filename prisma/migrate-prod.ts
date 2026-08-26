@@ -3432,6 +3432,44 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) {
     console.log('⚠️ PCP reserva_producao skipped:', e.message)
   }
+
+  // =========================================================================
+  // PCP — Sugestão de Compra (requisição gerada pela Análise de Produção)
+  // =========================================================================
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "sugestao_compra" (
+        "id" TEXT NOT NULL,
+        "empresa_id" TEXT NOT NULL,
+        "ordem_producao_id" TEXT,
+        "produto_id" TEXT NOT NULL,
+        "descricao" VARCHAR(200) NOT NULL,
+        "quantidade" DECIMAL(12, 4) NOT NULL,
+        "unidade_medida" VARCHAR(10) NOT NULL,
+        "fornecedor_id" TEXT,
+        "fornecedor_nome" VARCHAR(200),
+        "data_necessidade" TIMESTAMP(3),
+        "data_pedido_sugerida" TIMESTAMP(3),
+        "lead_time_dias" INTEGER NOT NULL DEFAULT 0,
+        "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+        "pedido_compra_id" TEXT,
+        "observacao" TEXT,
+        "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "sugestao_compra_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "sugestao_compra_empresa_id_status_idx" ON "sugestao_compra"("empresa_id", "status")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "sugestao_compra_ordem_producao_id_idx" ON "sugestao_compra"("ordem_producao_id")`)
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "sugestao_compra" ADD CONSTRAINT "sugestao_compra_ordem_producao_id_fkey" FOREIGN KEY ("ordem_producao_id") REFERENCES "ordem_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+    } catch (e: any) {
+      // FK já existe — idempotente
+    }
+    console.log('✅ PCP: tabela sugestao_compra criada/verificada')
+  } catch (e: any) {
+    console.log('⚠️ PCP sugestao_compra skipped:', e.message)
+  }
 }
 
 main()

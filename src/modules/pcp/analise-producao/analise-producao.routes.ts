@@ -13,6 +13,8 @@ import { authenticate } from '../../../middleware/authenticate'
 import { verificarEstoqueOp } from './verificacao-estoque.service'
 import { criarReservasOp, cancelarReservasOp } from './reserva-producao.service'
 import { calcularDataEntrega } from './calculo-data-entrega.service'
+import { gerarSugestoesCompra, listarSugestoesCompra } from './sugestao-compra.service'
+import { confirmarAnalise } from './confirmar-analise.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -72,6 +74,56 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro ao calcular data de entrega' })
+    }
+  })
+
+  // POST /pcp/analise-producao/:id/sugestoes-compra — gerar sugestões de compra
+  app.post('/analise-producao/:id/sugestoes-compra', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    try {
+      const resultado = await gerarSugestoesCompra(id, user.empresaId)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao gerar sugestões de compra' })
+    }
+  })
+
+  // GET /pcp/analise-producao/sugestoes-compra — listar sugestões de compra
+  app.get('/analise-producao/sugestoes-compra', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const query = z.object({
+      status: z.string().optional(),
+      ordemProducaoId: z.string().uuid().optional(),
+    }).parse(request.query)
+
+    try {
+      const lista = await listarSugestoesCompra(user.empresaId, query)
+      return reply.status(200).send(lista)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao listar sugestões' })
+    }
+  })
+
+  // POST /pcp/analise-producao/:id/confirmar — confirmar análise (Ponto 5)
+  app.post('/analise-producao/:id/confirmar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      reservar: z.boolean().optional(),
+      gerarCompras: z.boolean().optional(),
+      avancarStatus: z.boolean().optional(),
+    }).parse(request.body ?? {})
+
+    try {
+      const resultado = await confirmarAnalise(id, user.empresaId, user.id, body)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao confirmar análise' })
     }
   })
 }
