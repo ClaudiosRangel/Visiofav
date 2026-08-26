@@ -259,6 +259,7 @@ export async function concluirEtapa(etapaId: string, empresaId: string, usuarioI
       ordemProducao: {
         select: { id: true, empresaId: true, produtoId: true, quantidade: true, numero: true, lote: true },
       },
+      centroProducao: { select: { codigo: true, descricao: true } },
     },
   })
   if (!etapa) throw new EtapaOperacionalError(404, 'Etapa não encontrada')
@@ -275,6 +276,31 @@ export async function concluirEtapa(etapaId: string, empresaId: string, usuarioI
     where: { id: etapaId },
     data: { status: 'CONCLUIDA', dataFimReal: agora },
   })
+
+  // Log de auditoria — conclusão da etapa individual. Antes só havia log
+  // quando a OP inteira era concluída (última etapa); etapas intermediárias
+  // não deixavam rastro em logOrdemProducao. Registra centro, quantidade
+  // produzida/perda e tempo real, sem alterar o status da OP.
+  try {
+    const centroLabel = etapa.centroProducao
+      ? `${etapa.centroProducao.codigo} - ${etapa.centroProducao.descricao}`
+      : 'sem centro'
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        statusAnterior: etapa.status,
+        statusNovo: etapa.status,
+        usuarioId,
+        observacao:
+          `Etapa "${etapa.descricao}" (${centroLabel}) concluída. ` +
+          `Produzido: ${Number(atualizada.quantidadeProduzida)}, ` +
+          `perda: ${Number(atualizada.quantidadePerda)}, ` +
+          `tempo real: ${tempoRealMin} min.`,
+      },
+    })
+  } catch (err) {
+    console.error('[PCP] Erro ao registrar log de conclusão de etapa:', err)
+  }
 
   // Verifica se TODAS as etapas da OP estão concluídas → entrada de PA no WMS
   let entradaWms = null
