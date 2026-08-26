@@ -784,9 +784,23 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
-  // POST /api/ordens-producao/gerar-de-pedido — Gerar OPs a partir de pedido
+  // POST /api/ordens-producao/gerar-de-pedido — DESATIVADA
   // =========================================================================
-  app.post('/gerar-de-pedido', async (request, reply) => {
+  // A geração de OP a partir de pedido de venda foi centralizada na tela de
+  // Análise de Produção (PCP → Análise de Produção → aba "Gerar OP", rota
+  // POST /pcp/analise-producao/pedidos/:id/gerar-op). Este caminho paralelo
+  // foi desativado para evitar OPs criadas sem passar pela análise de
+  // estoque/capacidade/compras. A importação de OP por PDF (GPrint) e a
+  // criação manual/avulsa de OP continuam funcionando normalmente.
+  app.post('/gerar-de-pedido', async (_request, reply) => {
+    return reply.status(410).send({
+      message: 'A geração de OP a partir de pedido agora é feita pela tela de Análise de Produção (PCP → Análise de Produção → Gerar OP).',
+      code: 'USE_ANALISE_PRODUCAO',
+    })
+  })
+
+  // Trecho legado mantido apenas como referência histórica (nunca executado):
+  const _gerarDePedidoLegado = async (request: any, reply: any) => {
     const user = request.user as { id: string; empresaId: string }
     const body = z.object({
       pedidoVendaId: z.string().uuid(),
@@ -881,7 +895,8 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       totalGeradas: opsGeradas.length,
       totalErros: erros.length,
     })
-  })
+  }
+  void _gerarDePedidoLegado // referência mantida, não usada
 
   // =========================================================================
   // GET /api/ordens-producao/kanban — Visão Kanban

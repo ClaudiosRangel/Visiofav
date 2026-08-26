@@ -113,24 +113,13 @@ export async function pedidoVendaRoutes(app: FastifyInstance) {
 
     const pedidoAtualizado = await prisma.pedidoVenda.update({ where: { id }, data: { status: 'CONFIRMADO' } })
 
-    // Se o pedido veio de um orçamento gráfico, gerar OP automaticamente
-    let opGerada = null
-    if (pedido.origemPedido === 'ORCAMENTO_GRAFICO' && pedido.orcamentoOrigemId) {
-      try {
-        const { gerarOpFromOrcamento } = await import('../orcamento-grafico/orcamento-grafico-integracao.service')
-        opGerada = await gerarOpFromOrcamento(
-          pedido.orcamentoOrigemId,
-          id,
-          user.empresaId,
-          user.id,
-        )
-      } catch (err) {
-        // Não bloqueia a confirmação do pedido se a geração de OP falhar
-        console.error('[pedido-venda/confirmar] Erro ao gerar OP do orçamento:', err)
-      }
-    }
-
-    return { ...pedidoAtualizado, opGerada }
+    // NOTA: a geração de OP NÃO acontece mais aqui. A partir de agora, a OP
+    // só pode ser gerada manualmente pela tela de Análise de Produção
+    // (PCP → Análise de Produção → aba "Gerar OP"). Confirmar o pedido apenas
+    // o torna elegível para aparecer naquela aba. Isso centraliza a decisão
+    // de produção num único ponto, evitando OPs criadas sem análise de
+    // estoque/capacidade/compras.
+    return pedidoAtualizado
   })
 
   // PATCH /:id/cancelar
