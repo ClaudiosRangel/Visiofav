@@ -3053,6 +3053,203 @@ export async function seedRoteirosProduto(ctx: Contexto): Promise<ContadorModulo
   return { criados, pulados }
 }
 
+// ─── Módulo: cenário integrado (fluxo ponta a ponta) ──────────────────────────────
+
+/**
+ * Cria um cenário COMPLETO de ponta a ponta simulando o fluxo:
+ *
+ *   Representante solicita → Orçamento calculado → Aprovado → Pedido CONFIRMADO → Aguardando gerar OP
+ *
+ * Marina Alves (ctx.representantes[0]) solicita orçamento para SOL & NEVE.
+ * Produto: Caixa Papelão Ciclone Vaquinha (código 1051976) com BOM completa
+ * (Triplex 350g + tintas + verniz + cola).
+ *
+ * Entidades criadas (encadeadas):
+ * 1. OrcamentoGrafico (910/v1, APROVADO, com resultadoCalculo completo)
+ * 2. PedidoVenda (810, CONFIRMADO, origem ORCAMENTO_GRAFICO vinculado)
+ *    + 1 ItemPedidoVenda (produto 1051976, 3000un × R$5.60)
+ * 3. SolicitacaoOrcamentoRep (PROCESSADA, vinculada ao orçamento)
+ *
+ * Idempotência:
+ * - Orçamento: dedupe por [empresaId, numero=910, versao=1]
+ * - Pedido: dedupe por [empresaId, numero=810]
+ * - Solicitação: dedupe por [empresaId, representanteId, tipoEmbalagem]
+ * - Filhas/vínculos só são criados quando o pai é criado nesta execução.
+ */
+export async function seedCenarioIntegrado(ctx: Contexto): Promise<void> {
+  if (ctx.representantes.length === 0) {
+    log('⚠️', 'Nenhum representante disponível — cenário integrado pulado.')
+    return
+  }
+
+  const rep = ctx.representantes[0] // Marina Alves
+  const clienteId = ctx.clientes.get('SOL & NEVE')
+  if (!clienteId) {
+    log('⚠️', 'Cliente SOL & NEVE não encontrado — cenário integrado pulado.')
+    return
+  }
+
+  const tipoEmbalagemId = ctx.tipoEmbalagemIds[0]
+  if (!tipoEmbalagemId) {
+    log('⚠️', 'Nenhum TipoEmbalagem disponível — cenário integrado pulado.')
+    return
+  }
+
+  // Resolver produtoId do 1051976 via ctx.produtos ou fallback no banco
+  let produtoId: string | undefined = ctx.produtos.get('1051976')?.id
+  if (!produtoId) {
+    const prodBanco = await prisma.produto.findFirst({
+      where: { empresaId: ctx.empresaId, codigo: '1051976' },
+      select: { id: true },
+    })
+    produtoId = prodBanco?.id
+  }
+  if (!produtoId) {
+    log('⚠️', 'Produto 1051976 (Caixa Papelão Ciclone Vaquinha) não encontrado — cenário integrado pulado.')
+    return
+  }
+
+  const TIPO_EMBALAGEM_SOLICIT = 'Caixa para produto lácteo Ciclone Vaquinha'
+
+  try {
+    // ──── 1) OrcamentoGrafico (910/v1, APROVADO) ────────────────────────────────
+
+    const orcamentoExistente = await prisma.orcamentoGrafico.findFirst({
+      where: { empresaId: ctx.empresaId, numero: 910, versao: 1 },
+      select: { id: true },
+    })
+
+    let orcamentoId: string
+    let orcamentoCriado = false
+
+    if (orcamentoExistente) {
+      orcamentoId = orcamentoExistente.id
+    } else {
+      const orcamento = await prisma.orcamentoGrafico.create({
+        data: {
+          empresaId: ctx.empresaId,
+          numero: 910,
+          versao: 1,
+          clienteId,
+          clienteNome: 'SOL & NEVE',
+          vendedorId: rep.vendedorId,
+          tipoEmbalagemId,
+          medidas: { L: 250, A: 180, P: 120 },
+          quantidade: 3000,
+          criadoPorId: USUARIO_SEED_ID,
+          status: 'APROVADO',
+          aprovadoEm: diasNoPassado(5),
+          precoUnitario: 5.60,
+          precoVenda: 16800.00,
+          resultadoCalculo: {
+            precoUnitario: 5.60,
+            valorTotal: 16800.00,
+            custoTotal: 10920.00,
+            margemReal: 35,
+            custoMaterial: {
+              papel: { descricao: 'Triplex 350g 760x1040', qtdKg: 3600, precoKg: 7.20, total: 25920.00, porUnidade: 8.64 },
+              tinta: { descricao: 'CMYK offset', qtdKg: 39, total: 3120.00, porUnidade: 1.04 },
+              verniz: { descricao: 'Verniz UV Brilho', qtdKg: 24, precoKg: 32.00, total: 768.00, porUnidade: 0.256 },
+              cola: { descricao: 'Cola PVA Branca', qtdKg: 15, precoKg: 12.50, total: 187.50, porUnidade: 0.0625 },
+            },
+            custoProducao: {
+              corte: { tempo: '30min setup + 25h operação', custoHora: 85, total: 2167.50 },
+              impressao: { tempo: '45min setup + 40h operação', custoHora: 120, total: 4890.00 },
+              acabamento: { tempo: '15min setup + 15h operação', custoHora: 65, total: 1001.25 },
+            },
+            impostos: 12,
+            comissaoRep: 5,
+            despesasAdmin: 3,
+          },
+        },
+      })
+      orcamentoId = orcamento.id
+      orcamentoCriado = true
+      contabilizar(ctx.resumo, 'orcamentos', true)
+    }
+
+    if (!orcamentoCriado) {
+      contabilizar(ctx.resumo, 'orcamentos', false)
+    }
+
+    // ──── 2) PedidoVenda (810, CONFIRMADO, origem ORCAMENTO_GRAFICO) ────────────
+
+    const pedidoExistente = await prisma.pedidoVenda.findFirst({
+      where: { empresaId: ctx.empresaId, numero: 810 },
+      select: { id: true },
+    })
+
+    if (pedidoExistente) {
+      contabilizar(ctx.resumo, 'pedidos', false)
+    } else {
+      const pedido = await prisma.pedidoVenda.create({
+        data: {
+          empresaId: ctx.empresaId,
+          numero: 810,
+          clienteId,
+          tabelaPrecoId: ctx.tabelaPrecoId,
+          status: 'CONFIRMADO',
+          origemPedido: 'ORCAMENTO_GRAFICO',
+          orcamentoOrigemId: orcamentoId,
+          valorTotal: 16800.00,
+        },
+      })
+      contabilizar(ctx.resumo, 'pedidos', true)
+
+      // ItemPedidoVenda — criado somente quando o pedido é criado (idempotência)
+      await prisma.itemPedidoVenda.create({
+        data: {
+          pedidoVendaId: pedido.id,
+          produtoId,
+          quantidade: 3000,
+          precoBase: 5.60,
+          precoFinal: 5.60,
+          valorTotal: 16800.00,
+          unidade: 'UN',
+        },
+      })
+    }
+
+    // ──── 3) SolicitacaoOrcamentoRep (PROCESSADA, vinculada ao orçamento) ───────
+
+    const solicitExistente = await prisma.solicitacaoOrcamentoRep.findFirst({
+      where: {
+        empresaId: ctx.empresaId,
+        representanteId: rep.id,
+        tipoEmbalagem: TIPO_EMBALAGEM_SOLICIT,
+      },
+      select: { id: true },
+    })
+
+    if (solicitExistente) {
+      contabilizar(ctx.resumo, 'solicitacoes', false)
+    } else {
+      await prisma.solicitacaoOrcamentoRep.create({
+        data: {
+          empresaId: ctx.empresaId,
+          representanteId: rep.id,
+          vendedorId: rep.vendedorId,
+          clienteId,
+          clienteNome: 'SOL & NEVE',
+          tipoEmbalagem: TIPO_EMBALAGEM_SOLICIT,
+          quantidade: 3000,
+          medidaLargura: 250,
+          medidaAltura: 180,
+          medidaComprimento: 120,
+          acabamentos: 'Impressão offset 4x0 + verniz UV brilho total + colagem',
+          status: 'PROCESSADA',
+          orcamentoGraficoId: orcamentoId,
+        },
+      })
+      contabilizar(ctx.resumo, 'solicitacoes', true)
+    }
+
+    log('🔗', 'Cenário integrado ponta a ponta: Solicitação → Orçamento → Pedido CONFIRMADO ✓')
+  } catch (err) {
+    logErro('⚠️', 'Falha ao criar cenário integrado:', err)
+  }
+}
+
 // ─── Orquestração: main() ─────────────────────────────────────────────────────────
 
 /**
@@ -3148,6 +3345,7 @@ async function main(): Promise<void> {
   await seedSaldoEstoque(ctx)
   await seedEstruturasProduto(ctx)
   await seedRoteirosProduto(ctx)
+  await seedCenarioIntegrado(ctx)
   await seedSolicitacoesPortal(ctx)
 
   // 4) Resumo final por módulo.
@@ -3169,6 +3367,7 @@ async function main(): Promise<void> {
   log('📊', `Saldos estoque:       criados ${resumo.saldosCriados} | pulados ${resumo.saldosPulados}`)
   log('📊', `Estruturas (BOM):     criadas ${resumo.bomsCriadas} | puladas ${resumo.bomsPuladas}`)
   log('📊', `Roteiros produção:    criados ${resumo.roteirosCriados} | pulados ${resumo.roteirosPulados}`)
+  log('📊', `Cenário integrado:    Solicit→Orçamento→Pedido (fluxo ponta a ponta)`)
   log('📊', `Solicitações portal:  criados ${resumo.solicitacoesCriados} | pulados ${resumo.solicitacoesPulados}`)
   log('📊', '═══════════════════════════════════════════════════')
 
