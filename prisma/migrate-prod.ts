@@ -2846,7 +2846,10 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "formato_folha_largura" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "formato_folha_altura" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "pinca_mm" DECIMAL(6,2)`)
-  console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm adicionados')
+  // Flag: quando false, o centro não é listado no painel de Programação.
+  // Default true preserva o comportamento atual dos centros já cadastrados.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "disponivel_programacao" BOOLEAN NOT NULL DEFAULT true`)
+  console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm, disponivel_programacao adicionados')
 
   // =========================================================================
   // ORÇAMENTO GRÁFICO — Seed de Tipos de Embalagem Pré-Configurados

@@ -2314,6 +2314,10 @@ model CentroProducao {
   pincaMm             Decimal? @map("pinca_mm") @db.Decimal(6, 2) // mm
   posicao         Int            @default(0)
   status          Boolean        @default(true)
+  // Quando false, o centro não é listado no painel de Programação (nem
+  // recebe etapas por lá), mesmo estando ATIVO. Útil para centros que
+  // existem para orçamento/roteiro mas não devem aparecer no chão de fábrica.
+  disponivelProgramacao Boolean  @default(true) @map("disponivel_programacao")
   criadoEm        DateTime       @default(now()) @map("criado_em")
   atualizadoEm    DateTime       @updatedAt @map("atualizado_em")
 

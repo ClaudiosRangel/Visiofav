@@ -29,6 +29,9 @@ const centroProducaoBodySchema = z.object({
   formatoFolhaLargura: z.number().int().min(0).optional().nullable(),
   formatoFolhaAltura: z.number().int().min(0).optional().nullable(),
   pincaMm: z.number().min(0).optional().nullable(),
+  // Quando false, o centro não aparece no painel de Programação. Default true
+  // para preservar o comportamento atual de centros já cadastrados.
+  disponivelProgramacao: z.boolean().optional(),
 })
 
 const listQuerySchema = z.object({
@@ -195,6 +198,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         formatoFolhaLargura: body.formatoFolhaLargura ?? undefined,
         formatoFolhaAltura: body.formatoFolhaAltura ?? undefined,
         pincaMm: body.pincaMm ?? undefined,
+        disponivelProgramacao: body.disponivelProgramacao ?? true,
         posicao,
       },
     })
@@ -257,6 +261,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         formatoFolhaLargura: body.formatoFolhaLargura ?? null,
         formatoFolhaAltura: body.formatoFolhaAltura ?? null,
         pincaMm: body.pincaMm ?? null,
+        disponivelProgramacao: body.disponivelProgramacao ?? centro.disponivelProgramacao,
       },
     })
 

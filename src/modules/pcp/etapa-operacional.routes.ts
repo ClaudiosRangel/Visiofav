@@ -1705,7 +1705,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
 
     const centros = await prisma.centroProducao.findMany({
-      where: { empresaId: user.empresaId, status: true },
+      // disponivelProgramacao: false → centro não aparece no painel de Programação
+      where: { empresaId: user.empresaId, status: true, disponivelProgramacao: true },
       include: {
         tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } },
         turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true, duracaoMinutos: true } },
