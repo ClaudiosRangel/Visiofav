@@ -77,12 +77,25 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     // Auto-match com entidades existentes
     const sugestoes = await buscarSugestoes(user.empresaId, dadosExtraidos)
 
-    // Verificar se jÃ¡ existe OP com mesma referÃªncia
+    // Verificar se já existe OP com a mesma REFERÊNCIA EXTERNA (número do PDF),
+    // apenas entre OPs de origem PDF_GPRINT. Mesma regra do /confirmar — casa
+    // por referenciaExterna, nunca pelo numero interno sequencial.
     let opDuplicada = null
     if (dadosExtraidos.cabecalho.numeroOp) {
+      const numOp = dadosExtraidos.cabecalho.numeroOp
+      const numLimpo = numOp.replace(/\./g, '')
+      const refs = new Set<string>([numOp])
+      if (/^\d+$/.test(numLimpo)) {
+        refs.add(numLimpo)
+        refs.add(parseInt(numLimpo).toLocaleString('pt-BR'))
+      }
       const existente = await prisma.ordemProducao.findFirst({
-        where: { empresaId: user.empresaId, observacoes: { contains: dadosExtraidos.cabecalho.numeroOp } },
-        select: { id: true, numero: true, status: true },
+        where: {
+          empresaId: user.empresaId,
+          origemImportacao: 'PDF_GPRINT',
+          referenciaExterna: { in: Array.from(refs) },
+        },
+        select: { id: true, numero: true, status: true, referenciaExterna: true },
       })
       if (existente) {
         opDuplicada = existente
@@ -179,22 +192,58 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     const numeroLimpo = numeroOpOriginal ? numeroOpOriginal.replace(/\./g, '') : ''
     const numeroOriginal = /^\d+$/.test(numeroLimpo) ? parseInt(numeroLimpo) : NaN
 
-    if (!isNaN(numeroOriginal)) {
-      // Busca OP existente por número sequencial OU referência externa
-      // (cobre os casos: numero=2997, referenciaExterna="2997", referenciaExterna="2.997")
+    // ─────────────────────────────────────────────────────────────────────
+    // REGRA DE REIMPORTAÇÃO (corrigida após incidente OP 4/108 x 3013):
+    //
+    // O casamento de "OP já existe → atualizar" DEVE ser feito EXCLUSIVAMENTE
+    // pela `referenciaExterna` (o número do PDF/GPrint), nunca pelo `numero`
+    // sequencial interno do ERP. Esses são dois espaços de numeração distintos:
+    // uma OP importada de "4/108" recebe um `numero` interno sequencial (ex.
+    // 3013); reimportar o PDF "3013" casava `{ numero: 3013 }` com essa OP e
+    // sobrescrevia a 4/108 — apagando apontamentos e herdando o histórico.
+    //
+    // Além disso, só atualizamos OPs:
+    //   (a) de origem PDF_GPRINT (nunca uma OP nativa/avulsa/orçamento);
+    //   (b) que ainda NÃO avançaram no ciclo (status PLANEJADA/RASCUNHO) e
+    //       NÃO têm apontamento algum. Se já produziu, é PROIBIDO sobrescrever.
+    // ─────────────────────────────────────────────────────────────────────
+    if (numeroOpOriginal) {
+      // Só casa por referência externa (string exata do PDF), variações de
+      // pontuação de milhar quando o número é puramente numérico.
+      const refsCandidatas = new Set<string>([numeroOpOriginal])
+      if (!isNaN(numeroOriginal)) {
+        refsCandidatas.add(String(numeroOriginal))          // "3013"
+        refsCandidatas.add(numeroOriginal.toLocaleString('pt-BR')) // "3.013"
+      }
+
       const existe = await prisma.ordemProducao.findFirst({
         where: {
           empresaId: user.empresaId,
-          OR: [
-            { numero: numeroOriginal },
-            { referenciaExterna: String(numeroOriginal) },
-            ...(numeroOpOriginal && numeroOpOriginal !== String(numeroOriginal) ? [{ referenciaExterna: numeroOpOriginal }] : []),
-          ],
+          origemImportacao: 'PDF_GPRINT',
+          referenciaExterna: { in: Array.from(refsCandidatas) },
         },
       })
 
       if (existe) {
-        // ATUALIZAR OP existente — preservar flag de "material recebido" (se não tem mais "encomendado" nas obs, manter)
+        // TRAVA DE SEGURANÇA: nunca sobrescrever OP que já avançou.
+        const apontEtapa = await prisma.apontamentoEtapa.count({ where: { etapaOrdemProducao: { ordemProducaoId: existe.id } } })
+        const apontProd = await prisma.apontamentoProducao.count({ where: { ordemProducaoId: existe.id } })
+        const statusBloqueado = !['PLANEJADA', 'RASCUNHO'].includes(existe.status)
+
+        if (apontEtapa > 0 || apontProd > 0 || statusBloqueado) {
+          cacheImportacao.delete(body.importacaoId)
+          return reply.status(409).send({
+            message:
+              `Já existe a OP #${existe.numero} (ref. ${existe.referenciaExterna}) para este PDF e ela ` +
+              `não pode ser sobrescrita: status "${existe.status}"` +
+              (apontEtapa + apontProd > 0 ? ` e ${apontEtapa + apontProd} apontamento(s) de produção` : '') +
+              `. Reimportação só é permitida enquanto a OP está PLANEJADA/RASCUNHO e sem apontamentos.`,
+            code: 'OP_NAO_SOBRESCREVIVEL',
+            opExistente: { id: existe.id, numero: existe.numero, referenciaExterna: existe.referenciaExterna, status: existe.status },
+          })
+        }
+
+        // ATUALIZAR OP existente (segura) — preservar flag de "material recebido"
         modoAtualizacao = true
         const obsExistentes = existe.observacoes || ''
         const materialJaRecebido = !(/encomendad/i.test(obsExistentes)) && /encomendad/i.test(obsConsolidadas)
@@ -214,7 +263,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           },
         })
 
-        // Limpar itens e etapas existentes para recriar com dados atualizados
+        // Recriar itens/etapas — seguro porque acima garantimos que não há
+        // apontamento nem status avançado (nada de produção real a perder).
         await prisma.apontamentoEtapa.deleteMany({ where: { etapaOrdemProducao: { ordemProducaoId: op.id } } })
         await prisma.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId: op.id } })
         await prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: op.id } })
@@ -223,14 +273,14 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     }
 
     if (!op) {
-      // Criar nova OP
-      let proximoNumero: number
-      if (!isNaN(numeroOriginal)) {
-        proximoNumero = numeroOriginal
-      } else {
-        const ultimaOp = await prisma.ordemProducao.findFirst({ where: { empresaId: user.empresaId }, orderBy: { numero: 'desc' }, select: { numero: true } })
-        proximoNumero = (ultimaOp?.numero ?? 0) + 1
-      }
+      // Criar nova OP.
+      //
+      // O `numero` interno é SEMPRE sequencial próprio do ERP — nunca o número
+      // do PDF/GPrint. Isso evita colisão entre os dois espaços de numeração
+      // (o número do GPrint fica só em `referenciaExterna`). Usar o número do
+      // PDF como `numero` interno foi a causa-raiz do incidente OP 4/108 x 3013.
+      const ultimaOp = await prisma.ordemProducao.findFirst({ where: { empresaId: user.empresaId }, orderBy: { numero: 'desc' }, select: { numero: true } })
+      const proximoNumero = (ultimaOp?.numero ?? 0) + 1
 
       op = await prisma.ordemProducao.create({
         data: {
