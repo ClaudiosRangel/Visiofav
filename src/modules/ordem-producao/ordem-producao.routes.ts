@@ -16,7 +16,8 @@ import {
 import { reordenarFilaAutomaticamente } from '../pcp/fila-ordenacao.service'
 import { verificarAcessoMenu } from '../pcp/permissoes-pcp.routes'
 import { gerarOpPdf } from './op-pdf-gerado.service'
-import { cancelarReservasOp, consumirReservasOp } from '../pcp/analise-producao/reserva-producao.service'
+import { cancelarReservasOp, consumirReservasOp, criarReservasOp } from '../pcp/analise-producao/reserva-producao.service'
+import { verificarEstoqueOp } from '../pcp/analise-producao/verificacao-estoque.service'
 
 /**
  * Extrai o nome do cliente salvo na tag [Cliente] das observações da OP.
@@ -685,7 +686,67 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       console.warn('[ordem-producao] Falha ao atualizar reservas na transição:', e)
     }
 
-    return { ...atualizada, transicoesPermitidas: getTransicoesPermitidas(body.status) }
+    // Automação de estoque conforme transição
+    let verificacaoEstoque: any = null
+    let reservasMateriais: any = null
+    let sugestoesCompra: any = null
+
+    try {
+      if (body.status === 'PROGRAMADA') {
+        // Verificação automática de estoque ao programar
+        verificacaoEstoque = await verificarEstoqueOp(id, user.empresaId)
+
+        // Se houver materiais em falta, gerar sugestões de compra
+        if (verificacaoEstoque && !verificacaoEstoque.resumo.todosDisponiveis) {
+          const sugestoesCriadas = []
+          for (const mat of verificacaoEstoque.materiais) {
+            if (mat.situacao !== 'SUFICIENTE' && mat.produtoComponenteId && mat.falta > 0) {
+              // Verificar se já existe sugestão PENDENTE para este produto+OP
+              const existente = await prisma.sugestaoCompra.findFirst({
+                where: {
+                  empresaId: user.empresaId,
+                  ordemProducaoId: id,
+                  produtoId: mat.produtoComponenteId,
+                  status: 'PENDENTE',
+                },
+              })
+              if (!existente) {
+                const sugestao = await prisma.sugestaoCompra.create({
+                  data: {
+                    empresaId: user.empresaId,
+                    ordemProducaoId: id,
+                    produtoId: mat.produtoComponenteId,
+                    descricao: mat.descricao,
+                    quantidade: mat.falta,
+                    unidadeMedida: mat.unidade,
+                    dataNecessidade: atualizada.dataEntregaPrevista,
+                    status: 'PENDENTE',
+                  },
+                })
+                sugestoesCriadas.push(sugestao)
+              }
+            }
+          }
+          sugestoesCompra = { criadas: sugestoesCriadas.length }
+        }
+      }
+
+      if (body.status === 'LIBERADA') {
+        // Reserva automática de materiais ao liberar
+        reservasMateriais = await criarReservasOp(id, user.empresaId)
+      }
+    } catch (e) {
+      // Falha na verificação/reserva não deve bloquear a transição
+      console.warn('[ordem-producao] Falha na automação de estoque:', e)
+    }
+
+    return {
+      ...atualizada,
+      transicoesPermitidas: getTransicoesPermitidas(body.status),
+      verificacaoEstoque,
+      reservasMateriais,
+      sugestoesCompra,
+    }
   })
 
   // =========================================================================
