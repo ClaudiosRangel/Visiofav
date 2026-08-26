@@ -15,6 +15,8 @@ import { criarReservasOp, cancelarReservasOp } from './reserva-producao.service'
 import { calcularDataEntrega } from './calculo-data-entrega.service'
 import { gerarSugestoesCompra, listarSugestoesCompra } from './sugestao-compra.service'
 import { confirmarAnalise } from './confirmar-analise.service'
+import { listarPedidosElegiveis, gerarOpDePedido } from './gerar-op-de-pedido.service'
+import { prisma } from '../../../lib/prisma'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -124,6 +126,91 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro ao confirmar análise' })
+    }
+  })
+
+  // ─── ABA 1: Gerar OP a partir de pedido ───────────────────────────────
+
+  // GET /pcp/analise-producao/pedidos-elegiveis — pedidos aprovados sem OP
+  app.get('/analise-producao/pedidos-elegiveis', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    try {
+      const pedidos = await listarPedidosElegiveis(user.empresaId)
+      return reply.status(200).send(pedidos)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao listar pedidos elegíveis' })
+    }
+  })
+
+  // POST /pcp/analise-producao/pedidos/:id/gerar-op — gerar OP a partir do pedido
+  app.post('/analise-producao/pedidos/:id/gerar-op', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    try {
+      const resultado = await gerarOpDePedido(id, user.empresaId, user.id)
+      return reply.status(201).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro ao gerar OP' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
+  // ─── ABA 2: Cálculos/Análises de OPs nativas ──────────────────────────
+
+  // GET /pcp/analise-producao/ops-nativas — OPs criadas no sistema (não PDF)
+  app.get('/analise-producao/ops-nativas', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    try {
+      const ops = await prisma.ordemProducao.findMany({
+        where: {
+          empresaId: user.empresaId,
+          origemImportacao: { not: 'PDF_GPRINT' },
+          status: { notIn: ['CANCELADA'] },
+        },
+        select: {
+          id: true,
+          numero: true,
+          referenciaExterna: true,
+          status: true,
+          quantidade: true,
+          unidadeMedida: true,
+          origemImportacao: true,
+          dataEntregaPrevista: true,
+          produtoId: true,
+          clienteId: true,
+          observacoes: true,
+          criadoEm: true,
+        },
+        orderBy: { criadoEm: 'desc' },
+        take: 200,
+      })
+
+      // Resolver nomes de produto/cliente (tag tem prioridade)
+      const resultado = ops.map((op) => {
+        const clienteTag = op.observacoes?.match(/\[Cliente\]\s*(.+?)(?:\n|$)/)?.[1]?.trim()
+        const produtoTag = op.observacoes?.match(/\[Produto\]\s*(.+?)(?:\n|$)/)?.[1]?.trim()
+        return {
+          id: op.id,
+          numero: op.numero,
+          referenciaExterna: op.referenciaExterna,
+          status: op.status,
+          quantidade: Number(op.quantidade),
+          unidadeMedida: op.unidadeMedida,
+          origemImportacao: op.origemImportacao,
+          dataEntregaPrevista: op.dataEntregaPrevista?.toISOString() ?? null,
+          clienteNome: clienteTag ?? null,
+          produtoNome: produtoTag ?? null,
+          criadoEm: op.criadoEm.toISOString(),
+        }
+      })
+
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao listar OPs nativas' })
     }
   })
 }
