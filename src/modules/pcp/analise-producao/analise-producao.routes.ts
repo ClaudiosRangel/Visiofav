@@ -110,6 +110,49 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     }
   })
 
+  // PATCH /pcp/analise-producao/:id/editar — edita dados da OP em análise
+  // (quantidade, data de entrega desejada, prioridade) antes de firmar.
+  // Só permitido enquanto a OP está em RASCUNHO/PLANEJADA (fase de simulação).
+  app.patch('/analise-producao/:id/editar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      quantidade: z.number().positive().optional(),
+      dataEntregaPrevista: z.string().datetime().nullable().optional(),
+      prioridade: z.enum(['BAIXA', 'NORMAL', 'ALTA', 'URGENTE']).optional(),
+    }).parse(request.body ?? {})
+
+    try {
+      const op = await prisma.ordemProducao.findFirst({
+        where: { id, empresaId: user.empresaId },
+        select: { id: true, status: true },
+      })
+      if (!op) return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+      if (!['RASCUNHO', 'PLANEJADA'].includes(op.status)) {
+        return reply.status(422).send({
+          message: `Só é possível editar a OP na fase de análise (RASCUNHO/PLANEJADA). Status atual: ${op.status}.`,
+        })
+      }
+
+      const data: Record<string, unknown> = {}
+      if (body.quantidade !== undefined) data.quantidade = body.quantidade
+      if (body.prioridade !== undefined) data.prioridade = body.prioridade
+      if (body.dataEntregaPrevista !== undefined) {
+        data.dataEntregaPrevista = body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : null
+      }
+
+      const atualizada = await prisma.ordemProducao.update({
+        where: { id },
+        data,
+        select: { id: true, numero: true, quantidade: true, prioridade: true, dataEntregaPrevista: true, status: true },
+      })
+      return reply.status(200).send(atualizada)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao editar OP' })
+    }
+  })
+
   // POST /pcp/analise-producao/:id/confirmar — confirmar análise (Ponto 5)
   app.post('/analise-producao/:id/confirmar', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
@@ -143,7 +186,59 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     }
   })
 
+  // POST /pcp/analise-producao/pedidos/:id/iniciar-analise — cria a OP em
+  // PLANEJADA (rascunho de análise) a partir do pedido e retorna o opId, para
+  // o assistente abrir a tela de Cálculos/Análises. NÃO firma nada ainda
+  // (não reserva estoque, não gera compra, não entra na fila). Idempotente:
+  // se o pedido já tem OP não-cancelada, devolve ela.
+  app.post('/analise-producao/pedidos/:id/iniciar-analise', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    try {
+      // Se já existe OP ativa do pedido, reusa (permite reabrir a análise)
+      const opExistente = await prisma.ordemProducao.findFirst({
+        where: { empresaId: user.empresaId, pedidoVendaId: id, status: { not: 'CANCELADA' } },
+        select: { id: true, numero: true, status: true },
+      })
+      if (opExistente) {
+        return reply.status(200).send({
+          ordemProducaoId: opExistente.id,
+          numero: opExistente.numero,
+          status: opExistente.status,
+          reaproveitada: true,
+          avisos: [],
+        })
+      }
+
+      // Caso contrário, gera a OP (fica em PLANEJADA — rascunho de análise)
+      const resultado = await gerarOpDePedido(id, user.empresaId, user.id)
+      const primeira = resultado.opsGeradas[0]
+      if (!primeira) {
+        return reply.status(400).send({
+          message: 'Não foi possível iniciar a análise. ' + (resultado.avisos.join(' ') || ''),
+          code: 'SEM_OP',
+          avisos: resultado.avisos,
+        })
+      }
+      return reply.status(201).send({
+        ordemProducaoId: primeira.ordemProducaoId,
+        numero: primeira.numero,
+        status: 'PLANEJADA',
+        reaproveitada: false,
+        opsGeradas: resultado.opsGeradas,
+        avisos: resultado.avisos,
+      })
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro ao iniciar análise' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
   // POST /pcp/analise-producao/pedidos/:id/gerar-op — gerar OP a partir do pedido
+  // (mantida por compatibilidade; o fluxo recomendado agora é iniciar-analise
+  // → editar → POST /:opId/confirmar (firmar))
   app.post('/analise-producao/pedidos/:id/gerar-op', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = idParamsSchema.parse(request.params)
