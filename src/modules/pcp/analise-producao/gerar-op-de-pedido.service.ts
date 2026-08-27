@@ -158,15 +158,39 @@ export async function gerarOpDePedido(
   if (pedido.orcamentoOrigemId) {
     const r = await gerarOpFromOrcamento(pedido.orcamentoOrigemId, pedidoVendaId, empresaId, usuarioId)
     if (r) {
+      let materiaisGerados = 0
+
+      // Se os itens do pedido tiverem produto com BOM ATIVA, explodir materiais
+      // (orçamento gráfico gera etapas mas não BOM formal — complementamos aqui)
+      for (const item of pedido.itens) {
+        if (!item.produtoId) continue
+        const estrutura = await prisma.estruturaProduto.findFirst({
+          where: { empresaId, produtoId: item.produtoId, status: 'ATIVA' },
+          select: { id: true },
+        })
+        if (estrutura) {
+          // Vincular produtoId e estruturaProdutoId na OP (que foi criada sem)
+          await prisma.ordemProducao.update({
+            where: { id: r.ordemProducaoId },
+            data: { produtoId: item.produtoId, estruturaProdutoId: estrutura.id },
+          })
+          const bom = await explodirBomParaOp(r.ordemProducaoId, estrutura.id, Number(item.quantidade), empresaId)
+          materiaisGerados += bom.total
+        }
+      }
+
       opsGeradas.push({
         ordemProducaoId: r.ordemProducaoId,
         numero: r.numero,
         origem: 'ORCAMENTO_GRAFICO',
-        materiaisGerados: 0, // orçamento gráfico gera etapas, não BOM formal
+        materiaisGerados,
         etapasGeradas: r.etapasGeradas,
       })
       if (r.etapasGeradas === 0) {
         avisos.push('OP gerada do orçamento gráfico, mas sem etapas (verifique o cálculo do orçamento).')
+      }
+      if (materiaisGerados === 0) {
+        avisos.push('OP gerada sem materiais (produto não possui BOM ATIVA cadastrada).')
       }
       return { opsGeradas, avisos }
     }
