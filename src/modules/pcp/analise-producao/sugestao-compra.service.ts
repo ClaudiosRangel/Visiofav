@@ -142,18 +142,42 @@ export async function gerarSugestoesCompra(
 }
 
 /**
- * Lista sugestões de compra de uma empresa (opcionalmente por status/OP).
+ * Lista sugestões de compra de uma empresa (opcionalmente por status/OP/
+ * fornecedor/busca por produto). Enriquece com código/nome do produto e o
+ * número da OP de origem para exibição na tela de Requisições de Compra.
  */
 export async function listarSugestoesCompra(
   empresaId: string,
-  filtros?: { status?: string; ordemProducaoId?: string },
+  filtros?: { status?: string; ordemProducaoId?: string; fornecedorId?: string; busca?: string },
 ) {
   const where: Record<string, unknown> = { empresaId }
   if (filtros?.status) where.status = filtros.status
   if (filtros?.ordemProducaoId) where.ordemProducaoId = filtros.ordemProducaoId
+  if (filtros?.fornecedorId) where.fornecedorId = filtros.fornecedorId
+  if (filtros?.busca) {
+    where.descricao = { contains: filtros.busca, mode: 'insensitive' }
+  }
 
-  return prisma.sugestaoCompra.findMany({
+  const sugestoes = await prisma.sugestaoCompra.findMany({
     where,
     orderBy: { criadoEm: 'desc' },
+    include: {
+      ordemProducao: { select: { numero: true, referenciaExterna: true } },
+    },
   })
+
+  // Enriquecer com código/nome do produto (produtoId → Produto)
+  const produtoIds = [...new Set(sugestoes.map((s) => s.produtoId))]
+  const produtos = await prisma.produto.findMany({
+    where: { id: { in: produtoIds }, empresaId },
+    select: { id: true, codigo: true, nome: true },
+  })
+  const produtoMap = new Map(produtos.map((p) => [p.id, p]))
+
+  return sugestoes.map((s) => ({
+    ...s,
+    produtoCodigo: produtoMap.get(s.produtoId)?.codigo ?? null,
+    produtoNome: produtoMap.get(s.produtoId)?.nome ?? null,
+    opNumero: s.ordemProducao?.referenciaExterna || s.ordemProducao?.numero || null,
+  }))
 }

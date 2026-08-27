@@ -244,6 +244,29 @@ etc., **sempre com prioridade sobre o relacionamento formal**. O mesmo
 padrão é usado para OPs Avulsas sem cadastro (`produtoNomeLivre` /
 `clienteNomeLivre` viram tags `[Produto]`/`[Cliente]`).
 
+### 1.7 Requisições de Compra (SugestaoCompra) e visibilidade de reserva
+
+Os botões "Reservar Materiais" e "Gerar Requisições de Compra" da Análise de
+Produção criam, respectivamente, `ReservaProducao` (ATIVA) e `SugestaoCompra`
+(PENDENTE). Antes esses registros ficavam invisíveis no frontend; agora:
+
+- **Requisições de Compra** têm tela dedicada no módulo **Compras**
+  (`/compras/requisicoes`), consumindo `GET /pcp/analise-producao/sugestoes-compra`
+  (com filtros status/fornecedor/busca). O comprador seleciona requisições
+  PENDENTES e converte em Pedido de Compra via
+  `POST /pcp/analise-producao/sugestoes-compra/converter`
+  (`conversao-compra.service.ts` — cria 1 PedidoCompra RASCUNHO com 1 item por
+  requisição, preço 0, marca sugestões CONVERTIDA + preenche `pedidoCompraId`).
+  Edição/cancelamento via `PATCH`/`DELETE /pcp/analise-producao/sugestoes-compra/:id`.
+- **Reserva/Disponível** aparece na Consulta de Saldos do WMS (`/estoque`,
+  aba "Por Produto"), consumindo `GET /api/saldos/consolidado`
+  (`saldo-consolidado.service.ts`). Consolida por produto respeitando as DUAS
+  formas de estoque: se há `SaldoEndereco` (WMS) > 0, origem = WMS (com
+  endereços expansíveis); senão cai para `Estoque` global (ERP, sem endereço).
+  `Reservado = Estoque.reservado (venda) + Σ ReservaProducao ATIVA (produção)`;
+  `Disponível = Físico − Reservado`. Mesma regra de origem que o PCP usa em
+  `verificacao-estoque.service.ts` (`calcularSaldo`), para não divergir.
+
 ---
 
 ## 2. Ciclo de vida / máquina de estados da OrdemProducao

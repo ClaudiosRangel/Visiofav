@@ -2,11 +2,25 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
+import { listarSaldoConsolidado } from './saldo-consolidado.service'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
 export async function saldoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
+
+  // GET /saldos/consolidado — visão por produto com origem (WMS/ERP),
+  // reservado (venda + produção) e disponível. Endereços detalhados quando WMS.
+  app.get('/consolidado', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const q = z.object({ busca: z.string().optional() }).parse(request.query)
+    try {
+      const data = await listarSaldoConsolidado(user.empresaId, q.busca)
+      return reply.status(200).send({ data, total: data.length })
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ message: err.message || 'Erro ao consolidar saldos' })
+    }
+  })
 
   app.get('/', async (request) => {
     const db = getDb(request)

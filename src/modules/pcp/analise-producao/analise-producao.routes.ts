@@ -14,6 +14,7 @@ import { verificarEstoqueOp } from './verificacao-estoque.service'
 import { criarReservasOp, cancelarReservasOp } from './reserva-producao.service'
 import { calcularDataEntrega } from './calculo-data-entrega.service'
 import { gerarSugestoesCompra, listarSugestoesCompra } from './sugestao-compra.service'
+import { converterSugestoesEmPedido, editarSugestaoCompra, cancelarSugestaoCompra } from './conversao-compra.service'
 import { confirmarAnalise } from './confirmar-analise.service'
 import { listarPedidosElegiveis, gerarOpDePedido } from './gerar-op-de-pedido.service'
 import { prisma } from '../../../lib/prisma'
@@ -99,6 +100,8 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     const query = z.object({
       status: z.string().optional(),
       ordemProducaoId: z.string().uuid().optional(),
+      fornecedorId: z.string().uuid().optional(),
+      busca: z.string().optional(),
     }).parse(request.query)
 
     try {
@@ -107,6 +110,55 @@ export async function analiseProducaoRoutes(app: FastifyInstance) {
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       return reply.status(statusCode).send({ message: err.message || 'Erro ao listar sugestões' })
+    }
+  })
+
+  // POST /pcp/analise-producao/sugestoes-compra/converter — converter em Pedido de Compra
+  app.post('/analise-producao/sugestoes-compra/converter', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      sugestaoIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos uma requisição'),
+      fornecedorId: z.string().uuid(),
+    }).parse(request.body)
+
+    try {
+      const resultado = await converterSugestoesEmPedido(user.empresaId, body.sugestaoIds, body.fornecedorId)
+      return reply.status(201).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao converter requisições' })
+    }
+  })
+
+  // PATCH /pcp/analise-producao/sugestoes-compra/:id — editar requisição pendente
+  app.patch('/analise-producao/sugestoes-compra/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const body = z.object({
+      quantidade: z.number().positive().optional(),
+      fornecedorId: z.string().uuid().nullable().optional(),
+    }).parse(request.body)
+
+    try {
+      const resultado = await editarSugestaoCompra(user.empresaId, id, body)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao editar requisição' })
+    }
+  })
+
+  // DELETE /pcp/analise-producao/sugestoes-compra/:id — cancelar requisição pendente
+  app.delete('/analise-producao/sugestoes-compra/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    try {
+      const resultado = await cancelarSugestaoCompra(user.empresaId, id)
+      return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao cancelar requisição' })
     }
   })
 
