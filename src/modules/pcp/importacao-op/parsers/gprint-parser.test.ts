@@ -73,6 +73,39 @@ describe('parseGprintPdf — seção de Acabamentos', () => {
     expect(descricoes).not.toContain('Guilhotina maior')
   })
 
+  it('extrai o tipo de colagem (texto após "/") nas etapas de COLAGEM', () => {
+    const secao = [
+      'Acabamentos   Fixo   Variável',
+      'AFT70 (Coladeira) Lateral Simples  / Colagem Lateral  01:30  03:14',
+      'Cortadeira (Grande)  / 12.500 folhas 54,0 x 97,0 cm  00:15  03:56',
+    ].join('\n')
+
+    const texto = textoBaseComAcabamentos(secao)
+    const dados = parseGprintPdf(texto)
+
+    const colagem = dados.etapas.find((e) => e.tipo === 'COLAGEM')
+    expect(colagem).toBeDefined()
+    // Texto exato do PDF preservado
+    expect(colagem?.tipoColagem).toBe('Colagem Lateral')
+
+    // Etapas que não são de colagem não recebem tipoColagem
+    const cortadeira = dados.etapas.find((e) => e.tipo === 'CORTADEIRA')
+    expect(cortadeira?.tipoColagem).toBeNull()
+  })
+
+  it('extrai "Fundo Automático" como tipo de colagem', () => {
+    const secao = [
+      'Acabamentos   Fixo   Variável',
+      'AFT70 (Coladeira) Fundo Automático  / Fundo Automático  01:00  02:00',
+    ].join('\n')
+
+    const texto = textoBaseComAcabamentos(secao)
+    const dados = parseGprintPdf(texto)
+
+    const colagem = dados.etapas.find((e) => e.tipo === 'COLAGEM')
+    expect(colagem?.tipoColagem).toBe('Fundo Automático')
+  })
+
   it('não perde etapas quando não há nenhuma menção a "obs." nas linhas de acabamento', () => {
     const secao = [
       'Acabamentos   Fixo   Variável',

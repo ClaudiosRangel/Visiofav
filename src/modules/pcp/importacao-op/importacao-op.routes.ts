@@ -439,6 +439,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           tempoOperacaoCalculado: etapa.tempoVariavelMin,
           tempoEsperaMinutos: 0,
           status: 'PENDENTE',
+          // Tipo de colagem extraído do PDF (só preenchido em etapas COLAGEM)
+          tipoColagem: etapa.tipoColagem ?? undefined,
         },
       })
       etapasCriadas.push(etapaCriada)

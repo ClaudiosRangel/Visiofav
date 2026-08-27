@@ -159,6 +159,17 @@ manualmente/via desmembramento/OP avulsa). Campos operacionais importantes:
 - `quantidadeProduzida` (mapeada para coluna `quantidade_produzida_etapa`),
   `quantidadePerda` (`quantidade_perda_etapa`) — acumulam os apontamentos.
 - `observacaoOperador` — texto livre editável inline no painel.
+- `tipoColagem` (`tipo_colagem`, VARCHAR(100)) — texto EXATO extraído do PDF
+  na linha da coladeira (o trecho após a `/`, ex.: "Colagem Lateral", "Fundo
+  Automático"). Preenchido só para etapas de centros do tipo de processo
+  `COLAGEM`. É **somente leitura** (não editável pelo operador). Exibido como
+  coluna "Tipo Colagem" no painel de Programação, visível apenas nos cards de
+  centros COLAGEM (`centro.tipoProcesso.codigo === 'COLAGEM'`). Origem: o
+  parser GPrint já separa `nome / detalhe` de cada etapa de acabamento; para
+  etapas COLAGEM o `detalhe` (ou o próprio nome como fallback) vira o
+  `tipoColagem`. Gravado na confirmação da importação e também retroativamente
+  via `POST /pcp/programacao/reextrair-pdf` (que preenche o campo nas etapas de
+  colagem já existentes sem recriar a etapa — preserva apontamentos/fila).
 - `dataInicioReal`/`dataFimReal` — usados para calcular `tempoRealMinutos`.
 
 **`ApontamentoEtapa`** (`apontamento_etapa`) — registro granular de cada

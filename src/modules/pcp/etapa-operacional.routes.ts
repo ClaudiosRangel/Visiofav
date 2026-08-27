@@ -716,15 +716,47 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     }
 
+    // Tipo de colagem: preenche o campo dedicado nas etapas de COLAGEM já
+    // existentes desta OP, sem recriar etapas (preserva apontamentos/fila).
+    // Só ATUALIZA o campo escalar tipoColagem — nunca apaga/recria a etapa.
+    // Casa cada etapa de colagem do PDF reparseado com a etapa existente de
+    // mesma sequência; se não houver match por sequência, aplica o primeiro
+    // tipo de colagem encontrado no PDF a todas as etapas de colagem sem tipo.
+    let tipoColagemAtualizado = 0
+    const etapasColagemPdf = dados.etapas.filter((e) => e.tipo === 'COLAGEM' && e.tipoColagem)
+    if (etapasColagemPdf.length > 0) {
+      const etapasColagemExistentes = await prisma.etapaOrdemProducao.findMany({
+        where: {
+          ordemProducaoId: op.id,
+          centroProducao: { tipoProcesso: { codigo: 'COLAGEM' } },
+        },
+        select: { id: true, sequencia: true },
+      })
+
+      const tipoPorSequencia = new Map(etapasColagemPdf.map((e) => [e.sequencia, e.tipoColagem]))
+      const primeiroTipo = etapasColagemPdf[0].tipoColagem
+
+      for (const etapaExistente of etapasColagemExistentes) {
+        const novoTipo = tipoPorSequencia.get(etapaExistente.sequencia) ?? primeiroTipo
+        if (novoTipo) {
+          await prisma.etapaOrdemProducao.update({
+            where: { id: etapaExistente.id },
+            data: { tipoColagem: novoTipo },
+          })
+          tipoColagemAtualizado++
+        }
+      }
+    }
+
     // Log de auditoria — re-extração de PDF
-    if (novasTags.length > 0 || materiaisAtualizados) {
+    if (novasTags.length > 0 || materiaisAtualizados || tipoColagemAtualizado > 0) {
       await prisma.logOrdemProducao.create({
         data: {
           ordemProducaoId: op.id,
           statusAnterior: '',
           statusNovo: '',
           usuarioId: user.id,
-          observacao: `Re-extração de PDF: ${novasTags.length} tags atualizadas${materiaisAtualizados ? `, ${dados.materiais.length} materiais reprocessados` : ''}`,
+          observacao: `Re-extração de PDF: ${novasTags.length} tags atualizadas${materiaisAtualizados ? `, ${dados.materiais.length} materiais reprocessados` : ''}${tipoColagemAtualizado > 0 ? `, ${tipoColagemAtualizado} etapa(s) de colagem com tipo preenchido` : ''}`,
         },
       })
     }
@@ -735,9 +767,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       matriz: dados.observacoes.matriz || null,
       formato: dados.observacoes.formatoPlano || null,
       cores: dados.observacoes.coresPlano || null,
-      atualizado: novasTags.length > 0 || materiaisAtualizados,
+      atualizado: novasTags.length > 0 || materiaisAtualizados || tipoColagemAtualizado > 0,
       materiaisAtualizados,
       totalMateriais: dados.materiais.length,
+      tipoColagemAtualizado,
       avisos: materiaisAvisos,
     }
   })
@@ -2021,6 +2054,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             dataInicioReal: e.dataInicioReal,
             observacoes: e.ordemProducao.observacoes,
             observacaoOperador: (e.observacaoOperador || '').replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim() || null,
+            // Tipo de colagem (texto exato do PDF) — exibido só nos centros COLAGEM
+            tipoColagem: e.tipoColagem || null,
             // Campos de material (Requisito 3)
             // Tiragem: prioriza valor explícito do PDF, senão calcula Quantidade/Montagem
             tiragem: (() => {

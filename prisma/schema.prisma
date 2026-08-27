@@ -2598,6 +2598,11 @@ model EtapaOrdemProducao {
   ordemManual            Boolean          @default(false) @map("ordem_manual")
   // Status de pré-impressão: FINALIZADO, METADE, PROBLEMA ou null (sem marcação)
   preImpressaoStatus     String?          @map("pre_impressao_status") @db.VarChar(20)
+  // Tipo de colagem extraído do PDF (texto exato após a "/" na linha da
+  // coladeira — ex.: "Colagem Lateral", "Fundo Automático"). Preenchido só
+  // para etapas de centros do tipo de processo COLAGEM. Exibido como coluna
+  // "Tipo Colagem" no painel de Programação (somente leitura).
+  tipoColagem            String?          @map("tipo_colagem") @db.VarChar(100)
 
   apontamentosEtapa ApontamentoEtapa[]
 

@@ -77,6 +77,10 @@ export interface EtapaOp {
   tempoFixoMin: number
   tempoVariavelMin: number
   detalhes: string | null
+  // Só para etapas de COLAGEM: o texto exato do tipo de colagem extraído do
+  // PDF (o trecho após a "/" na linha da coladeira, ex.: "Colagem Lateral",
+  // "Fundo Automático"). null para etapas que não são de colagem.
+  tipoColagem: string | null
 }
 
 export interface CortadeiraOp {
@@ -505,6 +509,7 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
       tempoFixoMin: tempoParaMinutos(matchImpressao[3]),
       tempoVariavelMin: tempoParaMinutos(matchImpressao[4]),
       detalhes: null,
+      tipoColagem: null,
     })
   }
 
@@ -578,6 +583,16 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
       else if (/colagem|cola|coladeira/i.test(nome)) tipo = 'COLAGEM'
       else if (/verniz/i.test(nome)) tipo = 'VERNIZ'
 
+      // Para etapas de colagem, o detalhe após a "/" É o tipo de colagem
+      // (ex.: "AFT70 (Coladeira) Lateral Simples / Colagem Lateral" → detalhe
+      // "Colagem Lateral"). Guarda o texto exato. Para máquinas de colagem
+      // cujo tipo vem no próprio nome (ex.: "Fundo Automático") sem "/",
+      // usa o nome como fallback.
+      let tipoColagem: string | null = null
+      if (tipo === 'COLAGEM') {
+        tipoColagem = detalhe || nome
+      }
+
       etapas.push({
         sequencia: seq++,
         descricao: nome,
@@ -586,6 +601,7 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
         tempoFixoMin,
         tempoVariavelMin,
         detalhes: detalhe,
+        tipoColagem,
       })
       ultimaEtapaIdx = etapas.length - 1
     }

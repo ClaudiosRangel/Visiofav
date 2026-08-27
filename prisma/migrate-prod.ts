@@ -2136,6 +2136,12 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "pre_impressao_status" VARCHAR(20)`)
   console.log('✅ PCP — Coluna pre_impressao_status criada em etapa_ordem_producao')
 
+  // PCP — Tipo de Colagem (texto exato extraído do PDF na linha da coladeira,
+  // ex.: "Colagem Lateral", "Fundo Automático"). Exibido como coluna no painel
+  // de Programação apenas para centros do tipo de processo COLAGEM.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "tipo_colagem" VARCHAR(100)`)
+  console.log('✅ PCP — Coluna tipo_colagem criada em etapa_ordem_producao')
+
   // ===================================================================
   // PCP — Cadastro de Tipo de Processo (substitui o enum fixo tipoMaquina)
   // ===================================================================
