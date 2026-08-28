@@ -1049,7 +1049,7 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     const op = await prisma.ordemProducao.findFirst({
       where: { id, empresaId: user.empresaId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true },
     })
 
     if (!op) {
@@ -1063,7 +1063,23 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     const data: any = {}
     if (body.quantidade !== undefined) data.quantidade = body.quantidade
     if (body.unidadeMedida !== undefined) data.unidadeMedida = body.unidadeMedida
-    if (body.dataEntregaPrevista !== undefined) data.dataEntregaPrevista = new Date(body.dataEntregaPrevista)
+    // Alteração da data de entrega: preserva a data ORIGINAL (só na 1ª mudança)
+    // e conta quantas vezes foi alterada — mesmo padrão da rota de postergar,
+    // para o log e os indicadores de "entrega remarcada" ficarem consistentes.
+    let logDataEntrega: string | null = null
+    if (body.dataEntregaPrevista !== undefined) {
+      const novaData = new Date(body.dataEntregaPrevista)
+      const dataAntiga = op.dataEntregaPrevista
+      data.dataEntregaPrevista = novaData
+      // só registra alteração real (datas diferentes)
+      const mudou = !dataAntiga || new Date(dataAntiga).toISOString().slice(0, 10) !== novaData.toISOString().slice(0, 10)
+      if (mudou) {
+        data.dataEntregaOriginal = op.dataEntregaOriginal || dataAntiga || novaData
+        data.vezesPostergada = (op.vezesPostergada || 0) + 1
+        const antigaStr = dataAntiga ? new Date(dataAntiga).toLocaleDateString('pt-BR') : '—'
+        logDataEntrega = `Data de entrega alterada: ${antigaStr} → ${novaData.toLocaleDateString('pt-BR')} (${(op.vezesPostergada || 0) + 1}ª alteração)`
+      }
+    }
     if (body.prioridade !== undefined) data.prioridade = body.prioridade
     if (body.lote !== undefined) data.lote = body.lote
     if (body.cor !== undefined) data.cor = body.cor
@@ -1087,8 +1103,23 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       },
     })
 
-    // Log de auditoria — edição parcial
-    const camposAlterados = Object.keys(data).filter(k => k !== 'observacoes').join(', ')
+    // Log de auditoria — edição parcial.
+    // Se a data de entrega mudou, registra um log DEDICADO (com data antiga →
+    // nova e o contador de alteração). Os demais campos entram num log genérico.
+    if (logDataEntrega) {
+      await prisma.logOrdemProducao.create({
+        data: {
+          ordemProducaoId: id,
+          statusAnterior: op.status,
+          statusNovo: op.status,
+          usuarioId: user.id,
+          observacao: logDataEntrega,
+        },
+      })
+    }
+    const camposAlterados = Object.keys(data)
+      .filter(k => !['observacoes', 'dataEntregaPrevista', 'dataEntregaOriginal', 'vezesPostergada'].includes(k))
+      .join(', ')
     if (camposAlterados) {
       await prisma.logOrdemProducao.create({
         data: {
