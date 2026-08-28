@@ -255,7 +255,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           where: { id: existe.id },
           data: {
             quantidade: body.quantidade || dados.cabecalho.quantidade || Number(existe.quantidade),
-            dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getUltimaDataEntrega(dados.cabecalho.programacaoEntrega) || existe.dataEntregaPrevista),
+            dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getPrimeiraDataEntrega(dados.cabecalho.programacaoEntrega) || existe.dataEntregaPrevista),
             clienteId: body.clienteId || existe.clienteId,
             prioridade: body.prioridade || existe.prioridade,
             observacoes: novasObs,
@@ -292,8 +292,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           status: 'PLANEJADA',
           prioridade: body.prioridade,
           dataEmissao: new Date(),
-          dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getUltimaDataEntrega(dados.cabecalho.programacaoEntrega) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
-          dataEntregaOriginal: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getUltimaDataEntrega(dados.cabecalho.programacaoEntrega) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getPrimeiraDataEntrega(dados.cabecalho.programacaoEntrega) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          dataEntregaOriginal: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getPrimeiraDataEntrega(dados.cabecalho.programacaoEntrega) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
           clienteId: body.clienteId || undefined,
           lote: undefined,
           observacoes: body.observacoes || obsConsolidadas || undefined,
@@ -814,16 +814,23 @@ function parseDateBR(dateStr: string): Date | undefined {
 }
 
 /**
- * Pega a data MAIS RECENTE (última entrega) da programação de entrega.
- * A data de entrega prevista da OP deve ser a mais distante — quando
- * toda a produção precisa estar concluída.
+ * Pega a data MAIS PRÓXIMA (primeira entrega) da programação de entrega.
+ *
+ * A produção da OP é sempre total (a quantidade produzida cobre o pedido
+ * inteiro de uma vez, não em lotes por entrega parcial). Portanto o prazo
+ * que a fábrica precisa perseguir é o do PRIMEIRO compromisso de entrega —
+ * é a data mais próxima que determina a urgência da OP na fila. As entregas
+ * parciais posteriores ficam detalhadas na aba "Entregas" da OP.
+ *
+ * (Antes usava a data mais distante — mudado a pedido: com produção total,
+ * a base tem que ser o compromisso mais perto, senão a OP "relaxa" o prazo.)
  */
-function getUltimaDataEntrega(programacaoEntrega?: Array<{ data: string }>): Date | undefined {
+function getPrimeiraDataEntrega(programacaoEntrega?: Array<{ data: string }>): Date | undefined {
   if (!programacaoEntrega || programacaoEntrega.length === 0) return undefined
-  let maisRecente: Date | undefined
+  let maisProxima: Date | undefined
   for (const prog of programacaoEntrega) {
     const d = parseDateBR(prog.data)
-    if (d && (!maisRecente || d > maisRecente)) maisRecente = d
+    if (d && (!maisProxima || d < maisProxima)) maisProxima = d
   }
-  return maisRecente
+  return maisProxima
 }
