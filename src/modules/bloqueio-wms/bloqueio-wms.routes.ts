@@ -182,9 +182,17 @@ export async function bloqueioWmsRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const body = bloquearLoteSchema.parse(request.body)
 
-    // Bloquear todos os saldos desse lote/produto
+    // Bloquear todos os saldos desse lote/produto.
+    // Inclui saldos legados com empresa_id NULL (o endereçamento antigo
+    // criava SaldoEndereco sem empresaId) — mesma tolerância usada pelo
+    // saldo-consolidado.service.ts (OR: [{empresaId}, {empresaId: null}]).
+    // Sem isso, o bloqueio não casava as posições e retornava 0 posições.
     const resultado = await prisma.saldoEndereco.updateMany({
-      where: { produtoId: body.produtoId, lote: body.lote, empresaId: user.empresaId },
+      where: {
+        produtoId: body.produtoId,
+        lote: body.lote,
+        OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+      },
       data: { bloqueado: true, motivoBloqueioLote: body.motivo },
     })
 
@@ -210,8 +218,16 @@ export async function bloqueioWmsRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const { produtoId, lote } = z.object({ produtoId: z.string().uuid(), lote: z.string() }).parse(request.query)
 
+    // Libera as posições do lote. Inclui saldos legados com empresa_id NULL
+    // (mesma tolerância do bloqueio acima) para não deixar posição bloqueada
+    // remanescente quando o saldo foi criado sem empresaId.
     await prisma.saldoEndereco.updateMany({
-      where: { produtoId, lote, empresaId: user.empresaId, bloqueado: true },
+      where: {
+        produtoId,
+        lote,
+        bloqueado: true,
+        OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+      },
       data: { bloqueado: false, motivoBloqueioLote: null },
     })
 

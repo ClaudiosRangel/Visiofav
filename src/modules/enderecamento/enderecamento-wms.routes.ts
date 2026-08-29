@@ -206,6 +206,7 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
             quantidade: body.quantidade,
             lote: body.lote,
             validade: body.validade ? new Date(body.validade) : undefined,
+            empresaId: user.empresaId,
           },
         })
       }
@@ -614,6 +615,7 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
             quantidade: body.quantidade,
             lote: body.lote,
             validade: body.validade ? new Date(body.validade) : undefined,
+            empresaId: user.empresaId,
           },
         })
       }
@@ -1246,6 +1248,7 @@ export async function enderecamentoWmsRoutes(app: FastifyInstance) {
               quantidade: item.quantidade,
               lote: item.lote,
               validade: item.validade ? new Date(item.validade) : undefined,
+              empresaId: user.empresaId,
             },
           })
         }
