@@ -741,6 +741,68 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
     }
   }
 
+  // ── Prioridade 4: OVERFLOW (transbordo) ──────────────────────────────
+  // Se as prioridades 1-3 não cobrirem a quantidade a distribuir (armazém
+  // cheio: sem endereço fixo, sem consolidação do produto e sem endereço 100%
+  // livre), usamos os endereços marcados como OVERFLOW (``permiteOverflow``).
+  // Eles aceitam put-away de qualquer produto MESMO já contendo saldo — é a
+  // área provisória de transbordo, evitando que o recebimento conferido fique
+  // sem destino no sistema. Ver docs/melhoria-endereco-overflow-putaway.md.
+  const disponivelAtual = enderecosComCapacidade.reduce(
+    (soma, e) => soma + Math.max(0, e.disponivel),
+    0,
+  )
+  if (disponivelAtual < quantidadeParaMotor) {
+    const enderecosOverflow = await prisma.endereco.findMany({
+      where: {
+        permiteOverflow: true,
+        status: true,
+        // Overflow não deve estar bloqueado nem em inventário ativo.
+        bloqueado: false,
+        inventarioAtivo: false,
+      },
+      include: { estrutura: true },
+    })
+
+    // Saldo atual (de qualquer produto) por endereço de overflow, para calcular
+    // a capacidade residual — o overflow admite saldo existente, mas ainda
+    // respeita a capacidade do palete quando houver estrutura definida.
+    for (const endOv of enderecosOverflow) {
+      if (enderecosComCapacidade.some((e) => e.id === endOv.id)) continue
+
+      const saldoOv = await prisma.saldoEndereco.aggregate({
+        where: { enderecoId: endOv.id, quantidade: { gt: 0 } },
+        _sum: { quantidade: true },
+      })
+      const saldoAtualOv = Number(saldoOv._sum.quantidade ?? 0)
+      const capacidadeOv = calcularCapacidadePalete(
+        skuMaster.lastro,
+        skuMaster.camada,
+        endOv.estrutura?.capacidade ? Number(endOv.estrutura.capacidade) : null,
+      )
+      // Sem estrutura/capacidade definida, o overflow é "elástico": oferece o
+      // que resta da quantidade a distribuir (não trava o put-away). Com
+      // estrutura, respeita a capacidade residual do palete.
+      const disponivelOv = capacidadeOv > 0
+        ? Math.max(0, capacidadeOv - saldoAtualOv)
+        : quantidadeParaMotor
+
+      if (disponivelOv > 0) {
+        enderecosComCapacidade.push({
+          id: endOv.id,
+          enderecoCompleto: endOv.enderecoCompleto ?? '',
+          rua: endOv.codigoRua ?? '',
+          predio: endOv.codigoPredio ?? '',
+          nivel: endOv.codigoNivel ?? '',
+          apartamento: endOv.codigoApto ?? '',
+          capacidadePalete: capacidadeOv > 0 ? capacidadeOv : disponivelOv,
+          saldoAtual: saldoAtualOv,
+          disponivel: disponivelOv,
+        })
+      }
+    }
+  }
+
   // ── Calcular distribuição (motor de distribuição para pulmão) ────────
   // Se quantidadeAbastecidaPicking === 0: invocar motor com quantidade total original
   // Se quantidadeAbastecidaPicking > 0 e quantidadeParaMotor > 0: invocar motor com quantidadeRestante
