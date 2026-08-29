@@ -2442,6 +2442,9 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "quarentena" BOOLEAN DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "max_skus_misto" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "inventario_ativo" BOOLEAN DEFAULT false`)
+  // Overflow (transbordo): endereço provisório que aceita put-away de qualquer
+  // produto mesmo já ocupado, usado quando não há endereço fixo/livre/consolidação.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "permite_overflow" BOOLEAN DEFAULT false`)
 
   // SaldoEndereco — bloqueio por lote
   await prisma.$executeRawUnsafe(`ALTER TABLE "saldo_endereco" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)

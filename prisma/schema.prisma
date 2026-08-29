@@ -1609,6 +1609,12 @@ model Endereco {
   quarentena             Boolean               @default(false)
   maxSkusMisto           Int?                  @map("max_skus_misto")
   inventarioAtivo        Boolean               @default(false) @map("inventario_ativo")
+  // Endereço de OVERFLOW (transbordo): quando marcado, aceita put-away de
+  // qualquer produto mesmo já contendo saldo, servindo como área provisória
+  // quando não há endereço fixo/livre/consolidação disponível. É a 4ª
+  // prioridade da distribuição inteligente (evita put-away "travado" com o
+  // armazém cheio). Ver docs/melhoria-endereco-overflow-putaway.md.
+  permiteOverflow        Boolean               @default(false) @map("permite_overflow")
   criadoEm               DateTime              @default(now()) @map("criado_em")
   empresaId              String?               @map("empresa_id")
 
