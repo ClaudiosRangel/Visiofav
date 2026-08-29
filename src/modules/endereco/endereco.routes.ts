@@ -79,6 +79,8 @@ export async function enderecoRoutes(app: FastifyInstance) {
       zonaId: z.string().uuid().optional(), estruturaId: z.string().uuid().optional(),
       formaArmazenagemId: z.string().uuid().optional(), ambienteArmazenagemId: z.string().uuid().optional(),
       classificacaoProdutoId: z.string().uuid().optional(),
+      // Área de overflow (transbordo) — ver melhoria-endereco-overflow-putaway.md.
+      permiteOverflow: z.boolean().optional().default(false),
     }).parse(request.body)
 
     // Resolver formato de endereço aplicável (Zona > Depósito > Padrão)
@@ -219,6 +221,10 @@ export async function enderecoRoutes(app: FastifyInstance) {
       codigoDeposito: z.string().optional(), codigoZona: z.string().optional(),
       codigoRua: z.string().optional(), codigoPredio: z.string().optional(),
       codigoNivel: z.string().optional(), codigoApto: z.string().optional(),
+      // Marca o endereço como área de overflow (transbordo) — aceita put-away
+      // de qualquer produto mesmo já ocupado, como 4ª prioridade da
+      // distribuição inteligente (ver melhoria-endereco-overflow-putaway.md).
+      permiteOverflow: z.boolean().optional(),
     }).parse(request.body)
 
     // Check if any segment field is being updated
