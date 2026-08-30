@@ -91,9 +91,13 @@ export class AgendaDocaService {
       }
     }
 
-    // 6. Verificar bloqueios de slot
-    const inicioCompleto = new Date(`${dataPrevista}T${horaInicio}:00`)
-    const fimCompleto = new Date(`${dataPrevista}T${horaFim}:00`)
+    // 6. Verificar bloqueios de slot.
+    //    UTC explícito (mesmo motivo do range de conflito): sem o 'Z', o
+    //    horário da janela era interpretado no fuso do servidor; em servidor
+    //    não-UTC a janela do agendamento não sobrepunha o bloqueio (salvo em
+    //    UTC), fazendo o sistema aceitar agendamento em doca bloqueada.
+    const inicioCompleto = new Date(`${dataPrevista}T${horaInicio}:00.000Z`)
+    const fimCompleto = new Date(`${dataPrevista}T${horaFim}:00.000Z`)
 
     const bloqueio = await prisma.bloqueioSlotDoca.findFirst({
       where: {
