@@ -54,6 +54,7 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
       enderecoId: string
       enderecoCompleto: string
       tipo: string
+      permiteOverflow: boolean
       ocupacao: 'LIVRE' | 'PARCIAL' | 'CHEIO' | 'BLOQUEADO'
       produtos: Array<{ id: string; codigo: string; descricao: string; quantidade: number }>
       totalQuantidade: number
@@ -108,6 +109,7 @@ export async function posicionamentoRoutes(app: FastifyInstance) {
         enderecoId: end.id,
         enderecoCompleto: end.enderecoCompleto || '',
         tipo: end.tipo || 'ARMAZENAGEM',
+        permiteOverflow: (end as any).permiteOverflow === true,
         ocupacao,
         areaArmazenagem: (end as any).areaArmazenagem === 'PICKING'
           ? 'PICKING'
