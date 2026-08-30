@@ -27,17 +27,37 @@ export interface ConfigPutaway {
   prediosVarreduraPorLado: number
   usarClasseAbc: boolean
   politicaIncompleto: PoliticaIncompleto
+  /**
+   * Capacidade default (em unidades master) de um endereço de overflow que NÃO
+   * tem estrutura/capacidade própria definida. Padrão de mercado: área de
+   * transbordo SEMPRE tem um teto físico — não existe endereço de capacidade
+   * infinita (fonte de divergência físico × sistema). 0 desativa o overflow
+   * sem estrutura (só overflow com capacidade definida é usado).
+   */
+  overflowCapacidadePadrao: number
 }
 
+/**
+ * Defaults alinhados a como os melhores WMS de mercado operam:
+ *   - politicaIncompleto = BLOQUEAR: put-away dirigido não deixa mercadoria
+ *     "sem lar"; a tarefa fica pendente até o operador liberar posição. (SAP
+ *     EWM / Manhattan / Blue Yonder tratam falta de destino como exceção, não
+ *     como confirmação parcial silenciosa.)
+ *   - overflowCapacidadePadrao = 200: área de transbordo tem teto físico.
+ *   - usarClasseAbc = false enquanto o slotting ABC (spec separado) não popula
+ *     Produto.curvaAbc de forma confiável.
+ */
 export const CONFIG_PUTAWAY_DEFAULT: ConfigPutaway = {
   prediosVarreduraPorLado: 3,
   usarClasseAbc: false,
-  politicaIncompleto: 'PARCIAL',
+  politicaIncompleto: 'BLOQUEAR',
+  overflowCapacidadePadrao: 200,
 }
 
 const CHAVE_PREDIOS = 'wms.putaway.prediosVarreduraPorLado'
 const CHAVE_ABC = 'wms.putaway.usarClasseAbc'
 const CHAVE_POLITICA = 'wms.putaway.politicaIncompleto'
+const CHAVE_OVERFLOW_CAP = 'wms.putaway.overflowCapacidadePadrao'
 
 /**
  * Lê a Config_Putaway efetiva de uma empresa, aplicando defaults quando a
@@ -45,7 +65,7 @@ const CHAVE_POLITICA = 'wms.putaway.politicaIncompleto'
  */
 export async function obterConfigPutaway(empresaId: string): Promise<ConfigPutaway> {
   const params = await prisma.parametro.findMany({
-    where: { empresaId, chave: { in: [CHAVE_PREDIOS, CHAVE_ABC, CHAVE_POLITICA] } },
+    where: { empresaId, chave: { in: [CHAVE_PREDIOS, CHAVE_ABC, CHAVE_POLITICA, CHAVE_OVERFLOW_CAP] } },
   })
   const map = new Map(params.map((p) => [p.chave, p.valor]))
 
@@ -56,14 +76,24 @@ export async function obterConfigPutaway(empresaId: string): Promise<ConfigPutaw
       ? prediosParsed
       : CONFIG_PUTAWAY_DEFAULT.prediosVarreduraPorLado
 
+  // politicaIncompleto: BLOQUEAR é o default (padrão de mercado). A chave só
+  // muda o comportamento quando explicitamente setada como PARCIAL.
   const politicaRaw = (map.get(CHAVE_POLITICA) ?? '').toUpperCase()
   const politicaIncompleto: PoliticaIncompleto =
-    politicaRaw === 'BLOQUEAR' ? 'BLOQUEAR' : CONFIG_PUTAWAY_DEFAULT.politicaIncompleto
+    politicaRaw === 'PARCIAL' ? 'PARCIAL' : CONFIG_PUTAWAY_DEFAULT.politicaIncompleto
+
+  const overflowRaw = map.get(CHAVE_OVERFLOW_CAP)
+  const overflowParsed = overflowRaw != null ? Number(overflowRaw) : NaN
+  const overflowCapacidadePadrao =
+    Number.isFinite(overflowParsed) && overflowParsed >= 0
+      ? overflowParsed
+      : CONFIG_PUTAWAY_DEFAULT.overflowCapacidadePadrao
 
   return {
     prediosVarreduraPorLado,
     usarClasseAbc: map.get(CHAVE_ABC) === 'true',
     politicaIncompleto,
+    overflowCapacidadePadrao,
   }
 }
 
@@ -71,6 +101,7 @@ const patchSchema = z.object({
   prediosVarreduraPorLado: z.number().int().min(0).optional(),
   usarClasseAbc: z.boolean().optional(),
   politicaIncompleto: z.enum(['PARCIAL', 'BLOQUEAR']).optional(),
+  overflowCapacidadePadrao: z.number().min(0).optional(),
 })
 
 const PERFIS_ADMIN = ['ADMIN', 'SUPER_ADMIN']
@@ -106,6 +137,9 @@ export async function wmsPutawayConfigRoutes(app: FastifyInstance) {
     }
     if (body.politicaIncompleto !== undefined) {
       upserts.push({ chave: CHAVE_POLITICA, valor: body.politicaIncompleto })
+    }
+    if (body.overflowCapacidadePadrao !== undefined) {
+      upserts.push({ chave: CHAVE_OVERFLOW_CAP, valor: String(body.overflowCapacidadePadrao) })
     }
 
     for (const u of upserts) {

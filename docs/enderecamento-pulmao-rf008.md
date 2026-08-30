@@ -53,17 +53,21 @@ e `2 - Regras de Manutenção dos Estoques (1).docx` (ABC/giro — spec separado
   arquivos tocados).
 - Migração idempotente validada (2 execuções sem erro).
 
-## Pendências / pontos em aberto (decisão do consultor/cliente)
+## Decisões adotadas (padrão de mercado)
 
-1. **Política de put-away incompleto**: default ficou `PARCIAL` (preserva o
-   comportamento atual — confirma o que couber e devolve a quantidade pendente).
-   O consultor pode preferir `BLOQUEAR` (recusar a confirmação até tratar a
-   mercadoria sem destino). Basta ajustar `wms.putaway.politicaIncompleto`.
-2. **Overflow "elástico"**: o endereço de overflow SEM estrutura definida aceita
-   quantidade ilimitada (não trava o put-away). Isso **não está nos documentos do
-   consultor** — foi uma extensão anterior. Confirmar com ele se o overflow deve
-   respeitar uma capacidade física máxima (hoje respeita capacidade só quando há
-   estrutura definida no endereço).
+Os dois pontos antes em aberto foram resolvidos seguindo como os melhores WMS
+de mercado (SAP EWM, Manhattan, Blue Yonder) operam:
+
+1. **Política de put-away incompleto → default `BLOQUEAR`.** Put-away dirigido
+   não deixa mercadoria "sem lar": se não há destino, a confirmação é recusada
+   (HTTP 422 `PUTAWAY_INCOMPLETO`) e o operador precisa liberar posição/overflow
+   ou ajustar. `PARCIAL` continua disponível como opção configurável
+   (`wms.putaway.politicaIncompleto`).
+2. **Overflow com teto físico obrigatório.** Não existe endereço de capacidade
+   infinita (fonte de divergência físico × sistema). O overflow usa a capacidade
+   do palete quando o SKU/estrutura define; na ausência, usa a capacidade default
+   configurável `wms.putaway.overflowCapacidadePadrao` (default 200). O
+   comportamento "elástico ilimitado" anterior foi removido.
 
 ## Isolamento de saldo — outros módulos FORA do escopo desta feature
 

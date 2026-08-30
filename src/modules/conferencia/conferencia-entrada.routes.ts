@@ -1257,13 +1257,17 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           _sum: { quantidade: true },
         })
         const saldoAtual = Number(saldoOv._sum.quantidade ?? 0)
-        const disp = capacidadePalete > 0 ? Math.max(0, capacidadePalete - saldoAtual) : quantidade
+        // Overflow com teto físico (padrão de mercado): usa capacidade do
+        // palete quando definida, senão a capacidade default de overflow
+        // configurada — nunca capacidade "infinita".
+        const capOv = capacidadePalete > 0 ? capacidadePalete : configPutaway.overflowCapacidadePadrao
+        const disp = Math.max(0, capOv - saldoAtual)
         if (disp <= 0) continue
         candidatosOverflow.push({
           id: ov.id, enderecoCompleto: ov.enderecoCompleto ?? '', rua: ov.codigoRua ?? '',
           predio: parseInt(ov.codigoPredio || '1', 10) || 1, nivel: parseInt(ov.codigoNivel || '1', 10) || 1,
           apartamento: parseInt(ov.codigoApto || '1', 10) || 1,
-          capacidadePalete: capacidadePalete > 0 ? capacidadePalete : disp, saldoAtual, disponivel: disp, curvaAbc: produto.curvaAbc,
+          capacidadePalete: capOv, saldoAtual, disponivel: disp, curvaAbc: produto.curvaAbc,
         })
       }
 

@@ -867,17 +867,18 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
         _sum: { quantidade: true },
       })
       const saldoAtualOv = Number(saldoOv._sum.quantidade ?? 0)
-      const capacidadeOv = calcularCapacidadePalete(
-        skuMaster.lastro,
-        skuMaster.camada,
-        endOv.estrutura?.capacidade ? Number(endOv.estrutura.capacidade) : null,
-      )
-      // Sem estrutura/capacidade definida, o overflow é "elástico": oferece o
-      // que resta da quantidade a distribuir (não trava o put-away). Com
-      // estrutura, respeita a capacidade residual do palete.
-      const disponivelOv = capacidadeOv > 0
-        ? Math.max(0, capacidadeOv - saldoAtualOv)
-        : quantidadeParaMotor
+      // Capacidade do overflow: palete (lastro×camada) quando o SKU define,
+      // senão a capacidade da estrutura, senão a capacidade default de overflow
+      // configurada (wms.putaway.overflowCapacidadePadrao). Padrão de mercado:
+      // área de transbordo SEMPRE tem teto físico — não existe endereço de
+      // capacidade infinita (evita divergência físico × sistema).
+      const capacidadeOv =
+        calcularCapacidadePalete(
+          skuMaster.lastro,
+          skuMaster.camada,
+          endOv.estrutura?.capacidade ? Number(endOv.estrutura.capacidade) : null,
+        ) || configPutaway.overflowCapacidadePadrao
+      const disponivelOv = Math.max(0, capacidadeOv - saldoAtualOv)
 
       if (disponivelOv > 0) {
         enderecosComCapacidade.push({
@@ -887,7 +888,7 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
           predio: endOv.codigoPredio ?? '',
           nivel: endOv.codigoNivel ?? '',
           apartamento: endOv.codigoApto ?? '',
-          capacidadePalete: capacidadeOv > 0 ? capacidadeOv : disponivelOv,
+          capacidadePalete: capacidadeOv,
           saldoAtual: saldoAtualOv,
           disponivel: disponivelOv,
         })
