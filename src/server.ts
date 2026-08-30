@@ -202,6 +202,35 @@ import multipart from '@fastify/multipart'
 
 const app = Fastify({ logger: true, bodyLimit: 5 * 1024 * 1024 }) // 5MB para suportar upload de avatar base64
 
+// ── Tratamento global de erros de validação (Zod) ──
+// Sem isto, um corpo inválido (ex.: enum fora dos valores aceitos) estourava
+// como HTTP 500 genérico em qualquer rota que valida com Zod — o correto é
+// 400 (erro do cliente). Handler global evita ter que envolver cada rota em
+// try/catch. Demais erros seguem o fluxo padrão do Fastify.
+app.setErrorHandler((error: any, request, reply) => {
+  // ZodError expõe `issues` (array de problemas de validação).
+  const issues = error?.issues
+  const isZod = error?.name === 'ZodError' || Array.isArray(issues)
+  if (isZod) {
+    return reply.status(400).send({
+      message: 'Dados inválidos',
+      code: 'VALIDATION_ERROR',
+      issues: (issues || []).map((i: any) => ({
+        campo: Array.isArray(i.path) ? i.path.join('.') : String(i.path ?? ''),
+        mensagem: i.message,
+      })),
+    })
+  }
+  // Erros com statusCode explícito (ex.: throw { statusCode, message }).
+  const statusCode = error?.statusCode
+  if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
+    return reply.status(statusCode).send({ message: error.message })
+  }
+  // Demais: logar e responder 500 genérico (comportamento padrão preservado).
+  request.log.error(error)
+  return reply.status(500).send({ message: 'Erro interno do servidor' })
+})
+
 async function bootstrap() {
   // ── Segurança: JWT_SECRET obrigatório em produção ──
   const JWT_SECRET = process.env.JWT_SECRET
