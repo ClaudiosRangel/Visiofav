@@ -91,6 +91,66 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
   })
 
+  // GET /config-empresa — flags de conferência gravadas na própria Empresa
+  // (recebimento parcial, conferência cega de lote/quantidade, tolerância
+  // padrão). Exposto para permitir configurar essas regras via API/UI em vez
+  // de depender de edição direta no banco.
+  app.get('/config-empresa', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId },
+      select: {
+        permiteRecebimentoParcial: true,
+        conferenciaLoteCega: true,
+        conferenciaQuantidadeCega: true,
+        toleranciaQuantidadePercentualPadrao: true,
+      },
+    })
+    return {
+      permiteRecebimentoParcial: empresa?.permiteRecebimentoParcial ?? false,
+      conferenciaLoteCega: empresa?.conferenciaLoteCega ?? false,
+      conferenciaQuantidadeCega: empresa?.conferenciaQuantidadeCega ?? false,
+      toleranciaQuantidadePercentualPadrao:
+        empresa?.toleranciaQuantidadePercentualPadrao != null
+          ? Number(empresa.toleranciaQuantidadePercentualPadrao)
+          : null,
+    }
+  })
+
+  // PATCH /config-empresa — atualiza as flags de conferência da empresa.
+  app.patch('/config-empresa', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(user.perfil ?? '')) {
+      return reply.status(403).send({ message: 'Somente administradores podem alterar a configuração de conferência' })
+    }
+    const body = z.object({
+      permiteRecebimentoParcial: z.boolean().optional(),
+      conferenciaLoteCega: z.boolean().optional(),
+      conferenciaQuantidadeCega: z.boolean().optional(),
+      toleranciaQuantidadePercentualPadrao: z.number().min(0).max(100).nullable().optional(),
+    }).parse(request.body)
+
+    const atualizada = await prisma.empresa.update({
+      where: { id: user.empresaId },
+      data: body,
+      select: {
+        permiteRecebimentoParcial: true,
+        conferenciaLoteCega: true,
+        conferenciaQuantidadeCega: true,
+        toleranciaQuantidadePercentualPadrao: true,
+      },
+    })
+    return {
+      permiteRecebimentoParcial: atualizada.permiteRecebimentoParcial,
+      conferenciaLoteCega: atualizada.conferenciaLoteCega,
+      conferenciaQuantidadeCega: atualizada.conferenciaQuantidadeCega,
+      toleranciaQuantidadePercentualPadrao:
+        atualizada.toleranciaQuantidadePercentualPadrao != null
+          ? Number(atualizada.toleranciaQuantidadePercentualPadrao)
+          : null,
+    }
+  })
+
   // POST /conferir-por-barras/:notaId — conferir item por código de barras (para coletor/app)
   // O coletor escaneia o código de barras do produto e informa a quantidade
   app.post('/conferir-por-barras/:notaId', async (request, reply) => {
