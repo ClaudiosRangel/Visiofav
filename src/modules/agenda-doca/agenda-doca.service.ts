@@ -50,15 +50,23 @@ export class AgendaDocaService {
     const inicioMin = hIni * 60 + mIni - config.bufferMinutos
     const fimMin = hFim * 60 + mFim + config.bufferMinutos
 
-    // 4. Buscar agendamentos na mesma doca no mesmo dia
-    const dataBase = new Date(dataPrevista + 'T00:00:00')
-    const dataFimDia = new Date(dataPrevista + 'T23:59:59')
+    // 4. Buscar agendamentos na mesma doca no mesmo dia.
+    //    Os agendamentos são salvos com `dataPrevista = new Date('YYYY-MM-DD')`,
+    //    que é meia-noite UTC. O range de busca DEVE usar UTC explícito
+    //    (T00:00:00.000Z .. dia seguinte) para casar independentemente do
+    //    timezone do servidor — sem isso, em servidor não-UTC a query não
+    //    encontrava o agendamento existente e a validação de conflito falhava
+    //    silenciosamente (sobreposição era aceita). Alinhado ao padrão
+    //    `getHojeRange` usado no resto do módulo.
+    const dataBase = new Date(dataPrevista + 'T00:00:00.000Z')
+    const dataFimDia = new Date(dataPrevista + 'T00:00:00.000Z')
+    dataFimDia.setUTCDate(dataFimDia.getUTCDate() + 1)
 
     const agendamentosExistentes = await prisma.agendaWms.findMany({
       where: {
         empresaId,
         docaId,
-        dataPrevista: { gte: dataBase, lte: dataFimDia },
+        dataPrevista: { gte: dataBase, lt: dataFimDia },
         status: { notIn: ['CANCELADO'] },
         ...(excluirId ? { id: { not: excluirId } } : {}),
       },

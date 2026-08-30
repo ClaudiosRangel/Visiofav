@@ -14,6 +14,31 @@ import {
   estatisticasQuerySchema,
 } from './agenda-doca.schemas'
 
+/**
+ * Responde um erro de rota de forma consistente:
+ *  - ZodError (validação de body/query) → HTTP 400 com as issues;
+ *  - erro de negócio com `statusCode` (ex.: conflito 409) → esse status;
+ *  - demais → 500.
+ * Antes, o `catch` genérico transformava QUALQUER erro sem `statusCode` em
+ * 500 — inclusive ZodError de payload inválido (ex.: datetime sem timezone no
+ * bloqueio), mascarando um erro do cliente (400) como erro do servidor.
+ */
+function responderErro(reply: any, err: any) {
+  const issues = err?.issues
+  if (err?.name === 'ZodError' || Array.isArray(issues)) {
+    return reply.status(400).send({
+      message: 'Dados inválidos',
+      code: 'VALIDATION_ERROR',
+      issues: (issues || []).map((i: any) => ({
+        campo: Array.isArray(i.path) ? i.path.join('.') : String(i.path ?? ''),
+        mensagem: i.message,
+      })),
+    })
+  }
+  const statusCode = err?.statusCode || 500
+  return reply.status(statusCode).send({ message: err?.message || 'Erro interno' })
+}
+
 export async function agendaDocaRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
   app.addHook('preHandler', moduloGuard('WMS'))
@@ -150,8 +175,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
         })),
       }
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -169,8 +193,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       const resultado = await agendaDocaService.criarAgendamento(input, user.empresaId)
       return reply.status(201).send(resultado)
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -189,8 +212,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       const resultado = await agendaDocaService.moverAgendamento(id, input, user.empresaId)
       return resultado
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -209,8 +231,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       const resultado = await agendaDocaService.registrarChegada(id, user.empresaId, horaChegadaReal)
       return resultado
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -230,8 +251,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       })
       return { data: bloqueios }
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -253,8 +273,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       )
       return reply.status(201).send(resultado)
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -272,8 +291,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       await agendaDocaService.removerBloqueio(id, user.empresaId)
       return { message: 'Bloqueio removido com sucesso' }
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -305,8 +323,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
 
       return config
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -336,8 +353,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
 
       return config
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 
@@ -359,8 +375,7 @@ export async function agendaDocaRoutes(app: FastifyInstance) {
       )
       return resultado
     } catch (err: any) {
-      const statusCode = err.statusCode || 500
-      return reply.status(statusCode).send({ message: err.message || 'Erro interno' })
+      return responderErro(reply, err)
     }
   })
 }
