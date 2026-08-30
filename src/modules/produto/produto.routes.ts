@@ -90,6 +90,13 @@ export async function produtoRoutes(app: FastifyInstance) {
       aliqCOFINS: z.number().optional(),
       origemProd: z.number().optional(),
       toleranciaQuantidadePercentual: z.number().min(0).max(100).nullable().optional(),
+      // Regras de recebimento/armazenagem — permitem criar o produto já
+      // configurado num único passo (usado pela suíte de QA e cadastros reais).
+      exigeLote: z.boolean().optional(),
+      shelfLifeMinimo: z.number().int().positive().nullable().optional(),
+      curvaAbc: z.enum(['A', 'B', 'C']).nullable().optional(),
+      ambienteExigido: z.enum(['SECO', 'REFRIGERADO', 'CONGELADO']).nullable().optional(),
+      classificacaoArmazenagemId: z.string().uuid().nullable().optional(),
     }).parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
@@ -129,6 +136,10 @@ export async function produtoRoutes(app: FastifyInstance) {
       classificacaoPcp: z.enum(['MATERIA_PRIMA', 'INTERMEDIARIO', 'PRODUTO_ACABADO', 'EMBALAGEM', 'INSUMO']).nullable().optional(),
       tipoFisico: z.enum(['UNIDADE_PADRAO', 'FISICO_LINEAR', 'FISICO_SUPERFICIAL', 'LIQUIDO', 'PESO']).nullable().optional(),
       exigeLote: z.boolean().optional(),
+      // Compatibilidade de área (RF004) — usados pelo motor de put-away RF008
+      // para restringir os endereços elegíveis por ambiente/classificação.
+      ambienteExigido: z.enum(['SECO', 'REFRIGERADO', 'CONGELADO']).nullable().optional(),
+      classificacaoArmazenagemId: z.string().uuid().nullable().optional(),
       aceitarSenha: z.boolean().optional(),
       aceitarCcePendente: z.boolean().optional(),
       toleranciaQuantidadePercentual: z.number().min(0).max(100).nullable().optional(),
