@@ -3482,6 +3482,46 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) {
     console.log('⚠️ PCP sugestao_compra skipped:', e.message)
   }
+
+  // =========================================================================
+  // WMS — Endereçamento RF008: isolamento multi-tenant do SaldoEndereco (#2/#7)
+  //
+  // A coluna saldo_endereco.empresa_id já existe no schema, mas vários
+  // caminhos de put-away gravavam saldo SEM empresa (empresa_id NULL),
+  // deixando a posição invisível às consultas escopadas por empresa (bloqueio
+  // por lote, consolidação, saldo consolidado). Aqui:
+  //   1) Backfill idempotente do empresa_id a partir do endereço (fonte
+  //      primária: um endereço pertence a uma empresa) e, como fallback, do
+  //      produto — SEM descartar saldo real (só preenche onde está NULL).
+  //   2) Índice (empresa_id, produto_id) para as consultas do motor de
+  //      distribuição (consolidação/capacidade residual).
+  // Ver ATENCAO-pontos-verificar.md (seção 2) e docs/melhoria-endereco-overflow-putaway.md.
+  // =========================================================================
+  try {
+    // 1a) Backfill pelo endereço (fonte mais confiável — endereço tem dono).
+    const bfEndereco = await prisma.$executeRawUnsafe(`
+      UPDATE "saldo_endereco" se
+      SET "empresa_id" = e."empresa_id"
+      FROM "endereco" e
+      WHERE se."endereco_id" = e."id"
+        AND se."empresa_id" IS NULL
+        AND e."empresa_id" IS NOT NULL
+    `)
+    // 1b) Fallback pelo produto, para saldos cujo endereço também não tinha empresa.
+    const bfProduto = await prisma.$executeRawUnsafe(`
+      UPDATE "saldo_endereco" se
+      SET "empresa_id" = p."empresa_id"
+      FROM "produto" p
+      WHERE se."produto_id" = p."id"
+        AND se."empresa_id" IS NULL
+        AND p."empresa_id" IS NOT NULL
+    `)
+    // 2) Índice para as consultas escopadas por empresa do put-away.
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "saldo_endereco_empresa_id_produto_id_idx" ON "saldo_endereco"("empresa_id", "produto_id")`)
+    console.log(`✅ WMS: SaldoEndereco backfill empresa_id (endereço: ${bfEndereco}, produto: ${bfProduto}) + índice`)
+  } catch (e: any) {
+    console.log('⚠️ WMS SaldoEndereco backfill/index skipped:', e.message)
+  }
 }
 
 main()

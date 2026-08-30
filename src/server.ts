@@ -108,6 +108,7 @@ import { deparaFornecedorRoutes } from './modules/depara-fornecedor/depara-forne
 import { importarXmlDeparaRoutes } from './modules/nota-entrada/importar-xml-depara.routes'
 import { capacidadeNivelRoutes } from './modules/capacidade-nivel/capacidade-nivel.routes'
 import { enderecamentoInteligenteRoutes } from './modules/enderecamento-inteligente/enderecamento-inteligente.routes'
+import { wmsPutawayConfigRoutes } from './modules/enderecamento-inteligente/wms-putaway-config'
 import { formatoEnderecoRoutes } from './modules/formato-endereco/formato-endereco.routes'
 import { geoRoutes } from './modules/geolocalizacao/geo.routes'
 import { cceRoutes } from './modules/cce/cce.routes'
@@ -353,6 +354,7 @@ async function bootstrap() {
   await app.register(pendenciaLogisticaRoutes, { prefix: '/api/pendencias-logisticas' })
   await app.register(capacidadeNivelRoutes, { prefix: '/api/capacidades-nivel' })
   await app.register(enderecamentoInteligenteRoutes, { prefix: '/api/enderecamento-inteligente' })
+  await app.register(wmsPutawayConfigRoutes, { prefix: '/api/wms/putaway' })
   await app.register(formatoEnderecoRoutes, { prefix: '/api/formato-endereco' })
 
   // Módulo Geolocalização — Roteirização

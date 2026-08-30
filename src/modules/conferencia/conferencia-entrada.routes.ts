@@ -8,6 +8,9 @@ import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
 import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
 import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade } from '../enderecamento-inteligente/motor-distribuicao.service'
+import { calcularPutaway, type CandidatoPutaway } from '../enderecamento-inteligente/putaway-motor.service'
+import { areaCompativel } from '../enderecamento-inteligente/compatibilidade-area.service'
+import { obterConfigPutaway } from '../enderecamento-inteligente/wms-putaway-config'
 import { validarCredenciaisSupervisor } from '../conferencia-entrada/validar-supervisor.service'
 import {
   notaTemItensPendenteSegundaConferencia,
@@ -1092,6 +1095,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     const resultados: any[] = []
 
+    // Config_Putaway (RF008) — carregada uma vez para todos os itens da nota.
+    const configPutaway = await obterConfigPutaway(user.empresaId)
+
     // Calcular distribuição para cada item
     const distribuicoes: any[] = []
 
@@ -1140,33 +1146,167 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
       const capacidadePalete = calcularCapacidadePalete(skuMaster.lastro, skuMaster.camada, null)
 
-      const enderecosLivres = await prisma.endereco.findMany({
+      // ── Motor RF008 (task 4.2) ──────────────────────────────────────────
+      // Substitui a distribuição antiga "somente endereços 100% livres" pela
+      // cadeia completa fixo → consolidação → livre (proximidade RF008) →
+      // overflow, com compatibilidade de área (RF004) e isolamento por empresa.
+
+      // Restrição de área do produto (RF004).
+      const produtoArea = {
+        ambienteExigido: produto.ambienteExigido,
+        classificacaoArmazenagemId: produto.classificacaoArmazenagemId,
+      }
+      const compat = (end: {
+        ambienteArmazenagemId: string | null
+        ambienteArmazenagem?: { temperatura: string | null } | null
+        classificacaoProdutoId: string | null
+      }) =>
+        areaCompativel(produtoArea, {
+          ambienteArmazenagemId: end.ambienteArmazenagemId,
+          ambienteTemperatura: end.ambienteArmazenagem?.temperatura ?? null,
+          classificacaoProdutoId: end.classificacaoProdutoId,
+        })
+
+      const incluiAmbiente = { estrutura: true, ambienteArmazenagem: { select: { temperatura: true } } }
+
+      // Camada FIXO — endereço fixo do produto (se houver DadosLogisticosArmazenagem).
+      const dadosArmazenagem = await prisma.dadosLogisticosArmazenagem.findFirst({
+        where: { produtoId: produto.id },
+      })
+      const candidatosFixo: CandidatoPutaway[] = []
+      let ruaOrigem = 'A'
+      let predioOrigem = 1
+      if (dadosArmazenagem?.enderecoFixoId) {
+        const fixo = await prisma.endereco.findFirst({
+          where: { id: dadosArmazenagem.enderecoFixoId, status: true },
+          include: incluiAmbiente,
+        })
+        if (fixo && compat(fixo)) {
+          ruaOrigem = fixo.codigoRua ?? ruaOrigem
+          predioOrigem = parseInt(fixo.codigoPredio || '1', 10) || 1
+          const saldoFixo = await prisma.saldoEndereco.aggregate({
+            where: { enderecoId: fixo.id, quantidade: { gt: 0 }, OR: [{ empresaId: user.empresaId }, { empresaId: null }] },
+            _sum: { quantidade: true },
+          })
+          const saldoAtual = Number(saldoFixo._sum.quantidade ?? 0)
+          const disp = Math.max(0, capacidadePalete - saldoAtual)
+          if (disp > 0) {
+            candidatosFixo.push({
+              id: fixo.id, enderecoCompleto: fixo.enderecoCompleto ?? '', rua: fixo.codigoRua ?? '',
+              predio: parseInt(fixo.codigoPredio || '1', 10) || 1, nivel: parseInt(fixo.codigoNivel || '1', 10) || 1,
+              apartamento: parseInt(fixo.codigoApto || '1', 10) || 1,
+              capacidadePalete, saldoAtual, disponivel: disp, curvaAbc: produto.curvaAbc,
+            })
+          }
+        }
+      }
+
+      // Camada CONSOLIDAÇÃO — endereços que já têm saldo deste produto.
+      const saldosConsol = await prisma.saldoEndereco.findMany({
+        where: {
+          produtoId: produto.id, quantidade: { gt: 0 },
+          OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+          endereco: { status: true, tipo: { in: ['ARMAZENAGEM', 'LIVRE'] } },
+        },
+        include: { endereco: { include: incluiAmbiente } },
+      })
+      const candidatosConsolidacao: CandidatoPutaway[] = []
+      for (const s of saldosConsol) {
+        if (!compat(s.endereco)) continue
+        const saldoAtual = Number(s.quantidade)
+        const disp = Math.max(0, capacidadePalete - saldoAtual)
+        if (disp <= 0) continue
+        candidatosConsolidacao.push({
+          id: s.enderecoId, enderecoCompleto: s.endereco.enderecoCompleto ?? '', rua: s.endereco.codigoRua ?? '',
+          predio: parseInt(s.endereco.codigoPredio || '1', 10) || 1, nivel: parseInt(s.endereco.codigoNivel || '1', 10) || 1,
+          apartamento: parseInt(s.endereco.codigoApto || '1', 10) || 1,
+          capacidadePalete, saldoAtual, disponivel: disp, curvaAbc: produto.curvaAbc,
+        })
+      }
+
+      // Camada LIVRE — endereços vazios compatíveis (ordenados por RF008 no motor).
+      const livres = await prisma.endereco.findMany({
         where: {
           tipo: { in: ['ARMAZENAGEM', 'LIVRE'] }, status: true, saldos: { none: { quantidade: { gt: 0 } } },
-          // Isolamento multi-tenant — ver comentário equivalente acima, no
-          // fallback sem SKU master (mesmo bug, mesma correção).
           OR: [{ empresaId: user.empresaId }, { empresaId: null }],
         },
-        orderBy: [{ codigoRua: 'asc' }, { codigoPredio: 'asc' }, { codigoNivel: 'asc' }, { codigoApto: 'asc' }],
+        include: incluiAmbiente,
       })
+      const candidatosLivre: CandidatoPutaway[] = livres
+        .filter((e) => compat(e))
+        .map((e) => ({
+          id: e.id, enderecoCompleto: e.enderecoCompleto ?? '', rua: e.codigoRua ?? '',
+          predio: parseInt(e.codigoPredio || '1', 10) || 1, nivel: parseInt(e.codigoNivel || '1', 10) || 1,
+          apartamento: parseInt(e.codigoApto || '1', 10) || 1,
+          capacidadePalete, saldoAtual: 0, disponivel: capacidadePalete, curvaAbc: produto.curvaAbc,
+        }))
 
-      const enderecosComCapacidade: EnderecoComCapacidade[] = enderecosLivres.map((e) => ({
-        id: e.id, enderecoCompleto: e.enderecoCompleto ?? '', rua: e.codigoRua ?? '',
-        predio: e.codigoPredio ?? '', nivel: e.codigoNivel ?? '', apartamento: e.codigoApto ?? '',
-        capacidadePalete, saldoAtual: 0, disponivel: capacidadePalete,
-      }))
+      // Camada OVERFLOW — transbordo, último recurso.
+      const overflow = await prisma.endereco.findMany({
+        where: {
+          permiteOverflow: true, status: true, bloqueado: false, inventarioAtivo: false,
+          OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+        },
+        include: incluiAmbiente,
+      })
+      const candidatosOverflow: CandidatoPutaway[] = []
+      for (const ov of overflow) {
+        if (!compat(ov)) continue
+        const saldoOv = await prisma.saldoEndereco.aggregate({
+          where: { enderecoId: ov.id, quantidade: { gt: 0 }, OR: [{ empresaId: user.empresaId }, { empresaId: null }] },
+          _sum: { quantidade: true },
+        })
+        const saldoAtual = Number(saldoOv._sum.quantidade ?? 0)
+        const disp = capacidadePalete > 0 ? Math.max(0, capacidadePalete - saldoAtual) : quantidade
+        if (disp <= 0) continue
+        candidatosOverflow.push({
+          id: ov.id, enderecoCompleto: ov.enderecoCompleto ?? '', rua: ov.codigoRua ?? '',
+          predio: parseInt(ov.codigoPredio || '1', 10) || 1, nivel: parseInt(ov.codigoNivel || '1', 10) || 1,
+          apartamento: parseInt(ov.codigoApto || '1', 10) || 1,
+          capacidadePalete: capacidadePalete > 0 ? capacidadePalete : disp, saldoAtual, disponivel: disp, curvaAbc: produto.curvaAbc,
+        })
+      }
 
-      const distribuicao = calcularDistribuicao({ quantidade, enderecosOrdenados: enderecosComCapacidade })
+      const putaway = calcularPutaway({
+        quantidade,
+        ruaOrigem, predioOrigem,
+        nivelMin: dadosArmazenagem?.nivelMinPP && dadosArmazenagem.nivelMinPP > 0 ? dadosArmazenagem.nivelMinPP : 1,
+        nivelMax: dadosArmazenagem?.nivelMaxPP && dadosArmazenagem.nivelMaxPP > 0 ? dadosArmazenagem.nivelMaxPP : 99,
+        prediosVarreduraPorLado: configPutaway.prediosVarreduraPorLado,
+        usarClasseAbc: configPutaway.usarClasseAbc,
+        candidatosFixo, candidatosConsolidacao, candidatosLivre, candidatosOverflow,
+      })
 
       distribuicoes.push({
         produto: produto.nome, produtoId: produto.id, lote: item.lote, validade: item.validade,
-        alocacoes: distribuicao.alocacoes, quantidadeRestante: distribuicao.quantidadeRestante, completa: distribuicao.completa,
+        alocacoes: putaway.alocacoes, quantidadeRestante: putaway.quantidadeRestante,
+        completa: !putaway.incompleto, incompleto: putaway.incompleto,
       })
     }
 
-    // Se não é confirmação, retornar apenas a simulação
+    // Put-away incompleto (task 4.3 / Req 7): quando alguma distribuição não
+    // cobriu toda a quantidade (mesmo após overflow), a política configurada
+    // decide o comportamento. Itens sem SKU master (fallback) não têm flag
+    // `incompleto` — não entram nesta verificação.
+    const itensIncompletos = distribuicoes.filter((d) => d.incompleto)
+
+    // Se não é confirmação, retornar apenas a simulação (com o alerta de incompleto).
     if (!body.confirmar) {
-      return { simulacao: true, distribuicoes }
+      return {
+        simulacao: true,
+        distribuicoes,
+        incompleto: itensIncompletos.length > 0,
+        itensSemDestino: itensIncompletos.map((d) => ({ produto: d.produto, quantidadeRestante: d.quantidadeRestante })),
+      }
+    }
+
+    // Política BLOQUEAR: recusar a confirmação enquanto houver mercadoria sem destino.
+    if (configPutaway.politicaIncompleto === 'BLOQUEAR' && itensIncompletos.length > 0) {
+      return reply.status(422).send({
+        message: 'Endereçamento incompleto: há mercadoria sem destino. Libere endereços/overflow ou ajuste a configuração.',
+        bloqueio: 'PUTAWAY_INCOMPLETO',
+        itensSemDestino: itensIncompletos.map((d) => ({ produto: d.produto, quantidadeRestante: d.quantidadeRestante })),
+      })
     }
 
     // Confirmar: gravar no banco
@@ -1174,7 +1314,11 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       for (const dist of distribuicoes) {
         for (const alocacao of dist.alocacoes) {
           await tx.saldoEndereco.create({
-            data: { enderecoId: alocacao.enderecoId, produtoId: dist.produtoId, quantidade: alocacao.quantidadeAlocada, lote: dist.lote || undefined, validade: dist.validade || undefined },
+            // Isolamento multi-tenant (correção estrutural #2/#7): grava
+            // empresaId do usuário/nota — antes o saldo do endereçamento
+            // automático nascia sem empresa (empresa_id NULL), invisível às
+            // consultas escopadas por empresa. Ver ATENCAO-pontos-verificar.md.
+            data: { enderecoId: alocacao.enderecoId, produtoId: dist.produtoId, quantidade: alocacao.quantidadeAlocada, lote: dist.lote || undefined, validade: dist.validade || undefined, empresaId: user.empresaId },
           })
           resultados.push({ produto: dist.produto, quantidade: alocacao.quantidadeAlocada, endereco: alocacao.enderecoCompleto })
         }
@@ -1200,7 +1344,18 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       }
     })
 
-    return { message: 'Endereçamento automático concluído', itens: resultados }
+    return {
+      message: 'Endereçamento automático concluído',
+      itens: resultados,
+      // Política PARCIAL: confirma o que coube e devolve a mercadoria pendente
+      // de forma explícita (nunca silenciosa) — ver Req 7.4.
+      ...(itensIncompletos.length > 0
+        ? {
+            incompleto: true,
+            itensSemDestino: itensIncompletos.map((d) => ({ produto: d.produto, quantidadeRestante: d.quantidadeRestante })),
+          }
+        : {}),
+    }
   })
 
   // POST /enderecamento-manual
@@ -1273,15 +1428,26 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
 
     await prisma.$transaction(async (tx) => {
+      // Isolamento multi-tenant (correção estrutural #2/#7).
       const saldoExistente = await tx.saldoEndereco.findFirst({
-        where: { enderecoId: body.enderecoId, produtoId: produto.id },
+        where: {
+          enderecoId: body.enderecoId,
+          produtoId: produto.id,
+          OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+        },
       })
 
       if (saldoExistente) {
-        await tx.saldoEndereco.update({ where: { id: saldoExistente.id }, data: { quantidade: { increment: body.quantidade } } })
+        await tx.saldoEndereco.update({
+          where: { id: saldoExistente.id },
+          data: {
+            quantidade: { increment: body.quantidade },
+            ...(saldoExistente.empresaId ? {} : { empresaId: user.empresaId }),
+          },
+        })
       } else {
         await tx.saldoEndereco.create({
-          data: { enderecoId: body.enderecoId, produtoId: produto.id, quantidade: body.quantidade, lote: body.lote || undefined },
+          data: { enderecoId: body.enderecoId, produtoId: produto.id, quantidade: body.quantidade, lote: body.lote || undefined, empresaId: user.empresaId },
         })
       }
 

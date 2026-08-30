@@ -11,8 +11,10 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { converterParaUnidadeMaster, selecionarSkuMaster, type SkuInfo } from './conversor-unidade.service'
 import { validarCubagem, type DimensoesSku, type DimensoesEstrutura, type CapacidadeNivelConfig } from './validador-cubagem.service'
-import { ordenarPorProximidade, type EnderecoCandidate } from './alocador-proximidade.service'
 import { calcularDistribuicao, calcularCapacidadePalete, type EnderecoComCapacidade, type DistribuicaoResult } from './motor-distribuicao.service'
+import { ordenarRF008 } from './proximidade-rf008.service'
+import { areaCompativel } from './compatibilidade-area.service'
+import { obterConfigPutaway, type ConfigPutaway } from './wms-putaway-config'
 import { calcularAbastecimentoPicking, obterMenorValidadePicking, type DadosPickingConfig, type AlocacaoPicking } from './abastecimento-picking.service'
 
 // ── Zod Schemas ────────────────────────────────────────────────────────
@@ -220,7 +222,10 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
       })
     }
 
-    // 10. Implementar cadeia de prioridade: fixo → consolidação → livre
+    // 10. Config_Putaway (RF008): prédios a varrer por lado, uso de ABC.
+    const configPutaway = await obterConfigPutaway(user.empresaId)
+
+    // 11. Implementar cadeia de prioridade: fixo → consolidação → livre → overflow
     const resultado = await executarCadeiaPrioridade({
       produtoId: body.produtoId,
       empresaId: user.empresaId,
@@ -234,9 +239,24 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
       skuMasterRaw: skusRaw.find((s) => s.id === skuMaster.id)!,
       dadosPickingConfigs,
       validadeEntrada: body.validade ? new Date(body.validade) : null,
+      // RF004 (compatibilidade de área) + RF008 (proximidade/config).
+      produtoArea: {
+        ambienteExigido: produto.ambienteExigido,
+        classificacaoArmazenagemId: produto.classificacaoArmazenagemId,
+      },
+      curvaAbc: produto.curvaAbc,
+      configPutaway,
     })
 
-    return resultado
+    // Put-away incompleto (Req 7): expõe a flag explícita para o cliente, além
+    // da `quantidadeRestante` que o resultado já carrega. A política BLOQUEAR
+    // é aplicada no ponto que efetiva o estado (enderecamento-automatico da
+    // conferência); aqui `/distribuir` é simulação, então apenas sinaliza.
+    return {
+      ...resultado,
+      incompleto: (resultado.quantidadeRestante ?? 0) > 0,
+      politicaIncompleto: configPutaway.politicaIncompleto,
+    }
   })
 
   // ── POST /confirmar — confirma distribuição e registra LogMovimentacao ──
@@ -270,8 +290,19 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
         }
 
         // Upsert SaldoEndereco
+        // Isolamento multi-tenant (correção estrutural #2/#7): a busca do saldo
+        // existente e a criação de novo saldo SEMPRE consideram/gravam o
+        // empresaId da nota/produto. Antes, o create não gravava empresaId,
+        // deixando o saldo "órfão" (empresa_id NULL) — o que fazia o bloqueio
+        // por lote e outras consultas escopadas por empresa não enxergarem a
+        // posição. Ver ATENCAO-pontos-verificar.md (seção 2).
         const saldoExistente = await tx.saldoEndereco.findFirst({
-          where: { enderecoId: alocacao.enderecoId, produtoId: body.produtoId, lote: body.lote || null },
+          where: {
+            enderecoId: alocacao.enderecoId,
+            produtoId: body.produtoId,
+            lote: body.lote || null,
+            OR: [{ empresaId: user.empresaId }, { empresaId: null }],
+          },
         })
 
         const saldoAnterior = saldoExistente ? Number(saldoExistente.quantidade) : 0
@@ -280,7 +311,11 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
         if (saldoExistente) {
           await tx.saldoEndereco.update({
             where: { id: saldoExistente.id },
-            data: { quantidade: { increment: alocacao.quantidadeAlocada } },
+            data: {
+              quantidade: { increment: alocacao.quantidadeAlocada },
+              // Corrige em trânsito eventuais saldos legados sem empresa.
+              ...(saldoExistente.empresaId ? {} : { empresaId: user.empresaId }),
+            },
           })
         } else {
           await tx.saldoEndereco.create({
@@ -290,6 +325,7 @@ export async function enderecamentoInteligenteRoutes(app: FastifyInstance) {
               quantidade: alocacao.quantidadeAlocada,
               lote: body.lote,
               validade: body.validade ? new Date(body.validade) : undefined,
+              empresaId: user.empresaId,
             },
           })
         }
@@ -473,14 +509,32 @@ interface CadeiaPrioridadeInput {
   skuMasterRaw: { largura: any; altura: any; comprimento: any; volume: any; pesoBruto: any }
   dadosPickingConfigs: DadosPickingConfig[]
   validadeEntrada: Date | null
+  // RF004 — restrição de área do produto (ambiente/classificação).
+  produtoArea: { ambienteExigido: string | null; classificacaoArmazenagemId: string | null }
+  curvaAbc: string | null
+  configPutaway: ConfigPutaway
 }
 
 async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<DistribuicaoResult> {
   const {
     produtoId, empresaId, quantidadeMaster, dadosArmazenagem,
     predioOrigem, ruaOrigem, nivelMin, nivelMax, skuMaster, skuMasterRaw,
-    dadosPickingConfigs, validadeEntrada,
+    dadosPickingConfigs, validadeEntrada, produtoArea, curvaAbc, configPutaway,
   } = input
+
+  // RF004 — helper de compatibilidade de área aplicado a cada endereço
+  // candidato. Endereço traz o ambiente (temperatura) e a classificação já
+  // resolvidos via include na consulta. Produto sem restrição → compatível.
+  const enderecoCompativel = (end: {
+    ambienteArmazenagemId: string | null
+    ambienteArmazenagem?: { temperatura: string | null } | null
+    classificacaoProdutoId: string | null
+  }): boolean =>
+    areaCompativel(produtoArea, {
+      ambienteArmazenagemId: end.ambienteArmazenagemId,
+      ambienteTemperatura: end.ambienteArmazenagem?.temperatura ?? null,
+      classificacaoProdutoId: end.classificacaoProdutoId,
+    })
 
   // ── Abastecimento do Picking (Task 4.3) ──────────────────────────────
   // Invocar calcularAbastecimentoPicking ANTES do motor de distribuição.
@@ -565,12 +619,20 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
   if (dadosArmazenagem?.enderecoFixoId) {
     const enderecoFixo = await prisma.endereco.findFirst({
       where: { id: dadosArmazenagem.enderecoFixoId, status: true },
-      include: { estrutura: true },
+      include: { estrutura: true, ambienteArmazenagem: { select: { temperatura: true } } },
     })
 
-    if (enderecoFixo) {
+    // RF004: mesmo o endereço fixo só é usado se for compatível com a área
+    // exigida pelo produto (ex.: não endereçar produto seco num fixo frio).
+    if (enderecoFixo && enderecoCompativel(enderecoFixo)) {
       const saldoFixo = await prisma.saldoEndereco.aggregate({
-        where: { enderecoId: enderecoFixo.id, quantidade: { gt: 0 } },
+        // Isolamento multi-tenant: só somar saldo da própria empresa (aceita
+        // legado empresa_id NULL de forma explícita) — ver correção #2/#7.
+        where: {
+          enderecoId: enderecoFixo.id,
+          quantidade: { gt: 0 },
+          OR: [{ empresaId }, { empresaId: null }],
+        },
         _sum: { quantidade: true },
       })
       const saldoAtual = Number(saldoFixo._sum.quantidade ?? 0)
@@ -598,18 +660,25 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
   }
 
   // ── Prioridade 2: Consolidação (endereços com saldo do mesmo produto) ──
+  // Isolamento multi-tenant (correção estrutural #2): sem o filtro por
+  // empresaId, um SaldoEndereco do MESMO produtoId em OUTRA empresa entrava na
+  // consolidação (produtoId não é único entre empresas quando o mesmo código é
+  // recadastrado). Aceita legado empresa_id NULL explicitamente.
   const saldosConsolidacao = await prisma.saldoEndereco.findMany({
     where: {
       produtoId,
       quantidade: { gt: 0 },
+      OR: [{ empresaId }, { empresaId: null }],
       endereco: { status: true, tipo: { in: ['ARMAZENAGEM', 'LIVRE'] } },
     },
-    include: { endereco: { include: { estrutura: true } } },
+    include: { endereco: { include: { estrutura: true, ambienteArmazenagem: { select: { temperatura: true } } } } },
   })
 
   for (const saldo of saldosConsolidacao) {
     // Evitar duplicar endereço fixo
     if (enderecosComCapacidade.some((e) => e.id === saldo.enderecoId)) continue
+    // RF004: descartar endereço de consolidação incompatível com a área.
+    if (!enderecoCompativel(saldo.endereco)) continue
 
     const saldoAtual = Number(saldo.quantidade)
     const capacidade = calcularCapacidadePalete(
@@ -640,8 +709,11 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
       tipo: { in: ['ARMAZENAGEM', 'LIVRE'] },
       status: true,
       saldos: { none: { quantidade: { gt: 0 } } },
+      // Isolamento multi-tenant (correção #2/#7): só endereços da própria
+      // empresa (aceita legado empresa_id NULL explicitamente).
+      OR: [{ empresaId }, { empresaId: null }],
     },
-    include: { estrutura: true },
+    include: { estrutura: true, ambienteArmazenagem: { select: { temperatura: true } } },
   })
 
   // Buscar CapacidadeNivel para as estruturas envolvidas
@@ -660,12 +732,21 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
     pesoBruto: skuMasterRaw.pesoBruto ? Number(skuMasterRaw.pesoBruto) : null,
   }
 
-  // Filtrar por cubagem e montar candidatos para proximidade
-  const candidatosProximidade: EnderecoCandidate[] = []
+  // Filtrar por cubagem e montar candidatos para proximidade (RF008)
+  const candidatosProximidade: Array<{
+    id: string
+    rua: string
+    predio: number
+    nivel: number
+    apartamento: number
+    enderecoCompleto: string
+  }> = []
 
   for (const endereco of enderecosCandidatos) {
     // Evitar duplicar endereços já incluídos
     if (enderecosComCapacidade.some((e) => e.id === endereco.id)) continue
+    // RF004: descartar endereço livre incompatível com a área do produto.
+    if (!enderecoCompativel(endereco)) continue
 
     const dimensoesEstrutura: DimensoesEstrutura = {
       largura: endereco.estrutura?.largura ? Number(endereco.estrutura.largura) : null,
@@ -703,16 +784,16 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
       nivel: parseInt(endereco.codigoNivel || '1', 10) || 1,
       apartamento: parseInt(endereco.codigoApto || '1', 10) || 1,
       enderecoCompleto: endereco.enderecoCompleto ?? '',
-      estruturaId: endereco.estruturaId,
-      classificacaoProdutoId: endereco.classificacaoProdutoId,
     })
   }
 
-  // Ordenar por proximidade
-  const ordenados = ordenarPorProximidade({
+  // Ordenar pela regra de proximidade RF008 (substitui o par/ímpar legado):
+  // N prédios à direita → N à esquerda → restante da rua → outras ruas.
+  const ordenados = ordenarRF008({
     candidatos: candidatosProximidade,
     predioOrigem,
     ruaOrigem,
+    prediosVarreduraPorLado: configPutaway.prediosVarreduraPorLado,
     nivelMin,
     nivelMax,
   })
@@ -760,8 +841,10 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
         // Overflow não deve estar bloqueado nem em inventário ativo.
         bloqueado: false,
         inventarioAtivo: false,
+        // Isolamento multi-tenant (correção #2/#7).
+        OR: [{ empresaId }, { empresaId: null }],
       },
-      include: { estrutura: true },
+      include: { estrutura: true, ambienteArmazenagem: { select: { temperatura: true } } },
     })
 
     // Saldo atual (de qualquer produto) por endereço de overflow, para calcular
@@ -769,9 +852,18 @@ async function executarCadeiaPrioridade(input: CadeiaPrioridadeInput): Promise<D
     // respeita a capacidade do palete quando houver estrutura definida.
     for (const endOv of enderecosOverflow) {
       if (enderecosComCapacidade.some((e) => e.id === endOv.id)) continue
+      // RF004: o overflow também respeita a compatibilidade de área (não faz
+      // sentido transbordar um produto refrigerado num endereço seco).
+      if (!enderecoCompativel(endOv)) continue
 
       const saldoOv = await prisma.saldoEndereco.aggregate({
-        where: { enderecoId: endOv.id, quantidade: { gt: 0 } },
+        // Ocupação física do endereço de overflow (qualquer produto), mas
+        // sempre da própria empresa — ver correção #2/#7. Aceita legado null.
+        where: {
+          enderecoId: endOv.id,
+          quantidade: { gt: 0 },
+          OR: [{ empresaId }, { empresaId: null }],
+        },
         _sum: { quantidade: true },
       })
       const saldoAtualOv = Number(saldoOv._sum.quantidade ?? 0)
