@@ -1,4 +1,21 @@
-# Melhoria de negócio — Endereço de Overflow (transbordo) no put-away
+# Endereço de Overflow (transbordo) no put-away — IMPLEMENTADO
+
+> **Status: IMPLEMENTADO** (branch `feat/endereco-overflow-putaway`, mesclada em
+> `main` e deployada). Este documento descreve a lacuna original e a solução
+> entregue.
+
+## Como usar (ativação)
+
+O overflow é opt-in por endereço, via a flag **`permiteOverflow`** (coluna
+`permite_overflow` em `endereco`, default `false`):
+
+- **Marcar um endereço como overflow**: `PUT /enderecos/:id` com
+  `{ "permiteOverflow": true }` (ou informar no `POST /enderecos` na criação).
+- Recomenda-se marcar 1+ endereços de uma zona de transbordo dedicada por CD.
+- Quando as prioridades 1–3 (fixo → consolidação → livre) não cobrirem a
+  quantidade do put-away, a distribuição inteligente passa a alocar nos
+  endereços `permiteOverflow = true` (que aceitam saldo mesmo já ocupados),
+  evitando que o recebimento conferido fique sem destino.
 
 ## Contexto
 
