@@ -42,9 +42,16 @@ export async function notaEntradaRoutes(app: FastifyInstance) {
     const db = getDb(request)
     const empresaId = getEmpresaId(request)
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    // `conferencias` NÃO é relação de NotaEntrada (existe em OndaSeparacao) —
+    // incluí-la fazia o Prisma lançar e a rota responder 500 em toda nota.
+    // A conferência de entrada é rastreada por `divergencias`
+    // (DivergenciaConferencia), incluída aqui no lugar.
     const item = await db.notaEntrada.findFirst({
       where: empresaId ? { id, empresaId } : { id },
-      include: { itens: { orderBy: { item: 'asc' } }, conferencias: { include: { conferente: { select: { nome: true } }, itens: true } } },
+      include: {
+        itens: { orderBy: { item: 'asc' } },
+        divergencias: true,
+      },
     })
     if (!item) return reply.status(404).send({ message: 'Não encontrado' })
     return item
