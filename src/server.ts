@@ -38,6 +38,7 @@ import { conferenciaRoutes } from './modules/conferencia/conferencia.routes'
 import { saldoRoutes } from './modules/saldo/saldo.routes'
 import { enderecamentoRoutes } from './modules/enderecamento/enderecamento.routes'
 import { ordemServicoRoutes } from './modules/ordem-servico/ordem-servico.routes'
+import { qaSeedRoutes } from './modules/qa-seed/qa-seed.routes'
 import { empresaSelectorRoutes } from './modules/empresa-selector/empresa-selector.routes'
 import { vendedorRoutes } from './modules/vendedor/vendedor.routes'
 import { pedidoCompraRoutes } from './modules/pedido-compra/pedido-compra.routes'
@@ -517,13 +518,11 @@ async function bootstrap() {
   await app.register(ordemServicoRoutes, { prefix: '/api/ordens-servico' })
 
   // ── Seed de QA (habilitadores de teste) ──
-  // Só é registrado quando WMS_QA_SEED_KEY está definida. Em produção normal,
-  // sem essa env, o módulo nem sequer expõe rotas (caminho de teste restrito).
-  if (process.env.WMS_QA_SEED_KEY) {
-    const { qaSeedRoutes } = await import('./modules/qa-seed/qa-seed.routes')
-    await app.register(qaSeedRoutes, { prefix: '/api/qa-seed' })
-    app.log.warn('WMS_QA_SEED_KEY definida — rotas de seed de QA ATIVAS em /api/qa-seed')
-  }
+  // Rota restrita: exige JWT + perfil SUPER_ADMIN (mesmo padrão de proteção do
+  // adminPcpRoutes). Cria apenas dados de teste claramente marcados. Se a env
+  // WMS_QA_SEED_KEY estiver definida, exige adicionalmente o header
+  // x-qa-seed-key batendo com ela (camada extra opcional).
+  await app.register(qaSeedRoutes, { prefix: '/api/qa-seed' })
 
   // Health check
   const BUILD_DATE = new Date().toISOString()

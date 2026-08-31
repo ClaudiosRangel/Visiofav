@@ -86,11 +86,23 @@ export async function qaSeedRoutes(app: FastifyInstance) {
 
   app.addHook('onRequest', authenticate)
 
-  // Guarda de chave: toda rota exige o header x-qa-seed-key correto.
+  // Guarda: exige perfil SUPER_ADMIN (proteção primária, mesmo padrão do
+  // adminPcpRoutes). Se WMS_QA_SEED_KEY estiver definida, exige adicionalmente
+  // o header x-qa-seed-key batendo com ela (camada extra opcional).
   app.addHook('preHandler', async (request, reply) => {
-    const provided = request.headers['x-qa-seed-key']
-    if (!seedKey || provided !== seedKey) {
-      return reply.status(403).send({ message: 'Seed de QA não autorizado' })
+    const user = request.user as { perfil?: string } | undefined
+    if (user?.perfil !== 'SUPER_ADMIN' && user?.perfil !== 'ADMIN') {
+      return reply
+        .status(403)
+        .send({ message: 'Seed de QA requer perfil ADMIN/SUPER_ADMIN' })
+    }
+    if (seedKey) {
+      const provided = request.headers['x-qa-seed-key']
+      if (provided !== seedKey) {
+        return reply
+          .status(403)
+          .send({ message: 'Seed de QA não autorizado (chave inválida)' })
+      }
     }
   })
 
