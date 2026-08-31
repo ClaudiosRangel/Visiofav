@@ -21,6 +21,12 @@ services:
         value: production
       - key: PERSISTENT_STORAGE_PATH
         value: /var/data
+      # Chave que habilita as rotas de seed de QA (/api/qa-seed/*).
+      # Necessária para a suíte E2E exercitar fluxos de onda/expedição que,
+      # em produção, só seriam atingidos por emissão de NF-e real à SEFAZ.
+      # Além desta chave, cada requisição exige JWT válido de usuário autenticado.
+      - key: WMS_QA_SEED_KEY
+        value: qa-seed-visiofab-2026
     healthCheckPath: /api/health
     buildCommand: ""
     startCommand: ""

@@ -516,6 +516,15 @@ async function bootstrap() {
   await app.register(enderecamentoRoutes, { prefix: '/api/operacoes' })
   await app.register(ordemServicoRoutes, { prefix: '/api/ordens-servico' })
 
+  // ── Seed de QA (habilitadores de teste) ──
+  // Só é registrado quando WMS_QA_SEED_KEY está definida. Em produção normal,
+  // sem essa env, o módulo nem sequer expõe rotas (caminho de teste restrito).
+  if (process.env.WMS_QA_SEED_KEY) {
+    const { qaSeedRoutes } = await import('./modules/qa-seed/qa-seed.routes')
+    await app.register(qaSeedRoutes, { prefix: '/api/qa-seed' })
+    app.log.warn('WMS_QA_SEED_KEY definida — rotas de seed de QA ATIVAS em /api/qa-seed')
+  }
+
   // Health check
   const BUILD_DATE = new Date().toISOString()
   app.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString(), buildDate: BUILD_DATE }))
