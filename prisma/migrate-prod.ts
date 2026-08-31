@@ -759,20 +759,28 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_refresh_token_token" ON "refresh_token"("token")`)
   console.log('✅ Segurança: tabela refresh_token criada')
 
-  // Bug real da expiração de sessão: o código sempre fez `upsert({ where: { usuarioId } })`,
-  // mas usuario_id nunca teve constraint UNIQUE — o upsert falhava silenciosamente (catch vazio)
-  // e o refresh token NUNCA era salvo, quebrando a renovação automática de sessão.
-  // Antes de criar o índice único, remover duplicados (manter só o mais recente por usuário).
-  await prisma.$executeRawUnsafe(`
-    DELETE FROM "refresh_token" rt
-    WHERE rt.id NOT IN (
-      SELECT DISTINCT ON (usuario_id) id
-      FROM "refresh_token"
-      ORDER BY usuario_id, criado_em DESC
-    )
-  `)
-  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "refresh_token_usuario_id_key" ON "refresh_token"("usuario_id")`)
-  console.log('✅ Segurança: refresh_token.usuario_id agora é UNIQUE (corrige upsert silenciosamente ignorado — causa raiz da expiração de sessão)')
+  // ── Isolamento de sessão multi-empresa (correção definitiva) ──
+  // HISTÓRICO: originalmente `usuario_id` recebeu um índice UNIQUE para fazer
+  // o `upsert({ where: { usuarioId } })` funcionar (corrigia a expiração de
+  // sessão). PORÉM, um refresh token ÚNICO por usuário causou vazamento
+  // multi-tenant: um SUPER_ADMIN acessando empresas diferentes em abas
+  // diferentes tinha o registro único sobrescrito a cada troca, e o
+  // /auth/refresh reemitia o access token com o empresaId da ÚLTIMA empresa
+  // selecionada — migrando silenciosamente TODAS as abas para essa empresa
+  // (ex.: notas de QA da empresa Demo apareciam dentro da Carton Wega).
+  //
+  // CORREÇÃO: o refresh token passa a ser POR SESSÃO (vários por usuário),
+  // não por usuário. Removemos o índice UNIQUE de `usuario_id` e o
+  // substituímos por um índice NÃO-único. Operação NÃO-destrutiva: nenhum
+  // dado é apagado; apenas a constraint muda. O /login e o /selecionar
+  // passam a CRIAR um token por sessão (ver auth.routes.ts / empresa-selector).
+  await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "refresh_token_usuario_id_key"`)
+  // Alguns bancos podem ter materializado como CONSTRAINT em vez de índice.
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "refresh_token" DROP CONSTRAINT IF EXISTS "refresh_token_usuario_id_key"`)
+  } catch { /* não era constraint — ok */ }
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_refresh_token_usuario_id" ON "refresh_token"("usuario_id")`)
+  console.log('✅ Segurança: refresh_token.usuario_id agora é NÃO-único (um token por sessão) — corrige vazamento multi-empresa entre abas')
 
   // Limpar tokens expirados (manutenção automática)
   try {

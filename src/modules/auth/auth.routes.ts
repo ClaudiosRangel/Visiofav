@@ -50,16 +50,28 @@ export async function authRoutes(app: FastifyInstance) {
     const accessToken = generateAccessToken(app, payload)
     const refreshToken = generateRefreshToken()
 
-    // Salvar refresh token no banco (com expiração de 7 dias)
+    // Salvar refresh token no banco (com expiração de 7 dias).
+    // ── Isolamento de sessão: CRIAR um token por sessão (não upsert por
+    // usuário). Cada login/seleção de empresa gera sua própria sessão, com
+    // seu próprio empresaId — impede que uma sessão sobrescreva a empresa de
+    // outra (ver histórico do vazamento multi-empresa em migrate-prod.ts).
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    await prisma.refreshToken.upsert({
-      where: { usuarioId: usuario.id },
-      update: { token: refreshToken, expiresAt, revoked: false, empresaId },
-      create: { usuarioId: usuario.id, token: refreshToken, expiresAt, empresaId },
-    }).catch(() => {
+    try {
+      // Higiene: remover tokens já expirados/revogados deste usuário para não
+      // acumular indefinidamente (não toca sessões ativas de outras empresas).
+      await prisma.refreshToken.deleteMany({
+        where: {
+          usuarioId: usuario.id,
+          OR: [{ revoked: true }, { expiresAt: { lt: new Date() } }],
+        },
+      }).catch(() => {})
+      await prisma.refreshToken.create({
+        data: { usuarioId: usuario.id, token: refreshToken, expiresAt, empresaId },
+      })
+    } catch {
       // Tabela pode não existir ainda — será criada na migration
       // Fallback: funciona sem refresh token (apenas access token)
-    })
+    }
 
     // Setar cookies httpOnly
     setAuthCookies(reply, accessToken, refreshToken)

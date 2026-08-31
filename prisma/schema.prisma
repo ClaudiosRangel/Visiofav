@@ -152,10 +152,16 @@ model Usuario {
 /// Refresh tokens para renovação segura de access tokens.
 /// Permite revogação individual e rotação automática.
 model RefreshToken {
-  id        String   @id @default(uuid())
-  usuarioId String   @unique @map("usuario_id")
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  token     String   @unique @db.VarChar(200)
+  id String @id @default(uuid())
+  // NÃO é @unique: um usuário pode ter VÁRIOS refresh tokens simultâneos —
+  // um por sessão/aba/dispositivo. O @unique anterior (um token por usuário)
+  // causava vazamento multi-tenant: com um SUPER_ADMIN acessando empresas
+  // diferentes em abas diferentes, a última seleção sobrescrevia o único
+  // registro e o /auth/refresh reemitia o access token com a empresa errada,
+  // migrando silenciosamente todas as abas para a última empresa selecionada.
+  usuarioId String  @map("usuario_id")
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  token     String  @unique @db.VarChar(200)
   // Empresa selecionada no momento em que este refresh token foi emitido —
   // usada por POST /auth/refresh para reemitir o access token com o MESMO
   // empresaId (ver histórico do bug em auth.routes.ts). Sem esse campo, o
@@ -166,6 +172,7 @@ model RefreshToken {
   criadoEm  DateTime @default(now()) @map("criado_em")
 
   @@index([token])
+  @@index([usuarioId])
   @@map("refresh_token")
 }
 

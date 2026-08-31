@@ -282,14 +282,25 @@ export async function empresaSelectorRoutes(app: FastifyInstance) {
     const accessToken = generateAccessToken(app, payload)
     const refreshToken = generateRefreshToken()
 
+    // ── Isolamento de sessão multi-empresa: CRIAR um refresh token por
+    // sessão (não upsert por usuário). Selecionar uma empresa numa aba NÃO
+    // pode sobrescrever a sessão de outra aba/empresa — cada uma preserva seu
+    // próprio empresaId no refresh, e o /auth/refresh reemite o access token
+    // com a empresa correta daquela sessão (ver histórico em migrate-prod.ts).
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    await prisma.refreshToken.upsert({
-      where: { usuarioId: user.id },
-      update: { token: refreshToken, expiresAt, revoked: false, empresaId },
-      create: { usuarioId: user.id, token: refreshToken, expiresAt, empresaId },
-    }).catch(() => {
+    try {
+      await prisma.refreshToken.deleteMany({
+        where: {
+          usuarioId: user.id,
+          OR: [{ revoked: true }, { expiresAt: { lt: new Date() } }],
+        },
+      }).catch(() => {})
+      await prisma.refreshToken.create({
+        data: { usuarioId: user.id, token: refreshToken, expiresAt, empresaId },
+      })
+    } catch {
       // Tabela pode não existir ainda — fallback: funciona sem refresh token
-    })
+    }
 
     setAuthCookies(reply, accessToken, refreshToken)
 
