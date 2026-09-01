@@ -232,8 +232,12 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   // GET /notas-pendentes — notas pendentes + em conferência
   app.get('/notas-pendentes', async (request) => {
     const user = request.user as { id: string; empresaId: string }
+    // ISOLAMENTO MULTI-TENANT: filtrar por empresaId. Sem este filtro a rota
+    // retornava as notas PENDENTES/EM_CONFERENCIA de TODAS as empresas —
+    // causando o vazamento em que uma empresa (ex.: Carton Wega) via as notas
+    // de outra (ex.: dados de QA da VisioFab Demo) na Conferência de Entrada.
     const notas = await prisma.notaEntrada.findMany({
-      where: { status: { in: ['PENDENTE', 'EM_CONFERENCIA'] } },
+      where: { empresaId: user.empresaId, status: { in: ['PENDENTE', 'EM_CONFERENCIA'] } },
       orderBy: { criadoEm: 'desc' },
       include: { itens: true },
     })
@@ -265,9 +269,12 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
   // GET /:notaId — detalhe da nota com itens e resultado da conferência
   app.get('/:notaId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
-    const nota = await prisma.notaEntrada.findUnique({
-      where: { id: notaId },
+    // ISOLAMENTO MULTI-TENANT: uma nota só é acessível pela sua própria empresa
+    // (findFirst com empresaId em vez de findUnique só por id).
+    const nota = await prisma.notaEntrada.findFirst({
+      where: { id: notaId, empresaId: user.empresaId },
       include: { itens: true },
     })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
@@ -276,8 +283,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
   // POST /iniciar/:notaId — iniciar conferência (PENDENTE → EM_CONFERENCIA)
   app.post('/iniciar/:notaId', async (request, reply) => {
+    const user = request.user as { id: string; nome: string; empresaId: string }
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
-    const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
+    const nota = await prisma.notaEntrada.findFirst({ where: { id: notaId, empresaId: user.empresaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
     if (!['PENDENTE', 'EM_CONFERENCIA'].includes(nota.status)) {
@@ -290,7 +298,6 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }
 
     // Verificar pendências logísticas — bloqueia conferência se houver pendências
-    const user = request.user as { id: string; nome: string; empresaId: string }
     const pendenciasLogisticas = await prisma.pendenciaLogistica.count({
       where: { notaEntradaId: notaId, status: 'PENDENTE', empresaId: user.empresaId },
     })
@@ -481,7 +488,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       })
     }
 
-    const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
+    const nota = await prisma.notaEntrada.findFirst({ where: { id: notaId, empresaId: userConf2.empresaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
     // Buscar configuração "Recebimento Parcial" da empresa — permite aceitar
@@ -928,7 +935,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     }).optional()
     const body = bodySchema.parse(request.body) || { acaoDivergencia: 'APROVAR' }
 
-    const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
+    const nota = await prisma.notaEntrada.findFirst({ where: { id: notaId, empresaId: user.empresaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
     // Bloqueio: verificar pendências CC-e abertas (Requirements 7.5, 7.6)
@@ -1058,11 +1065,12 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
   // POST /rejeitar/:notaId — rejeitar conferência (volta para recontar)
   app.post('/rejeitar/:notaId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
     const bodySchema = z.object({ motivo: z.string().optional() }).optional()
     const body = bodySchema.parse(request.body)
 
-    const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId } })
+    const nota = await prisma.notaEntrada.findFirst({ where: { id: notaId, empresaId: user.empresaId } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
 
     // Rejeitar = volta para PENDENTE para recontar
@@ -1075,9 +1083,10 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   })
 
   // GET /notas-conferidas — notas conferidas pendentes de endereçamento
-  app.get('/notas-conferidas', async () => {
+  app.get('/notas-conferidas', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
     const notas = await prisma.notaEntrada.findMany({
-      where: { status: 'CONFERIDA' },
+      where: { empresaId: user.empresaId, status: 'CONFERIDA' },
       orderBy: { criadoEm: 'desc' },
       include: { itens: true },
     })
@@ -1098,9 +1107,10 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   })
 
   // GET /notas-enderecadas — notas já endereçadas
-  app.get('/notas-enderecadas', async () => {
+  app.get('/notas-enderecadas', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
     const notas = await prisma.notaEntrada.findMany({
-      where: { status: 'ENDERECADA' },
+      where: { empresaId: user.empresaId, status: 'ENDERECADA' },
       orderBy: { criadoEm: 'desc' },
       include: { itens: true },
     })
@@ -1121,9 +1131,11 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
   })
 
   // GET /notas-conferidas-e-enderecadas — todas as notas conferidas + endereçadas (para aba Conferidas)
-  app.get('/notas-conferidas-todas', async () => {
+  app.get('/notas-conferidas-todas', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    // ISOLAMENTO MULTI-TENANT: filtrar por empresaId (mesmo bug de /notas-pendentes).
     const notas = await prisma.notaEntrada.findMany({
-      where: { status: { in: ['CONFERIDA', 'ENDERECADA'] } },
+      where: { empresaId: user.empresaId, status: { in: ['CONFERIDA', 'ENDERECADA'] } },
       orderBy: { criadoEm: 'desc' },
       include: { itens: true },
     })
@@ -1149,7 +1161,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const { notaId } = z.object({ notaId: z.string().uuid() }).parse(request.params)
     const body = z.object({ confirmar: z.boolean().default(false) }).parse(request.body || {})
 
-    const nota = await prisma.notaEntrada.findUnique({ where: { id: notaId }, include: { itens: true } })
+    const nota = await prisma.notaEntrada.findFirst({ where: { id: notaId, empresaId: user.empresaId }, include: { itens: true } })
     if (!nota) return reply.status(404).send({ message: 'Nota não encontrada' })
     if (nota.status !== 'CONFERIDA') return reply.status(422).send({ message: 'Nota não está conferida' })
 
