@@ -259,3 +259,42 @@ encontrar um PDF de OP com um caso de borda interessante para o parser
 com um nome descritivo (`OP <numero>.pdf` ou `OP-<numero>.pdf`) para os
 próximos que forem tocar nesse parser rodarem o script contra ele também —
 quanto mais PDFs reais versionados, melhor a cobertura desta ferramenta.
+
+## 8. Vazamento multi-empresa por SESSÃO (refresh token + storage do frontend)
+
+Bug real encontrado e corrigido (SUPER_ADMIN acessando várias empresas): a
+tela mostrava o cabeçalho de uma empresa (ex.: Carton Wega) mas listava dados
+de OUTRA (ex.: notas de QA da VisioFab Demo). **A camada de dados do backend
+sempre isolou corretamente** (`GET /notas-entrada` etc. filtram por
+`empresaId` via `request.prismaScoped` + filtro explícito). O vazamento era de
+SESSÃO, em duas causas somadas:
+
+1. **Backend — refresh token ÚNICO por usuário.** `RefreshToken.usuarioId`
+   era `@unique` e `/login` + `/empresas/:id/selecionar` faziam
+   `upsert({ where: { usuarioId } })`. Com o mesmo usuário em várias empresas,
+   a última seleção sobrescrevia o único registro, e `/auth/refresh` (disparado
+   pelo keep-alive a cada 4min) reemitia o access token com o `empresaId` da
+   ÚLTIMA empresa — migrando silenciosamente todas as sessões. **Correção:**
+   `usuarioId` deixou de ser `@unique` (índice normal); `/login` e `/selecionar`
+   passaram a `create` (um refresh token POR SESSÃO, cada um com seu
+   `empresaId`); `/auth/refresh` já resolvia por `storedToken.empresaId`.
+   Migração NÃO-destrutiva (`DROP INDEX refresh_token_usuario_id_key` +
+   `CREATE INDEX` não-único). Validado em produção: sessões de empresas
+   diferentes fazem refresh e cada uma preserva sua empresa.
+
+2. **Frontend — token/empresa no `localStorage` (compartilhado entre abas).**
+   `localStorage` é global por domínio: abrir Empresa A numa aba e Empresa B em
+   outra fazia a última seleção sobrescrever o token global, e um handler de
+   evento `storage` recarregava a outra aba, que então HERDAVA a empresa B.
+   **Correção:** `src/lib/authStorage.ts` — o token/empresa ATIVOS ficam em
+   `sessionStorage` (isolado por aba), com o localStorage servindo só de
+   "semente" para uma aba nova herdar a sessão. `api.ts` passou a `withCredentials:
+   false` (o cookie de auth é global por domínio e colidiria — o header
+   Authorization do sessionStorage é a única fonte). Removido o reload por
+   troca de empresa em outra aba. Validado em produção com Playwright: duas
+   abas do mesmo navegador, empresas diferentes, cada uma mantém a sua.
+
+**Regra daqui pra frente:** qualquer estado de SESSÃO (token, empresa
+selecionada) no frontend deve usar `authStorage.ts` (sessionStorage por aba),
+nunca `localStorage` direto. No backend, nunca voltar `RefreshToken.usuarioId`
+a `@unique` — a sessão é por dispositivo/aba, não por usuário.
