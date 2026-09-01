@@ -249,7 +249,9 @@ export async function multiCdRoutes(app: FastifyInstance) {
           where,
           skip,
           take: limit,
-          orderBy: { dataSaida: 'desc' },
+          // Campo correto do schema é `dataExpedicao` (não existe `dataSaida`)
+          // — o `orderBy` por campo inexistente causava erro Prisma → 500.
+          orderBy: { dataExpedicao: 'desc' },
         }),
         prisma.mercadoriaTransito.count({ where }),
       ])
