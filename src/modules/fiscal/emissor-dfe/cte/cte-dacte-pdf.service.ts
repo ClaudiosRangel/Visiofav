@@ -743,11 +743,12 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       const tipoH = 30
       box(L, Y, W, tipoH)
 
-      // Sub-divisões verticais (5 colunas)
-      const tcW1 = Math.round(W * 0.14) // Tipo CT-e
-      const tcW2 = Math.round(W * 0.16) // Tipo Serviço
-      const tcW3 = Math.round(W * 0.12) // Tomador
-      const tcW4 = Math.round(W * 0.10) // CFOP
+      // Sub-divisões verticais (5 colunas). Larguras reequilibradas para o
+      // rótulo "TOMADOR DO SERVIÇO" caber na sua célula sem invadir "CFOP".
+      const tcW1 = Math.round(W * 0.13) // Tipo CT-e
+      const tcW2 = Math.round(W * 0.15) // Tipo Serviço
+      const tcW3 = Math.round(W * 0.15) // Tomador
+      const tcW4 = Math.round(W * 0.08) // CFOP
       const tcW5 = W - tcW1 - tcW2 - tcW3 - tcW4 // Município
 
       vline(L + tcW1, Y, Y + tipoH)
@@ -758,18 +759,25 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
       // Linha horizontal no meio
       hline(L, L + W, Y + tipoH / 2)
 
+      // Labels confinados à largura da própria coluna (lineBreak:false evita
+      // que um rótulo longo empurre/sobreponha o título da coluna vizinha).
+      const labelCol = (text: string, x: number, w: number) =>
+        label(text, x, Y + 2, { width: w - 6, lineBreak: false, ellipsis: true })
+      const valorCol = (text: string, x: number, w: number) =>
+        valorBold(text, x, Y + 9, { width: w - 6, lineBreak: false, ellipsis: true })
+
       // Linha 1 — labels + valores
-      label('TIPO DO CT-e', L + 3, Y + 2)
-      valorBold(tpCTeNomes[tpCTe] || 'Normal', L + 3, Y + 9)
+      labelCol('TIPO DO CT-e', L + 3, tcW1)
+      valorCol(tpCTeNomes[tpCTe] || 'Normal', L + 3, tcW1)
 
-      label('TIPO DO SERVIÇO', L + tcW1 + 3, Y + 2)
-      valorBold(tpServNomes[tpServ] || 'Normal', L + tcW1 + 3, Y + 9)
+      labelCol('TIPO DO SERVIÇO', L + tcW1 + 3, tcW2)
+      valorCol(tpServNomes[tpServ] || 'Normal', L + tcW1 + 3, tcW2)
 
-      label('TOMADOR DO SERVIÇO', L + tcW1 + tcW2 + 3, Y + 2)
-      valorBold(tomaNomes[toma] || 'Remetente', L + tcW1 + tcW2 + 3, Y + 9)
+      labelCol('TOMADOR DO SERVIÇO', L + tcW1 + tcW2 + 3, tcW3)
+      valorCol(tomaNomes[toma] || 'Remetente', L + tcW1 + tcW2 + 3, tcW3)
 
-      label('CFOP', L + tcW1 + tcW2 + tcW3 + 3, Y + 2)
-      valorBold(cfop, L + tcW1 + tcW2 + tcW3 + 3, Y + 9)
+      labelCol('CFOP', L + tcW1 + tcW2 + tcW3 + 3, tcW4)
+      valorCol(cfop, L + tcW1 + tcW2 + tcW3 + 3, tcW4)
 
       label('MUNICÍPIO DE INÍCIO DA PRESTAÇÃO', L + tcW1 + tcW2 + tcW3 + tcW4 + 3, Y + 2)
       valorBold(`${xMunIni}${ufIni ? ' - ' + ufIni : ''}${cMunIni ? ' - ' + cMunIni : ''}`, L + tcW1 + tcW2 + tcW3 + tcW4 + 3, Y + 9, { width: tcW5 - 6 })
