@@ -85,3 +85,32 @@ Persistir como parâmetros (`cte.dacteModelo`, `cte.dacteOrientacao`).
 - [x] Item 5 — DACTE M1 retrato (suporte a orientação dinâmica)
 - [x] Item 6 — DACTE M2 (ACBr) — modelo 2 com canhoto, QR Code, layout retrato
 - [x] Item 7 — Config preferência (parâmetros cte.dacteModelo + cte.dacteOrientacao)
+
+---
+
+## Correções pós-produção (02/09/2026) — emissão de veículos novos
+
+Ao emitir CT-e real (transportadora Miguez), surgiram 4 bugs, todos corrigidos
+e deployados na `main`. Detalhes completos no steering
+`.kiro/steering/cte-emissao.md` seção 8.
+
+1. **cStat 252 (ambiente diverge)** — URL do webservice resolvia por
+   `SEFAZ_AMBIENTE` (default homologação no Render) enquanto o XML saía com
+   `tpAmb` de produção. Ambiente agora segue o do documento.
+2. **Código IBGE de município diverge do nome** — `cMunIni`/`cMunFim`/`cMunEnv`
+   validados/corrigidos pelo nome+UF via IBGE antes de transmitir.
+3. **`cMod` do veículo novo** — schema ajustado para 1..6 chars; importação por
+   PDF passa a derivar `cMod` do nome (remove "Modelo", 6 primeiros alfanuméricos
+   sem espaço, ex.: `NEW HRV EXL HS` → `NEWHRV`). `cMod`/`cor` são texto livre,
+   não cruzados pela SEFAZ (dado relevante = chassi).
+4. **DACTE modelo 2** — NOME/MODELO lia tag inexistente `xMod` (saía vazio),
+   corrigido para `cMod`; coluna COR mostra descrição (`xCor`).
+
+Melhoria extra: erro 400 agora traz o campo/motivo legível (`formatarErroZod`).
+
+### Pendências remanescentes
+
+- Corrigir o cadastro de origem do código IBGE errado (o cliente pode continuar
+  com o `cMun` errado gravado; a emissão está protegida, mas a fonte não).
+- Validar em produção: cliente reimportar por PDF, conferir `cMod` curto, gravar,
+  transmitir e ver o DACTE com NOME/MODELO e cor preenchidos.

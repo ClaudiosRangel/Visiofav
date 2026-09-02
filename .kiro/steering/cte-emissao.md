@@ -170,6 +170,8 @@ processável (não como exceção), permitindo extrair `cStat`/`xMotivo`.
 | 244 | Falha na descompactação | Conteúdo não está em GZip+Base64 OU xmlns ausente no cteDadosMsg | Comprimir com GZip e enviar Base64 COM xmlns |
 | 215 | Falha no schema XML | `<enviCTe>` não aceito no síncrono, ou Signature na posição errada | Enviar só `<CTe>`, Signature após infCTeSupl |
 | 228 | Data emissão posterior | `fmtDataHora` gerava hora UTC+offset errado | Subtrair 3h antes de formatar |
+| 252 | Ambiente informado diverge do Ambiente de recebimento | XML gerado com `tpAmb` do cadastro da empresa (produção) mas URL do webservice resolvida por `SEFAZ_AMBIENTE` (default homologação no Render) | Ambiente da URL agora segue o do documento — ver seção 8.1 |
+| — | Código de Município diverge do nome | `cMunIni`/`cMunFim` gravado com código IBGE errado (ex.: Petrópolis com 3303906/Paty do Alferes) | Validação/correção pelo nome+UF via IBGE antes de transmitir — seção 8.2 |
 | — | HTTP 400 body vazio | xmlns no cteDadosMsg + XML plain-text | Usar xmlns COM GZip+Base64 |
 | — | HTTP 500 "invalid action" | Falta action no Content-Type | Incluir `; action="..."` no Content-Type |
 
@@ -198,3 +200,89 @@ Esses scripts ficam para debug futuro — rodam com `npx tsx scripts/nome.ts`.
 5. Validação pré-transmissão (campos obrigatórios)
 6. Campos Data Emissão / Data Autorização + filtros
 7. Seleção em lote + ações em massa
+
+---
+
+## 8. Correções da sessão de 02/09/2026 (ambiente, município, veículo novo)
+
+Quatro bugs reais que apareceram ao emitir CT-e de veículos novos em produção
+(transportadora Miguez / destinatário HAYASA). Todos corrigidos e deployados
+na `main` (commits `5776ee89f`, `5aa806e9e`, `c19542071`). Nenhum tocou schema
+Prisma — sem migration.
+
+### 8.1 cStat 252 — Ambiente diverge (fonte única do ambiente)
+
+O XML era gerado com `tpAmb` vindo do cadastro da empresa
+(`empresa.ambienteCTe || ambienteNFe`), mas a URL do webservice era resolvida
+por `CTeEmissaoService.obterAmbiente()`, que lia **`process.env.SEFAZ_AMBIENTE`
+(default 2/homologação)** — e essa env NÃO está setada no Render. Resultado: XML
+com `tpAmb=1` (produção) enviado para a URL de homologação → rejeição 252.
+
+**Correção** (`cte-emissao.service.ts`): `obterAmbiente(ambienteDoc?)` agora
+prioriza o ambiente do documento; a env var é só fallback. O ambiente é
+propagado explicitamente de `dadosCTe.ambiente`/`documento.ambiente` para
+`transmitirSefaz`, `consultarResultadoLote` e os eventos (cancelamento/CC-e). O
+protocolo (`protCTe`) em `montarXmlAutorizado` extrai o `tpAmb` do próprio XML
+assinado (`extrairTpAmbDoXml`) em vez de env var.
+
+**Regra daqui pra frente:** ambiente do CT-e tem UMA fonte — o cadastro da
+empresa (que gera o `tpAmb` do XML). Nunca resolver URL de webservice por env
+var isolada; sempre derivar do mesmo valor que foi para o XML, senão volta o 252.
+
+### 8.2 Código IBGE de município diverge do nome
+
+O `cMunIni`/`cMunFim` vinha direto do `body` (frontend/cadastro) sem validar
+coerência com o nome. Um CT-e saiu com `cMunIni=3303906` (Paty do Alferes) e
+`xMunIni=PETROPOLIS` (correto seria 3304557) — rejeição "Código de Município
+diverge do nome".
+
+**Correção** (`cte.routes.ts`, rota `POST /cte/emitir`): helper
+`resolverCodigoMunicipio(codigo, nome, uf)` consulta a lista oficial do IBGE por
+UF (`buscarMunicipiosIBGE`) e, se o código informado não corresponder ao nome,
+corrige o código pelo nome (match exato normalizado sem acento). Aplicado a
+`cMunIni`, `cMunFim` e `cMunEnv` (município do emitente) antes de montar
+`dadosCTe`. Loga aviso quando corrige. Fonte de dado errado (cadastro do cliente)
+NÃO foi corrigida — só a emissão está protegida; o cadastro pode continuar
+propagando o código errado para outras telas.
+
+### 8.3 `cMod` (Código Marca Modelo) do veículo novo — 6 chars + derivação do PDF
+
+Layout CT-e 4.00: `veicNovos.cMod` tem **1 a 6 caracteres** (tabela
+RENAVAM/DENATRAN), e o grupo `veicNovos` só tem `chassi/cCor/xCor/cMod/vUnit/
+vFrete` (NÃO existe `xMod` nem RENAVAM próprio do veículo transportado). Dois
+problemas encontrados:
+
+- O schema Zod aceitava `cMod` com `max(20)` — corrigido para `min(1).max(6)`
+  (`cCor` para `max(4)`, `xCor` para `max(40)`). Antes, a descrição textual
+  longa ("Modelo NEW HRV EXL HS") passava na validação e o XML builder a cortava
+  silenciosamente com `.substring(0,6)` gerando lixo (`<cMod>Modelo</cMod>`).
+- Na importação por **PDF/DANFE** não existe `cMod` no texto — o parser jogava a
+  descrição textual do modelo no campo. **Corrigido** com
+  `derivarCodModelo(descricao)` (`cte-danfe-parser.service.ts`): remove a palavra
+  "Modelo" e usa os **6 primeiros caracteres alfanuméricos sem espaço**. Ex.:
+  `NEW HRV EXL HS` → `NEWHRV`, `CIVIC HYB TOURING` → `CIVICH`.
+
+**Importante — `cMod` é texto livre, a SEFAZ NÃO cruza** esse dado (o dado fiscal
+relevante do veículo é o **chassi**). Confirmado por XML autorizado do ACBr que
+usou `<cMod>NHRV</cMod>` e `<cCor>PRAT</cCor>`/`<xCor>PRATA</xCor>` (cor também é
+texto livre). Por isso a regra "seguir o PDF do cliente solicitante" é aceitável.
+
+**Importação por XML da NF-e** (`cte-importar-nfe.service.ts`) continua lendo o
+`cMod` do próprio `<veicProd>` da nota (código de fábrica correto) — NÃO alterada.
+Ou seja: XML traz o código oficial; PDF deriva a abreviação do nome. Se o cliente
+tem o XML da nota, importar por XML é o caminho mais correto.
+
+### 8.4 DACTE modelo 2 (ACBr) — NOME/MODELO vazio e coluna COR
+
+O DACTE lia a tag inexistente `xMod` para o campo NOME/MODELO (saía sempre
+vazio) e mostrava o **código** da cor (`cCor`, ex.: "04") em vez da descrição.
+**Corrigido** (`cte-dacte-pdf.service.ts`): NOME/MODELO lê `cMod`; COR exibe
+`xCor` (descrição) com fallback para `cCor`. Só o modelo 2 imprime a seção de
+veículos novos (o modelo 1 não tem esse quadro).
+
+### 8.5 Mensagem de erro 400 legível
+
+`formatarErroZod()` (`cte.routes.ts`) transforma o `ZodError` numa mensagem
+"campo: motivo" (com rótulos amigáveis para `cMod`, município, etc.) em vez do
+genérico "Dados inválidos" — aplicado nas rotas `gravar`, `PUT /:id` e `emitir`.
+Assim o usuário vê na tela qual campo reprovou.
