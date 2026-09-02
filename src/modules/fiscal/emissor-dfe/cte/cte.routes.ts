@@ -241,6 +241,24 @@ function gerarCodigoNumerico(): string {
 }
 
 /**
+ * Resolve a preferência de DACTE da empresa (modelo/orientação) a partir dos
+ * parâmetros `cte.dacteModelo` / `cte.dacteOrientacao`. Fonte única usada tanto
+ * pelo download do DACTE quanto pelo envio por e-mail, para que o PDF gerado
+ * seja SEMPRE o mesmo nos dois caminhos (antes o e-mail ignorava a preferência
+ * e mandava o modelo 1 retrato fixo).
+ */
+async function resolverPreferenciaDacte(empresaId: string): Promise<{ modelo: '1' | '2'; orientacao: 'retrato' | 'paisagem' }> {
+  const parametros = await prisma.parametro.findMany({
+    where: { empresaId, chave: { in: ['cte.dacteModelo', 'cte.dacteOrientacao'] } },
+  })
+  const paramsMap: Record<string, string> = {}
+  for (const p of parametros) paramsMap[p.chave] = p.valor
+  const modelo = (paramsMap['cte.dacteModelo'] || '1') as '1' | '2'
+  const orientacao = (paramsMap['cte.dacteOrientacao'] || 'retrato') as 'retrato' | 'paisagem'
+  return { modelo, orientacao }
+}
+
+/**
  * Formata um ZodError numa mensagem legível "campo: motivo", para que o
  * frontend consiga mostrar ao usuário exatamente qual campo reprovou em vez
  * de um genérico "Dados inválidos". Mapeia alguns caminhos técnicos do CT-e
@@ -2081,18 +2099,12 @@ export async function cteRoutes(app: FastifyInstance) {
         })
       }
 
-      // Buscar preferência da empresa (pode ser overridden via query params)
-      let modelo = query.modelo
-      let orientacao = query.orientacao
-      if (!modelo || !orientacao) {
-        const parametros = await prisma.parametro.findMany({
-          where: { empresaId: user.empresaId, chave: { in: ['cte.dacteModelo', 'cte.dacteOrientacao'] } },
-        })
-        const paramsMap: Record<string, string> = {}
-        for (const p of parametros) paramsMap[p.chave] = p.valor
-        if (!modelo) modelo = (paramsMap['cte.dacteModelo'] || '1') as '1' | '2'
-        if (!orientacao) orientacao = (paramsMap['cte.dacteOrientacao'] || 'retrato') as 'retrato' | 'paisagem'
-      }
+      // Buscar preferência da empresa (pode ser overridden via query params).
+      // Mesma fonte usada pelo envio por e-mail (resolverPreferenciaDacte),
+      // para que o PDF do menu e o do e-mail sejam idênticos.
+      const prefDacte = await resolverPreferenciaDacte(user.empresaId)
+      const modelo = query.modelo || prefDacte.modelo
+      const orientacao = query.orientacao || prefDacte.orientacao
 
       const pdfBuffer = await gerarDactePdf(doc, doc.empresa, { modelo, orientacao })
 
@@ -2247,7 +2259,8 @@ export async function cteRoutes(app: FastifyInstance) {
 
       if (body.incluirPdf) {
         try {
-          const pdfBuffer = await gerarDactePdf(doc, doc.empresa)
+          const prefDacte = await resolverPreferenciaDacte(user.empresaId)
+          const pdfBuffer = await gerarDactePdf(doc, doc.empresa, prefDacte)
           attachments.push({ filename: `DACTE-${doc.numero}-${doc.serie}.pdf`, content: pdfBuffer, contentType: 'application/pdf' })
         } catch (pdfErr: any) {
           console.warn(`[cte-email] Falha ao gerar PDF DACTE: ${pdfErr.message}`)
@@ -2477,6 +2490,7 @@ export async function cteRoutes(app: FastifyInstance) {
       })
 
       const resultados: Array<{ id: string; numero?: number; sucesso: boolean; message?: string }> = []
+      const prefDacteLote = await resolverPreferenciaDacte(user.empresaId)
 
       for (const docId of body.ids) {
         try {
@@ -2496,7 +2510,7 @@ export async function cteRoutes(app: FastifyInstance) {
           }
           if (body.incluirPdf) {
             try {
-              const pdfBuf = await gerarDactePdf(doc, doc.empresa)
+              const pdfBuf = await gerarDactePdf(doc, doc.empresa, prefDacteLote)
               attachments.push({ filename: `DACTE-${doc.numero}-${doc.serie}.pdf`, content: pdfBuf, contentType: 'application/pdf' })
             } catch { /* skip */ }
           }
