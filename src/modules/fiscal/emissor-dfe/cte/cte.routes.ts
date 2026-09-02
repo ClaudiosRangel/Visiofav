@@ -119,9 +119,11 @@ const valePedagioSchema = z.object({
 
 const veiculoNovoSchema = z.object({
   chassi: z.string().min(1).max(17),
-  cCor: z.string().max(10),
-  xCor: z.string().max(60),
-  cMod: z.string().max(20),
+  cCor: z.string().max(4),
+  xCor: z.string().max(40),
+  // cMod = Código Marca Modelo da tabela RENAVAM/DENATRAN (1 a 6 caracteres,
+  // conforme layout CT-e 4.00). NÃO é a descrição textual do modelo.
+  cMod: z.string().min(1).max(6),
   vUnit: z.number().min(0),
   vFrete: z.number().min(0),
 })
@@ -236,6 +238,34 @@ async function proximoNumeroCTe(empresaId: string, serie: number, ambiente: numb
 
 function gerarCodigoNumerico(): string {
   return String(Math.floor(Math.random() * 99999999)).padStart(8, '0')
+}
+
+/**
+ * Formata um ZodError numa mensagem legível "campo: motivo", para que o
+ * frontend consiga mostrar ao usuário exatamente qual campo reprovou em vez
+ * de um genérico "Dados inválidos". Mapeia alguns caminhos técnicos do CT-e
+ * para rótulos amigáveis.
+ */
+function formatarErroZod(err: any): { message: string; erros: any } {
+  const rotulos: Record<string, string> = {
+    'infCTeNorm.veicNovos.cMod': 'Cód. Modelo do veículo (DENATRAN) — deve ter no máximo 6 caracteres (código da tabela RENAVAM, não a descrição)',
+    'infCTeNorm.veicNovos.chassi': 'Chassi do veículo',
+    'infCTeNorm.veicNovos.cCor': 'Cód. Cor do veículo — máximo 4 caracteres',
+    'infCTeNorm.infCarga.proPred': 'Produto predominante da carga',
+    'cMunIni': 'Município de início',
+    'cMunFim': 'Município de fim',
+  }
+  const issues = Array.isArray(err.errors) ? err.errors : []
+  const detalhes = issues.map((e: any) => {
+    const pathArr = (e.path || []).filter((p: any) => typeof p !== 'number')
+    const pathKey = pathArr.join('.')
+    const rotulo = rotulos[pathKey] || pathArr.join(' → ') || 'campo'
+    return `${rotulo}: ${e.message}`
+  })
+  const message = detalhes.length > 0
+    ? `Dados inválidos — ${detalhes.join('; ')}`
+    : 'Dados inválidos'
+  return { message, erros: err.errors }
 }
 
 /** Normaliza nome de município (maiúsculas, sem acento) para comparação. */
@@ -1328,7 +1358,7 @@ export async function cteRoutes(app: FastifyInstance) {
       })
     } catch (err: any) {
       if (err.name === 'ZodError') {
-        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+        return reply.status(400).send(formatarErroZod(err))
       }
       return reply.status(500).send({ message: err.message || 'Erro ao gravar' })
     }
@@ -1383,7 +1413,7 @@ export async function cteRoutes(app: FastifyInstance) {
       })
     } catch (err: any) {
       if (err.name === 'ZodError') {
-        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+        return reply.status(400).send(formatarErroZod(err))
       }
       return reply.status(500).send({ message: err.message || 'Erro ao atualizar' })
     }
@@ -1773,7 +1803,7 @@ export async function cteRoutes(app: FastifyInstance) {
         return reply.status(422).send(err.toJSON())
       }
       if (err.name === 'ZodError') {
-        return reply.status(400).send({ message: 'Dados inválidos', erros: err.errors })
+        return reply.status(400).send(formatarErroZod(err))
       }
       return reply.status(500).send({ message: err.message || 'Erro interno' })
     }
