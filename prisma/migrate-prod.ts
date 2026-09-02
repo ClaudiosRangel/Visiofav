@@ -8,6 +8,9 @@ async function main() {
   // Usuario table - senha_alterada flag
   await prisma.$executeRawUnsafe(`ALTER TABLE "usuario" ADD COLUMN IF NOT EXISTS "senha_alterada" BOOLEAN DEFAULT false`)
 
+  // Usuario table - ultimo_acesso (Log de Acesso)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "usuario" ADD COLUMN IF NOT EXISTS "ultimo_acesso" TIMESTAMP(3)`)
+
   // Endereco table - new columns
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "codigo_barras" VARCHAR(30)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "area_armazenagem" VARCHAR(20)`)
@@ -2882,6 +2885,27 @@ async function main() {
   // ORÇAMENTO GRÁFICO — Popular Preços de Matéria-Prima a partir dos PDFs de OP
   // =========================================================================
   await seedMateriaisFromOPs()
+
+  // =========================================================================
+  // LOG DE ACESSO — Rastreio de acesso a módulos por usuário (SUPER_ADMIN)
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "acesso_modulo" (
+      "id" TEXT NOT NULL,
+      "usuario_id" TEXT NOT NULL,
+      "empresa_id" TEXT,
+      "modulo" VARCHAR(100) NOT NULL,
+      "rota" VARCHAR(300),
+      "ip" VARCHAR(45),
+      "user_agent" VARCHAR(300),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "acesso_modulo_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acesso_modulo_empresa_criado" ON "acesso_modulo"("empresa_id", "criado_em")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acesso_modulo_usuario" ON "acesso_modulo"("usuario_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acesso_modulo_modulo" ON "acesso_modulo"("modulo")`)
+  console.log('✅ Log de acesso: tabela acesso_modulo pronta')
 
   console.log('✅ All migrations applied successfully')
 }

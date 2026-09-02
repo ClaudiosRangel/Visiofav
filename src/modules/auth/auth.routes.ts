@@ -76,6 +76,12 @@ export async function authRoutes(app: FastifyInstance) {
     // Setar cookies httpOnly
     setAuthCookies(reply, accessToken, refreshToken)
 
+    // Atualizar último acesso (Log de Acesso). Não bloqueia o login se falhar.
+    prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { ultimoAcesso: new Date() },
+    }).catch(() => {})
+
     // ── Auditoria: login bem-sucedido ──
     const ctx = extractSecurityContext(request)
     await logSecurityEvent({

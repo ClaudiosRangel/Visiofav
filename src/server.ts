@@ -8,6 +8,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import cookie from '@fastify/cookie'
 import { authRoutes } from './modules/auth/auth.routes'
+import { acessoLogRoutes } from './modules/acesso-log/acesso-log.routes'
 import { usuarioRoutes } from './modules/usuario/usuario.routes'
 import { preferenciasRoutes } from './modules/usuario/preferencias.routes'
 import { centroDistRoutes } from './modules/centro-distribuicao/centro-dist.routes'
@@ -297,6 +298,9 @@ async function bootstrap() {
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(usuarioRoutes, { prefix: '/api/usuarios' })
   await app.register(preferenciasRoutes, { prefix: '/api/usuarios' })
+
+  // Log de Acesso (rastreio de acesso a módulos — leitura só SUPER_ADMIN)
+  await app.register(acessoLogRoutes, { prefix: '/api/acesso-log' })
 
   // Notificações
   await app.register(notificacaoRoutes, { prefix: '/api/notificacoes' })

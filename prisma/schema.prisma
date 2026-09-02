@@ -139,6 +139,7 @@ model Usuario {
   status        Boolean  @default(true)
   senhaAlterada Boolean  @default(false) @map("senha_alterada")
   avatarUrl     String?  @map("avatar_url") @db.Text
+  ultimoAcesso  DateTime? @map("ultimo_acesso")
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 
@@ -192,6 +193,25 @@ model SecurityAuditLog {
   @@index([usuarioId])
   @@index([ip])
   @@map("security_audit_log")
+}
+
+/// Rastreio de acesso a módulos por usuário (menu "Log de Acesso", só SUPER_ADMIN).
+/// Registrado explicitamente pelo frontend ao abrir cada módulo. Guarda histórico
+/// completo (uma linha por acesso), com empresa para permitir filtro por empresa.
+model AcessoModulo {
+  id        String   @id @default(uuid())
+  usuarioId String   @map("usuario_id")
+  empresaId String?  @map("empresa_id")
+  modulo    String   @db.VarChar(100)
+  rota      String?  @db.VarChar(300)
+  ip        String?  @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.VarChar(300)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, criadoEm])
+  @@index([usuarioId])
+  @@index([modulo])
+  @@map("acesso_modulo")
 }
 
 model UsuarioEmpresa {
