@@ -174,7 +174,7 @@ export class CTeEmissaoService {
 
     // 5. Transmitir à SEFAZ via CTeAutorizacao
     try {
-      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado, ServicoSefaz.CTE_AUTORIZACAO)
+      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado, ServicoSefaz.CTE_AUTORIZACAO, dadosCTe.ambiente)
 
       // Resetar falhas ao sucesso na comunicação
       falhasConsecutivas.set(empresaId, 0)
@@ -186,6 +186,7 @@ export class CTeEmissaoService {
           resposta.protocolo,
           ufEmitente,
           certificado,
+          dadosCTe.ambiente,
         )
         return await this.processarRespostaSefaz(
           respostaConsulta, documentoFiscal.id, chaveAcesso, xmlAssinado
@@ -281,7 +282,7 @@ export class CTeEmissaoService {
       xmlAssinado = resultado.xmlAssinado
     } catch (errCert) {
       // Em homologação sem certificado, prosseguir com XML não-assinado (simulação)
-      const ambiente = this.obterAmbiente()
+      const ambiente = this.obterAmbiente(dadosCTe.ambiente)
       if (ambiente === AmbienteSefaz.HOMOLOGACAO) {
         xmlAssinado = xmlGerado
       } else {
@@ -291,12 +292,12 @@ export class CTeEmissaoService {
 
     // 4. Transmitir à SEFAZ
     try {
-      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado!, ServicoSefaz.CTE_AUTORIZACAO)
+      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado!, ServicoSefaz.CTE_AUTORIZACAO, dadosCTe.ambiente)
       falhasConsecutivas.set(empresaId, 0)
 
       if (resposta.codigoStatus === 103 && resposta.protocolo) {
         const respostaConsulta = await this.consultarResultadoLote(
-          resposta.protocolo, ufEmitente, certificado,
+          resposta.protocolo, ufEmitente, certificado!, dadosCTe.ambiente,
         )
         const result = await this.processarRespostaSefaz(
           respostaConsulta, documentoFiscalId, chaveAcesso, xmlAssinado
@@ -402,7 +403,7 @@ export class CTeEmissaoService {
 
     // Transmitir à SEFAZ
     const resposta = await this.transmitirSefaz(
-      xmlAssinado, documento.emitenteUf, certificado, ServicoSefaz.CTE_RECEPCAO_EVENTO
+      xmlAssinado, documento.emitenteUf, certificado, ServicoSefaz.CTE_RECEPCAO_EVENTO, documento.ambiente
     )
 
     const resultado = this.parsearRespostaEvento(resposta)
@@ -521,7 +522,7 @@ export class CTeEmissaoService {
 
     // Transmitir à SEFAZ
     const resposta = await this.transmitirSefaz(
-      xmlAssinado, documento.emitenteUf, certificado, ServicoSefaz.CTE_RECEPCAO_EVENTO
+      xmlAssinado, documento.emitenteUf, certificado, ServicoSefaz.CTE_RECEPCAO_EVENTO, documento.ambiente
     )
 
     const resultado = this.parsearRespostaEvento(resposta)
@@ -588,8 +589,9 @@ export class CTeEmissaoService {
     ufEmitente: string,
     certificado: CertificadoParaUso,
     servico: ServicoSefaz = ServicoSefaz.CTE_AUTORIZACAO,
+    ambienteDoc?: number | null,
   ): Promise<RespostaSefaz> {
-    const ambiente = this.obterAmbiente()
+    const ambiente = this.obterAmbiente(ambienteDoc)
 
     const sefazConfig: SefazConfig = {
       ambiente,
@@ -619,8 +621,9 @@ export class CTeEmissaoService {
     recibo: string,
     ufEmitente: string,
     certificado: CertificadoParaUso,
+    ambienteDoc?: number | null,
   ): Promise<RespostaSefaz> {
-    const ambiente = this.obterAmbiente()
+    const ambiente = this.obterAmbiente(ambienteDoc)
     const MAX_TENTATIVAS_CONSULTA = 3
     const INTERVALO_CONSULTA_MS = 2000
 
@@ -985,7 +988,10 @@ export class CTeEmissaoService {
       xmlAssinado.replace('<?xml version="1.0" encoding="UTF-8"?>', '').trim(),
       '<protCTe versao="4.00">',
       '<infProt>',
-      `<tpAmb>${this.obterAmbiente()}</tpAmb>`,
+      // O tpAmb do protocolo deve refletir o MESMO ambiente do CT-e assinado.
+      // Extraído do próprio XML (fonte única) em vez de env var, para não
+      // divergir do tpAmb do <ide>.
+      `<tpAmb>${this.extrairTpAmbDoXml(xmlAssinado) ?? this.obterAmbiente()}</tpAmb>`,
       `<verAplic>VisioFab-1.0.0</verAplic>`,
       `<chCTe>${this.extrairChaveDoXml(xmlAssinado)}</chCTe>`,
       resposta.dataRecebimento ? `<dhRecbto>${resposta.dataRecebimento}</dhRecbto>` : '',
@@ -1038,8 +1044,15 @@ export class CTeEmissaoService {
   /**
    * Obtém o ambiente de comunicação (Produção ou Homologação).
    */
-  private obterAmbiente(): AmbienteSefaz {
-    const ambiente = Number(process.env.SEFAZ_AMBIENTE) || 2
+  private obterAmbiente(ambienteDoc?: number | null): AmbienteSefaz {
+    // O ambiente DEVE seguir o mesmo valor gravado no XML (tpAmb), que vem do
+    // cadastro da empresa (ambienteCTe/ambienteNFe). Se o XML sai com tpAmb=1
+    // (produção) mas a URL do webservice é resolvida como homologação (ou
+    // vice-versa), a SEFAZ rejeita com cStat 252 "Ambiente informado diverge
+    // do Ambiente de recebimento". Por isso o ambiente do documento tem
+    // prioridade; a env var SEFAZ_AMBIENTE é apenas fallback quando não há
+    // ambiente do documento disponível.
+    const ambiente = ambienteDoc ?? (Number(process.env.SEFAZ_AMBIENTE) || 2)
     return ambiente === 1 ? AmbienteSefaz.PRODUCAO : AmbienteSefaz.HOMOLOGACAO
   }
 
@@ -1063,6 +1076,16 @@ export class CTeEmissaoService {
   private extrairChaveDoXml(xml: string): string {
     const match = xml.match(/Id="CTe(\d{44})"/)
     return match ? match[1] : ''
+  }
+
+  /**
+   * Extrai o tpAmb (1=produção, 2=homologação) do XML do CT-e.
+   * Usado para manter o protocolo (protCTe) coerente com o ambiente do
+   * documento, sem depender de env var.
+   */
+  private extrairTpAmbDoXml(xml: string): number | null {
+    const match = xml.match(/<tpAmb>([12])<\/tpAmb>/)
+    return match ? Number(match[1]) : null
   }
 
   /**

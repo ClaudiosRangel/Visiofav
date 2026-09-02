@@ -238,6 +238,73 @@ function gerarCodigoNumerico(): string {
   return String(Math.floor(Math.random() * 99999999)).padStart(8, '0')
 }
 
+/** Normaliza nome de município (maiúsculas, sem acento) para comparação. */
+function normalizarNomeMunicipio(nome: string): string {
+  return nome.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+/**
+ * Garante que o código IBGE informado corresponde ao nome+UF do município.
+ * A SEFAZ rejeita (cStat "Código de Município diverge do nome") quando o
+ * cMun não bate com o xMun. Este validador consulta a lista oficial do IBGE
+ * por UF e, se o código informado não corresponder ao nome, corrige o código
+ * pelo nome (match exato normalizado). Retorna o código a usar e um aviso
+ * quando houve correção. Se não for possível resolver, mantém o código
+ * original (a validação/SEFAZ tratam o erro depois).
+ */
+async function resolverCodigoMunicipio(
+  codigoInformado: string,
+  nomeMunicipio: string,
+  uf: string,
+): Promise<{ codigo: string; corrigido: boolean; aviso?: string }> {
+  const cod = (codigoInformado || '').trim()
+  const nome = (nomeMunicipio || '').trim()
+  const ufNorm = (uf || '').trim().toUpperCase()
+
+  if (!nome || ufNorm.length !== 2) {
+    return { codigo: cod, corrigido: false }
+  }
+
+  let municipios: Array<{ codigo: string; nome: string; uf: string }>
+  try {
+    municipios = await buscarMunicipiosIBGE(ufNorm)
+  } catch {
+    // Falha ao consultar IBGE — não bloquear, manter o código original.
+    return { codigo: cod, corrigido: false }
+  }
+  if (!municipios || municipios.length === 0) {
+    return { codigo: cod, corrigido: false }
+  }
+
+  const buscaNome = normalizarNomeMunicipio(nome)
+  const porNome = municipios.find(m => normalizarNomeMunicipio(m.nome) === buscaNome)
+
+  // Se o código informado já é válido para essa UF, checar se bate com o nome.
+  const porCodigo = municipios.find(m => m.codigo === cod)
+
+  if (porCodigo && porNome && porCodigo.codigo === porNome.codigo) {
+    // Código e nome coerentes — nada a fazer.
+    return { codigo: cod, corrigido: false }
+  }
+
+  if (porNome) {
+    // Nome encontrado no IBGE — o código correto é o do nome. Corrige se
+    // divergir do informado (inclui o caso do código apontar para outro
+    // município da mesma UF, ex.: Petrópolis 3304557 vs Paty do Alferes 3303906).
+    if (porNome.codigo !== cod) {
+      return {
+        codigo: porNome.codigo,
+        corrigido: true,
+        aviso: `Código IBGE de "${nome}/${ufNorm}" corrigido de ${cod || '(vazio)'} para ${porNome.codigo}.`,
+      }
+    }
+    return { codigo: cod, corrigido: false }
+  }
+
+  // Nome não encontrado no IBGE — não corrigir, deixar a validação/SEFAZ decidir.
+  return { codigo: cod, corrigido: false }
+}
+
 function obterCodigoUF(uf: string): number {
   const UF_CODES: Record<string, number> = {
     RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17,
@@ -1611,6 +1678,23 @@ export async function cteRoutes(app: FastifyInstance) {
       const ambienteEmissao = empresa.ambienteCTe || empresa.ambienteNFe || 2
       const nCT = await proximoNumeroCTe(user.empresaId, body.serie, ambienteEmissao)
 
+      // Garantir coerência código IBGE x nome do município (evita rejeição
+      // "Código de Município diverge do nome"). Corrige o código pelo nome+UF
+      // quando divergir — ex.: Petrópolis enviado com código 3303906
+      // (Paty do Alferes) é corrigido para 3304557.
+      const avisosMunicipio: string[] = []
+      const munIniResolvido = await resolverCodigoMunicipio(body.cMunIni, body.xMunIni, body.ufIni)
+      const munFimResolvido = await resolverCodigoMunicipio(body.cMunFim, body.xMunFim, body.ufFim)
+      const munEnvResolvido = await resolverCodigoMunicipio(
+        empresa.codigoMunicipio || '', empresa.cidade || '', ufEmitente,
+      )
+      if (munIniResolvido.aviso) avisosMunicipio.push(munIniResolvido.aviso)
+      if (munFimResolvido.aviso) avisosMunicipio.push(munFimResolvido.aviso)
+      if (munEnvResolvido.aviso) avisosMunicipio.push(munEnvResolvido.aviso)
+      if (avisosMunicipio.length > 0) {
+        request.log.warn({ avisosMunicipio, cte: nCT }, 'CT-e: código(s) de município corrigido(s) antes da transmissão')
+      }
+
       const dadosCTe: DadosCTe = {
         cUF: obterCodigoUF(ufEmitente),
         cCT: gerarCodigoNumerico(),
@@ -1625,10 +1709,10 @@ export async function cteRoutes(app: FastifyInstance) {
         dataEmissao: new Date(),
         tpCTe: body.tpCTe,
         modal: body.modal,
-        cMunIni: body.cMunIni,
+        cMunIni: munIniResolvido.codigo,
         xMunIni: body.xMunIni,
         ufIni: body.ufIni,
-        cMunFim: body.cMunFim,
+        cMunFim: munFimResolvido.codigo,
         xMunFim: body.xMunFim,
         ufFim: body.ufFim,
         tpTom: body.tpTom,
@@ -1645,7 +1729,7 @@ export async function cteRoutes(app: FastifyInstance) {
             numero: empresa.numero || '',
             complemento: empresa.complemento || undefined,
             bairro: empresa.bairro || '',
-            codigoMunicipio: empresa.codigoMunicipio || empresa.cidade || '',
+            codigoMunicipio: munEnvResolvido.codigo || empresa.codigoMunicipio || empresa.cidade || '',
             municipio: empresa.cidade || '',
             uf: ufEmitente,
             cep: empresa.cep || '',
