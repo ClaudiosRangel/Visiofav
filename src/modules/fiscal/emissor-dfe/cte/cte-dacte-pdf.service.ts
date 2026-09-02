@@ -1115,8 +1115,10 @@ async function gerarDacteModelo2(doc: DocumentoCTe, empresa: EmpresaCTe, orienta
         pdf.fontSize(6).font('Helvetica-Bold').text('INFORMAÇÕES SOBRE OS VEÍCULOS NOVOS TRANSPORTADOS', L + 3, Y + 2, { width: W - 6, align: 'center' })
 
         const vChassi = xml(veicNovosBloco, 'chassi')
-        const vCor = xml(veicNovosBloco, 'cCor')
-        const vModelo = xml(veicNovosBloco, 'xMod')
+        // Cor: mostrar a descrição (xCor), caindo para o código (cCor) se não houver.
+        const vCor = xml(veicNovosBloco, 'xCor') || xml(veicNovosBloco, 'cCor')
+        // NOME/MODELO: a tag do CT-e é cMod (não existe xMod no layout 4.00).
+        const vModelo = xml(veicNovosBloco, 'cMod')
         const vValUnit = xml(veicNovosBloco, 'vUnit')
         const vValFrete = xml(veicNovosBloco, 'vFrete')
 

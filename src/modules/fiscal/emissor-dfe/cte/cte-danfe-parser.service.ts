@@ -65,7 +65,23 @@ export interface DadosDanfeExtraidos {
   valorTotal: number
   pesoBruto: number
   produtos: string
-  veiculos: Array<{ chassi: string; modelo: string; cor: string }>
+  veiculos: Array<{ chassi: string; modelo: string; cor: string; cMod: string }>
+}
+
+/**
+ * Deriva o código do modelo (cMod) para o CT-e a partir da descrição textual
+ * do modelo extraída da DANFE. Regra acordada com o cliente (o cMod do CT-e
+ * é texto livre, não é cruzado pela SEFAZ — o dado fiscal relevante é o
+ * chassi): remove a palavra "Modelo" e usa os 6 primeiros caracteres
+ * alfanuméricos (sem espaços) do restante. Ex.: "NEW HRV EXL HS" -> "NEWHRV".
+ */
+export function derivarCodModelo(descricaoModelo: string): string {
+  if (!descricaoModelo) return ''
+  // Remover a palavra "Modelo" (com ou sem acento) onde aparecer.
+  const semModelo = descricaoModelo.replace(/modelo/gi, ' ')
+  // Manter só alfanuméricos, descartando espaços e pontuação.
+  const alfanum = semModelo.replace(/[^A-Za-z0-9]/g, '')
+  return alfanum.substring(0, 6).toUpperCase()
 }
 
 export function parseDanfeTexto(texto: string): DadosDanfeExtraidos {
@@ -265,7 +281,7 @@ export function parseDanfeTexto(texto: string): DadosDanfeExtraidos {
 
   // Veículos — buscar chassi (17 chars alfanuméricos, padrão VIN)
   // Exclui letras I, O, Q conforme regra VIN
-  const veiculos: Array<{ chassi: string; modelo: string; cor: string }> = []
+  const veiculos: Array<{ chassi: string; modelo: string; cor: string; cMod: string }> = []
   const chassiRegex = /\b([A-HJ-NPR-Z0-9]{17})\b/g
   const chassisEncontrados = [...new Set([...texto.matchAll(chassiRegex)].map(m => m[1]))]
   
@@ -289,7 +305,7 @@ export function parseDanfeTexto(texto: string): DadosDanfeExtraidos {
       if (cor.length > 20) cor = cor.substring(0, 20).trim()
     }
 
-    veiculos.push({ chassi, modelo, cor })
+    veiculos.push({ chassi, modelo, cor, cMod: derivarCodModelo(modelo) })
   }
 
   return {

@@ -21,7 +21,7 @@ import { prisma } from '../../../../lib/prisma'
 import { cteEmissaoService } from './cte-emissao.service'
 import { gerarDactePdf } from './cte-dacte-pdf.service'
 import { parseNFeXml, autoCadastrarParticipante } from './cte-importar-nfe.service'
-import { extrairTextoDanfePdf, parseDanfeTexto } from './cte-danfe-parser.service'
+import { extrairTextoDanfePdf, parseDanfeTexto, derivarCodModelo } from './cte-danfe-parser.service'
 import { buscarMunicipiosIBGE } from './cte-municipios.routes'
 import { consultarCnpj } from './cte-consulta-cnpj.service'
 import { ErroFiscal, CodigoErroFiscal } from '../../erros'
@@ -1056,7 +1056,7 @@ export async function cteRoutes(app: FastifyInstance) {
           origemUf: remResolvido.uf || origemUf,
           destinoMun: destResolvido.municipio || dados.destinatario.municipio,
           destinoUf: destResolvido.uf || destinoUf,
-          veiculosNovos: dados.veiculos?.map(v => ({ chassi: v.chassi, xCor: v.cor, cMod: v.modelo })) || [],
+          veiculosNovos: dados.veiculos?.map(v => ({ chassi: v.chassi, xCor: v.cor, cMod: v.cMod || derivarCodModelo(v.modelo) })) || [],
         },
         ctePrePreenchido: {
           serie: empresa?.serieCTe || 1,
@@ -1097,7 +1097,7 @@ export async function cteRoutes(app: FastifyInstance) {
                 cCor = novoCodigo
               }
             }
-            return { chassi: v.chassi, cCor, xCor: v.cor || '', cMod: v.modelo || '', vUnit: dados.valorTotal, vFrete: 0 }
+            return { chassi: v.chassi, cCor, xCor: v.cor || '', cMod: v.cMod || derivarCodModelo(v.modelo) || '', vUnit: dados.valorTotal, vFrete: 0 }
           })),
           rntrc: empresa?.rntrc || '',
           cstIcms: params['cte.cstIcms'] || '00',
