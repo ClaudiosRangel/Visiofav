@@ -41,7 +41,21 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-const BASE_RECEITA = 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'
+// A Receita mudou o caminho do repositório de dados abertos ao longo do tempo.
+// Mantemos uma lista de bases candidatas e o script tenta cada uma (a que
+// responder com HTTP 200 no download é usada). Ordem: mais recente primeiro.
+const BASES_RECEITA = [
+  'https://arquivos.receitafederal.gov.br/CNPJ/dados_abertos_cnpj',
+  'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj',
+  'https://arquivos.receitafederal.gov.br/dados/cnpj',
+]
+// Padrões de nome dos arquivos de Estabelecimentos (também mudaram).
+// {i} = índice 0..9. O script tenta cada padrão até um responder 200.
+const PADROES_NOME_ESTAB = [
+  'Estabelecimentos{i}.zip',
+  'Estabelecimentos_{i}.zip',
+  'K3241.K03200Y{i}.D50809.ESTABELE.zip',
+]
 
 function parseArgs() {
   const args = process.argv.slice(2)
@@ -122,20 +136,62 @@ async function importarArquivo(caminho: string, cnaes: string[], uf?: string) {
   console.log(`✅ ${caminho}: ${lidas} linhas lidas, ${gravadas} estabelecimentos gravados (filtro CNAE=[${cnaes.join(',')}] UF=${uf || 'todos'})`)
 }
 
-/** Descobre o ANO-MES mais recente disponível no portal (ex.: 2026-08). */
-async function descobrirMesMaisRecente(): Promise<string | null> {
-  try {
-    const resp = await fetch(`${BASE_RECEITA}/`, { headers: { Accept: 'text/html' } })
-    if (!resp.ok) return null
-    const html = await resp.text()
-    // Os diretórios aparecem como links "AAAA-MM/". Pega o maior.
-    const meses = [...html.matchAll(/(\d{4}-\d{2})\//g)].map((m) => m[1])
-    if (meses.length === 0) return null
-    meses.sort()
-    return meses[meses.length - 1]
-  } catch {
-    return null
+/** Descobre o ANO-MES mais recente disponível, tentando cada base candidata. */
+async function descobrirMesMaisRecente(): Promise<{ mes: string; base: string } | null> {
+  for (const base of BASES_RECEITA) {
+    try {
+      const resp = await fetch(`${base}/`, { headers: { Accept: 'text/html' } })
+      if (!resp.ok) continue
+      const html = await resp.text()
+      const meses = [...html.matchAll(/(\d{4}-\d{2})\//g)].map((m) => m[1])
+      if (meses.length === 0) continue
+      meses.sort()
+      return { mes: meses[meses.length - 1], base }
+    } catch {
+      continue
+    }
   }
+  return null
+}
+
+/** Verifica se uma URL existe (HEAD/GET leve). */
+async function urlExiste(url: string): Promise<boolean> {
+  try {
+    const resp = await fetch(url, { method: 'HEAD' })
+    if (resp.ok) return true
+    // Alguns servidores não aceitam HEAD — tenta GET com range mínimo.
+    const g = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+    return g.ok || g.status === 206
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve a URL real de um arquivo de Estabelecimentos índice `i`, testando
+ * todas as combinações base × padrão de nome até achar uma que exista.
+ * Cacheia a base+padrão que funcionou para não re-testar nos próximos índices.
+ */
+let baseResolvida: string | null = null
+let padraoResolvido: string | null = null
+async function resolverUrlEstab(mes: string, i: number): Promise<string | null> {
+  const nome = (padrao: string) => padrao.replace('{i}', String(i))
+  // Se já resolvemos base+padrão, monta direto.
+  if (baseResolvida && padraoResolvido) {
+    return `${baseResolvida}/${mes}/${nome(padraoResolvido)}`
+  }
+  const bases = baseResolvida ? [baseResolvida] : BASES_RECEITA
+  for (const base of bases) {
+    for (const padrao of PADROES_NOME_ESTAB) {
+      const url = `${base}/${mes}/${nome(padrao)}`
+      if (await urlExiste(url)) {
+        baseResolvida = base
+        padraoResolvido = padrao
+        return url
+      }
+    }
+  }
+  return null
 }
 
 /** Baixa um arquivo remoto para o disco (streaming, sem carregar tudo em memória). */
@@ -165,20 +221,33 @@ function descompactar(zipPath: string, destDir: string) {
 
 /** Modo automático: baixa os 10 arquivos de Estabelecimentos do mês, descompacta e importa. */
 async function modoAuto(cnaes: string[], uf: string | undefined, mesArg: string | undefined, tmp: string) {
-  const mes = mesArg || (await descobrirMesMaisRecente())
+  let mes = mesArg
   if (!mes) {
-    console.error('❌ Não foi possível descobrir o mês disponível. Informe manualmente com --mes=AAAA-MM')
+    const descoberto = await descobrirMesMaisRecente()
+    if (descoberto) {
+      mes = descoberto.mes
+      baseResolvida = descoberto.base
+      console.log(`🌐 Descoberto: mês ${mes} na base ${descoberto.base}`)
+    }
+  }
+  if (!mes) {
+    console.error('❌ Não foi possível descobrir o mês automaticamente (o portal bloqueia listagem).')
+    console.error('   Informe manualmente: --mes=AAAA-MM (ex.: --mes=2026-01). O script testa as URLs candidatas.')
     process.exit(1)
   }
-  console.log(`🌐 Usando base da Receita de ${mes}`)
+  console.log(`🌐 Usando base da Receita — mês ${mes}`)
   mkdirSync(tmp, { recursive: true })
 
   for (let i = 0; i < 10; i++) {
+    console.log(`\n📥 [${i + 1}/10] Resolvendo URL do arquivo ${i}...`)
+    const url = await resolverUrlEstab(mes, i)
+    if (!url) {
+      console.log(`   ⚠️ Nenhuma URL candidata respondeu para o arquivo ${i} (mês ${mes}). Pulando.`)
+      continue
+    }
     const nomeZip = `Estabelecimentos${i}.zip`
-    const url = `${BASE_RECEITA}/${mes}/${nomeZip}`
     const zipPath = join(tmp, nomeZip)
-
-    console.log(`\n📥 [${i + 1}/10] Baixando ${nomeZip}...`)
+    console.log(`   → ${url}`)
     const ok = await baixarArquivo(url, zipPath)
     if (!ok) continue
 
