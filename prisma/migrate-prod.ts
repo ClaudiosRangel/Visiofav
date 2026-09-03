@@ -3678,6 +3678,52 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_estabelecimento_cnpj_cnae_uf" ON "estabelecimento_cnpj"("cnae_principal", "uf")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_estabelecimento_cnpj_uf_cidade" ON "estabelecimento_cnpj"("uf", "cidade")`)
   console.log('✅ Prospecção de Clientes: tabelas configuracao_prospeccao, execucao_prospeccao, prospect, estabelecimento_cnpj criadas')
+
+  // Seed de configurações de prospecção — SOMENTE para a Carton Wega
+  // (identificada pelo CNPJ, não pelo nome). Idempotente: só cria se ainda
+  // não existir uma config com o mesmo nome para a empresa. Perfis focados
+  // nos setores que mais consomem embalagem de papel-cartão (cartucho/estojo/
+  // caixa): cosméticos, chocolates/alimentos, farma e calçados.
+  try {
+    const cnpjWega = '39740545000179' // CARTON WEGA INDÚSTRIA DE EMBALAGENS SA
+    const wega = await prisma.empresa.findFirst({
+      where: { cnpj: { in: [cnpjWega, '39.740.545/0001-79'] } },
+      select: { id: true },
+    })
+    if (wega) {
+      const seeds = [
+        { nome: 'Cosméticos e Perfumaria', descricao: 'Fabricantes de cosméticos/perfumaria/higiene — grande uso de cartucho e estojo.', cnaes: '2063100', uf: null as string | null },
+        { nome: 'Chocolates e Alimentos', descricao: 'Chocolates, balas, biscoitos, panificação e massas — caixas e cartuchos de produto.', cnaes: '1093701,1093702,1092900,1091101,1094500', uf: null },
+        { nome: 'Farmacêutico', descricao: 'Medicamentos e preparações farmacêuticas — cartucho de medicamento.', cnaes: '2121101,2123800,2110600,2122000', uf: null },
+        { nome: 'Calçados', descricao: 'Fabricantes de calçados — caixa de sapato.', cnaes: '1531901,1533500,1539400', uf: null },
+      ]
+      let criadas = 0
+      for (const s of seeds) {
+        const existe = await prisma.configuracaoProspeccao.findFirst({
+          where: { empresaId: wega.id, nome: s.nome },
+          select: { id: true },
+        })
+        if (!existe) {
+          await prisma.configuracaoProspeccao.create({
+            data: {
+              empresaId: wega.id,
+              nome: s.nome,
+              descricao: s.descricao,
+              cnaes: s.cnaes,
+              uf: s.uf,
+              situacao: 'ATIVA',
+            },
+          })
+          criadas++
+        }
+      }
+      console.log(`✅ Prospecção: seed Carton Wega — ${criadas} configuração(ões) criada(s) (${seeds.length} verificadas)`)
+    } else {
+      console.log('ℹ️ Prospecção: empresa Carton Wega não encontrada por CNPJ — seed de configs pulado')
+    }
+  } catch (e: any) {
+    console.log('⚠️ Prospecção: seed de configs Carton Wega skipped:', e.message)
+  }
 }
 
 main()
