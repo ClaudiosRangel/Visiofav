@@ -286,3 +286,59 @@ veículos novos (o modelo 1 não tem esse quadro).
 "campo: motivo" (com rótulos amigáveis para `cMod`, município, etc.) em vez do
 genérico "Dados inválidos" — aplicado nas rotas `gravar`, `PUT /:id` e `emitir`.
 Assim o usuário vê na tela qual campo reprovou.
+
+---
+
+## 9. Melhorias de UX/cadastro da sessão de 03/09/2026
+
+Quatro melhorias na listagem/emissão de CT-e (commits back `c112d8249`, front
+`8f4c7ee`). Toca schema — migration idempotente em `migrate-prod.ts`, testada 2x
+local (sem migration formal separada, conforme padrão do projeto).
+
+### 9.1 Chave de acesso copiável na listagem
+
+Coluna "Chave de Acesso" em `fiscal/cte/page.tsx` com a chave abreviada
+(`6…6`) e `CopyButton` do Mantine (ícone vira ✓ ao copiar). A chave já vinha do
+backend no campo `chaveAcesso`.
+
+### 9.2 Barra de ações em lote no tema escuro
+
+A barra de seleção usava `backgroundColor: 'var(--mantine-color-blue-0)'`
+(branco-azulado fixo) — no dark os botões `variant="light"` ficavam sem
+contraste. Trocado para `bg="var(--mantine-color-blue-light)"` (respeita o tema)
++ botões `variant="filled"`. **Regra**: nunca usar `-0`/cores claras fixas como
+fundo de área com texto/botões; usar os tokens `*-light`/`*-filled` que se
+adaptam ao tema.
+
+### 9.3 Cadastro de e-mails úteis (`EmailUtilCte`)
+
+- **Backend**: model `EmailUtilCte` (`empresaId`, `nome` livre, `email`
+  validado, `status`) + CRUD em `cte-emails-uteis.routes.ts`
+  (`/api/fiscal/cte/emails-uteis`), registrado em `emissor-dfe.routes.ts`.
+- **Frontend**: tela em Fiscal → Cadastros → E-mails Úteis
+  (`fiscal/cadastros/emails-uteis/page.tsx`). Os campos de destinatário no
+  **envio individual**, **em lote** e em **Baixar/Enviar Arquivos**
+  (`exportar-xml`) viraram `TagsInput` (Mantine 7) — lista os contatos
+  cadastrados como sugestão E aceita digitação livre (`splitChars` `,`/espaço/`;`).
+  **Nota Mantine 7**: `MultiSelect` NÃO tem mais `creatable`/`onCreate` (era
+  Mantine 6); para "selecionar da lista OU digitar livre" o componente certo é
+  `TagsInput`.
+
+### 9.4 Cidade origem/fim na Tabela de Frete (refino do match)
+
+- **Backend**: `TabelaFreteCte` ganhou `cMunOrigem`/`municipioOrigem`/
+  `cMunDestino`/`municipioDestino` (todos opcionais). Rotas
+  `cte-tabela-frete.routes.ts` aceitam/gravam os campos.
+- **Frontend**: modal da Tabela de Serviço usa `MunicipioAutocomplete` (por UF,
+  grava o código IBGE). Na emissão (`cte/nova`), a auto-seleção da tabela agora:
+  uma tabela COM cidade cadastrada só casa quando a cidade da emissão
+  (`cMunIni`/`cMunFim`) bate; tabelas SÓ por UF servem de fallback; ordena
+  colocando a mais específica (com cidade) primeiro. Permite ter, ex., um valor
+  específico "Niterói→Petrópolis" diferente do genérico "RJ→RJ".
+
+### Estado do schema após esta sessão
+
+Tabelas/campos novos que o `migrate-prod.ts` cria (idempotente): `acesso_modulo`
+(seção do Log de Acesso), `Usuario.ultimo_acesso`, `email_util_cte`, e as 4
+colunas de cidade em `tabela_frete_cte`. Sempre rodar `npx tsx
+prisma/migrate-prod.ts` 2x local antes de push que toque schema.
