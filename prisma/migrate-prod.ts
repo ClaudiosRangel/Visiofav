@@ -3577,6 +3577,107 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) {
     console.log('⚠️ WMS SaldoEndereco backfill/index skipped:', e.message)
   }
+
+  // =========================================================================
+  // Prospecção de Clientes (Prospectar Clientes — leads B2B da base oficial CNPJ)
+  // Ver docs/prospeccao-clientes.md. Multi-tenant por empresa_id.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "configuracao_prospeccao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(150) NOT NULL,
+      "descricao" TEXT,
+      "cnaes" TEXT NOT NULL,
+      "uf" VARCHAR(2),
+      "cidade" VARCHAR(100),
+      "portes" VARCHAR(100),
+      "situacao" VARCHAR(20) NOT NULL DEFAULT 'ATIVA',
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "configuracao_prospeccao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_configuracao_prospeccao_empresa_id" ON "configuracao_prospeccao"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "execucao_prospeccao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "configuracao_id" TEXT NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'EXECUTANDO',
+      "total_encontrado" INTEGER NOT NULL DEFAULT 0,
+      "total_novo" INTEGER NOT NULL DEFAULT 0,
+      "erro" TEXT,
+      "usuario_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "finalizado_em" TIMESTAMP(3),
+      CONSTRAINT "execucao_prospeccao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_execucao_prospeccao_empresa_id" ON "execucao_prospeccao"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_execucao_prospeccao_configuracao_id" ON "execucao_prospeccao"("configuracao_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "prospect" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "configuracao_id" TEXT,
+      "cnpj" VARCHAR(14) NOT NULL,
+      "razao_social" VARCHAR(250) NOT NULL,
+      "nome_fantasia" VARCHAR(250),
+      "cnae_principal" VARCHAR(10),
+      "cnae_descricao" VARCHAR(250),
+      "situacao" VARCHAR(30),
+      "porte" VARCHAR(30),
+      "logradouro" VARCHAR(250),
+      "numero" VARCHAR(20),
+      "complemento" VARCHAR(150),
+      "bairro" VARCHAR(150),
+      "cidade" VARCHAR(150),
+      "uf" VARCHAR(2),
+      "cep" VARCHAR(10),
+      "telefone" VARCHAR(40),
+      "email" VARCHAR(200),
+      "status_funil" VARCHAR(20) NOT NULL DEFAULT 'NOVO',
+      "observacoes" TEXT,
+      "cliente_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "prospect_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "prospect_empresa_id_cnpj_key" ON "prospect"("empresa_id", "cnpj")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_prospect_empresa_id_status_funil" ON "prospect"("empresa_id", "status_funil")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_prospect_configuracao_id" ON "prospect"("configuracao_id")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "estabelecimento_cnpj" (
+      "id" TEXT NOT NULL,
+      "cnpj" VARCHAR(14) NOT NULL,
+      "razao_social" VARCHAR(250) NOT NULL,
+      "nome_fantasia" VARCHAR(250),
+      "cnae_principal" VARCHAR(10),
+      "cnae_descricao" VARCHAR(250),
+      "situacao" VARCHAR(30),
+      "porte" VARCHAR(30),
+      "logradouro" VARCHAR(250),
+      "numero" VARCHAR(20),
+      "complemento" VARCHAR(150),
+      "bairro" VARCHAR(150),
+      "cidade" VARCHAR(150),
+      "uf" VARCHAR(2),
+      "cep" VARCHAR(10),
+      "telefone" VARCHAR(40),
+      "email" VARCHAR(200),
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "estabelecimento_cnpj_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "estabelecimento_cnpj_cnpj_key" ON "estabelecimento_cnpj"("cnpj")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_estabelecimento_cnpj_cnae_uf" ON "estabelecimento_cnpj"("cnae_principal", "uf")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_estabelecimento_cnpj_uf_cidade" ON "estabelecimento_cnpj"("uf", "cidade")`)
+  console.log('✅ Prospecção de Clientes: tabelas configuracao_prospeccao, execucao_prospeccao, prospect, estabelecimento_cnpj criadas')
 }
 
 main()

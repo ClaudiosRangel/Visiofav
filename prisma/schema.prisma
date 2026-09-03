@@ -127,6 +127,11 @@ model Empresa {
   caixasPdv CaixaPdv[]
   vendasPdv VendaPdv[]
 
+  // Prospecção de Clientes
+  configuracoesProspeccao ConfiguracaoProspeccao[]
+  execucoesProspeccao     ExecucaoProspeccao[]
+  prospects               Prospect[]
+
   @@map("empresa")
 }
 
@@ -5017,4 +5022,130 @@ model AprovacaoClienteRep {
 
   @@index([empresaId, status])
   @@map("aprovacao_cliente_rep")
+}
+
+// ============================================================================
+// PROSPECÇÃO DE CLIENTES (Prospectar Clientes — leads B2B da base oficial CNPJ)
+// ============================================================================
+
+/// Configuração de "negócio a prospectar" salva pelo usuário. Define os
+/// critérios de busca na base oficial de CNPJ (CNAEs alvo + UF/cidade/porte).
+/// Multi-tenant (empresaId). Uma empresa pode ter várias configurações
+/// (ex.: "Cosméticos SP", "Alimentos Sul").
+model ConfiguracaoProspeccao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  nome         String   @db.VarChar(150)
+  descricao    String?  @db.Text
+  // Lista de códigos CNAE alvo (ex.: ["2063100","1093701"]). Guardada como
+  // CSV em coluna texto para simplicidade (poucos itens, sem consulta por
+  // elemento). Ex.: "2063100,1093701".
+  cnaes        String   @db.Text
+  uf           String?  @db.VarChar(2)
+  cidade       String?  @db.VarChar(100)
+  // Porte alvo (opcional): MEI | ME | EPP | DEMAIS. CSV como cnaes.
+  portes       String?  @db.VarChar(100)
+  // Situação cadastral alvo (default só ATIVA=02).
+  situacao     String   @default("ATIVA") @db.VarChar(20)
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  execucoes ExecucaoProspeccao[]
+  prospects Prospect[]
+
+  @@index([empresaId])
+  @@map("configuracao_prospeccao")
+}
+
+/// Histórico de cada disparo de busca de prospecção. Guarda a config usada,
+/// quantos leads foram encontrados/novos e por quem/quando.
+model ExecucaoProspeccao {
+  id             String                 @id @default(uuid())
+  empresaId      String                 @map("empresa_id")
+  empresa        Empresa                @relation(fields: [empresaId], references: [id])
+  configuracaoId String                 @map("configuracao_id")
+  configuracao   ConfiguracaoProspeccao @relation(fields: [configuracaoId], references: [id], onDelete: Cascade)
+  status         String                 @default("EXECUTANDO") @db.VarChar(20) // EXECUTANDO | CONCLUIDA | ERRO
+  totalEncontrado Int                   @default(0) @map("total_encontrado")
+  totalNovo      Int                    @default(0) @map("total_novo")
+  erro           String?                @db.Text
+  usuarioId      String?                @map("usuario_id")
+  criadoEm       DateTime               @default(now()) @map("criado_em")
+  finalizadoEm   DateTime?              @map("finalizado_em")
+
+  @@index([empresaId])
+  @@index([configuracaoId])
+  @@map("execucao_prospeccao")
+}
+
+/// Cada empresa/lead encontrado na prospecção. Multi-tenant. Status de funil
+/// controla o avanço do lead até virar Cliente. Quando convertido, guarda o
+/// clienteId gerado.
+model Prospect {
+  id             String                  @id @default(uuid())
+  empresaId      String                  @map("empresa_id")
+  empresa        Empresa                 @relation(fields: [empresaId], references: [id])
+  configuracaoId String?                 @map("configuracao_id")
+  configuracao   ConfiguracaoProspeccao? @relation(fields: [configuracaoId], references: [id])
+  cnpj           String                  @db.VarChar(14)
+  razaoSocial    String                  @map("razao_social") @db.VarChar(250)
+  nomeFantasia   String?                 @map("nome_fantasia") @db.VarChar(250)
+  cnaePrincipal  String?                 @map("cnae_principal") @db.VarChar(10)
+  cnaeDescricao  String?                 @map("cnae_descricao") @db.VarChar(250)
+  situacao       String?                 @db.VarChar(30)
+  porte          String?                 @db.VarChar(30)
+  logradouro     String?                 @db.VarChar(250)
+  numero         String?                 @db.VarChar(20)
+  complemento    String?                 @db.VarChar(150)
+  bairro         String?                 @db.VarChar(150)
+  cidade         String?                 @db.VarChar(150)
+  uf             String?                 @db.VarChar(2)
+  cep            String?                 @db.VarChar(10)
+  telefone       String?                 @db.VarChar(40)
+  email          String?                 @db.VarChar(200)
+  // Funil: NOVO | EM_CONTATO | QUALIFICADO | DESCARTADO | CONVERTIDO
+  statusFunil    String                  @default("NOVO") @map("status_funil") @db.VarChar(20)
+  observacoes    String?                 @db.Text
+  // Preenchido quando o prospect é convertido em Cliente (id do Cliente).
+  clienteId      String?                 @map("cliente_id")
+  criadoEm       DateTime                @default(now()) @map("criado_em")
+  atualizadoEm   DateTime                @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, cnpj])
+  @@index([empresaId, statusFunil])
+  @@index([configuracaoId])
+  @@map("prospect")
+}
+
+/// Espelho LOCAL da base oficial de CNPJ da Receita Federal, populado sob
+/// demanda por CNAE+UF a partir do dump oficial (scripts/importar-cnpj-oficial.ts).
+/// NÃO é multi-tenant — é uma base de referência compartilhada (dado público
+/// da Receita, igual para todas as empresas). A prospecção consulta esta
+/// tabela filtrando por CNAE/UF/cidade e materializa os resultados como
+/// Prospect (esse sim multi-tenant) da empresa que disparou a busca.
+model EstabelecimentoCnpj {
+  id             String   @id @default(uuid())
+  cnpj           String   @unique @db.VarChar(14)
+  razaoSocial    String   @map("razao_social") @db.VarChar(250)
+  nomeFantasia   String?  @map("nome_fantasia") @db.VarChar(250)
+  cnaePrincipal  String?  @map("cnae_principal") @db.VarChar(10)
+  cnaeDescricao  String?  @map("cnae_descricao") @db.VarChar(250)
+  situacao       String?  @db.VarChar(30)
+  porte          String?  @db.VarChar(30)
+  logradouro     String?  @db.VarChar(250)
+  numero         String?  @db.VarChar(20)
+  complemento    String?  @db.VarChar(150)
+  bairro         String?  @db.VarChar(150)
+  cidade         String?  @db.VarChar(150)
+  uf             String?  @db.VarChar(2)
+  cep            String?  @db.VarChar(10)
+  telefone       String?  @db.VarChar(40)
+  email          String?  @db.VarChar(200)
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+
+  @@index([cnaePrincipal, uf])
+  @@index([uf, cidade])
+  @@map("estabelecimento_cnpj")
 }
