@@ -22,6 +22,7 @@ import { nfceEmissaoService } from './nfce/nfce-emissao.service'
 import { danfePdfService } from './nfe/danfe-pdf.service'
 import { cteRoutes } from './cte/cte.routes'
 import { cteTabelaFreteRoutes } from './cte/cte-tabela-frete.routes'
+import { cteEmailsUteisRoutes } from './cte/cte-emails-uteis.routes'
 import { cteMunicipiosRoutes } from './cte/cte-municipios.routes'
 import { cteCoresRoutes } from './cte/cte-cores.routes'
 import { exportacaoXmlRoutes } from './exportacao-xml.routes'
@@ -74,6 +75,9 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
 
   // Registrar rotas de Tabela de Frete CT-e
   app.register(cteTabelaFreteRoutes)
+
+  // Cadastro de e-mails úteis do CT-e
+  app.register(cteEmailsUteisRoutes)
 
   // Busca de municípios IBGE
   app.register(cteMunicipiosRoutes)

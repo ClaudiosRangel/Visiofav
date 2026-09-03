@@ -2907,6 +2907,29 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acesso_modulo_modulo" ON "acesso_modulo"("modulo")`)
   console.log('✅ Log de acesso: tabela acesso_modulo pronta')
 
+  // =========================================================================
+  // CT-e — Cidade na Tabela de Frete + Cadastro de e-mails úteis
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_frete_cte" ADD COLUMN IF NOT EXISTS "cmun_origem" VARCHAR(7)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_frete_cte" ADD COLUMN IF NOT EXISTS "municipio_origem" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_frete_cte" ADD COLUMN IF NOT EXISTS "cmun_destino" VARCHAR(7)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_frete_cte" ADD COLUMN IF NOT EXISTS "municipio_destino" VARCHAR(60)`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "email_util_cte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(150) NOT NULL,
+      "email" VARCHAR(200) NOT NULL,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "email_util_cte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_email_util_cte_empresa" ON "email_util_cte"("empresa_id")`)
+  console.log('✅ CT-e: cidade na tabela de frete + email_util_cte prontos')
+
   console.log('✅ All migrations applied successfully')
 }
 

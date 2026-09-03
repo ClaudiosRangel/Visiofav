@@ -1054,6 +1054,12 @@ model TabelaFreteCte {
   descricao        String?  @db.VarChar(300)
   ufOrigem         String?  @map("uf_origem") @db.VarChar(2)
   ufDestino        String?  @map("uf_destino") @db.VarChar(2)
+  // Cidade (opcional) — quando preenchida, refina o match da tabela na
+  // emissão do CT-e (cidade+UF tem prioridade sobre só UF). cMun = código IBGE.
+  cMunOrigem       String?  @map("cmun_origem") @db.VarChar(7)
+  municipioOrigem  String?  @map("municipio_origem") @db.VarChar(60)
+  cMunDestino      String?  @map("cmun_destino") @db.VarChar(7)
+  municipioDestino String?  @map("municipio_destino") @db.VarChar(60)
   valorFixo        Decimal? @map("valor_fixo") @db.Decimal(12, 2) // Valor fixo da prestação (se preenchido, usa direto)
   valorFretePeso   Decimal? @map("valor_frete_peso") @db.Decimal(12, 4) // R$/kg
   valorFreteVolume Decimal? @map("valor_frete_volume") @db.Decimal(12, 4) // R$/m³
@@ -1071,6 +1077,20 @@ model TabelaFreteCte {
 
   @@index([empresaId, ufOrigem, ufDestino])
   @@map("tabela_frete_cte")
+}
+
+// CT-e — Cadastro de e-mails úteis (contatos frequentes para envio de CT-e)
+model EmailUtilCte {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  nome         String   @db.VarChar(150) // Nome/descrição do contato (pode repetir entre empresas)
+  email        String   @db.VarChar(200)
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId])
+  @@map("email_util_cte")
 }
 
 // CT-e — Seguro da Carga
