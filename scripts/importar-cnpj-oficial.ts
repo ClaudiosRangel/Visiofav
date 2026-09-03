@@ -31,11 +31,17 @@
  * (varia muito por ambiente). Este script foca no que é reutilizável: PARSEAR
  * um CSV de Estabelecimentos e gravar só as linhas que batem com o filtro.
  */
-import { createReadStream, existsSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, createWriteStream, readdirSync, rmSync } from 'node:fs'
 import { createInterface } from 'node:readline'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { execFileSync } from 'node:child_process'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
+
+const BASE_RECEITA = 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'
 
 function parseArgs() {
   const args = process.argv.slice(2)
@@ -43,10 +49,14 @@ function parseArgs() {
     const a = args.find((x) => x.startsWith(`--${k}=`))
     return a ? a.split('=').slice(1).join('=') : undefined
   }
+  const has = (k: string) => args.includes(`--${k}`)
   return {
     cnaes: (get('cnaes') || '').split(',').map((c) => c.replace(/\D/g, '')).filter(Boolean),
     uf: (get('uf') || '').toUpperCase() || undefined,
     arquivo: get('arquivo'),
+    auto: has('auto'),
+    mes: get('mes'), // AAAA-MM (opcional; se omitido no --auto, tenta descobrir o mais recente)
+    tmp: get('tmp') || join(process.cwd(), '.cnpj-tmp'),
   }
 }
 
@@ -112,28 +122,119 @@ async function importarArquivo(caminho: string, cnaes: string[], uf?: string) {
   console.log(`✅ ${caminho}: ${lidas} linhas lidas, ${gravadas} estabelecimentos gravados (filtro CNAE=[${cnaes.join(',')}] UF=${uf || 'todos'})`)
 }
 
+/** Descobre o ANO-MES mais recente disponível no portal (ex.: 2026-08). */
+async function descobrirMesMaisRecente(): Promise<string | null> {
+  try {
+    const resp = await fetch(`${BASE_RECEITA}/`, { headers: { Accept: 'text/html' } })
+    if (!resp.ok) return null
+    const html = await resp.text()
+    // Os diretórios aparecem como links "AAAA-MM/". Pega o maior.
+    const meses = [...html.matchAll(/(\d{4}-\d{2})\//g)].map((m) => m[1])
+    if (meses.length === 0) return null
+    meses.sort()
+    return meses[meses.length - 1]
+  } catch {
+    return null
+  }
+}
+
+/** Baixa um arquivo remoto para o disco (streaming, sem carregar tudo em memória). */
+async function baixarArquivo(url: string, destino: string): Promise<boolean> {
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok || !resp.body) {
+      console.log(`   ⚠️ ${url} → HTTP ${resp.status}`)
+      return false
+    }
+    await pipeline(Readable.fromWeb(resp.body as any), createWriteStream(destino))
+    return true
+  } catch (e: any) {
+    console.log(`   ⚠️ Falha ao baixar ${url}: ${e.message}`)
+    return false
+  }
+}
+
+/** Descompacta um .zip usando Expand-Archive (Windows) ou unzip (Linux/Render). */
+function descompactar(zipPath: string, destDir: string) {
+  if (process.platform === 'win32') {
+    execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${destDir}' -Force`], { stdio: 'inherit' })
+  } else {
+    execFileSync('unzip', ['-o', zipPath, '-d', destDir], { stdio: 'inherit' })
+  }
+}
+
+/** Modo automático: baixa os 10 arquivos de Estabelecimentos do mês, descompacta e importa. */
+async function modoAuto(cnaes: string[], uf: string | undefined, mesArg: string | undefined, tmp: string) {
+  const mes = mesArg || (await descobrirMesMaisRecente())
+  if (!mes) {
+    console.error('❌ Não foi possível descobrir o mês disponível. Informe manualmente com --mes=AAAA-MM')
+    process.exit(1)
+  }
+  console.log(`🌐 Usando base da Receita de ${mes}`)
+  mkdirSync(tmp, { recursive: true })
+
+  for (let i = 0; i < 10; i++) {
+    const nomeZip = `Estabelecimentos${i}.zip`
+    const url = `${BASE_RECEITA}/${mes}/${nomeZip}`
+    const zipPath = join(tmp, nomeZip)
+
+    console.log(`\n📥 [${i + 1}/10] Baixando ${nomeZip}...`)
+    const ok = await baixarArquivo(url, zipPath)
+    if (!ok) continue
+
+    console.log(`📦 Descompactando ${nomeZip}...`)
+    try {
+      descompactar(zipPath, tmp)
+    } catch (e: any) {
+      console.log(`   ⚠️ Falha ao descompactar: ${e.message}`); continue
+    }
+
+    // O CSV extraído tem nome variável (ex.: "K3241.K03200Y0.D50809.ESTABELE").
+    // Importa todos os arquivos extraídos deste zip que não sejam o próprio zip.
+    const extraidos = readdirSync(tmp).filter((f) => !f.endsWith('.zip') && f.toUpperCase().includes('ESTABELE'))
+    for (const f of extraidos) {
+      const caminho = join(tmp, f)
+      console.log(`🔄 Importando ${f}...`)
+      await importarArquivo(caminho, cnaes, uf)
+      rmSync(caminho, { force: true }) // libera espaço logo após importar
+    }
+    rmSync(zipPath, { force: true }) // remove o zip depois de processar
+  }
+
+  // Limpa a pasta temporária
+  try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+}
+
 async function main() {
-  const { cnaes, uf, arquivo } = parseArgs()
+  const { cnaes, uf, arquivo, auto, mes, tmp } = parseArgs()
 
   if (cnaes.length === 0) {
     console.error('❌ Informe ao menos um CNAE: --cnaes=2063100,2062200')
     process.exit(1)
   }
 
+  // Modo automático: baixa + descompacta + importa tudo (recomendado).
+  if (auto) {
+    console.log(`🚀 Modo automático — CNAEs: ${cnaes.join(',')}, UF: ${uf || 'todas'}`)
+    await modoAuto(cnaes, uf, mes, tmp)
+    const total = await prisma.estabelecimentoCnpj.count()
+    console.log(`\n📊 Total de estabelecimentos na base local agora: ${total}`)
+    return
+  }
+
   if (!arquivo) {
     console.log(`
-ℹ️  Nenhum --arquivo informado. Este script IMPORTA um CSV de Estabelecimentos
-    já baixado. Passos:
+ℹ️  Escolha um modo:
 
-    1) Baixe os arquivos oficiais (dados abertos, gratuitos) de:
-       https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/<ANO-MES>/
-       Arquivos "Estabelecimentos0.zip" .. "Estabelecimentos9.zip".
-    2) Descompacte cada um (vira um CSV grande, sem extensão — renomeie p/ .csv).
-    3) Rode para cada CSV:
-       npx tsx scripts/importar-cnpj-oficial.ts --arquivo=./Estabelecimentos0.csv --cnaes=${cnaes.join(',')}${uf ? ` --uf=${uf}` : ''}
+  ▶ AUTOMÁTICO (recomendado) — baixa, descompacta e importa tudo:
+      npx tsx scripts/importar-cnpj-oficial.ts --auto --cnaes=${cnaes.join(',')}${uf ? ` --uf=${uf}` : ''}
+    (opcional: --mes=AAAA-MM para fixar o mês; padrão = mais recente)
 
-    Só as linhas que batem com o CNAE/UF são gravadas — o volume no banco fica
-    proporcional ao seu nicho, não à base inteira.
+  ▶ MANUAL — importa um CSV de Estabelecimentos já baixado/descompactado:
+      npx tsx scripts/importar-cnpj-oficial.ts --arquivo=./ESTABELE.csv --cnaes=${cnaes.join(',')}${uf ? ` --uf=${uf}` : ''}
+
+Só as linhas que batem com o CNAE/UF são gravadas — o volume no banco fica
+proporcional ao seu nicho, não à base inteira (~60M de empresas).
 `)
     await prisma.$disconnect()
     return

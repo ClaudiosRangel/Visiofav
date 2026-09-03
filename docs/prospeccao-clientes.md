@@ -130,11 +130,35 @@ Módulo completo e integrado. Fluxo ponta a ponta:
 4. Aba "Leads": vê os prospects, muda status do funil inline, enriquece via API
    pública, e converte em Cliente (1 clique → reaproveita o cadastro existente).
 
+### Como popular a base oficial (IMPORTANTE)
+
+O script `scripts/importar-cnpj-oficial.ts` tem DOIS modos:
+
+**Automático (recomendado)** — baixa, descompacta e importa tudo num comando:
+```
+cd C:\Source\VisioFab.Wms.Back
+npx tsx scripts/importar-cnpj-oficial.ts --auto --cnaes=2063100,1093701,1093702,1092900,1091101,1094500,2121101,2123800,2110600,2122000,1531901,1533500,1539400
+```
+- Descobre o mês mais recente da Receita sozinho (ou fixe com `--mes=2026-08`).
+- Baixa os 10 arquivos `Estabelecimentos0..9.zip`, descompacta um a um,
+  importa só as linhas que batem com os CNAEs (e `--uf=SP` se informado),
+  e apaga o arquivo logo após importar (não acumula 5GB em disco).
+- Filtrar por `--uf=SP` reduz muito o volume; sem UF importa o Brasil todo.
+
+**Manual** — se já baixou/descompactou um CSV de Estabelecimentos:
+```
+npx tsx scripts/importar-cnpj-oficial.ts --arquivo=./ESTABELE.csv --cnaes=2063100
+```
+
+Rodar CONTRA O BANCO DE PRODUÇÃO: setar a env `DATABASE_URL` de produção
+(Neon) antes de rodar, OU rodar no Web Shell do Render. Rodar contra o banco
+local só popula o dev.
+
 ### Pendência operacional (não é código — é dado)
 Para a busca retornar empresas, a base `estabelecimento_cnpj` precisa ser
-populada uma vez pelo operador de infra, baixando os arquivos de
-Estabelecimentos da Receita e rodando o script filtrando pelos CNAEs do nicho
-da Carton Wega (embalagens → clientes de cosméticos/alimentos/farma/calçados).
+populada uma vez rodando o comando acima. Os CNAEs do nicho da Carton Wega
+(embalagens → cosméticos/alimentos/farma/calçados) já estão nas configs
+pré-cadastradas (seed) e no comando de exemplo.
 Isso é intencional: mantém o volume no Neon proporcional ao nicho, não à base
 inteira (~60M de empresas). O enriquecimento por API pública funciona
 imediatamente para CNPJs já conhecidos, sem depender do dump.
