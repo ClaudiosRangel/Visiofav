@@ -198,3 +198,37 @@ Frontend:
 ## Registro de execução
 
 (atualizado conforme avança)
+
+
+## PAUSADO (03/09/2026) — menu desabilitado, aguardando decisão da fonte
+
+O módulo está **completo, deployado e funcional**, mas o item de menu
+"Prospectar Clientes" foi **desabilitado** (comentado em
+`ModuleSidebar.tsx`, bloco `vendas`) porque nenhuma fonte automática e
+gratuita de dados de CNPJ se mostrou viável:
+
+| Fonte testada | Resultado |
+|---|---|
+| Base oficial — URL antiga (`arquivos.receitafederal.gov.br/dados/cnpj/...`) | 404 — portal removido |
+| Base oficial — dados.gov.br | Só links/metadados, não expõe os ZIPs de Estabelecimentos |
+| Base oficial — Nextcloud SERPRO (`.../index.php/s/YggdBLfdninEJX9`) | Download programático retorna HTML vazio (exige sessão de navegador). Pastas por mês (2025-10..2026-08, ~7GB cada), arquivos `Estabelecimentos0..9.zip` |
+| API Casa dos Dados (v2 público) | HTTP 403 (Cloudflare/anti-bot) |
+
+### O que continua pronto (não removido)
+- Backend: models, migrations, rotas `/api/prospeccao`, provider plugável,
+  script `importar-cnpj-oficial.ts` (com fallback de URLs/nomes).
+- Frontend: página `/vendas/prospeccao` (acessível por URL direta; só o item
+  de menu foi ocultado), hook `useProspeccao.ts`.
+- Seed das 4 configs da Carton Wega no `migrate-prod.ts`.
+
+### Para reativar quando a fonte for decidida
+1. Descomentar a linha do menu em `ModuleSidebar.tsx` (e re-adicionar o
+   import `IconRadar2`).
+2. Popular a base via uma destas opções:
+   - **Manual**: baixar `Estabelecimentos*.zip` do Nextcloud pelo navegador,
+     descompactar e rodar `importar-cnpj-oficial.ts --arquivo=...`.
+   - **API paga** (recomendado p/ uso recorrente): CNPJá comercial, Casa dos
+     Dados (com token), dadosapi.com — plugar no provider
+     (`src/modules/prospeccao/provider/`), sem mudar rotas/tela.
+
+Decisão do usuário: estudar melhor a fonte antes de reativar.
