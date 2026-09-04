@@ -132,7 +132,89 @@ model Empresa {
   execucoesProspeccao     ExecucaoProspeccao[]
   prospects               Prospect[]
 
+  // Financeiro Vizor (billing do SaaS) — status de cobrança da empresa cliente.
+  // Campo dedicado, distinto do `status` boolean existente (preservado acima).
+  statusFinanceiro String    @default("ATIVO") @map("status_financeiro") @db.VarChar(20)
+  // Auditoria de inativação/reativação manual (Req 9.5, 9.6)
+  inativadoPor     String?   @map("inativado_por")
+  inativadoEm      DateTime? @map("inativado_em")
+  reativadoPor     String?   @map("reativado_por")
+  reativadoEm      DateTime? @map("reativado_em")
+
+  contratoCobranca ContratoCobranca?
+  faturas          Fatura[]
+
+  @@index([statusFinanceiro])
   @@map("empresa")
+}
+
+// ============================================================================
+// FINANCEIRO VIZOR — BILLING DO SAAS (cobrança das empresas clientes)
+// Uso exclusivo do SUPER_ADMIN. Ver .kiro/specs/financeiro-vizor/.
+// ============================================================================
+
+model ContratoCobranca {
+  id            String   @id @default(uuid())
+  empresaId     String   @unique @map("empresa_id") // 1:1 com Empresa (Req 10.5)
+  empresa       Empresa  @relation(fields: [empresaId], references: [id])
+  dataContrato  DateTime @map("data_contrato")
+  diaVencimento Int      @map("dia_vencimento") // 1..31 (Req 3.4/3.5)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+
+  precosModulo PrecoModulo[]
+
+  @@map("contrato_cobranca")
+}
+
+model PrecoModulo {
+  id                 String           @id @default(uuid())
+  contratoCobrancaId String           @map("contrato_cobranca_id")
+  contratoCobranca   ContratoCobranca @relation(fields: [contratoCobrancaId], references: [id], onDelete: Cascade)
+  modulo             String           @db.VarChar(20) // COMPRAS|VENDAS|FINANCEIRO|FISCAL|WMS|PCP
+  preco              Decimal          @default(0) @db.Decimal(12, 2) // 0,00 .. 999.999.999,99 (Req 3.2/3.6)
+
+  @@unique([contratoCobrancaId, modulo]) // um preço por módulo por contrato
+  @@map("preco_modulo")
+}
+
+model Fatura {
+  id             String    @id @default(uuid())
+  empresaId      String    @map("empresa_id") // não nulo (Req 10.5)
+  empresa        Empresa   @relation(fields: [empresaId], references: [id])
+  competencia    String    @db.VarChar(7) // "YYYY-MM"
+  dataVencimento DateTime  @map("data_vencimento")
+  valor          Decimal   @db.Decimal(12, 2)
+  status         String    @default("PENDENTE") @db.VarChar(20) // PENDENTE|PAGA|VENCIDA|CANCELADA
+  dataPagamento  DateTime? @map("data_pagamento")
+  criadoEm       DateTime  @default(now()) @map("criado_em")
+  atualizadoEm   DateTime  @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, competencia])
+  @@index([empresaId, status, dataVencimento])
+  @@map("fatura")
+}
+
+model ControleAlertaCobranca {
+  id         String   @id @default(uuid())
+  empresaId  String   @map("empresa_id")
+  tipoAlerta String   @db.VarChar(30) // ALERTA_10D | SOMENTE_LEITURA_30D
+  dataEnvio  String   @db.VarChar(10) // "YYYY-MM-DD" (dia do envio)
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, tipoAlerta, dataEnvio]) // no máximo 1x/dia por tipo/empresa
+  @@map("controle_alerta_cobranca")
+}
+
+model LogExecucaoJobFinanceiro {
+  id                  String    @id @default(uuid())
+  iniciadoEm          DateTime  @default(now()) @map("iniciado_em")
+  finalizadoEm        DateTime? @map("finalizado_em")
+  sucesso             Boolean   @default(false)
+  empresasProcessadas Int       @default(0) @map("empresas_processadas")
+  erro                String?   @db.Text
+
+  @@map("log_execucao_job_financeiro")
 }
 
 model Usuario {

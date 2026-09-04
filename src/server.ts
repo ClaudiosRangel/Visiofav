@@ -158,6 +158,9 @@ import { startPortalWorker } from './modules/portal/portal.worker'
 import { startBiWorkers } from './modules/bi/bi.worker'
 import { startWaveWorker } from './modules/wave/wave.worker'
 
+// Financeiro Vizor — billing do SaaS (recálculo diário de inadimplência)
+import { startRecalculoFinanceiroScheduler } from './modules/financeiro-vizor/recalculo-financeiro.scheduler'
+
 // PCP — Planejamento e Controle da Produção
 import { centroProducaoRoutes } from './modules/centro-producao/centro-producao.routes'
 import { tipoProcessoRoutes } from './modules/tipo-processo/tipo-processo.routes'
@@ -192,6 +195,9 @@ import { apontamentoProducaoRoutes } from './modules/apontamento-producao/aponta
 // Sistema de Notificações
 import { notificacaoRoutes } from './modules/notificacao/notificacao.routes'
 
+// Financeiro Vizor — billing do SaaS (exclusivo do SUPER_ADMIN)
+import { financeiroVizorRoutes } from './modules/financeiro-vizor/financeiro-vizor.routes'
+
 // Checkout de Apontamento — app web separado do ERP (Terminal + PIN)
 import { checkoutAuthRoutes } from './modules/checkout/checkout-auth.routes'
 import { checkoutRoutes } from './modules/checkout/checkout.routes'
@@ -201,6 +207,7 @@ import { portalRepRoutes } from './modules/portal-rep/index'
 
 import { registerTenantContext } from './middleware/tenant-context'
 import { registerSecurityAuditHook } from './middleware/security-audit'
+import { registerReadOnlyGuard } from './modules/financeiro-vizor/read-only-guard'
 import multipart from '@fastify/multipart'
 
 const app = Fastify({ logger: true, bodyLimit: 5 * 1024 * 1024 }) // 5MB para suportar upload de avatar base64
@@ -292,6 +299,16 @@ async function bootstrap() {
   // ── Segurança: Auditoria automática de eventos de segurança ──
   registerSecurityAuditHook(app)
 
+  // ── Financeiro Vizor: guard central de somente-leitura (choke point único) ──
+  // Registro ÚNICO e transversal do enforcement do estágio de cobrança de cada
+  // empresa cliente. Como o tenant-context, é um `preHandler` global no `app`
+  // (roda depois de TODA a fase `onRequest`, incluindo o `authenticate` de cada
+  // módulo), garantindo que `request.user` já esteja populado quando o guard lê
+  // o `statusFinanceiro` da empresa da sessão. Cobre todos os módulos
+  // operacionais registrados abaixo, com allowlist para auth/seleção de
+  // empresa/módulo financeiro/perfil próprio (ver read-only-guard.ts).
+  registerReadOnlyGuard(app)
+
   // Adapter Firebase Auth (período de migração)
   app.addHook('onRequest', firebaseAuthAdapter)
 
@@ -308,6 +325,9 @@ async function bootstrap() {
 
   // Seleção de empresa (pré-módulo — sem moduloGuard)
   await app.register(empresaSelectorRoutes, { prefix: '/api/empresas' })
+
+  // Financeiro Vizor — billing do SaaS (exclusivo do SUPER_ADMIN)
+  await app.register(financeiroVizorRoutes, { prefix: '/api/financeiro-vizor' })
 
   // Módulo Vendas — Vendedores
   await app.register(vendedorRoutes, { prefix: '/api/vendedores' })
@@ -577,6 +597,7 @@ async function bootstrap() {
   startPortalWorker()
   startBiWorkers()
   startWaveWorker()
+  startRecalculoFinanceiroScheduler()
 }
 
 bootstrap()

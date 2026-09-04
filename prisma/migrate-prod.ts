@@ -3724,6 +3724,105 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) {
     console.log('⚠️ Prospecção: seed de configs Carton Wega skipped:', e.message)
   }
+
+  // =========================================================================
+  // Financeiro Vizor — Billing do SaaS (cobrança das empresas clientes)
+  // Ver .kiro/specs/financeiro-vizor/. statusFinanceiro é campo NOVO na
+  // empresa, distinto do `status` boolean existente (que NÃO é tocado aqui).
+  // =========================================================================
+
+  // Empresa — campos do Financeiro Vizor (idempotentes)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "status_financeiro" VARCHAR(20) NOT NULL DEFAULT 'ATIVO'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "inativado_por" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "inativado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "reativado_por" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "reativado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "empresa_status_financeiro_idx" ON "empresa"("status_financeiro")`)
+
+  // ContratoCobranca table (1:1 com Empresa)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "contrato_cobranca" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "data_contrato" TIMESTAMP(3) NOT NULL,
+      "dia_vencimento" INTEGER NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "contrato_cobranca_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "contrato_cobranca_empresa_id_key" ON "contrato_cobranca"("empresa_id")`)
+
+  // PrecoModulo table (um preço por módulo por contrato)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "preco_modulo" (
+      "id" TEXT NOT NULL,
+      "contrato_cobranca_id" TEXT NOT NULL,
+      "modulo" VARCHAR(20) NOT NULL,
+      "preco" DECIMAL(12,2) NOT NULL DEFAULT 0,
+      CONSTRAINT "preco_modulo_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "preco_modulo_contrato_cobranca_id_modulo_key" ON "preco_modulo"("contrato_cobranca_id", "modulo")`)
+
+  // Fatura table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "fatura" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "competencia" VARCHAR(7) NOT NULL,
+      "data_vencimento" TIMESTAMP(3) NOT NULL,
+      "valor" DECIMAL(12,2) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+      "data_pagamento" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "fatura_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "fatura_empresa_id_competencia_idx" ON "fatura"("empresa_id", "competencia")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "fatura_empresa_id_status_data_vencimento_idx" ON "fatura"("empresa_id", "status", "data_vencimento")`)
+
+  // ControleAlertaCobranca table (idempotência diária de alerta)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "controle_alerta_cobranca" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "tipo_alerta" VARCHAR(30) NOT NULL,
+      "data_envio" VARCHAR(10) NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "controle_alerta_cobranca_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "controle_alerta_cobranca_empresa_id_tipo_alerta_data_envio_key" ON "controle_alerta_cobranca"("empresa_id", "tipo_alerta", "data_envio")`)
+
+  // LogExecucaoJobFinanceiro table (rastreio do job diário)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "log_execucao_job_financeiro" (
+      "id" TEXT NOT NULL,
+      "iniciado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "finalizado_em" TIMESTAMP(3),
+      "sucesso" BOOLEAN NOT NULL DEFAULT false,
+      "empresas_processadas" INTEGER NOT NULL DEFAULT 0,
+      "erro" TEXT,
+      CONSTRAINT "log_execucao_job_financeiro_pkey" PRIMARY KEY ("id")
+    )
+  `)
+
+  // FKs — Postgres não tem ADD CONSTRAINT IF NOT EXISTS: cada uma em try/catch
+  const addFkFinanceiro = async (sql: string) => {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('já existe')) return // idempotente
+      console.log('⚠️ Financeiro Vizor FK skipped:', e.message?.substring(0, 150))
+    }
+  }
+  await addFkFinanceiro(`ALTER TABLE "contrato_cobranca" ADD CONSTRAINT "contrato_cobranca_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkFinanceiro(`ALTER TABLE "preco_modulo" ADD CONSTRAINT "preco_modulo_contrato_cobranca_id_fkey" FOREIGN KEY ("contrato_cobranca_id") REFERENCES "contrato_cobranca"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  await addFkFinanceiro(`ALTER TABLE "fatura" ADD CONSTRAINT "fatura_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+
+  console.log('✅ Financeiro Vizor: empresa.status_financeiro (+ auditoria), contrato_cobranca, preco_modulo, fatura, controle_alerta_cobranca, log_execucao_job_financeiro criados')
 }
 
 main()
