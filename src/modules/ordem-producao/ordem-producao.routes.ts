@@ -58,7 +58,12 @@ const listQuerySchema = z.object({
   produto: z.string().optional(),
   dataEntregaDe: z.string().optional(),
   dataEntregaAte: z.string().optional(),
-  numero: z.coerce.number().int().optional(),
+  // `numero` chega como texto do campo de busca. O cliente enxerga o número
+  // da OP do GPrint (referenciaExterna), não o `numero` interno sequencial do
+  // ERP. Por isso a busca casa AMBOS: referenciaExterna (número visível) e
+  // numero interno. Mantido como string (não coerce) para poder buscar refs
+  // alfanuméricas como "4-101".
+  numero: z.string().optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
   orderBy: z.enum(['numero', 'dataEmissao', 'dataEntregaPrevista', 'prioridade']).optional().default('numero'),
@@ -89,7 +94,27 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     if (query.produtoId) where.produtoId = query.produtoId
     if (query.clienteId) where.clienteId = query.clienteId
     if (query.pedidoVendaId) where.pedidoVendaId = query.pedidoVendaId
-    if (query.numero) where.numero = query.numero
+    // Busca por número da OP: o cliente enxerga APENAS o número da OP do
+    // GPrint (referenciaExterna) — ele nem conhece o `numero` interno
+    // sequencial do ERP. Por isso a busca casa exclusivamente a
+    // referenciaExterna. Incluir o numero interno geraria resultados "a mais"
+    // que confundem (ex.: buscar "3044" traria também a OP de numero interno
+    // 3044, cuja ref. visível é outra). Fallback: se a OP não tem
+    // referenciaExterna (OP nativa/manual sem número GPrint), casa o numero
+    // interno como último recurso.
+    if (query.numero) {
+      const termo = query.numero.trim()
+      const orBusca: any[] = [
+        { referenciaExterna: { contains: termo, mode: 'insensitive' } },
+      ]
+      const termoNum = parseInt(termo.replace(/\./g, ''), 10)
+      if (/^\d[\d.]*$/.test(termo) && !isNaN(termoNum)) {
+        // Só casa numero interno para OPs SEM referenciaExterna (não-GPrint),
+        // evitando poluir a busca de OPs importadas.
+        orBusca.push({ AND: [{ numero: termoNum }, { referenciaExterna: null }] })
+      }
+      where.AND = [...(where.AND || []), { OR: orBusca }]
+    }
     // Filtro por texto de cliente (busca na tag [Cliente] nas observações)
     if (query.cliente) {
       where.observacoes = { ...(where.observacoes || {}), contains: query.cliente, mode: 'insensitive' }

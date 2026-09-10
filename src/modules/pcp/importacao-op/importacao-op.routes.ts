@@ -98,7 +98,20 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         select: { id: true, numero: true, status: true, referenciaExterna: true },
       })
       if (existente) {
-        opDuplicada = existente
+        const apontEtapa = await prisma.apontamentoEtapa.count({ where: { etapaOrdemProducao: { ordemProducaoId: existente.id } } })
+        const apontProd = await prisma.apontamentoProducao.count({ where: { ordemProducaoId: existente.id } })
+        const finalizada = ['CONCLUIDA', 'CANCELADA'].includes(existente.status)
+        const emAndamento = ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'].includes(existente.status)
+        opDuplicada = {
+          ...existente,
+          apontamentos: apontEtapa + apontProd,
+          finalizada,
+          emAndamento,
+          // Nível de alerta que o frontend usa: 'bloqueio' (finalizada, não
+          // dá pra reimportar), 'forte' (em andamento ou com apontamentos),
+          // 'simples' (rascunho/planejada).
+          nivelAlerta: finalizada ? 'bloqueio' : (emAndamento || apontEtapa + apontProd > 0 ? 'forte' : 'simples'),
+        }
       }
     }
 
@@ -156,6 +169,12 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       })).optional(),
       // Se quer salvar De/Para para futuras importaÃ§Ãµes
       salvarDePara: z.boolean().optional().default(false),
+      // Confirmação explícita para SOBRESCREVER uma OP que já existe e já
+      // avançou no ciclo (PROGRAMADA/LIBERADA/EM_PRODUCAO) ou que já tem
+      // apontamento de produção. Sem esse flag, o backend retorna 409 com
+      // code 'CONFIRMACAO_NECESSARIA' e o frontend exibe o modal de
+      // confirmação. Nunca permite sobrescrever OP CONCLUIDA/CANCELADA.
+      confirmarSobrescrita: z.boolean().optional().default(false),
     })
 
     const body = bodySchema.parse(request.body)
@@ -193,19 +212,26 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     const numeroOriginal = /^\d+$/.test(numeroLimpo) ? parseInt(numeroLimpo) : NaN
 
     // ─────────────────────────────────────────────────────────────────────
-    // REGRA DE REIMPORTAÇÃO (corrigida após incidente OP 4/108 x 3013):
+    // REGRA DE REIMPORTAÇÃO (revisada 09/2026 — reimportar OS alterada):
     //
-    // O casamento de "OP já existe → atualizar" DEVE ser feito EXCLUSIVAMENTE
-    // pela `referenciaExterna` (o número do PDF/GPrint), nunca pelo `numero`
-    // sequencial interno do ERP. Esses são dois espaços de numeração distintos:
-    // uma OP importada de "4/108" recebe um `numero` interno sequencial (ex.
-    // 3013); reimportar o PDF "3013" casava `{ numero: 3013 }` com essa OP e
-    // sobrescrevia a 4/108 — apagando apontamentos e herdando o histórico.
+    // O casamento de "OP já existe → atualizar" é feito EXCLUSIVAMENTE pela
+    // `referenciaExterna` (o número do PDF/GPrint que o cliente enxerga),
+    // nunca pelo `numero` sequencial interno do ERP. São dois espaços de
+    // numeração distintos (incidente OP 4/108 x 3013).
     //
-    // Além disso, só atualizamos OPs:
-    //   (a) de origem PDF_GPRINT (nunca uma OP nativa/avulsa/orçamento);
-    //   (b) que ainda NÃO avançaram no ciclo (status PLANEJADA/RASCUNHO) e
-    //       NÃO têm apontamento algum. Se já produziu, é PROIBIDO sobrescrever.
+    // Estados e ações (o cliente costuma alterar a OS no GPrint e reimportar):
+    //   • CONCLUIDA / CANCELADA        → BLOQUEIO DURO (nunca sobrescreve).
+    //   • RASCUNHO / PLANEJADA         → atualiza; exige confirmação simples.
+    //   • PROGRAMADA/LIBERADA/EM_PROD  → atualiza; exige confirmação com
+    //                                    RECOMENDAÇÃO FORTE (OP já em andamento).
+    //
+    // Sem `confirmarSobrescrita === true` no body, retornamos 409 com
+    // code 'CONFIRMACAO_NECESSARIA' (não é erro fatal) para o frontend abrir
+    // o modal com o estado atual e o nível de alerta apropriado.
+    //
+    // Apontamentos de produção real NUNCA são apagados: ao atualizar,
+    // preservamos etapas que já têm apontamento ou que já foram iniciadas,
+    // recriando somente as etapas ainda intocadas.
     // ─────────────────────────────────────────────────────────────────────
     if (numeroOpOriginal) {
       // Só casa por referência externa (string exata do PDF), variações de
@@ -225,25 +251,58 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       })
 
       if (existe) {
-        // TRAVA DE SEGURANÇA: nunca sobrescrever OP que já avançou.
         const apontEtapa = await prisma.apontamentoEtapa.count({ where: { etapaOrdemProducao: { ordemProducaoId: existe.id } } })
         const apontProd = await prisma.apontamentoProducao.count({ where: { ordemProducaoId: existe.id } })
-        const statusBloqueado = !['PLANEJADA', 'RASCUNHO'].includes(existe.status)
+        const totalApont = apontEtapa + apontProd
+        const finalizada = ['CONCLUIDA', 'CANCELADA'].includes(existe.status)
+        const emAndamento = ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'].includes(existe.status)
 
-        if (apontEtapa > 0 || apontProd > 0 || statusBloqueado) {
+        // 1) BLOQUEIO DURO — OP finalizada nunca pode ser reimportada.
+        if (finalizada) {
           cacheImportacao.delete(body.importacaoId)
           return reply.status(409).send({
             message:
-              `Já existe a OP #${existe.numero} (ref. ${existe.referenciaExterna}) para este PDF e ela ` +
-              `não pode ser sobrescrita: status "${existe.status}"` +
-              (apontEtapa + apontProd > 0 ? ` e ${apontEtapa + apontProd} apontamento(s) de produção` : '') +
-              `. Reimportação só é permitida enquanto a OP está PLANEJADA/RASCUNHO e sem apontamentos.`,
-            code: 'OP_NAO_SOBRESCREVIVEL',
+              `A OP ${existe.referenciaExterna || existe.numero} já está ${existe.status === 'CONCLUIDA' ? 'CONCLUÍDA' : 'CANCELADA'} ` +
+              `e não pode ser alterada por reimportação. Se precisar refazê-la, crie uma nova OP.`,
+            code: 'OP_FINALIZADA',
             opExistente: { id: existe.id, numero: existe.numero, referenciaExterna: existe.referenciaExterna, status: existe.status },
           })
         }
 
-        // ATUALIZAR OP existente (segura) — preservar flag de "material recebido"
+        // 2) CONFIRMAÇÃO NECESSÁRIA — só sobrescreve com aval explícito do usuário.
+        if (!body.confirmarSobrescrita) {
+          cacheImportacao.delete(body.importacaoId)
+          const nivel = (emAndamento || totalApont > 0) ? 'forte' : 'simples'
+          const partesMsg = [
+            `A OP ${existe.referenciaExterna || existe.numero} já existe (status ${existe.status}).`,
+          ]
+          if (emAndamento) partesMsg.push('Ela já está em andamento na produção.')
+          if (totalApont > 0) partesMsg.push(`ATENÇÃO: há ${totalApont} apontamento(s) de produção que serão DESCARTADOS ao substituir a OP.`)
+          partesMsg.push('Ao confirmar, TODOS os dados (produto, materiais, etapas) serão substituídos pelos do novo PDF. Deseja continuar?')
+          return reply.status(409).send({
+            message: partesMsg.join(' '),
+            code: 'CONFIRMACAO_NECESSARIA',
+            nivelAlerta: nivel,
+            opExistente: {
+              id: existe.id,
+              numero: existe.numero,
+              referenciaExterna: existe.referenciaExterna,
+              status: existe.status,
+              emAndamento,
+              apontamentos: totalApont,
+            },
+          })
+        }
+
+        // 3) ATUALIZAR (usuário confirmou) — SUBSTITUIÇÃO TOTAL.
+        //
+        // Mesmo número de OP reimportado = "esta OP foi refeita e virou isto".
+        // Trocamos TUDO: cabeçalho, produto, materiais, etapas/roteiro e
+        // programação de entrega, a partir do novo PDF. É a decisão de negócio
+        // acordada com o cliente (a OS do GPrint foi alterada por completo).
+        //
+        // Se havia apontamento de produção, ele é DESCARTADO junto — o usuário
+        // já foi avisado disso na confirmação forte (nivelAlerta 'forte').
         modoAtualizacao = true
         const obsExistentes = existe.observacoes || ''
         const materialJaRecebido = !(/encomendad/i.test(obsExistentes)) && /encomendad/i.test(obsConsolidadas)
@@ -254,6 +313,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         op = await prisma.ordemProducao.update({
           where: { id: existe.id },
           data: {
+            produtoId: body.produtoId ?? existe.produtoId,
             quantidade: body.quantidade || dados.cabecalho.quantidade || Number(existe.quantidade),
             dataEntregaPrevista: body.dataEntregaPrevista ? new Date(body.dataEntregaPrevista) : (getPrimeiraDataEntrega(dados.cabecalho.programacaoEntrega) || existe.dataEntregaPrevista),
             clienteId: body.clienteId || existe.clienteId,
@@ -263,9 +323,10 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           },
         })
 
-        // Recriar itens/etapas — seguro porque acima garantimos que não há
-        // apontamento nem status avançado (nada de produção real a perder).
+        // Substituição total: apaga apontamentos, etapas, itens e programação
+        // antigos. Os laços abaixo recriam tudo a partir do novo PDF.
         await prisma.apontamentoEtapa.deleteMany({ where: { etapaOrdemProducao: { ordemProducaoId: op.id } } })
+        await prisma.apontamentoProducao.deleteMany({ where: { ordemProducaoId: op.id } })
         await prisma.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId: op.id } })
         await prisma.itemOrdemProducao.deleteMany({ where: { ordemProducaoId: op.id } })
         await prisma.programacaoEntrega.deleteMany({ where: { ordemProducaoId: op.id } })
@@ -309,7 +370,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       await salvarOpPdf(op.id, cached.pdfBuffer)
     }
 
-    // Criar itens de material
+    // Criar itens de material (em reimportação, já apagamos os antigos acima —
+    // substituição total a partir do novo PDF).
     const itensMateriaisCriados = []
     for (let i = 0; i < dados.materiais.length; i++) {
       const mat = dados.materiais[i]
@@ -461,15 +523,16 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       }
     }
 
-    // Registrar log
+    // Registrar log — em reimportação, o status atual da OP é preservado
+    // (não força PLANEJADA); o log apenas documenta a atualização.
     await prisma.logOrdemProducao.create({
       data: {
         ordemProducaoId: op.id,
-        statusAnterior: '',
-        statusNovo: 'PLANEJADA',
+        statusAnterior: modoAtualizacao ? op.status : '',
+        statusNovo: op.status,
         usuarioId: user.id,
         observacao: modoAtualizacao
-          ? `OP reimportada/atualizada via PDF do sistema GPrint. Referência externa: ${dados.cabecalho.numeroOp || 'N/A'}`
+          ? `OP reimportada/atualizada via PDF do sistema GPrint (status ${op.status} preservado). Referência externa: ${dados.cabecalho.numeroOp || 'N/A'}`
           : `OP importada via PDF do sistema GPrint. Referência externa: ${dados.cabecalho.numeroOp || 'N/A'}`,
       },
     })
