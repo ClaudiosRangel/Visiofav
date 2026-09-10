@@ -138,12 +138,54 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
       if (query.dataEntregaAte) where.dataEntregaPrevista.lte = new Date(query.dataEntregaAte)
     }
 
+    // Ordenação por padrão (orderBy = 'numero'): ordenar pelo NÚMERO QUE O
+    // CLIENTE ENXERGA (referenciaExterna do GPrint), de forma NUMÉRICA — não
+    // alfabética (senão "999" viria depois de "3100"). Como referenciaExterna
+    // é texto (e pode ser alfanumérica, ex. "4-101"), o Prisma não consegue
+    // ordenar numericamente por ela no orderBy. Solução: buscar id + chave de
+    // ordenação de TODAS as OPs que batem nos filtros (payload leve — só 3
+    // campos), ordenar/paginar em memória, e então buscar o detalhe só da
+    // página. Respeita todos os filtros (status/cliente/produto/número/datas).
+    const usarOrdemPorNumeroVisivel = query.orderBy === 'numero'
+    let idsOrdenados: string[] | null = null
+    let totalPreCalculado: number | null = null
+    if (usarOrdemPorNumeroVisivel) {
+      const chaves = await prisma.ordemProducao.findMany({
+        where,
+        select: { id: true, numero: true, referenciaExterna: true },
+      })
+      // Regra de ordenação (opção C acordada com o cliente):
+      //  • Números "puros" (referenciaExterna só com dígitos, ex.: "3066", ou
+      //    OPs sem referenciaExterna que usam o numero interno) vêm PRIMEIRO,
+      //    ordenados numericamente.
+      //  • Séries alfanuméricas (ex.: "4/116", "4-101") vêm DEPOIS, no fim da
+      //    lista, ordenadas numericamente entre si pelos seus dígitos.
+      // A direção (asc/desc) se aplica dentro de cada grupo; o grupo "puro"
+      // sempre precede o "alfanumérico".
+      const classificar = (op: { numero: number; referenciaExterna: string | null }) => {
+        const ref = op.referenciaExterna || ''
+        const ehAlfanumerico = ref !== '' && /\D/.test(ref) // tem algo além de dígitos
+        const soDigitos = ref.replace(/\D/g, '')
+        const valor = soDigitos ? parseInt(soDigitos, 10) : op.numero
+        return { grupo: ehAlfanumerico ? 1 : 0, valor }
+      }
+      chaves.sort((a, b) => {
+        const ca = classificar(a)
+        const cb = classificar(b)
+        if (ca.grupo !== cb.grupo) return ca.grupo - cb.grupo // puro (0) antes de alfanumérico (1)
+        return query.orderDir === 'asc' ? ca.valor - cb.valor : cb.valor - ca.valor
+      })
+      totalPreCalculado = chaves.length
+      idsOrdenados = chaves
+        .slice((query.page - 1) * query.limit, (query.page - 1) * query.limit + query.limit)
+        .map((c) => c.id)
+    }
+
     const [data, total] = await Promise.all([
       prisma.ordemProducao.findMany({
-        where,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-        orderBy: { [query.orderBy]: query.orderDir },
+        where: idsOrdenados ? { id: { in: idsOrdenados } } : where,
+        ...(idsOrdenados ? {} : { skip: (query.page - 1) * query.limit, take: query.limit }),
+        orderBy: idsOrdenados ? undefined : { [query.orderBy]: query.orderDir },
         // IMPORTANTE: usar `select` (não `omit`) para excluir pdfData (BYTEA).
         // `select` é traduzido direto para a cláusula SQL SELECT — o campo nunca
         // sai do banco. `omit` filtra só na serialização e já causou o backend
@@ -184,8 +226,15 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
           atualizadoEm: true,
         },
       }),
-      prisma.ordemProducao.count({ where }),
+      totalPreCalculado !== null ? Promise.resolve(totalPreCalculado) : prisma.ordemProducao.count({ where }),
     ])
+
+    // Quando ordenamos por número visível, o `in` do Prisma não preserva a
+    // ordem — reordenamos `data` conforme a lista de ids já ordenada.
+    if (idsOrdenados) {
+      const posicao = new Map(idsOrdenados.map((id, i) => [id, i]))
+      data.sort((a, b) => (posicao.get(a.id) ?? 0) - (posicao.get(b.id) ?? 0))
+    }
 
     // Calcula percentual concluído e busca nomes dos produtos e clientes
     const produtoIds = [...new Set(data.map((op) => op.produtoId).filter((id): id is string => id !== null))]
