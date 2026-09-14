@@ -2,307 +2,348 @@
 inclusion: manual
 ---
 
-# VisioFab ERP — Roadmap Completo e Contexto do Projeto
+# Vizor ERP (VisioFab) — Roadmap Único e Contexto do Projeto
+
+> **Este é o documento-mestre / fonte única de verdade do roadmap do Vizor ERP.**
+> Sempre que concluir um bloco, tarefa ou spec, **atualize este arquivo**
+> (status, data, resumo). Ele deve refletir a realidade do código, não a
+> intenção. Ao iniciar qualquer trabalho no ERP, consulte primeiro este
+> roadmap para saber o bloco/fase atual antes de agir.
 
 ## Visão Geral
 
-O VisioFab está evoluindo de um WMS especializado para um **ERP completo** focado no mercado brasileiro. O diferencial competitivo é a combinação de WMS nativo sofisticado + ERP com UX moderna + preço acessível.
+O Vizor ERP (VisioFab) está evoluindo de um WMS especializado para um **ERP
+completo focado no mercado brasileiro**. Diferencial competitivo: **WMS nativo
+sofisticado + ERP com UX moderna + Vizor AI + preço acessível**.
 
-## Stack Backend
+Existem três "trilhos" de trabalho que este documento consolida num plano só:
 
-| Recurso | Tecnologia |
-|---------|-----------|
+1. **Trilho ERP genérico** — tornar o Vizor um ERP brasileiro competitivo
+   (Fiscal, Financeiro, Vendas, Compras, Contábil). **É a Frente Atual.**
+2. **Trilho gráfico (Carton Wega)** — o fluxo representante → orçamento → PCP →
+   WMS contratado pela Carton Wega, com fases pendentes de refino.
+3. **Trilho SaaS/plataforma** — billing do próprio Vizor (Financeiro Vizor),
+   multi-tenant, onboarding, Vizor AI.
+
+## Stack
+
+| Camada | Tecnologia |
+|--------|-----------|
 | Runtime | Node.js + tsx |
 | Framework | Fastify |
 | ORM | Prisma 6 |
 | Banco | PostgreSQL (Neon serverless) |
 | Validação | Zod |
 | Linguagem | TypeScript 100% |
-| Deploy | Render (automático via push main) |
+| Frontend | Next.js 15 + Mantine 7 + react-query + Axios |
+| App Mobile | Expo / EAS Build |
+| Deploy back | Render (push `main` → deploy automático) |
+| Deploy front | Vercel (push `main` → deploy automático) |
+| Testes | Vitest + fast-check (PBT) + Playwright (E2E) |
 
 ---
 
-## Módulos — Ordem de Implementação
+## ⭐ FRENTE ATUAL — Núcleo Financeiro-Fiscal Competitivo
 
-### Prioridade 1 (Sem isso não vende ERP no Brasil)
+**Objetivo:** um Financeiro operacional robusto (nível Omie/Totvs/Sankhya) que
+capta automaticamente de Compras, Vendas e lançamentos manuais de caixa, com
+fechamentos, e os desafios fiscais urgentes acoplados. **Ordem de ataque
+definida: Financeiro robusto primeiro, depois os fiscais.**
 
-| # | Módulo | Status | Spec |
-|---|--------|--------|------|
-| 1 | **Fiscal** | ✅ Completo | `erp-modulo-fiscal` + `erp-fiscal-completar` |
-| 2 | **Financeiro** | ⚠️ Básico | — |
-| 3 | **Cadastros Completos** | ⚠️ Parcial | — |
+Esta frente está detalhada nos blocos **F1 a F5** abaixo. Cada bloco vira um
+spec próprio (`requirements → design → tasks`) quando for iniciado.
 
-### Prioridade 2 (Diferencial competitivo)
+| Bloco | Tema | Status | Spec |
+|-------|------|--------|------|
+| **F1** | Financeiro Operacional Completo | ✅ Concluído (14/09/2026) | `erp-financeiro-completo` |
+| **F2** | Vendas com Emissão Real de NF-e (100% no fluxo) | ⚠️ Base existe, falta fechar | `erp-vendas-nfe-real` (a criar) |
+| **F3** | Boletos Bancários + CNAB + PIX | 🔲 A iniciar | `erp-cobranca-bancaria` (a criar) |
+| **F4** | Reforma Tributária (IBS/CBS/IS) | 🔲 A iniciar (greenfield) | `erp-reforma-tributaria` (a criar) |
+| **F5** | SPED Fiscal + Contábil (alimentação geral) | ⚠️ Fiscal parcial | `erp-sped-fiscal-contabil` (a criar) |
 
-| # | Módulo | Status | Detalhe |
-|---|--------|--------|---------|
-| 4 | **Vendas Completo** | ✅ **COMPLETO** | Pedido, Orçamento (PDF), Devolução (NF-e), Relatórios, PDV, Campanhas, Comissão, Workflow, Metas, Bonificação, Encomenda, Consignada, E-commerce |
-| 5 | **Compras Completo** | ⚠️ Parcial | Pedido + efetivação + XML ok. Falta cotação, MRP, aprovação |
-| 6 | **Devolução** | ✅ Completo | Devolução compra + venda (NF-e finalidade=4) + estorno financeiro + reentrada estoque |
-| 7 | **Transferência** | ⚠️ Básico | Transferência estoque entre empresas ok. Falta NF-e de transferência |
-| 8 | **Régua de cobrança** | 🔲 Não iniciado | — |
-| 9 | **Vizor AI** | ✅ **IMPLEMENTADO** | Chat IA com function calling, upload XML, onboarding, 30+ tools, conhecimento completo do sistema |
+O detalhamento de cada bloco está na seção **"Frente Atual — Detalhamento"**
+mais abaixo.
 
-### Prioridade 3 (Amadurecimento)
+---
+
+## Mapa Geral dos Módulos (estado consolidado)
+
+### Prioridade 1 — Base de ERP brasileiro
+
+| # | Módulo | Status | Observação |
+|---|--------|--------|-----------|
+| 1 | **Fiscal** | ✅ Emissores completos (NF-e e **CT-e em produção real**) / ⚠️ SPED e Reforma pendentes | NF-e, NFC-e, **CT-e (mod. 57 v4.00 — emitindo em produção)**, MDF-e, NFS-e, apuração, certificados, contingência, GNRE, Distribuição DFe. Falta: captação do CT-e no Financeiro (F1), SPED do movimento real (F5) e Reforma Tributária (F4). |
+| 2 | **Financeiro** | ⚠️ Básico (contas a pagar/receber) | **Foco da Frente Atual (F1).** |
+| 3 | **Cadastros Completos** | ⚠️ Parcial | Amadurecer junto com F1. |
+
+### Prioridade 2 — Diferencial competitivo
+
+| # | Módulo | Status | Observação |
+|---|--------|--------|-----------|
+| 4 | **Vendas** | ✅ Amplo / ⚠️ NF-e real a fechar no fluxo | Pedido, orçamento, devolução, PDV, campanhas, comissão, workflow, metas, e-commerce. Emissão real existe (`NFeEmissaoService.emitir`) — **F2 garante o fluxo ponta a ponta**. |
+| 5 | **Compras** | ⚠️ Parcial | Pedido + efetivação + XML ok. Falta cotação, MRP, aprovação por alçada, NF-e de devolução ao fornecedor, relatórios. |
+| 6 | **Devolução** | ✅ Completo | Compra + venda (NF-e finalidade=4) + estorno financeiro + reentrada estoque. |
+| 7 | **Transferência** | ⚠️ Básico | Entre empresas ok. Falta NF-e de transferência (CFOP 5152/6152), remessa/retorno industrialização, entre depósitos. |
+| 8 | **Vizor AI** | ✅ Implementado | Chat com function calling, 30+ tools, onboarding real, importação XML, Distribuição DFe. |
+
+### Prioridade 3 — Amadurecimento
 
 | # | Módulo | Status |
 |---|--------|--------|
-| 10 | Contábil (exportação para Domínio/Fortes) | 🔲 |
-| 11 | Integrações (marketplaces, Open Finance) | ⚠️ Básico (estrutura pronta) |
+| 9 | Contábil (exportação Domínio/Fortes) | 🔲 (parte entra em F5) |
+| 10 | Integrações (marketplaces, Open Finance) | ⚠️ Estrutura básica |
 | 11 | CRM integrado | 🔲 |
 
----
+### Trilho Gráfico — Carton Wega (proposta contratada)
 
-## Estado Atual Detalhado por Módulo
+Fluxo representante → orçamento → PCP → WMS: **12/12 etapas em produção**
+(ver `docs/acompanhamento-fase1-cliente.md`). Fases de refino pendentes na
+seção **"Trilho Gráfico"** abaixo (data de entrega, capacidade finita, custo
+real vs orçado).
 
-### 📦 Módulo de Vendas
+### Trilho SaaS / Plataforma
 
-#### O que JÁ existe (implementado)
+| Tema | Status | Spec |
+|------|--------|------|
+| Financeiro Vizor (billing do SaaS, SUPER_ADMIN) | ✅ Atende hoje / melhorias futuras | `financeiro-vizor` (back) + `financeiro-vizor-frontend` |
+| Multi-tenant / isolamento | ✅ Em uso | `multi-tenant-isolation` |
 
-| Funcionalidade | Endpoint | Status |
-|----------------|----------|--------|
-| Pedido de venda (CRUD) | `POST/GET/PUT /api/pedido-venda` | ✅ |
-| Confirmar pedido | `PATCH /api/pedido-venda/:id/confirmar` | ✅ |
-| Cancelar pedido | `PATCH /api/pedido-venda/:id/cancelar` | ✅ |
-| Efetivar venda (emite NF-e) | `POST /api/vendas/efetivar` | ✅ |
-| Listar vendas efetivadas | `GET /api/vendas` | ✅ |
-| Status de entrega | `PATCH /api/vendas/:id/entrega` | ✅ |
-| Relatório comissões | `GET /api/vendas/comissoes` | ✅ |
-| Vendedor (CRUD + inativar) | `/api/vendedor` | ✅ |
-| Tabela de preço + condições | `/api/tabela-preco` | ✅ |
-| Contas a receber automáticas | Gerado na efetivação | ✅ |
-| Integração fiscal (NF-e automática) | Via `vendaFiscalService` | ✅ |
-| Contingência SEFAZ | Efetiva com flag contingência | ✅ |
-
-#### O que FALTA para módulo completo (padrão Totvs/Omie/Sankhya)
-
-##### ✅ Módulo de Vendas — COMPLETO (implementado nesta sprint)
-
-| # | Funcionalidade | Status |
-|---|---|---|
-| 1 | Orçamento/Proposta (CRUD + workflow + PDF + conversão pedido) | ✅ |
-| 2 | Devolução de venda (NF-e finalidade=4 + estorno + reentrada estoque) | ✅ |
-| 3 | Relatórios (KPIs, por período, vendedor, cliente, curva ABC) | ✅ |
-| 4 | PDV (caixa, sangria, suprimento, venda rápida, pagamentos múltiplos, dark-mode UX) | ✅ |
-| 5 | Desconto por campanha/cupom (CRUD + validar + aplicar) | ✅ |
-| 6 | Tabela de preço com vigência (data início/fim, por cliente/grupo, prioridade) | ✅ |
-| 7 | Força de vendas (metas por vendedor/período, dashboard performance) | ✅ |
-| 8 | Bonificação (regras gatilho por produto/quantidade) | ✅ |
-| 9 | Venda sob encomenda (make-to-order com link OP) | ✅ |
-| 10 | Venda consignada (remessa + retorno parcial) | ✅ |
-| 11 | Comissão avançada (por faixa, produto, região, sobre recebimento) | ✅ |
-| 12 | Workflow de aprovação (regras + solicitações + aprovar/rejeitar) | ✅ |
-| 13 | Integração e-commerce (CRUD integrações + importar pedido) | ✅ |
-
-##### 🤖 Vizor AI — Assistente Inteligente (implementado)
-
-| Funcionalidade | Status |
-|---|---|
-| Chat com function calling (Claude API) | ✅ |
-| 30+ tools (navegar, criar pedido, consultar vendas/estoque/financeiro, etc.) | ✅ |
-| Upload XML no chat → extrai dados + concilia pedido + oferece agendamento WMS | ✅ |
-| Conhecimento completo do sistema (todas tabelas, regras, pré-requisitos) | ✅ |
-| Onboarding automático (detecta sistema vazio, guia configuração) | ✅ |
-| Histórico persistente (salva conversas no banco) | ✅ |
-| Diagnóstico de pré-requisitos antes de executar ações | ✅ |
-| Shortcuts para sugestões (resposta instantânea sem LLM) | ✅ |
-| Agendamento REAL de recebimento no WMS (consulta disponibilidade real nas docas, sugere próximos dias se lotado, agenda só após confirmação) | ✅ |
-| Configuração de integração com ERP externo (SAP, TOTVS, Sankhya, etc.) via IA | ✅ |
-| Onboarding guiado passo-a-passo (segmento, regime tributário, módulos, WMS detalhado, integração ERP, cadastros, certificado digital) | ✅ |
-| Importação REAL de XML (cadastra fornecedor/produtos, cria pedido+doc fiscal+conta a pagar, confirmação determinística no chat) | ✅ |
-| Onboarding REAL de nova empresa: dados cadastrais, tributação inicial (seed de naturezas de operação/CFOP), CD/depósito/zona/docas/endereços WMS em lote, criação de usuários com nível de acesso, cadastro de funcionários com vínculo a coletor | ✅ |
-| Bug corrigido: erro genérico "Erro ao processar" causado por histórico de chat mal formatado (roles não alternando) enviado à Anthropic API | ✅ |
-| Busca automática de CEP (ViaCEP) no cadastro de empresa/cliente/fornecedor via chat | ✅ |
-| Módulo Distribuição DFe: verificar e baixar NF-e/CT-e emitidas contra o CNPJ da empresa direto na SEFAZ (requer certificado digital ativo) | ✅ backend + frontend |
-
-##### 🔧 Infraestrutura (implementado)
-
-| Funcionalidade | Status |
-|---|---|
-| Token keep-alive (renova automaticamente enquanto usuário ativo) | ✅ |
-| PDV: recuperação de venda após relogin | ✅ |
-| PDV: busca produto por nome (F3) | ✅ |
-| Layout ERP (Sankhya/TOTVS) no pedido de venda | ✅ |
-| Limpar dados: filtra por empresa (não global) | ✅ |
-| Backup: exportar dados empresa como JSON (download local) | ✅ |
-| Restaurar: importar backup JSON com upsert | ✅ |
+> **Nota importante — não confundir:** "Financeiro **Vizor**" é o billing que
+> *nós* cobramos das empresas-cliente do SaaS (pronto, atende hoje). O
+> "Financeiro **operacional**" (Bloco F1) é o módulo que a empresa-cliente usa
+> para gerir o próprio caixa/banco. São coisas diferentes com nome parecido.
 
 ---
 
-### 🛒 Módulo de Compras
+## Frente Atual — Detalhamento (Blocos F1 a F5)
 
-#### O que JÁ existe (implementado)
+### F1 — Financeiro Operacional Completo ✅ (14/09/2026)
 
-| Funcionalidade | Endpoint | Status |
-|----------------|----------|--------|
-| Pedido de compra (CRUD) | `POST/GET/PUT /api/pedido-compra` | ✅ |
-| Confirmar pedido | `PATCH /api/pedido-compra/:id/confirmar` | ✅ |
-| Cancelar pedido | `PATCH /api/pedido-compra/:id/cancelar` | ✅ |
-| Efetivar compra (com/sem XML) | `POST /api/compras/efetivar` | ✅ |
-| Importar XML fornecedor | `POST /api/compras/importar-xml` | ✅ |
-| Preview XML | `POST /api/compras/preview-xml` | ✅ |
-| Auto-criar fornecedor/produto do XML | Na importação | ✅ |
-| Contas a pagar automáticas | Gerado na efetivação | ✅ |
-| Integração fiscal (DocumentoFiscal entrada) | Via `compraFiscalService` | ✅ |
-| Validação XML + duplicidade | CNPJ + nNF + série | ✅ |
-| Devolução de compra | `POST /api/compras/:id/devolver` | ✅ |
-| Transferência entre empresas | `POST /api/compras/transferir` | ✅ |
-| De-para fornecedor/produto | `/api/depara-fornecedor` | ✅ |
+**Meta:** financeiro que capta automaticamente de Compras e Vendas, permite
+lançamentos manuais de caixa, faz conciliação e fechamentos, e entrega gestão
+no nível dos melhores do mercado.
 
-#### O que FALTA para módulo completo
+**Entregue nesta versão:** contas bancárias multi-conta com saldo derivado +
+transferência entre contas; plano de contas gerencial (categorias) + centro de
+custo + rateio; lançamentos manuais de caixa com estorno; **captação automática
+do CT-e** (autorizado → conta a receber do frete, idempotente, no ponto único
+`gerar-titulo-de-documento.service.ts`, plugado em `cte-emissao.service.ts`);
+conciliação bancária (import OFX + matching + baixa + desfazer); fluxo de caixa,
+aging e DRE gerencial; fechamento/reabertura de período com trava de escrita.
+Backend: `src/modules/financeiro/` (services + rotas `/api/financeiro`, núcleo
+puro testado). Frontend: telas Contas Bancárias, Fluxo de Caixa (com aging) e
+Conciliação em `financeiro/*` + menu. Migração idempotente em `migrate-prod.ts`.
+Doc: `docs/financeiro-operacional-f1.md`.
+**Consolidação futura:** repontar geração de título de venda/compra para o
+service compartilhado (hoje o CT-e já nasce nele; venda/compra seguem na lógica
+inline de efetivação, que já funciona em produção).
 
-| Funcionalidade | Prioridade | Descrição |
-|----------------|-----------|-----------|
-| **Cotação / Solicitação de compra** | Alta | Solicitar cotação a N fornecedores, comparar preços, selecionar melhor |
-| **MRP (Planejamento de Necessidades)** | Alta | Sugestão automática baseada em estoque mínimo, demanda, lead time |
-| **Workflow de aprovação** | Alta | Aprovação por alçada (valor, centro de custo, gestor) |
-| **Follow-up de entregas** | Média | Acompanhamento de prazos, alertas de atraso, replanejamento |
-| **Avaliação de fornecedor** | Média | Nota por prazo, qualidade, preço; ranking automático |
-| **Acordo comercial** | Média | Condições negociadas: prazo, desconto progressivo, volume mínimo |
-| **NF-e de devolução ao fornecedor** | Alta | Emissão de NF-e de saída com finalidade=4 (devolução) referenciando a NF-e de entrada |
-| **Recebimento parcial** | Média | Receber apenas parte dos itens, manter pedido aberto para restante |
-| **Compra de serviço** | Baixa | Pedido sem movimentação de estoque (serviço, consultoria) |
-| **Importação (exterior)** | Baixa | DI, LI, despesas de importação, rateio |
-| **Relatórios compras** | Alta | Volume por fornecedor, saving, evolução preços, lead time médio |
+**O que JÁ existe (base):**
+- Contas a receber (CRUD + recebimento) — `/api/conta-receber`
+- Contas a pagar (CRUD + pagamento) — `/api/conta-pagar`
+- Geração automática de parcelas na efetivação de vendas e compras
+- Estorno por devolução (conta negativa)
 
----
+**O que FALTA (escopo do bloco):**
 
-### ↩️ Módulo de Devolução
+| Item | Prioridade | Descrição |
+|------|:---------:|-----------|
+| Multi-conta bancária | Alta | Cadastro de contas, saldo por conta, transferência entre contas (pré-requisito de boleto/CNAB do F3) |
+| Fluxo de caixa | Alta | Projeção por período, multi-conta, realizado vs. previsto |
+| Conciliação bancária | Alta | Import OFX/extrato + match automático extrato × títulos, baixa em lote |
+| Aging (análise de vencimento) | Alta | Faixas de atraso 30/60/90/120+ |
+| Categorias / Plano de contas gerencial | Alta | Classificação de receitas/despesas (base para DRE gerencial e rateio) |
+| Rateio por centro de custo/projeto | Média | Dividir despesa entre centros |
+| DRE gerencial + dashboards | Alta | Visão de resultado por competência/caixa |
+| Contratos recorrentes | Média | Mensalidade/aluguel — gera parcelas automaticamente |
+| Conciliação de cartões | Média | Vendas de adquirentes, taxas, antecipação |
+| Cheques | Baixa | Emissão, custódia, compensação, devolvido |
+| Provisão | Baixa | Reconhecer despesa futura antes do pagamento |
 
-#### O que JÁ existe (implementado)
+**Integrações a garantir (captação automática):** todo `PedidoVenda` efetivado
+e toda compra efetivada já geram títulos; o bloco garante que caixa, banco,
+categorias e centro de custo sejam preenchidos de forma consistente para os
+fechamentos e para alimentar o SPED Contábil (F5).
 
-| Funcionalidade | Local | Status |
-|----------------|-------|--------|
-| Devolução de compra (parcial/total) | `POST /api/compras/:id/devolver` | ✅ |
-| Estorno financeiro automático | Conta a pagar negativa | ✅ |
-| Logística reversa (RA) | `/api/logistica-reversa/ra` | ✅ |
-| Recebimento da devolução | `POST /ra/:id/receber` | ✅ |
-| Inspeção de itens | `POST /ra/:id/inspecionar` | ✅ |
-| Disposição (reestoque/descarte/reparo) | `POST /ra/:id/dispor` | ✅ |
-| Motivos configuráveis | `GET/POST /motivos` | ✅ |
-| NF-e de crédito (nota de crédito) | Via `logisticaReversaService` | ✅ |
+**Captação do CT-e (já em produção):** a emissão de CT-e (modelo 57 v4.00) já
+está **em uso real em produção** (ver `.kiro/steering/cte-emissao.md`). A
+receita de frete de cada CT-e autorizado deve gerar **conta a receber**
+automaticamente no Financeiro (por tomador/remetente conforme o responsável
+pelo pagamento), da mesma forma que a NF-e de venda gera título. Amarrar essa
+integração `CT-e autorizado → conta a receber` é item obrigatório do F1.
 
-#### O que FALTA
-
-| Funcionalidade | Prioridade | Descrição |
-|----------------|-----------|-----------|
-| **Devolução de venda completa (fiscal)** | Alta | Emitir NF-e de entrada (finalidade=4) referenciando a NF-e de saída original |
-| **Estorno financeiro de venda** | Alta | Cancelar/estornar contas a receber vinculadas, gerar crédito ao cliente |
-| **Reentrada estoque automática** | Alta | Ao receber devolução de venda: incrementar estoque automaticamente |
-| **Troca (devolução + nova venda)** | Média | Workflow de troca: recebe item devolvido e emite novo pedido com crédito |
-| **Garantia** | Baixa | Controle de prazo de garantia por produto/lote vendido |
-| **Dashboard devoluções** | Média | Taxa de devolução, motivos mais frequentes, custo operacional |
+| Item | Prioridade | Descrição |
+|------|:---------:|-----------|
+| Integração CT-e → conta a receber | Alta | CT-e autorizado gera título de frete no Financeiro (tomador/pagador), com categoria/centro de custo, alimentando fluxo de caixa e SPED |
 
 ---
 
-### 🔄 Módulo de Transferência
+### F2 — Vendas com Emissão Real de NF-e (fluxo 100%) ⚠️
 
-#### O que JÁ existe (implementado)
+**Meta:** garantir que a venda emite NF-e real na SEFAZ ponta a ponta, sem
+lacunas, com contingência e retorno amarrado ao financeiro/estoque.
 
-| Funcionalidade | Local | Status |
-|----------------|-------|--------|
-| Transferência de estoque entre empresas | `POST /api/compras/transferir` | ✅ |
-| Validação de saldo disponível | Deduz reservado | ✅ |
-| Upsert estoque destino | Cria se não existe | ✅ |
-| Registro de transferência | `TransferenciaEstoque` + itens | ✅ |
+**O que JÁ existe:** `NFeEmissaoService.emitir()` (cálculo de tributos →
+transmissão SEFAZ → processa resposta → contingência automática 3 falhas → fila
+→ retransmissão), usado por `venda-fiscal.service.ts` e devolução. DANFE PDF,
+cancelamento, CC-e, inutilização.
 
-#### O que FALTA
+**O que FALTA / validar:** cobertura do fluxo em todos os cenários de venda
+(PDV, pedido, encomenda, consignada), tratamento de rejeições de negócio
+mapeadas para o usuário, reprocessamento, e conferir amarração com contas a
+receber e baixa de estoque em cada caminho. Fechar como spec dedicado.
 
-| Funcionalidade | Prioridade | Descrição |
-|----------------|-----------|-----------|
-| **NF-e de transferência** | Alta | Emissão de NF-e com CFOP 5152/6152 (transferência mercadoria) |
-| **NF-e de remessa para industrialização** | Média | CFOP 5901/6901 (enviar para beneficiamento) |
-| **NF-e de retorno de industrialização** | Média | CFOP 5902/6902 (receber de volta) |
-| **Controle de filiais** | Média | Visão consolidada multi-empresa, saldo unificado |
-| **Transferência entre depósitos** | Alta | Dentro da mesma empresa (sem NF-e), de CD para loja |
-| **Transferência com romaneio** | Baixa | Documento de transporte vinculado à transferência |
-| **Relatório de movimentação** | Média | Histórico de transferências, custos de movimentação |
+**Nota (CT-e):** o CT-e já emite em produção; o padrão "documento fiscal
+autorizado → título financeiro" deve ser consistente entre NF-e (F2) e CT-e
+(integração no F1), reaproveitando a mesma lógica de geração de conta a receber.
 
 ---
 
-## Módulo Fiscal (✅ Completo)
+### F3 — Boletos Bancários + CNAB + PIX 🔲
 
-### Endpoints existentes em `/api/fiscal/`:
-- Motor tributário (CRUD + simulação com fallback)
-- NF-e (emissão, cancelamento, CC-e, inutilização, DANFE PDF)
-- NFC-e (emissão modelo 65, contingência offline)
-- CT-e (emissão modelo 57, cancelamento, CC-e, DACTE)
-- MDF-e (emissão modelo 58, encerramento)
-- NFS-e (adaptadores multi-prefeitura)
-- SPED (geração + histórico)
-- Apuração (ICMS, ICMS-ST, PIS/COFINS, IPI)
-- Certificados digitais (upload A1, validação)
-- Contingência (fila, retransmissão automática, status SEFAZ)
-- GNRE (geração, pagamento)
-- Importação XML (upload, de-para, gerar entrada)
-- Manifesto destinatário
-- Auditoria fiscal
-- Dashboard métricas
+**Meta:** cobrança bancária real. **Depende de F1 (multi-conta bancária).**
+
+| Item | Prioridade | Descrição |
+|------|:---------:|-----------|
+| Boleto registrado | Alta | Geração PDF + registro bancário + baixa automática por retorno |
+| CNAB 240/400 | Alta | Remessa/retorno (Itaú, Bradesco, BB, Santander, Sicoob) |
+| PIX API | Alta | Cobrança QRCode estático/dinâmico + webhook de confirmação |
+| Régua de cobrança | Alta | Notificações automáticas e-mail/SMS antes e após o vencimento |
+| DDA | Média | Receber títulos a pagar do banco |
+| Borderô | Média | Agrupar títulos para envio em lote |
 
 ---
 
-## Módulo Financeiro (⚠️ Básico)
+### F4 — Reforma Tributária (IBS / CBS / IS) 🔲 (greenfield)
 
-### O que JÁ existe
+**Meta:** preparar o motor fiscal e os documentos para o novo modelo tributário
+brasileiro. **Hoje NÃO há nada de IBS/CBS/IS no código** — é campo aberto.
 
-| Funcionalidade | Endpoint | Status |
-|----------------|----------|--------|
-| Contas a receber (CRUD + recebimento) | `/api/conta-receber` | ✅ |
-| Contas a pagar (CRUD + pagamento) | `/api/conta-pagar` | ✅ |
-| Geração automática de parcelas (vendas) | Na efetivação | ✅ |
-| Geração automática de parcelas (compras) | Na efetivação | ✅ |
-| Estorno por devolução de compra | Conta negativa | ✅ |
+| Item | Descrição |
+|------|-----------|
+| Motor de cálculo IBS/CBS/IS | Novos tributos convivendo com ICMS/ISS no período de transição |
+| Layout NF-e/NFC-e/NFS-e novos grupos | Grupos de IBS/CBS conforme notas técnicas |
+| Cadastros | Classificação tributária, alíquotas por ente, regras de crédito |
+| Transição | Cálculo dual (modelo atual + novo) durante o período legal |
+| Impacto no Financeiro | Novos tributos refletidos em títulos, apuração e SPED |
 
-### O que FALTA para módulo completo
-
-| Funcionalidade | Prioridade | Descrição |
-|----------------|-----------|-----------|
-| **CNAB 240/400** | Alta | Remessa/retorno bancário (Itaú, Bradesco, BB, Santander, Sicoob) |
-| **Boleto registrado** | Alta | Geração PDF, registro bancário, baixa automática por retorno |
-| **PIX API** | Alta | Cobrança por QRCode estático/dinâmico, webhook de confirmação |
-| **DDA (Débito Direto Autorizado)** | Média | Receber títulos a pagar do banco automaticamente |
-| **OFX / Extrato bancário** | Média | Importar extrato para conciliação |
-| **Conciliação bancária** | Alta | Match automático extrato vs. contas, baixa em lote |
-| **Fluxo de caixa** | Alta | Projeção por período, multi-conta, visão realizado vs. previsto |
-| **Multi-conta bancária** | Alta | Cadastro de contas, saldo por conta, transferência entre contas |
-| **Borderô** | Média | Agrupar títulos para envio ao banco em lote |
-| **Rateio centro de custo** | Média | Dividir despesa entre centros de custo/projeto |
-| **Cheques** | Baixa | Emissão, custódia, compensação, cheque devolvido |
-| **Conciliação de cartões** | Média | Importar vendas de adquirentes, conferir taxas, antecipação |
-| **Contratos recorrentes** | Média | Mensalidade, aluguel — gerar parcelas automaticamente |
-| **Régua de cobrança** | Alta | Notificações automáticas: email/SMS antes e após vencimento |
-| **Aging (análise de vencimento)** | Média | Relatório por faixa de atraso (30/60/90/120+ dias) |
-| **Provisão** | Baixa | Reconhecer despesas futuras antes do pagamento efetivo |
+> **Ação:** acompanhar as Notas Técnicas oficiais (IBS/CBS) para dimensionar o
+> spec — o cronograma legal define o "quando", não só a nossa priorização.
 
 ---
 
-## Próximos Passos Sugeridos (ordem de impacto)
+### F5 — SPED Fiscal + Contábil (alimentação a partir do movimento real) ⚠️
 
-| Ordem | Spec a Criar | Impacto |
-|-------|-------------|---------|
-| 1 | `erp-financeiro-completo` | Sem financeiro robusto, não sustenta operação real |
-| 2 | `erp-vendas-completo` | PDV + orçamento + devolução de venda = operação comercial completa |
-| 3 | `erp-compras-completo` | Cotação + MRP + aprovação = gestão de suprimentos profissional |
-| 4 | `erp-devolucao-venda` | NF-e de devolução + estorno = compliance fiscal |
-| 5 | `erp-transferencia-fiscal` | NF-e de transferência = operação multi-filial regularizada |
+**Meta:** que o SPED seja gerado a partir do movimento real (documentos
+fiscais, financeiro, estoque), não só o esqueleto do arquivo.
+
+**O que JÁ existe:** geração de SPED (EFD ICMS/IPI, Contribuições) + histórico
+no módulo Fiscal.
+
+**O que FALTA:** alimentar os blocos com o movimento real do ERP (fiscal +
+financeiro do F1 + estoque), SPED Contábil (ECD/ECF), exportação para Domínio/
+Fortes, e validação cruzada (apuração × SPED × financeiro). Depende de F1
+(plano de contas/categorias) e conversa com F4 (novos tributos).
+
+---
+
+## Trilho Gráfico — Carton Wega (refinos pendentes)
+
+Fluxo em produção (12/12 etapas). Docs de referência: `docs/proposta-comercial-carton-wega.md`,
+`docs/proposta-funcionalidades-discriminada.md`, `docs/acompanhamento-fase1-cliente.md`.
+Steering do módulo: `.kiro/steering/pcp-modulo.md`.
+
+> Nota de consistência: o `acompanhamento-fase1-cliente.md` (26/08) marca
+> verificação de estoque, reserva automática e sugestão de compra como ✅ em
+> produção, enquanto o `proposta-funcionalidades-discriminada.md` (25/08) ainda
+> as listava como pendentes. Prevalece o acompanhamento (mais recente).
+> **Confirmar no código antes de retrabalhar qualquer item marcado ✅.**
+
+| Item | Status | Descrição |
+|------|:------:|-----------|
+| Verificação de estoque na programação | ✅ | Ao programar OP, compara BOM × saldo disponível (WMS+ERP−reservas) |
+| Reserva automática de materiais | ✅ | Ao liberar OP, cria `ReservaProducao` (empenho) |
+| Requisição de compra automática | ✅ | Falta de material → `SugestaoCompra` PENDENTE |
+| Geração de OP a partir de Pedido de Venda | ✅ | `POST /gerar-de-pedido` |
+| Cálculo automático de data de entrega | 🔲 | Backward scheduling por tempos do roteiro/turnos/calendário |
+| Capacidade finita (fila de produção) | 🔲 | Considerar OPs já na fila de cada centro ao estimar prazo |
+| Data de entrega no orçamento | 🔲 | Prazo = produção + fila + lead time de compra |
+| Verificação/previsão de estoque no orçamento | 🔲 | Papel disponível? Se não, prazo de compra embutido |
+| Integração CalcGraf → OP completa | 🔲 | OP com BOM completa + etapas + reserva + programação de entrega |
+| Custo real vs orçado | 🔲 | Comparar consumo/horas reais × orçado; dashboard de rentabilidade |
+
+---
+
+## Backlog dos Demais Módulos (fora da Frente Atual)
+
+### Compras (amadurecer para "completo")
+Cotação/solicitação, MRP, workflow de aprovação por alçada, follow-up de
+entregas, avaliação de fornecedor, acordo comercial, NF-e de devolução ao
+fornecedor, recebimento parcial, relatórios de compras.
+
+### Transferência (regularização fiscal)
+NF-e de transferência (CFOP 5152/6152), remessa/retorno para industrialização
+(5901/6901, 5902/6902), transferência entre depósitos, controle de filiais,
+relatório de movimentação.
+
+### Prioridade 3
+Contábil (exportação Domínio/Fortes — parte em F5), integrações
+(marketplaces, Open Finance), CRM integrado.
+
+---
+
+## Próximos Specs a Criar (ordem)
+
+| Ordem | Spec | Bloco | Impacto |
+|-------|------|-------|---------|
+| 1 | `erp-financeiro-completo` | F1 | Financeiro robusto — base de tudo |
+| 2 | `erp-vendas-nfe-real` | F2 | Fecha emissão real ponta a ponta |
+| 3 | `erp-cobranca-bancaria` | F3 | Boleto/CNAB/PIX (depende de F1) |
+| 4 | `erp-reforma-tributaria` | F4 | Compliance futura (segue calendário legal) |
+| 5 | `erp-sped-fiscal-contabil` | F5 | Alimenta SPED do movimento real |
+
+Depois da Frente Atual: `erp-compras-completo`, `erp-transferencia-fiscal`,
+e os refinos do Trilho Gráfico.
 
 ---
 
 ## Padrões de Desenvolvimento
 
-1. Cada módulo vive em `src/modules/{modulo}/`
-2. Rotas Fastify com prefixo `/api/{modulo}/`
-3. Validação com Zod em todas as rotas
-4. Middleware `moduloGuard` para controle de acesso por módulo
-5. `ALL_MODULOS` em `empresa-selector.routes.ts` deve ser atualizado ao adicionar módulo novo
-6. Prisma migrations para schema do banco
-7. Testes com vitest
-8. Integração fiscal via services (`vendaFiscalService`, `compraFiscalService`, `nfeEmissaoService`)
-9. XML builders como funções puras (testáveis isoladamente)
-10. Contingência automática (3 falhas → fila → retransmissão)
+1. Cada módulo vive em `src/modules/{modulo}/`; rotas Fastify com prefixo `/api/{modulo}/`.
+2. Validação com Zod em todas as rotas; `moduloGuard` para acesso por módulo.
+3. `ALL_MODULOS` em `empresa-selector.routes.ts` atualizado ao adicionar módulo novo.
+4. **Migração obrigatória no mesmo commit:** toda alteração em `prisma/schema.prisma`
+   inclui o equivalente idempotente em `prisma/migrate-prod.ts`, testado 2x local
+   (ver `.kiro/steering/database-migrations.md`). Produção NÃO usa `migrate deploy`.
+5. **Isolamento multi-tenant:** `request.prismaScoped` para modelos em `ISOLATED_MODELS`;
+   filtro manual por `empresaId` nos demais (ver `.kiro/steering/ATENCAO-pontos-verificar.md`).
+6. Integração fiscal via services (`vendaFiscalService`, `compraFiscalService`, `nfeEmissaoService`).
+7. XML builders como funções puras (testáveis isoladamente); contingência automática.
+8. Testes: Vitest + fast-check (funções puras) + Playwright/pytest (E2E — ver `.kiro/steering/qa-automatizado.md` no front).
+9. Nunca commitar direto em `main`/`master` — sempre branch nova.
+
+## Regras de Continuidade entre Sessões
+
+1. **Comece consultando este roadmap** para saber o bloco/fase atual.
+2. **Atualize este roadmap** ao concluir bloco/tarefa/spec (status + data + resumo).
+3. **Um spec por bloco** em `.kiro/specs/`, ciclo requirements → design → tasks.
+4. Ordem da Frente Atual é deliberada (F1 → F5); não pular sem pedido explícito.
+5. Este arquivo é a fonte única — se divergir dos docs de proposta, prevalece o
+   estado confirmado no código.
 
 ## Referências
-- Spec fiscal: `.kiro/specs/erp-modulo-fiscal/` e `.kiro/specs/erp-fiscal-completar/`
-- WMS specs: `.kiro/specs/wms-*`
-- Logística reversa: `src/modules/logistica-reversa/`
-- Financeiro básico: `src/modules/conta-pagar/` e `src/modules/conta-receber/`
+
+- Fiscal: `.kiro/specs/erp-modulo-fiscal/`, `.kiro/specs/erp-fiscal-completar/`
+- Vendas: `.kiro/specs/erp-vendas-pedido-completo/`
+- Financeiro básico: `src/modules/conta-pagar/`, `src/modules/conta-receber/`
+- Emissão NF-e: `src/modules/fiscal/emissor-dfe/nfe/nfe-emissao.service.ts`
+- Integração venda→fiscal: `src/modules/fiscal/integracao/venda-fiscal.service.ts`
+- Financeiro Vizor (SaaS): `.kiro/specs/financeiro-vizor/`
+- PCP: `.kiro/steering/pcp-modulo.md`
+- Migrações: `.kiro/steering/database-migrations.md`
+- Multi-tenant: `.kiro/steering/ATENCAO-pontos-verificar.md`
+- CT-e: `.kiro/steering/cte-emissao.md`
+
+---
+
+*Vizor ERP — Desenvolvido por Claudio Rangel*

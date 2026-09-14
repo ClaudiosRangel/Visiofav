@@ -27,6 +27,7 @@ import {
   type CertificadoParaUso,
 } from '../../certificado/certificado.service'
 import { type StatusDocumento } from '../tipos'
+import { gerarTituloDeCteProtegido, cancelarTitulosDeCte } from '../../../financeiro/gerar-titulo-de-documento.service'
 
 // === Tipos ===
 
@@ -429,6 +430,8 @@ export class CTeEmissaoService {
         where: { id: documentoFiscalId },
         data: { status: 'CANCELADO' },
       })
+      // F1 — cancela títulos de frete em aberto gerados por este CT-e
+      await cancelarTitulosDeCte(prisma, documento.empresaId, documentoFiscalId).catch(() => {})
     }
 
     return resultado
@@ -701,6 +704,11 @@ export class CTeEmissaoService {
             : new Date(),
         },
       })
+
+      // F1 — Captação automática: CT-e autorizado gera conta a receber do
+      // frete. Protegido: falha aqui NÃO desfaz a autorização (registra
+      // PendenciaTituloFiscal para reprocessamento).
+      await gerarTituloDeCteProtegido(prisma, documentoFiscalId)
 
       return {
         sucesso: true,

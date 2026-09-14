@@ -3830,6 +3830,162 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "cancelado_por_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
   console.log('✅ AgendaWms: campos de auditoria de cancelamento adicionados')
+
+  // ==========================================================================
+  // F1 — Financeiro Operacional Completo
+  // ==========================================================================
+
+  // Colunas aditivas (nullable) em conta_receber / conta_pagar
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "conta_financeira_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "categoria_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "centro_custo_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "data_competencia" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "documento_fiscal_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "cte_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "conta_financeira_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "categoria_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "centro_custo_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "data_competencia" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "documento_fiscal_id" TEXT`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "conta_financeira" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "nome" VARCHAR(120) NOT NULL,
+      "banco" VARCHAR(60),
+      "agencia" VARCHAR(20),
+      "conta" VARCHAR(30),
+      "saldo_inicial" DECIMAL(14,2) NOT NULL DEFAULT 0,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "conta_financeira_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_conta_financeira_empresa_id" ON "conta_financeira"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "categoria_financeira" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "tipo" VARCHAR(10) NOT NULL,
+      "codigo" VARCHAR(20) NOT NULL,
+      "nome" VARCHAR(120) NOT NULL,
+      "pai_id" TEXT,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT "categoria_financeira_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "categoria_financeira_empresa_id_codigo_key" ON "categoria_financeira"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "centro_custo" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(20) NOT NULL,
+      "nome" VARCHAR(120) NOT NULL,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT "centro_custo_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "centro_custo_empresa_id_codigo_key" ON "centro_custo"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "lancamento_caixa" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "conta_financeira_id" TEXT NOT NULL,
+      "tipo" VARCHAR(10) NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      "data" TIMESTAMP(3) NOT NULL,
+      "data_competencia" TIMESTAMP(3) NOT NULL,
+      "descricao" VARCHAR(300) NOT NULL,
+      "categoria_id" TEXT,
+      "estornado" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "lancamento_caixa_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_lancamento_caixa_empresa_data" ON "lancamento_caixa"("empresa_id","data")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "rateio_centro_custo" (
+      "id" TEXT NOT NULL,
+      "lancamento_id" TEXT,
+      "centro_custo_id" TEXT NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      CONSTRAINT "rateio_centro_custo_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_rateio_centro_custo_lancamento" ON "rateio_centro_custo"("lancamento_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "extrato_bancario" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "conta_financeira_id" TEXT NOT NULL,
+      "fitid" VARCHAR(100) NOT NULL,
+      "data" TIMESTAMP(3) NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      "descricao" VARCHAR(300) NOT NULL,
+      "conciliado" BOOLEAN NOT NULL DEFAULT false,
+      "conta_receber_id" TEXT,
+      "conta_pagar_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "extrato_bancario_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "extrato_bancario_conta_fitid_key" ON "extrato_bancario"("conta_financeira_id","fitid")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "fechamento_periodo" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "competencia" VARCHAR(7) NOT NULL,
+      "fechado_por" TEXT NOT NULL,
+      "fechado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "reaberto_por" TEXT,
+      "reaberto_em" TIMESTAMP(3),
+      "motivo_reabertura" VARCHAR(300),
+      "aberto" BOOLEAN NOT NULL DEFAULT false,
+      CONSTRAINT "fechamento_periodo_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "fechamento_periodo_empresa_competencia_key" ON "fechamento_periodo"("empresa_id","competencia")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pendencia_titulo_fiscal" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "tipo_documento" VARCHAR(20) NOT NULL,
+      "documento_id" TEXT NOT NULL,
+      "erro" TEXT NOT NULL,
+      "resolvido" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "pendencia_titulo_fiscal_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_pendencia_titulo_fiscal_empresa_resolvido" ON "pendencia_titulo_fiscal"("empresa_id","resolvido")`)
+
+  // FKs — Postgres não tem ADD CONSTRAINT IF NOT EXISTS: cada uma em try/catch
+  const addFkF1 = async (sql: string) => {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('já existe')) return
+      console.log('⚠️ F1 Financeiro FK skipped:', e.message?.substring(0, 150))
+    }
+  }
+  await addFkF1(`ALTER TABLE "conta_financeira" ADD CONSTRAINT "conta_financeira_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkF1(`ALTER TABLE "categoria_financeira" ADD CONSTRAINT "categoria_financeira_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkF1(`ALTER TABLE "centro_custo" ADD CONSTRAINT "centro_custo_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkF1(`ALTER TABLE "lancamento_caixa" ADD CONSTRAINT "lancamento_caixa_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkF1(`ALTER TABLE "extrato_bancario" ADD CONSTRAINT "extrato_bancario_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkF1(`ALTER TABLE "fechamento_periodo" ADD CONSTRAINT "fechamento_periodo_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkF1(`ALTER TABLE "pendencia_titulo_fiscal" ADD CONSTRAINT "pendencia_titulo_fiscal_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+
+  console.log('✅ F1 Financeiro: conta_financeira, categoria_financeira, centro_custo, lancamento_caixa, rateio_centro_custo, extrato_bancario, fechamento_periodo, pendencia_titulo_fiscal criados (+ colunas em conta_receber/conta_pagar)')
 }
 
 main()

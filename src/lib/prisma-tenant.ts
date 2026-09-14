@@ -9,6 +9,9 @@ const ISOLATED_MODELS: string[] = [
   'EquipamentoMovimentacao', 'Funcao', 'FormaArmazenagem',
   'AmbienteArmazenagem', 'ClassificacaoProduto', 'TipoCarroceria',
   'TipoCarga', 'VeiculoWms', 'NotaEntrada', 'SaldoEndereco', 'Sku',
+  // F1 — Financeiro operacional
+  'ContaFinanceira', 'CategoriaFinanceira', 'CentroCusto', 'LancamentoCaixa',
+  'ExtratoBancario', 'FechamentoPeriodo', 'PendenciaTituloFiscal',
 ]
 
 export function createTenantExtension(empresaId: string) {

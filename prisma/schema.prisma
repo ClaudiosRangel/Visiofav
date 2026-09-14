@@ -1069,6 +1069,13 @@ model ContaPagar {
   totalParcelas     Int              @default(1) @map("total_parcelas")
   criadoEm          DateTime         @default(now()) @map("criado_em")
 
+  // F1 — Financeiro operacional (colunas aditivas, nullable)
+  contaFinanceiraId String?          @map("conta_financeira_id")
+  categoriaId       String?          @map("categoria_id")
+  centroCustoId     String?          @map("centro_custo_id")
+  dataCompetencia   DateTime?        @map("data_competencia")
+  documentoFiscalId String?          @map("documento_fiscal_id")
+
   @@map("conta_pagar")
 }
 
@@ -1091,7 +1098,131 @@ model ContaReceber {
   totalParcelas    Int             @default(1) @map("total_parcelas")
   criadoEm         DateTime        @default(now()) @map("criado_em")
 
+  // F1 — Financeiro operacional (colunas aditivas, nullable)
+  contaFinanceiraId String?        @map("conta_financeira_id")
+  categoriaId       String?        @map("categoria_id")
+  centroCustoId     String?        @map("centro_custo_id")
+  dataCompetencia   DateTime?      @map("data_competencia")
+  documentoFiscalId String?        @map("documento_fiscal_id")
+  cteId             String?        @map("cte_id")
+
   @@map("conta_receber")
+}
+
+// ============================================================================
+// FINANCEIRO OPERACIONAL (Bloco F1) — contas, categorias, caixa, conciliação
+// ============================================================================
+
+model ContaFinanceira {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  tipo         String   @db.VarChar(20) // CAIXA | BANCO | APLICACAO
+  nome         String   @db.VarChar(120)
+  banco        String?  @db.VarChar(60)
+  agencia      String?  @db.VarChar(20)
+  conta        String?  @db.VarChar(30)
+  saldoInicial Decimal  @default(0) @map("saldo_inicial") @db.Decimal(14, 2)
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@map("conta_financeira")
+}
+
+model CategoriaFinanceira {
+  id        String  @id @default(uuid())
+  empresaId String  @map("empresa_id")
+  tipo      String  @db.VarChar(10) // RECEITA | DESPESA
+  codigo    String  @db.VarChar(20)
+  nome      String  @db.VarChar(120)
+  paiId     String? @map("pai_id")
+  status    Boolean @default(true)
+
+  @@unique([empresaId, codigo])
+  @@map("categoria_financeira")
+}
+
+model CentroCusto {
+  id        String  @id @default(uuid())
+  empresaId String  @map("empresa_id")
+  codigo    String  @db.VarChar(20)
+  nome      String  @db.VarChar(120)
+  status    Boolean @default(true)
+
+  @@unique([empresaId, codigo])
+  @@map("centro_custo")
+}
+
+model LancamentoCaixa {
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  contaFinanceiraId String   @map("conta_financeira_id")
+  tipo              String   @db.VarChar(10) // ENTRADA | SAIDA
+  valor             Decimal  @db.Decimal(14, 2)
+  data              DateTime
+  dataCompetencia   DateTime @map("data_competencia")
+  descricao         String   @db.VarChar(300)
+  categoriaId       String?  @map("categoria_id")
+  estornado         Boolean  @default(false)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, data])
+  @@map("lancamento_caixa")
+}
+
+model RateioCentroCusto {
+  id            String  @id @default(uuid())
+  lancamentoId  String? @map("lancamento_id")
+  centroCustoId String  @map("centro_custo_id")
+  valor         Decimal @db.Decimal(14, 2)
+
+  @@index([lancamentoId])
+  @@map("rateio_centro_custo")
+}
+
+model ExtratoBancario {
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  contaFinanceiraId String   @map("conta_financeira_id")
+  fitid             String   @db.VarChar(100)
+  data              DateTime
+  valor             Decimal  @db.Decimal(14, 2)
+  descricao         String   @db.VarChar(300)
+  conciliado        Boolean  @default(false)
+  contaReceberId    String?  @map("conta_receber_id")
+  contaPagarId      String?  @map("conta_pagar_id")
+  criadoEm          DateTime @default(now()) @map("criado_em")
+
+  @@unique([contaFinanceiraId, fitid])
+  @@map("extrato_bancario")
+}
+
+model FechamentoPeriodo {
+  id               String    @id @default(uuid())
+  empresaId        String    @map("empresa_id")
+  competencia      String    @db.VarChar(7) // "YYYY-MM"
+  fechadoPor       String    @map("fechado_por")
+  fechadoEm        DateTime  @default(now()) @map("fechado_em")
+  reabertoPor      String?   @map("reaberto_por")
+  reabertoEm       DateTime? @map("reaberto_em")
+  motivoReabertura String?   @map("motivo_reabertura") @db.VarChar(300)
+  aberto           Boolean   @default(false)
+
+  @@unique([empresaId, competencia])
+  @@map("fechamento_periodo")
+}
+
+model PendenciaTituloFiscal {
+  id            String   @id @default(uuid())
+  empresaId     String   @map("empresa_id")
+  tipoDocumento String   @map("tipo_documento") @db.VarChar(20) // VENDA | COMPRA | CTE
+  documentoId   String   @map("documento_id")
+  erro          String   @db.Text
+  resolvido     Boolean  @default(false)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, resolvido])
+  @@map("pendencia_titulo_fiscal")
 }
 
 // ============================================================================
