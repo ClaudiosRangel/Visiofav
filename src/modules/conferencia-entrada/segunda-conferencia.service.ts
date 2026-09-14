@@ -13,12 +13,18 @@
  *   no frontend as ações Aceitar com divergência / Rejeitar / Corrigir Contagem
  * - Se diverge e o operador aceitou explicitamente → segue para lote/validade
  *
- * Regra de lote/validade (só avaliada se Produto.exigeLote = true):
- * - Se ambos coincidem com a NF-e → item CONFERIDO
- * - Se algum diverge → decide conforme ConfigConferenciaProduto:
+ * Regra de lote (só avaliada se Produto.exigeLote = true):
+ * - Se o lote coincide com a NF-e → item CONFERIDO (a validade NÃO é mais
+ *   comparada contra a NF-e; ver abaixo)
+ * - Se o lote diverge → decide conforme ConfigConferenciaProduto:
  *   aceitarSenha → 'requerSenha' | aceitarCcePendente → pendência/e-mail conforme
  *   ConfigIntegracao | ambos false → bloqueio total, reconferência obrigatória
  *   (item permanece PENDENTE_SEGUNDA_CONFERENCIA para nova tentativa)
+ *
+ * Regra de validade (independente da NF-e):
+ * - A validade reinformada é validada contra produto vencido + shelf life mínimo
+ *   (validarValidadeProduto) — nunca contra a validade da NF-e. Se reprovar
+ *   (vencido/shelf life curto), o item é bloqueado para reconferência.
  */
 
 import { prisma } from '../../lib/prisma'
@@ -26,6 +32,7 @@ import { obterConfigBloqueio } from './config-conferencia-produto.service'
 import { criarPendencia } from '../pendencia-cce/pendencia-cce.service'
 import { enviarEmailDivergencia } from '../email-fiscal/email-fiscal.service'
 import { avaliarToleranciaQuantidade } from './tolerancia-quantidade.service'
+import { validarValidadeProduto } from './validar-validade-produto.service'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -72,26 +79,6 @@ function normalizarString(valor: string | null | undefined): string | null {
 }
 
 /**
- * Compara datas ignorando hora (apenas dia).
- * Retorna true se representam o mesmo dia.
- */
-function mesmoDia(d1: Date | null | undefined, d2: Date | string | null | undefined): boolean {
-  if (!d1 && !d2) return true
-  if (!d1 || !d2) return false
-
-  const date1 = d1 instanceof Date ? d1 : new Date(d1)
-  const date2 = d2 instanceof Date ? d2 : new Date(d2)
-
-  if (isNaN(date1.getTime()) || isNaN(date2.getTime())) return false
-
-  return (
-    date1.getFullYear() === date2.getFullYear() &&
-    date1.getMonth() === date2.getMonth() &&
-    date1.getDate() === date2.getDate()
-  )
-}
-
-/**
  * Parseia uma string de validade (DD/MM/AAAA ou ISO) para Date.
  */
 function parsearValidade(valor: string | null | undefined): Date | null {
@@ -111,26 +98,6 @@ function parsearValidade(valor: string | null | undefined): Date | null {
   if (!isNaN(isoDate.getTime())) return isoDate
 
   return null
-}
-
-/**
- * Determina o tipo de divergência com base nos valores divergentes.
- */
-function determinarTipoDivergencia(
-  loteNfe: string | null,
-  loteConferido: string | null,
-  validadeNfe: Date | null,
-  validadeConferida: Date | null,
-): 'LOTE' | 'VALIDADE' {
-  const loteNorm = normalizarString(loteNfe)
-  const loteConfNorm = normalizarString(loteConferido)
-
-  // Se lote diverge, prioriza LOTE
-  if (loteNorm !== loteConfNorm) {
-    return 'LOTE'
-  }
-
-  return 'VALIDADE'
 }
 
 // ─── Serviço principal ─────────────────────────────────────────────────────────
@@ -243,7 +210,7 @@ export async function executarSegundaConferencia(
     const produto = itemNota.codigoProduto
       ? await prisma.produto.findFirst({
           where: { empresaId, codigo: itemNota.codigoProduto },
-          select: { id: true, exigeLote: true },
+          select: { id: true, exigeLote: true, shelfLifeMinimo: true, nome: true },
         })
       : null
 
@@ -260,17 +227,35 @@ export async function executarSegundaConferencia(
       continue
     }
 
-    // Comparar valores da 2ª conferência com NF-e
+    // Comparar lote da 2ª conferência com a NF-e. A validade NÃO é mais
+    // comparada contra a NF-e — é validada contra produto vencido + shelf life.
     const loteNfe = normalizarString(itemNota.lote)
     const loteConferido = normalizarString(itemInput.lote)
-    const validadeNfe = itemNota.validade
     const validadeConferida = parsearValidade(itemInput.validade)
 
     const loteCoincide = loteNfe === loteConferido
-    const validadeCoincide = mesmoDia(validadeNfe, validadeConferida)
 
-    // Se valores coincidem com NF-e → auto-resolve
-    if (loteCoincide && validadeCoincide) {
+    // Validação de validade reinformada (produto vencido + shelf life mínimo),
+    // independente da NF-e. Se reprovar, bloqueia o item para reconferência
+    // (mantém PENDENTE_SEGUNDA_CONFERENCIA) — não deixa produto vencido/validade
+    // curta entrar via reconferência.
+    const validacaoValidade = validarValidadeProduto({
+      validadeDigitada: validadeConferida,
+      shelfLifeMinimo: produto.shelfLifeMinimo,
+      dataAtual: new Date(),
+      produtoNome: produto.nome,
+    })
+    if (!validacaoValidade.aprovado) {
+      resultados.push({
+        itemNotaEntradaId: itemInput.itemNotaEntradaId,
+        resultado: { status: 'bloqueado' },
+      })
+      continue
+    }
+
+    // Se o lote coincide com a NF-e (e a validade passou na validação acima) →
+    // auto-resolve.
+    if (loteCoincide) {
       await prisma.itemNotaEntrada.update({
         where: { id: itemInput.itemNotaEntradaId },
         data: { statusConferencia: 'CONFERIDO' },
@@ -283,13 +268,8 @@ export async function executarSegundaConferencia(
       continue
     }
 
-    // Divergência confirmada — determinar ação conforme config do produto
-    const tipoDivergencia = determinarTipoDivergencia(
-      itemNota.lote,
-      itemInput.lote ?? null,
-      validadeNfe,
-      validadeConferida,
-    )
+    // Divergência de LOTE confirmada — determinar ação conforme config do produto.
+    const tipoDivergencia = 'LOTE' as const
 
     const configBloqueio = await obterConfigBloqueio(empresaId, produto.id)
 

@@ -69,7 +69,8 @@ export function compararValidade(
 /**
  * Verifica se o produto está vencido com base na validade digitada.
  *
- * - Se validadeDigitada for anterior à dataAtual: retorna bloqueio com alerta "PRODUTO VENCIDO"
+ * - Se validadeDigitada for menor ou igual à dataAtual: retorna bloqueio com alerta "PRODUTO VENCIDO"
+ *   (produto que vence hoje também é considerado vencido e bloqueia o recebimento)
  * - Caso contrário: retorna null (produto dentro da validade)
  *
  * A comparação é feita apenas por data (ano, mês, dia), ignorando hora.
@@ -91,7 +92,7 @@ export function verificarProdutoVencido(
   const validadeNorm = normalizarData(validadeDigitada)
   const atualNorm = normalizarData(dataAtual)
 
-  if (validadeNorm.getTime() < atualNorm.getTime()) {
+  if (validadeNorm.getTime() <= atualNorm.getTime()) {
     return {
       alerta: 'PRODUTO VENCIDO',
       validadeDigitada,

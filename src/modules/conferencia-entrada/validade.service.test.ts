@@ -72,13 +72,13 @@ describe('validade.service', () => {
       expect(resultado).toBeNull()
     })
 
-    it('retorna null quando validade é igual à data atual (vence hoje)', () => {
-      const data = new Date(2025, 5, 15)
+    it('retorna bloqueio quando validade é igual à data atual (vence hoje bloqueia, <=)', () => {
       const resultado = verificarProdutoVencido(
         new Date(2025, 5, 15, 8, 0, 0),
         new Date(2025, 5, 15, 14, 0, 0),
       )
-      expect(resultado).toBeNull()
+      expect(resultado).not.toBeNull()
+      expect(resultado!.alerta).toBe('PRODUTO VENCIDO')
     })
 
     it('retorna bloqueio quando produto está vencido (validade anterior à data atual)', () => {

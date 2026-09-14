@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
-import { validarShelfLife } from './shelf-life.service'
+import { validarValidadeProduto } from '../conferencia-entrada/validar-validade-produto.service'
 import { calcularOcupacaoNivel } from '../endereco/ocupacao-nivel.service'
 import { validarCapacidadeNivel } from '../endereco/validador-capacidade-nivel.service'
 import { selecionarSkuMaster, type SkuInfo } from '../enderecamento-inteligente/conversor-unidade.service'
@@ -181,25 +181,27 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     const item = nota.itens.find((i) => i.codigoProduto === body.codigoProduto)
     if (!item) return reply.status(404).send({ message: `Produto ${body.codigoProduto} não encontrado nesta nota` })
 
-    // Validação de Shelf Life
+    // Validação de validade (produto vencido + shelf life) — regra única do helper.
+    // Produto encontrado basta: PRODUTO_VENCIDO bloqueia mesmo com shelfLifeMinimo nulo.
     if (body.validade) {
       const produto = await prisma.produto.findFirst({
         where: { empresaId: user.empresaId, codigo: body.codigoProduto },
         select: { shelfLifeMinimo: true, nome: true },
       })
-      if (produto && produto.shelfLifeMinimo) {
-        const resultado = validarShelfLife({
+      if (produto) {
+        const resultado = validarValidadeProduto({
+          validadeDigitada: parseDateBR(body.validade),
           shelfLifeMinimo: produto.shelfLifeMinimo,
-          dataValidade: parseDateBR(body.validade)!,
           dataAtual: new Date(),
           produtoNome: produto.nome,
         })
         if (!resultado.aprovado) {
           return reply.status(422).send({
             message: resultado.mensagem,
-            bloqueio: 'SHELF_LIFE',
-            diasRestantes: resultado.diasRestantes,
-            dataMinima: resultado.dataMinima,
+            bloqueio: resultado.bloqueio,
+            ...(resultado.bloqueio === 'SHELF_LIFE'
+              ? { diasRestantes: resultado.diasRestantes, dataMinima: resultado.dataMinima }
+              : {}),
           })
         }
       }
@@ -422,25 +424,27 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       })
     }
 
-    // Validação de Shelf Life
+    // Validação de validade (produto vencido + shelf life) — regra única do helper.
+    // Produto encontrado basta: PRODUTO_VENCIDO bloqueia mesmo com shelfLifeMinimo nulo.
     if (body.validade && item.codigoProduto) {
       const produto = await prisma.produto.findFirst({
         where: { empresaId: userConf.empresaId, codigo: item.codigoProduto },
         select: { shelfLifeMinimo: true, nome: true },
       })
-      if (produto && produto.shelfLifeMinimo) {
-        const resultado = validarShelfLife({
+      if (produto) {
+        const resultado = validarValidadeProduto({
+          validadeDigitada: parseDateBR(body.validade),
           shelfLifeMinimo: produto.shelfLifeMinimo,
-          dataValidade: parseDateBR(body.validade)!,
           dataAtual: new Date(),
           produtoNome: produto.nome,
         })
         if (!resultado.aprovado) {
           return reply.status(422).send({
             message: resultado.mensagem,
-            bloqueio: 'SHELF_LIFE',
-            diasRestantes: resultado.diasRestantes,
-            dataMinima: resultado.dataMinima,
+            bloqueio: resultado.bloqueio,
+            ...(resultado.bloqueio === 'SHELF_LIFE'
+              ? { diasRestantes: resultado.diasRestantes, dataMinima: resultado.dataMinima }
+              : {}),
           })
         }
       }
@@ -592,24 +596,31 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         }
       }
 
-      // Validação de Shelf Life por item
+      // Validação de validade por item (produto vencido + shelf life mínimo).
+      // Usa o helper único `validarValidadeProduto` — mesma regra dos canais
+      // individual e por código de barras. A condição passa a ser `if (produto)`
+      // (sem exigir shelfLifeMinimo) para que PRODUTO_VENCIDO bloqueie mesmo
+      // quando o shelf life mínimo é nulo. A validade NÃO é mais comparada
+      // contra a NF-e aqui.
       if (conferido.validade && item.codigoProduto) {
         const produto = await prisma.produto.findFirst({
           where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto },
           select: { shelfLifeMinimo: true, nome: true },
         })
-        if (produto && produto.shelfLifeMinimo) {
-          const resultado = validarShelfLife({
+        if (produto) {
+          const resultado = validarValidadeProduto({
+            validadeDigitada: parseDateBR(conferido.validade),
             shelfLifeMinimo: produto.shelfLifeMinimo,
-            dataValidade: parseDateBR(conferido.validade)!,
             dataAtual: new Date(),
             produtoNome: produto.nome,
           })
           if (!resultado.aprovado) {
+            // A mensagem já distingue produto vencido de shelf life insuficiente.
+            // Mantém o nome do array `falhasShelfLife` (consumido pelo frontend).
             falhasShelfLife.push({
               itemId: item.id,
               descricao: item.descricao,
-              mensagem: resultado.mensagem!,
+              mensagem: resultado.mensagem,
             })
             continue // Skip this item
           }
@@ -675,17 +686,10 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
           tiposDivergentes.push('LOTE_DIVERGENTE')
         }
 
-        // Comparar validade conferida vs validade da NF-e (ignorando horas)
-        const validadeConferidaDate = conferido.validade ? parseDateBR(conferido.validade) : null
-        const validadeNfDate = item.validade
-        if (validadeNfDate && validadeConferidaDate) {
-          const nfDia = new Date(validadeNfDate.getFullYear(), validadeNfDate.getMonth(), validadeNfDate.getDate()).getTime()
-          const confDia = new Date(validadeConferidaDate.getFullYear(), validadeConferidaDate.getMonth(), validadeConferidaDate.getDate()).getTime()
-          if (nfDia !== confDia) {
-            itemDivergente = true
-            tiposDivergentes.push('VALIDADE_DIVERGENTE')
-          }
-        }
+        // A validade NÃO é mais comparada contra a NF-e (dado frequentemente
+        // ausente/incorreto). A validade digitada já foi validada acima contra
+        // produto vencido + shelf life (validarValidadeProduto). Divergência de
+        // validade vs NF-e deixou de existir como gatilho de segunda conferência.
       }
 
       if (divergenciaQtd !== 0 && !recebimentoParcialAceito && !toleranciaInfo) {
@@ -707,13 +711,17 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
         await marcarPendenteSegundaConferencia(item.id)
         temDivergencia = true
       } else if (conferido.lote || conferido.validade) {
-        // Sem divergência: persiste lote/validade digitados (preenchimento
-        // inicial quando a NF-e não trazia esses dados, ou confirmação).
+        // Sem divergência: persiste lote e validade.
+        // - Lote: mantém o valor da NF-e quando existe (comparado, nunca
+        //   sobrescrito), com fallback para o digitado.
+        // - Validade: PREFERE a validade DIGITADA (lida do produto físico —
+        //   fonte confiável), com fallback para a NF-e apenas quando nada é
+        //   digitado. É esta validade que alimenta o SaldoEndereco (FEFO).
         await prisma.itemNotaEntrada.update({
           where: { id: item.id },
           data: {
             lote: item.lote ?? conferido.lote,
-            validade: item.validade ?? (conferido.validade ? parseDateBR(conferido.validade) : null),
+            validade: conferido.validade ? parseDateBR(conferido.validade) : item.validade,
           },
         })
       }

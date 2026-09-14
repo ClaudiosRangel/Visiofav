@@ -57,7 +57,7 @@ describe('executarSegundaConferencia — notificação fiscal adiada', () => {
     vi.clearAllMocks()
     mockedPrisma.configIntegracao.findUnique.mockResolvedValue({ integracaoAtiva: false } as any)
     mockedPrisma.empresa.findUnique.mockResolvedValue({ toleranciaQuantidadePercentualPadrao: null } as any)
-    mockedPrisma.produto.findFirst.mockResolvedValue({ id: 'prod-1', exigeLote: true, toleranciaQuantidadePercentual: null } as any)
+    mockedPrisma.produto.findFirst.mockResolvedValue({ id: 'prod-1', exigeLote: true, toleranciaQuantidadePercentual: null, shelfLifeMinimo: null, nome: 'ACHOCOLATADO NESCAU' } as any)
   })
 
   it('não dispara pendência CC-e nem e-mail — apenas registra a divergência (aceitarCcePendente=true, sem senha)', async () => {
@@ -121,7 +121,7 @@ describe('executarSegundaConferencia — notificação fiscal adiada', () => {
     expect(resultado.itens[0].resultado).toEqual({ status: 'bloqueado' })
   })
 
-  it('auto-resolve quando lote/validade coincidem com a NF-e na 2ª tentativa', async () => {
+  it('auto-resolve quando o lote coincide com a NF-e na 2ª tentativa (validade não é mais comparada)', async () => {
     const item = itemNotaBase()
     mockedPrisma.notaEntrada.findUnique.mockResolvedValue({ id: 'nota-1', itens: [item] } as any)
 
@@ -133,6 +133,44 @@ describe('executarSegundaConferencia — notificação fiscal adiada', () => {
     )
 
     expect(resultado.itens[0].resultado).toEqual({ status: 'resolvido' })
+    expect(mockedObterConfigBloqueio).not.toHaveBeenCalled()
+    expect(mockedPrisma.divergenciaConferencia.create).not.toHaveBeenCalled()
+  })
+
+  it('REGRESSÃO: validade divergente da NF-e NÃO impede a resolução quando o lote coincide e o produto é válido', async () => {
+    // NF-e diz validade 01/07/2027; conferente digita 15/09/2027 (divergente da
+    // NF-e, mas produto válido e não vencido). Antes gerava VALIDADE_DIVERGENTE
+    // e barrava; agora resolve porque o lote coincide e a validade passa na
+    // validação de vencido/shelf life.
+    const item = itemNotaBase()
+    mockedPrisma.notaEntrada.findUnique.mockResolvedValue({ id: 'nota-1', itens: [item] } as any)
+
+    const resultado = await executarSegundaConferencia(
+      'nota-1',
+      [{ itemNotaEntradaId: 'item-1', quantidadeConferida: 200, lote: 'L2026M07A', validade: '15/09/2027' }],
+      'empresa-1',
+      'user-1',
+    )
+
+    expect(resultado.itens[0].resultado).toEqual({ status: 'resolvido' })
+    expect(mockedObterConfigBloqueio).not.toHaveBeenCalled()
+    expect(mockedPrisma.divergenciaConferencia.create).not.toHaveBeenCalled()
+  })
+
+  it('bloqueia na reconferência quando a validade reinformada está vencida (produto vencido), mesmo com lote coincidente', async () => {
+    // Produto com shelf life definido; validade digitada no passado → vencido.
+    mockedPrisma.produto.findFirst.mockResolvedValue({ id: 'prod-1', exigeLote: true, toleranciaQuantidadePercentual: null, shelfLifeMinimo: 30, nome: 'ACHOCOLATADO NESCAU' } as any)
+    const item = itemNotaBase()
+    mockedPrisma.notaEntrada.findUnique.mockResolvedValue({ id: 'nota-1', itens: [item] } as any)
+
+    const resultado = await executarSegundaConferencia(
+      'nota-1',
+      [{ itemNotaEntradaId: 'item-1', quantidadeConferida: 200, lote: 'L2026M07A', validade: '01/01/2000' }],
+      'empresa-1',
+      'user-1',
+    )
+
+    expect(resultado.itens[0].resultado).toEqual({ status: 'bloqueado' })
     expect(mockedObterConfigBloqueio).not.toHaveBeenCalled()
     expect(mockedPrisma.divergenciaConferencia.create).not.toHaveBeenCalled()
   })
