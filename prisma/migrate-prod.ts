@@ -3823,6 +3823,13 @@ async function seedMateriaisFromOPs() {
   await addFkFinanceiro(`ALTER TABLE "fatura" ADD CONSTRAINT "fatura_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
 
   console.log('✅ Financeiro Vizor: empresa.status_financeiro (+ auditoria), contrato_cobranca, preco_modulo, fatura, controle_alerta_cobranca, log_execucao_job_financeiro criados')
+
+  // AgendaWms — auditoria de cancelamento (bloqueio de cancelamento após
+  // entrada no pátio: só permitido em AGENDADO e com motivo válido).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "motivo_cancelamento" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "cancelado_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
+  console.log('✅ AgendaWms: campos de auditoria de cancelamento adicionados')
 }
 
 main()

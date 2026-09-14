@@ -1335,6 +1335,11 @@ model AgendaWms {
   divergenciaTransporte String? @map("divergencia_transporte") @db.VarChar(500)
   supervisorLiberacaoId String? @map("supervisor_liberacao_id")
 
+  // Auditoria de cancelamento (só permitido antes da entrada no pátio).
+  motivoCancelamento String?   @map("motivo_cancelamento") @db.Text
+  canceladoPorId     String?   @map("cancelado_por_id")
+  canceladoEm        DateTime? @map("cancelado_em")
+
   veiculoPatio VeiculoPatio?
 
   @@map("agenda_wms")

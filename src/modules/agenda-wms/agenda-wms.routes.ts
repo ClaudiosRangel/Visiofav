@@ -6,6 +6,7 @@ import { moduloGuard } from '../../middleware/modulo-guard'
 import { parseNfeXml } from '../nota-entrada/nfe-xml-parser'
 import { sincronizarDadosTransporte } from './transporte-sync.service'
 import { resolverCodigosProdutoItensXml } from '../nota-entrada/resolver-codigo-produto-item.service'
+import { decidirCancelamento } from './cancelamento-agenda.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -38,6 +39,8 @@ const criarAgendaSchema = z.object({
 
 const statusSchema = z.object({
   status: z.enum(['AGENDADO', 'CONFIRMADO', 'ESPERA', 'NA_DOCA', 'CONFERINDO', 'CONFERIDO', 'RECEBIDO', 'CANCELADO']),
+  // Obrigatório (validado em runtime) somente quando status === 'CANCELADO'.
+  motivoCancelamento: z.string().optional(),
 })
 
 export async function agendaWmsRoutes(app: FastifyInstance) {
@@ -546,10 +549,31 @@ export async function agendaWmsRoutes(app: FastifyInstance) {
   app.patch('/:id/status', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = idParamsSchema.parse(request.params)
-    const { status } = statusSchema.parse(request.body)
+    const body = statusSchema.parse(request.body)
+    const { status } = body
 
     const ag = await prisma.agendaWms.findFirst({ where: { id, empresaId: user.empresaId } })
     if (!ag) return reply.status(404).send({ message: 'Agendamento não encontrado' })
+
+    // Cancelamento: só permitido em AGENDADO (antes da entrada no pátio) e com
+    // motivo válido. A partir de ESPERA o veículo já foi autorizado a entrar —
+    // cancelar deixaria a operação inconsistente (fila/pátio/nota órfãos).
+    if (status === 'CANCELADO') {
+      const decisao = decidirCancelamento(ag.status, body.motivoCancelamento)
+      if (!decisao.permitido) {
+        return reply.status(decisao.httpStatus).send({ message: decisao.mensagem })
+      }
+      const atualizado = await prisma.agendaWms.update({
+        where: { id },
+        data: {
+          status: 'CANCELADO',
+          motivoCancelamento: body.motivoCancelamento!.trim(),
+          canceladoPorId: user.id,
+          canceladoEm: new Date(),
+        },
+      })
+      return atualizado
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const atualizado = await tx.agendaWms.update({ where: { id }, data: { status } })
