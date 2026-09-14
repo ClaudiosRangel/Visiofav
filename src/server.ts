@@ -84,6 +84,7 @@ import { posicionamentoRoutes } from './modules/posicionamento/posicionamento.ro
 import { portariaRoutes } from './modules/portaria/portaria.routes'
 import { manutencaoEstoqueRoutes } from './modules/manutencao-estoque/manutencao-estoque.routes'
 import { conferenciaEntradaRoutes } from './modules/conferencia/conferencia-entrada.routes'
+import { wmsConfigMenusRoutes } from './modules/wms-config-menus/wms-config-menus.routes'
 import { filaExcecoesRoutes } from './modules/fila-excecoes/fila-excecoes.routes'
 import { enderecamentoWmsRoutes } from './modules/enderecamento/enderecamento-wms.routes'
 import { etiquetaRoutes } from './modules/etiqueta/etiqueta.routes'
@@ -410,6 +411,7 @@ async function bootstrap() {
   await app.register(capacidadeNivelRoutes, { prefix: '/api/capacidades-nivel' })
   await app.register(enderecamentoInteligenteRoutes, { prefix: '/api/enderecamento-inteligente' })
   await app.register(wmsPutawayConfigRoutes, { prefix: '/api/wms/putaway' })
+  await app.register(wmsConfigMenusRoutes, { prefix: '/api/wms' })
   await app.register(formatoEnderecoRoutes, { prefix: '/api/formato-endereco' })
 
   // Módulo Geolocalização — Roteirização
