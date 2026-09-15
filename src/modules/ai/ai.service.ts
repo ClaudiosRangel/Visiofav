@@ -9,6 +9,8 @@ import { AI_TOOLS } from './ai-tools'
 import { VIZOR_AI_SYSTEM_PROMPT } from './ai-system-prompt'
 import { executarTool, type ToolResult } from './ai-executor'
 import { salvarXmlPendente, obterXmlPendente } from './ai-xml-pendente'
+import { extrairDocumentoFinanceiro } from './extrator-documento.service'
+import { salvarDocPendente } from './documento-financeiro-pendente'
 
 // Frases que indicam confirmação explícita de importação de XML pendente.
 // Interceptadas ANTES do LLM/shortcuts para executar a importação real de forma
@@ -432,6 +434,63 @@ export const aiService = {
     return {
       resposta,
       sugestoes,
+    }
+  },
+
+  /**
+   * Processa um documento financeiro (boleto/fatura/guia em PDF ou imagem).
+   * Extrai os campos (valor, vencimento, linha digitável, documento, tipo),
+   * guarda em cache pendente por empresa e devolve um resumo conversacional
+   * pedindo confirmação. O lançamento real só acontece quando o usuário
+   * confirma — a IA então chama a tool `lancar_documento_financeiro` (via
+   * `obterDocPendente`). Nunca grava sem confirmação humana.
+   */
+  async processarDocumentoFinanceiro(fileBuffer: Buffer, mime: string, empresaId: string, _mensagem?: string): Promise<AIResponse> {
+    const campos = await extrairDocumentoFinanceiro(fileBuffer, mime)
+
+    // Sem nenhum campo reconhecido: orienta o usuário em vez de gravar lixo.
+    const nadaReconhecido = campos.valor === undefined && !campos.vencimento && !campos.linhaDigitavel && !campos.documento
+    if (nadaReconhecido) {
+      return {
+        resposta: '📄 Recebi o documento, mas não consegui reconhecer os dados financeiros automaticamente (valor, vencimento ou linha digitável). Você pode me informar os dados manualmente — ex.: "lançar despesa de R$ 1.250,00 vencendo em 10/10/2026 para Fornecedor X".',
+        sugestoes: ['Lançar manualmente', 'Contas a pagar', 'Enviar outro documento'],
+      }
+    }
+
+    // Guarda os campos extraídos em cache pendente (assume "pagar" — documento
+    // recebido de terceiro é tipicamente uma obrigação; o usuário pode corrigir).
+    salvarDocPendente(empresaId, {
+      ...campos,
+      tipo: 'pagar',
+      descricaoSugerida: campos.beneficiario || undefined,
+    })
+
+    // Monta o resumo conversacional.
+    const fmtBRL = (v?: number) => v !== undefined ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'
+    const fmtData = (d?: Date) => d ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—'
+    const rotuloTipo: Record<string, string> = {
+      NF: 'Nota Fiscal', NFS: 'Nota de Serviço', BOLETO: 'Boleto',
+      DESPESA: 'Despesa', IMPOSTO: 'Imposto/Guia', FINANCIAMENTO: 'Financiamento', OUTRO: 'Documento',
+    }
+    const tipoTxt = campos.tipoSugerido ? (rotuloTipo[campos.tipoSugerido] || 'Documento') : 'Documento'
+
+    let resposta = `📄 **${tipoTxt} lido!**\n`
+    resposta += `• Valor: **${fmtBRL(campos.valor)}**\n`
+    resposta += `• Vencimento: **${fmtData(campos.vencimento)}**\n`
+    if (campos.beneficiario) resposta += `• Beneficiário: **${campos.beneficiario}**\n`
+    if (campos.documento) resposta += `• CNPJ/CPF: ${campos.documento}\n`
+    if (campos.linhaDigitavel) resposta += `• Linha digitável detectada ✓\n`
+
+    const confiancaBaixa = (campos.confianca ?? 0) < 0.5
+    if (confiancaBaixa) {
+      resposta += `\n⚠️ Confirme os dados acima — a leitura teve confiança baixa e pode precisar de ajuste.\n`
+    }
+
+    resposta += `\nÉ uma **conta a pagar**. Quer que eu lance no financeiro?`
+
+    return {
+      resposta,
+      sugestoes: ['Sim, lançar', 'É a receber', 'Corrigir dados', 'Cancelar'],
     }
   },
 

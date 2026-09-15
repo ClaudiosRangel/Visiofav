@@ -46,6 +46,7 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'consultar_produtos_sem_estoque': return await executarConsultarProdutosSemEstoque(empresaId)
       case 'consultar_financeiro': return await executarConsultarFinanceiro(input, empresaId)
       case 'criar_conta_pagar': return await executarCriarContaPagar(input, empresaId)
+    case 'lancar_documento_financeiro': return await executarLancarDocumentoFinanceiro(input, empresaId)
       case 'criar_conta_receber': return await executarCriarContaReceber(input, empresaId)
       case 'baixar_titulo': return await executarBaixarTitulo(input, empresaId)
       case 'consultar_nfe': return await executarConsultarNfe(input, empresaId)
@@ -950,6 +951,83 @@ async function executarCriarContaPagar(input: any, empresaId: string): Promise<T
   return {
     resposta: `✅ Conta a pagar criada!\n• Descrição: **${input.descricao}**\n• Valor: **R$ ${formatBRL(input.valor)}**\n• Vencimento: **${formatDate(new Date(input.vencimento))}**`,
     acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-pagar' },
+  }
+}
+
+/**
+ * D2 — Lançamento de documento financeiro completo via IA. Reusa `incluirTitulo`
+ * (D1): resolve parceiro (cadastro por documento/nome, ou livre), categoria por
+ * nome/código, e cria os títulos (com parcelas). Isola por empresa.
+ */
+async function executarLancarDocumentoFinanceiro(input: any, empresaId: string): Promise<ToolResult> {
+  const { incluirTitulo } = await import('../financeiro/inclusao-titulo.service')
+  const { validarDocumento, normalizarDoc } = await import('../financeiro/documento-validacao')
+  const tipo: 'RECEBER' | 'PAGAR' = input.tipo === 'receber' ? 'RECEBER' : 'PAGAR'
+
+  // valida documento (se informado)
+  const docNorm = input.parceiroDocumento ? normalizarDoc(input.parceiroDocumento) : ''
+  if (docNorm && !validarDocumento(docNorm).valido) {
+    return { resposta: `❌ O CPF/CNPJ informado (${input.parceiroDocumento}) é inválido. Confira e me diga novamente.` }
+  }
+
+  // resolve parceiro no cadastro (por documento ou nome); senão, parceiro livre
+  let parceiroId: string | undefined
+  if (tipo === 'PAGAR') {
+    const f = await prisma.fornecedor.findFirst({
+      where: {
+        empresaId,
+        OR: [
+          ...(docNorm ? [{ cnpj: docNorm }] : []),
+          ...(input.parceiroNome ? [{ razaoSocial: { contains: input.parceiroNome, mode: 'insensitive' as const } }, { nomeFantasia: { contains: input.parceiroNome, mode: 'insensitive' as const } }] : []),
+        ],
+      },
+      select: { id: true },
+    })
+    parceiroId = f?.id
+  } else {
+    const c = await prisma.cliente.findFirst({
+      where: {
+        empresaId,
+        OR: [
+          ...(docNorm ? [{ cpfCnpj: docNorm }] : []),
+          ...(input.parceiroNome ? [{ razaoSocial: { contains: input.parceiroNome, mode: 'insensitive' as const } }, { nomeFantasia: { contains: input.parceiroNome, mode: 'insensitive' as const } }] : []),
+        ],
+      },
+      select: { id: true },
+    })
+    parceiroId = c?.id
+  }
+
+  // resolve categoria por nome/código
+  let categoriaId: string | undefined
+  if (input.categoria) {
+    const cat = await prisma.categoriaFinanceira.findFirst({
+      where: { empresaId, OR: [{ codigo: input.categoria }, { nome: { contains: input.categoria, mode: 'insensitive' } }] },
+      select: { id: true },
+    })
+    categoriaId = cat?.id
+  }
+
+  try {
+    const res = await incluirTitulo(prisma, empresaId, tipo, {
+      descricao: input.descricao,
+      valor: Number(input.valor),
+      dataVencimento: new Date(input.vencimento),
+      parceiroId,
+      parceiroNomeLivre: parceiroId ? undefined : input.parceiroNome,
+      parceiroDocLivre: parceiroId ? undefined : (docNorm || undefined),
+      categoriaId,
+      parcelas: input.parcelas ? Number(input.parcelas) : 1,
+      tipoDocumento: input.tipoDocumento,
+      codigoBarras: tipo === 'PAGAR' ? input.codigoBarras : undefined,
+    })
+
+    const rota = tipo === 'PAGAR' ? '/financeiro/contas-pagar' : '/financeiro/contas-receber'
+    const parceiroTxt = parceiroId ? ' _(vinculado ao cadastro)_' : input.parceiroNome ? ` _(${input.parceiroNome}, avulso)_` : ''
+    let resposta = `✅ **Documento lançado!**\n• ${input.descricao}\n• Valor: **R$ ${formatBRL(Number(input.valor))}**${res.parcelas > 1 ? ` em **${res.parcelas}x**` : ''}\n• Vencimento: **${formatDate(new Date(input.vencimento))}**${parceiroTxt}`
+    return { resposta, acao: { tipo: 'NAVEGAR', rota } }
+  } catch (err: any) {
+    return { resposta: `❌ Não consegui lançar: ${err?.message || 'erro desconhecido'}` }
   }
 }
 

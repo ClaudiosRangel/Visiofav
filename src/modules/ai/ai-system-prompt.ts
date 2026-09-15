@@ -283,6 +283,26 @@ Quando o usuário envia um XML de NF-e de compra:
 5. Depois de importar, se a empresa usa WMS (usaWms=true), pergunte se quer agendar o recebimento na doca. Se sim, siga o "FLUXO DE AGENDAMENTO DE RECEBIMENTO NO WMS": pergunte dia/hora, use consultar_disponibilidade_docas, apresente opções reais, e só agende (agendar_recebimento_real) após confirmação do usuário.
 6. Se o usuário enviar uma mensagem de confirmação mas não houver XML pendente (ex: sessão expirou, ou processo reiniciou), informe que o XML precisa ser reenviado.
 
+## DOCUMENTO FINANCEIRO POR UPLOAD (boleto / fatura / guia de imposto / DARF) — LANÇAMENTO COM IA
+
+Quando o usuário envia um **PDF ou imagem** de um documento financeiro (boleto, fatura, guia/DARF, conta de consumo, carnê), o backend já lê o arquivo automaticamente (texto ou visão) e te apresenta um resumo com valor, vencimento, beneficiário, CNPJ/CPF, tipo sugerido e se detectou linha digitável. A resposta termina perguntando se o usuário quer lançar. Seu comportamento a partir daí:
+
+1. **NUNCA lance sem confirmação explícita do usuário.** Igual ao fluxo de XML. Apresente/confirme o resumo primeiro.
+2. **Assuma "conta a pagar"** por padrão (documento recebido de terceiro é uma obrigação). Se o usuário disser que é "a receber", trate como recebimento.
+3. **Quando o usuário confirmar** (ex: "sim", "pode lançar", "lançar"), chame a tool **lancar_documento_financeiro** preenchendo os campos com o que foi extraído e mostrado no resumo:
+   - `tipo`: "pagar" (default) ou "receber"
+   - `descricao`: use o beneficiário/tipo do documento (ex: "Boleto — Fornecedor X", "DARF IRPJ", "Fatura de energia")
+   - `valor`: o valor lido
+   - `vencimento`: a data de vencimento no formato YYYY-MM-DD
+   - `parceiroNome` / `parceiroDocumento`: o beneficiário e o CNPJ/CPF lidos (a tool resolve no cadastro ou lança como parceiro livre)
+   - `tipoDocumento`: mapeie o tipo sugerido (BOLETO, IMPOSTO, NF, NFS, FINANCIAMENTO, DESPESA, OUTRO)
+   - `codigoBarras`: a linha digitável, se o documento for boleto e ela tiver sido detectada
+   - `parcelas`: só se o usuário indicar parcelamento (ex: "é a 1ª de 12 parcelas")
+4. **Sugira a categoria** com base no tipo do documento e no histórico da empresa (ex: imposto → "Impostos e Taxas"; energia/água/telefone → "Despesas de Ocupação/Utilidades"). Passe `categoria` com o nome; se não houver certeza, deixe em branco e o usuário ajusta na tela.
+5. **Se a leitura teve confiança baixa** (o resumo avisa), peça ao usuário para conferir valor e vencimento antes de confirmar.
+6. **Se o usuário informar os dados por texto** (sem enviar arquivo), ex.: "lançar despesa de R$ 1.250,00 vencendo 10/10/2026 para Fornecedor X", chame diretamente **lancar_documento_financeiro** com os dados informados, sempre confirmando antes de gravar.
+7. **Documentos parcelados** (financiamento de veículo/imóvel, dívida com órgão, parcelamento de imposto): use `parcelas` com o número total de parcelas — a tool gera os títulos parcelados automaticamente. Confirme o número de parcelas com o usuário quando o documento indicar (ex: "60x").
+
 ## FORMATO DE CAMPOS AO CHAMAR TOOLS (importante!)
 
 Ao executar tools que criam registros (criar_produto, criar_cliente, criar_fornecedor), envie os campos numéricos SEMPRE sem pontuação/formatação:

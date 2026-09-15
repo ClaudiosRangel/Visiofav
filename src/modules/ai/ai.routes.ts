@@ -32,36 +32,46 @@ export async function aiRoutes(app: FastifyInstance) {
     return resultado
   })
 
-  // POST /upload — Processar arquivo (XML) com contexto AI
+  // POST /upload — Processar arquivo (XML de NF-e OU documento financeiro PDF/imagem)
   app.post('/upload', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const parts = request.parts()
 
-    let fileContent = ''
+    let fileBuffer: Buffer | null = null
     let fileName = ''
+    let mimeType = ''
     let mensagem = ''
 
     for await (const part of parts) {
       if (part.type === 'file') {
-        const buffer = await part.toBuffer()
-        fileContent = buffer.toString('utf-8')
+        fileBuffer = await part.toBuffer()
         fileName = part.filename || ''
+        mimeType = part.mimetype || ''
       } else if (part.type === 'field' && part.fieldname === 'mensagem') {
         mensagem = part.value as string
       }
     }
 
-    if (!fileContent) {
+    if (!fileBuffer) {
       return reply.status(400).send({ message: 'Nenhum arquivo enviado' })
     }
 
-    // Detect file type and process
-    if (fileName.endsWith('.xml') || fileContent.includes('<nfeProc') || fileContent.includes('<NFe')) {
-      const resultado = await aiService.processarXml(fileContent, user.empresaId, mensagem)
-      return resultado
+    const lower = fileName.toLowerCase()
+    const textoInicio = fileBuffer.subarray(0, 2000).toString('utf-8')
+
+    // XML de NF-e (fluxo existente)
+    if (lower.endsWith('.xml') || textoInicio.includes('<nfeProc') || textoInicio.includes('<NFe')) {
+      return await aiService.processarXml(fileBuffer.toString('utf-8'), user.empresaId, mensagem)
     }
 
-    return { resposta: 'Formato de arquivo não suportado. Envie um XML de NF-e.' }
+    // Documento financeiro: PDF ou imagem (D2)
+    const isPdf = lower.endsWith('.pdf') || mimeType === 'application/pdf'
+    const isImg = /\.(png|jpe?g|webp)$/.test(lower) || mimeType.startsWith('image/')
+    if (isPdf || isImg) {
+      return await aiService.processarDocumentoFinanceiro(fileBuffer, isPdf ? 'application/pdf' : (mimeType || 'image/png'), user.empresaId, mensagem)
+    }
+
+    return { resposta: 'Formato não suportado. Envie um XML de NF-e, ou um boleto/fatura/guia em PDF ou imagem.' }
   })
 
   // GET /sugestoes — Sugestões contextuais

@@ -234,6 +234,26 @@ export const AI_TOOLS: AITool[] = [
     },
   },
   {
+    name: 'lancar_documento_financeiro',
+    description: 'Lança um documento financeiro completo a pagar/receber (boleto, fatura, guia de imposto, despesa, financiamento) a partir do documento enviado no chat (PDF/imagem, cujos campos já foram extraídos) OU dos dados informados pelo usuário em texto. Resolve o parceiro no cadastro (por documento/nome) ou lança como parceiro livre (nome+CPF/CNPJ). Suporta parcelamento. Use SOMENTE após o usuário confirmar. Isola por empresa.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tipo: { type: 'string', enum: ['pagar', 'receber'], description: 'pagar (fornecedor) ou receber (cliente)' },
+        descricao: { type: 'string' },
+        valor: { type: 'number' },
+        vencimento: { type: 'string', description: 'Data de vencimento YYYY-MM-DD' },
+        parceiroNome: { type: 'string', description: 'Nome do fornecedor/cliente (resolve no cadastro ou vira parceiro livre)' },
+        parceiroDocumento: { type: 'string', description: 'CPF ou CNPJ do parceiro (opcional, validado)' },
+        categoria: { type: 'string', description: 'Nome ou código da categoria/natureza (opcional)' },
+        parcelas: { type: 'number', description: 'Número de parcelas (default 1)' },
+        tipoDocumento: { type: 'string', enum: ['NF', 'NFS', 'BOLETO', 'DESPESA', 'IMPOSTO', 'FINANCIAMENTO', 'RECORRENTE', 'REEMBOLSO', 'OUTRO'] },
+        codigoBarras: { type: 'string', description: 'Linha digitável do boleto (opcional)' },
+      },
+      required: ['tipo', 'descricao', 'valor', 'vencimento'],
+    },
+  },
+  {
     name: 'baixar_titulo',
     description: 'Registra o pagamento/recebimento de um título financeiro.',
     input_schema: {

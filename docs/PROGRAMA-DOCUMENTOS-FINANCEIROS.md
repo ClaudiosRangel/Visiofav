@@ -37,7 +37,7 @@ financiamentos parcelados, recorrências, e a ponte para a contabilidade.
 | Fase | Tema | Status | Spec |
 |------|------|--------|------|
 | **D1** | Central de Documento Financeiro tipado + fornecedor PF/PJ + formulário rico + contrato parcelado | ✅ Concluída (15/09/2026) | `financeiro-documentos-d1` |
-| **D2** | Vizor AI: OCR de boleto/fatura + lançamento por documento + classificação automática | 🔲 A iniciar | `financeiro-documentos-d2-ia` |
+| **D2** | Vizor AI: OCR de boleto/fatura + lançamento por documento + classificação automática | ✅ Concluída (15/09/2026) | `financeiro-documentos-d2-ia` |
 | **D3** | Folha de pagamento (lançamento do resultado) + funcionário enriquecido | 🔲 A iniciar | `financeiro-documentos-d3-folha` |
 | **D4** | Plano de contas contábil + de/para categoria→conta + partidas dobradas automáticas | 🔲 A iniciar | `financeiro-documentos-d4-contabil` |
 | **D5** | Exportação contábil (ECD/Domínio/Fortes) — conecta ao F5 do roadmap | 🔲 A iniciar | `financeiro-documentos-d5-exportacao` |
@@ -73,3 +73,11 @@ _(atualizar a cada avanço)_
 - 15/09/2026 — Programa criado. Baseline verificado. `inclusao-titulo.service.ts` já existe (parcelas + parse boleto). D1 iniciando.
 - 15/09/2026 — D1 spec completo. Tarefa 1 (schema) + migração 2x OK. Tarefas 2-3 (núcleo `documento-validacao.ts`, 7 testes). BACKEND D1 COMPLETO: Tarefa 4 (inclusao-titulo estendido; `contrato-parcelamento.service`), Tarefa 5 (POST rico + interpretar-boleto + /contratos), Tarefa 6 (13 testes). FRONTEND D1 COMPLETO: `lib/financeiro/documento.ts` (7 testes), `ParceiroAutocomplete` (PF/PJ dinâmico), `DocumentoFinanceiroForm` (4 blocos) integrado em pagar/receber, tela `/financeiro/contratos` (saldo devedor). Build front OK. QA `test_45` criado. PRÓXIMO: deploy + rodar QA contra produção (ambiente local de teste instável nesta sessão — validar QA pós-deploy).
 - **D1 CONCLUÍDA.** Próxima fase: D2 (Vizor AI — OCR de boleto/fatura + lançamento autônomo).
+- 15/09/2026 — D2 iniciada. Spec completo (requirements/design/tasks). Tarefa 1-2: núcleo puro `extrair-campos-documento.ts` (extração determinística de valor/vencimento/linha digitável/CNPJ/tipo, prioriza linha digitável, reusa interpretarLinhaDigitavel+validarDocumento da D1), 8 testes passando. PRÓXIMO na D2: Tarefa 3 (cache pendente + extrator PDF/visão Claude), Tarefa 4 (tool `lancar_documento_financeiro` no ai-executor), Tarefa 5 (upload estendido PDF/imagem + system prompt), QA test_46, deploy.
+- **D2 CONCLUÍDA (15/09/2026).** Backend completo e sem erros de diagnostics:
+  - Tarefa 3: `documento-financeiro-pendente.ts` (cache por empresa, TTL 30min) + `extrator-documento.service.ts` (`extrairTextoPdf` via pdfjs-dist reusando o parser de OP + `extrairPorVisao` via Claude multimodal; no-op sem API key — o caminho determinístico continua válido).
+  - Tarefa 4: tool `lancar_documento_financeiro` (`ai-tools.ts`) + `executarLancarDocumentoFinanceiro` (`ai-executor.ts`) — resolve parceiro (cadastro por documento/nome OU parceiro livre PF/PJ), categoria por nome/código, valida documento (D1) e chama `incluirTitulo` (D1); isola por empresa.
+  - Tarefa 5: `POST /ai/upload` estendido para rotear PDF/imagem ao novo `aiService.processarDocumentoFinanceiro` (extrai → salva pendente → resumo conversacional com valor/vencimento/tipo + pergunta de confirmação; barra documento sem dados reconhecidos). `ai-system-prompt.ts` ganhou a seção "DOCUMENTO FINANCEIRO POR UPLOAD" (resumir+confirmar, sugerir categoria por tipo, nunca lançar sem "sim", suportar parcelamento e lançamento por texto).
+  - Tarefa 6: checkpoint backend — 8 testes do núcleo passando (`extrair-campos-documento.test.ts`), diagnostics limpos em todos os arquivos tocados.
+  - Tarefa 7: QA E2E `test_46_ia_documentos.py` (lançamento por dados PF/PJ, parcelamento, documento inválido barrado 422, boleto inválido 422, chat da IA responde 200, isolamento multi-tenant). Helper `ai_chat` adicionado no `wms_api.py`.
+  - **Confirmação humana obrigatória** preservada (padrão do XML). Sem migração de schema (D2 reusa D1). PRÓXIMO: deploy back + front, rodar QA contra produção; depois iniciar D3 (folha).
