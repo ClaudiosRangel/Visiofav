@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { ErroFinanceiro } from '../financeiro/conta-financeira.service'
 import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote } from '../financeiro/titulo.service'
+import { contabilizarProvisao, contabilizarLiquidacao } from '../financeiro/contabilizacao.service'
 import { incluirTitulo, type InclusaoTituloInput } from '../financeiro/inclusao-titulo.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
@@ -155,6 +156,14 @@ export async function contaReceberRoutes(app: FastifyInstance) {
         subtipoDocumento: body.subtipoDocumento,
       }
       const res = await incluirTitulo(prisma, user.empresaId, 'RECEBER', input)
+      // D4 — contabilização best-effort da provisão de receita
+      await contabilizarProvisao(prisma, user.empresaId, {
+        categoriaId: body.categoriaId,
+        valor: body.valor,
+        data: input.dataVencimento,
+        historico: `Provisão receita: ${body.descricao}`,
+        refTipo: 'CONTA_RECEBER',
+      })
       return reply.status(201).send(res)
     } catch (err) {
       return tratar(reply, err)
@@ -181,7 +190,7 @@ export async function contaReceberRoutes(app: FastifyInstance) {
       const user = request.user as { id: string; empresaId: string }
       const { id } = idParamsSchema.parse(request.params)
       const body = receberBodySchema.parse(request.body)
-      return await baixarTitulo(prisma, user.empresaId, 'RECEBER', id, {
+      const resultado = await baixarTitulo(prisma, user.empresaId, 'RECEBER', id, {
         valor: body.valorRecebido,
         data: body.dataRecebimento ? new Date(body.dataRecebimento) : undefined,
         formaPagamento: body.formaPagamento,
@@ -189,6 +198,17 @@ export async function contaReceberRoutes(app: FastifyInstance) {
         categoriaId: body.categoriaId,
         centroCustoId: body.centroCustoId,
       })
+      // D4 — contabilização best-effort da liquidação (recebimento)
+      const cat = body.categoriaId ?? (resultado as any)?.categoriaId ?? undefined
+      await contabilizarLiquidacao(prisma, user.empresaId, {
+        categoriaId: cat,
+        valor: body.valorRecebido,
+        data: body.dataRecebimento ? new Date(body.dataRecebimento) : new Date(),
+        historico: `Recebimento título a receber`,
+        refTipo: 'CONTA_RECEBER',
+        refId: id,
+      })
+      return resultado
     } catch (err) {
       return tratar(reply, err)
     }

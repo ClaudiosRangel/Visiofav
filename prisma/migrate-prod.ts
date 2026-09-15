@@ -4264,6 +4264,84 @@ async function seedMateriaisFromOPs() {
   await addFkFolha(`ALTER TABLE "encargo_folha" ADD CONSTRAINT "encargo_folha_folha_id_fkey" FOREIGN KEY ("folha_id") REFERENCES "folha_pagamento"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
 
   console.log('✅ D3 Folha: funcionario enriquecido (cpf/cargo/admissao/salario/banco), folha_pagamento, item_folha, encargo_folha criados')
+
+  // ==========================================================================
+  // D4 — Contabilidade: plano de contas, de/para e partidas dobradas
+  // ==========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "conta_contabil" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(30) NOT NULL,
+      "nome" VARCHAR(150) NOT NULL,
+      "natureza" VARCHAR(10) NOT NULL,
+      "grupo" VARCHAR(15) NOT NULL,
+      "pai_id" TEXT,
+      "analitica" BOOLEAN NOT NULL DEFAULT true,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "conta_contabil_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "uq_conta_contabil_empresa_codigo" ON "conta_contabil"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "mapeamento_contabil" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "categoria_id" TEXT NOT NULL,
+      "provisao_debito_id" TEXT,
+      "provisao_credito_id" TEXT,
+      "liquidacao_debito_id" TEXT,
+      "liquidacao_credito_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "mapeamento_contabil_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "uq_mapeamento_contabil_empresa_categoria" ON "mapeamento_contabil"("empresa_id","categoria_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "lancamento_contabil" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "data" TIMESTAMP(3) NOT NULL,
+      "historico" VARCHAR(300) NOT NULL,
+      "origem" VARCHAR(20) NOT NULL DEFAULT 'MANUAL',
+      "ref_tipo" VARCHAR(20),
+      "ref_id" TEXT,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'LANCADO',
+      "valor_pendente" DECIMAL(14,2),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "lancamento_contabil_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_lancamento_contabil_empresa_data" ON "lancamento_contabil"("empresa_id","data")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "partida_contabil" (
+      "id" TEXT NOT NULL,
+      "lancamento_id" TEXT NOT NULL,
+      "conta_id" TEXT NOT NULL,
+      "tipo" VARCHAR(7) NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      CONSTRAINT "partida_contabil_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_partida_contabil_lancamento" ON "partida_contabil"("lancamento_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_partida_contabil_conta" ON "partida_contabil"("conta_id")`)
+
+  const addFkContabil = async (sql: string) => {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('já existe')) return
+      console.log('⚠️ D4 Contábil FK skipped:', e.message?.substring(0, 150))
+    }
+  }
+  await addFkContabil(`ALTER TABLE "partida_contabil" ADD CONSTRAINT "partida_contabil_lancamento_id_fkey" FOREIGN KEY ("lancamento_id") REFERENCES "lancamento_contabil"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  await addFkContabil(`ALTER TABLE "partida_contabil" ADD CONSTRAINT "partida_contabil_conta_id_fkey" FOREIGN KEY ("conta_id") REFERENCES "conta_contabil"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+
+  console.log('✅ D4 Contábil: conta_contabil, mapeamento_contabil, lancamento_contabil, partida_contabil criados')
 }
 
 main()

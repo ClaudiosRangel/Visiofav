@@ -6,6 +6,7 @@ import { moduloGuard } from '../../middleware/modulo-guard'
 import { ErroFinanceiro } from '../financeiro/conta-financeira.service'
 import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote } from '../financeiro/titulo.service'
 import { incluirTitulo, interpretarLinhaDigitavel, type InclusaoTituloInput } from '../financeiro/inclusao-titulo.service'
+import { contabilizarProvisao, contabilizarLiquidacao } from '../financeiro/contabilizacao.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -165,6 +166,14 @@ export async function contaPagarRoutes(app: FastifyInstance) {
         referenciaOrgao: body.referenciaOrgao,
       }
       const res = await incluirTitulo(prisma, user.empresaId, 'PAGAR', input)
+      // D4 — contabilização best-effort da provisão (não bloqueia o financeiro)
+      await contabilizarProvisao(prisma, user.empresaId, {
+        categoriaId: body.categoriaId,
+        valor: body.valor,
+        data: input.dataVencimento,
+        historico: `Provisão: ${body.descricao}`,
+        refTipo: 'CONTA_PAGAR',
+      })
       return reply.status(201).send(res)
     } catch (err) {
       return tratar(reply, err)
@@ -203,7 +212,7 @@ export async function contaPagarRoutes(app: FastifyInstance) {
       const user = request.user as { id: string; empresaId: string }
       const { id } = idParamsSchema.parse(request.params)
       const body = pagarBodySchema.parse(request.body)
-      return await baixarTitulo(prisma, user.empresaId, 'PAGAR', id, {
+      const resultado = await baixarTitulo(prisma, user.empresaId, 'PAGAR', id, {
         valor: body.valorPago,
         data: body.dataPagamento ? new Date(body.dataPagamento) : undefined,
         formaPagamento: body.formaPagamento,
@@ -211,6 +220,17 @@ export async function contaPagarRoutes(app: FastifyInstance) {
         categoriaId: body.categoriaId,
         centroCustoId: body.centroCustoId,
       })
+      // D4 — contabilização best-effort da liquidação (pagamento)
+      const cat = body.categoriaId ?? (resultado as any)?.categoriaId ?? undefined
+      await contabilizarLiquidacao(prisma, user.empresaId, {
+        categoriaId: cat,
+        valor: body.valorPago,
+        data: body.dataPagamento ? new Date(body.dataPagamento) : new Date(),
+        historico: `Pagamento título a pagar`,
+        refTipo: 'CONTA_PAGAR',
+        refId: id,
+      })
+      return resultado
     } catch (err) {
       return tratar(reply, err)
     }

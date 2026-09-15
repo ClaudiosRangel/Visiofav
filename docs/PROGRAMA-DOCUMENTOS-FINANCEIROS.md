@@ -39,7 +39,7 @@ financiamentos parcelados, recorrências, e a ponte para a contabilidade.
 | **D1** | Central de Documento Financeiro tipado + fornecedor PF/PJ + formulário rico + contrato parcelado | ✅ Concluída (15/09/2026) | `financeiro-documentos-d1` |
 | **D2** | Vizor AI: OCR de boleto/fatura + lançamento por documento + classificação automática | ✅ Concluída (15/09/2026) | `financeiro-documentos-d2-ia` |
 | **D3** | Folha de pagamento (lançamento do resultado) + funcionário enriquecido | ✅ Concluída (15/09/2026) | `financeiro-documentos-d3-folha` |
-| **D4** | Plano de contas contábil + de/para categoria→conta + partidas dobradas automáticas | 🔲 A iniciar | `financeiro-documentos-d4-contabil` |
+| **D4** | Plano de contas contábil + de/para categoria→conta + partidas dobradas automáticas | ✅ Concluída (15/09/2026) | `financeiro-documentos-d4-contabil` |
 | **D5** | Exportação contábil (ECD/Domínio/Fortes) — conecta ao F5 do roadmap | 🔲 A iniciar | `financeiro-documentos-d5-exportacao` |
 
 ## Detalhamento por fase
@@ -91,3 +91,11 @@ _(atualizar a cada avanço)_
   - QA `test_47_folha.py`: funcionário com dados trabalhistas, CPF inválido barrado, ciclo criar→item→encargo→efetivar (N contas a pagar), competência ABERTA duplicada 409, idempotência (2ª efetivação 409), isolamento multi-tenant. Helpers de folha/funcionário no `wms_api.py`.
   - Checkpoint: 12 testes verdes + bundle esbuild do server OK (validado antes do push). PRÓXIMO: deploy back+front, QA contra produção; depois D4 (contabilidade).
 - **D3.1 — Frontend da Folha (15/09/2026).** Tela `/financeiro/folha` (Next/Mantine, padrão da tela de Contratos D1): lista de folhas com totais/status; modal "Nova folha" (competência YYYY-MM + data de pagamento); modal de detalhe (`DetalheFolha.tsx`) com cards de totais, grid de itens por funcionário (Select de funcionário + proventos/descontos → líquido calculado), grid de encargos (INSS/FGTS/IRRF), importação de CSV (textarea), e botão "Efetivar folha" com modal de confirmação. Item adicionado ao menu financeiro (`ModuleSidebar.tsx`, ícone IconUsers). `tsc --noEmit` sem erros nos arquivos novos (dívida técnica pré-existente do projeto à parte). Fecha o gap de usabilidade: a folha agora é operável ponta a ponta pela interface, não só por API/IA.
+- **D4 CONCLUÍDA (15/09/2026).** Contabilidade em partidas dobradas. Backend completo:
+  - Núcleo puro `contabil-core.ts` (validarPartidasDobradas Σd=Σc, montarPartidas, saldoPorNatureza, temDebitoECredito), 10 testes (fast-check com `fc.double`, não `fc.float` — este exige float32).
+  - Schema: `ContaContabil` (plano hierárquico, natureza/grupo, analítica vs sintética), `MapeamentoContabil` (de/para categoria→contas de provisão/liquidação), `LancamentoContabil` (origem MANUAL/PROVISAO/LIQUIDACAO, status LANCADO/PENDENTE), `PartidaContabil` (débito/crédito). Migração idempotente no `migrate-prod.ts` (testada 2x local): 4 CREATE TABLE, índices únicos, FKs em try/catch.
+  - `contabil.service.ts`: CRUD plano de contas (pai vira sintético ao ganhar filha; só analítica lança), de/para (valida contas analíticas da empresa), lançamento manual (valida Σd=Σc + contas analíticas em transação), consultas razão e balancete (saldo por natureza; balancete fecha).
+  - `contabilizacao.service.ts`: geração automática best-effort — usa o de/para; sem de/para cria lançamento PENDENTE; **nunca lança erro** (try/catch, engole e loga). Acoplado em `conta-pagar.routes` e `conta-receber.routes` (provisão após incluirTitulo; liquidação após baixarTitulo), fora da transação financeira — a contabilização nunca bloqueia/desfaz o financeiro.
+  - Rotas `/api/financeiro/contabil` (contas, mapeamentos, lançamentos, razão, balancete).
+  - QA `test_48_contabil.py`: criar conta, lançamento balanceado (ok) e desbalanceado (422), conta sintética barrada, balancete fecha, isolamento multi-tenant. Helpers no `wms_api.py`.
+  - Checkpoint: 10 testes verdes + bundle esbuild do server OK (validado antes do push). D4 é base da D5 (exportação ECD/SPED Contábil). PRÓXIMO: deploy back+front, QA em produção; depois D5.

@@ -1185,6 +1185,74 @@ model CentroCusto {
   @@map("centro_custo")
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTABILIDADE (D4) — plano de contas, de/para e lançamentos em partidas dobradas
+// ═══════════════════════════════════════════════════════════════════════════
+
+model ContaContabil {
+  id        String   @id @default(uuid())
+  empresaId String   @map("empresa_id")
+  codigo    String   @db.VarChar(30) // ex.: "1.1.01.001"
+  nome      String   @db.VarChar(150)
+  natureza  String   @db.VarChar(10) // DEVEDORA | CREDORA
+  grupo     String   @db.VarChar(15) // ATIVO|PASSIVO|PATRIMONIO|RECEITA|DESPESA
+  paiId     String?  @map("pai_id")
+  analitica Boolean  @default(true)
+  status    Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  partidas PartidaContabil[]
+
+  @@unique([empresaId, codigo])
+  @@map("conta_contabil")
+}
+
+model MapeamentoContabil {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  categoriaId         String   @map("categoria_id")
+  provisaoDebitoId    String?  @map("provisao_debito_id")
+  provisaoCreditoId   String?  @map("provisao_credito_id")
+  liquidacaoDebitoId  String?  @map("liquidacao_debito_id")
+  liquidacaoCreditoId String?  @map("liquidacao_credito_id")
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, categoriaId])
+  @@map("mapeamento_contabil")
+}
+
+model LancamentoContabil {
+  id            String   @id @default(uuid())
+  empresaId     String   @map("empresa_id")
+  data          DateTime
+  historico     String   @db.VarChar(300)
+  origem        String   @default("MANUAL") @db.VarChar(20) // MANUAL|PROVISAO|LIQUIDACAO
+  refTipo       String?  @map("ref_tipo") @db.VarChar(20)
+  refId         String?  @map("ref_id")
+  status        String   @default("LANCADO") @db.VarChar(20) // LANCADO|PENDENTE
+  valorPendente Decimal? @map("valor_pendente") @db.Decimal(14, 2)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  partidas PartidaContabil[]
+
+  @@index([empresaId, data])
+  @@map("lancamento_contabil")
+}
+
+model PartidaContabil {
+  id           String  @id @default(uuid())
+  lancamentoId String  @map("lancamento_id")
+  lancamento   LancamentoContabil @relation(fields: [lancamentoId], references: [id], onDelete: Cascade)
+  contaId      String  @map("conta_id")
+  conta        ContaContabil @relation(fields: [contaId], references: [id])
+  tipo         String  @db.VarChar(7) // DEBITO | CREDITO
+  valor        Decimal @db.Decimal(14, 2)
+
+  @@index([lancamentoId])
+  @@index([contaId])
+  @@map("partida_contabil")
+}
+
 model LancamentoCaixa {
   id                String   @id @default(uuid())
   empresaId         String   @map("empresa_id")

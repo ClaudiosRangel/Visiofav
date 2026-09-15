@@ -23,6 +23,7 @@ import { inadimplencia, contasPorPeriodo } from './relatorios.service'
 import { criarContrato, listarContratos, obterContrato } from './contrato-parcelamento.service'
 import * as folha from './folha.service'
 import { efetivarFolha } from './folha-efetivacao.service'
+import * as contabil from './contabil.service'
 import {
   criarContaSchema,
   transferenciaSchema,
@@ -541,6 +542,121 @@ export async function financeiroRoutes(app: FastifyInstance) {
       const user = request.user as { empresaId: string }
       const { id } = idParams.parse(request.params)
       return await efetivarFolha(prisma, user.empresaId, id)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Contabilidade (D4) ----
+  const contaContabilSchema = z.object({
+    codigo: z.string().min(1).max(30),
+    nome: z.string().min(1).max(150),
+    natureza: z.enum(['DEVEDORA', 'CREDORA']),
+    grupo: z.enum(['ATIVO', 'PASSIVO', 'PATRIMONIO', 'RECEITA', 'DESPESA']),
+    paiId: z.string().uuid().optional(),
+    analitica: z.boolean().optional(),
+  })
+  const partidaSchema = z.object({
+    contaId: z.string().uuid(),
+    tipo: z.enum(['DEBITO', 'CREDITO']),
+    valor: z.number().positive(),
+  })
+  const periodoQuery = z.object({ inicio: z.string().optional(), fim: z.string().optional() })
+
+  app.get('/contabil/contas', async (request) => {
+    const user = request.user as { empresaId: string }
+    return contabil.listarContas(prisma, user.empresaId)
+  })
+
+  app.post('/contabil/contas', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const body = contaContabilSchema.parse(request.body)
+      return reply.status(201).send(await contabil.criarConta(prisma, user.empresaId, body))
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.put('/contabil/contas/:id', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      const body = z.object({ nome: z.string().optional(), status: z.boolean().optional(), analitica: z.boolean().optional() }).parse(request.body)
+      return await contabil.atualizarConta(prisma, user.empresaId, id, body)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/contabil/mapeamentos', async (request) => {
+    const user = request.user as { empresaId: string }
+    return contabil.listarMapeamentos(prisma, user.empresaId)
+  })
+
+  app.put('/contabil/mapeamentos/:categoriaId', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { categoriaId } = z.object({ categoriaId: z.string().uuid() }).parse(request.params)
+      const body = z.object({
+        provisaoDebitoId: z.string().uuid().optional(),
+        provisaoCreditoId: z.string().uuid().optional(),
+        liquidacaoDebitoId: z.string().uuid().optional(),
+        liquidacaoCreditoId: z.string().uuid().optional(),
+      }).parse(request.body)
+      return await contabil.salvarMapeamento(prisma, user.empresaId, categoriaId, body)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/contabil/lancamentos', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = periodoQuery.parse(request.query)
+      return await contabil.listarLancamentos(prisma, user.empresaId, {
+        inicio: q.inicio ? new Date(q.inicio) : undefined,
+        fim: q.fim ? new Date(q.fim + 'T23:59:59') : undefined,
+      })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.post('/contabil/lancamentos', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const body = z.object({
+        data: z.string(),
+        historico: z.string().min(1).max(300),
+        partidas: z.array(partidaSchema).min(2),
+      }).parse(request.body)
+      return reply.status(201).send(await contabil.criarLancamentoManual(prisma, user.empresaId, {
+        data: new Date(body.data),
+        historico: body.historico,
+        partidas: body.partidas,
+      }))
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/contabil/razao/:contaId', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { contaId } = z.object({ contaId: z.string().uuid() }).parse(request.params)
+      const q = periodoQuery.parse(request.query)
+      return await contabil.razao(prisma, user.empresaId, contaId, q.inicio ? new Date(q.inicio) : undefined, q.fim ? new Date(q.fim + 'T23:59:59') : undefined)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/contabil/balancete', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = periodoQuery.parse(request.query)
+      return await contabil.balancete(prisma, user.empresaId, q.inicio ? new Date(q.inicio) : undefined, q.fim ? new Date(q.fim + 'T23:59:59') : undefined)
     } catch (err) {
       return tratarErro(reply, err)
     }
