@@ -56,7 +56,7 @@ spec próprio (`requirements → design → tasks`) quando for iniciado.
 | Bloco | Tema | Status | Spec |
 |-------|------|--------|------|
 | **F1** | Financeiro Operacional Completo | ✅ Concluído (14/09/2026) | `erp-financeiro-completo` |
-| **F2** | Vendas com Emissão Real de NF-e (100% no fluxo) | 🔄 Backend do núcleo em andamento (15/09/2026) | `erp-vendas-nfe-real` |
+| **F2** | Vendas com Emissão Real de NF-e (100% no fluxo) | 🔄 Núcleo + PDV + front + QA prontos (15/09/2026); falta encomenda/consignada | `erp-vendas-nfe-real` |
 | **F3** | Boletos Bancários + CNAB + PIX + Régua | ✅ Motor concluído (pronto p/ integrar) | `financeiro-cobranca-bancaria` |
 | **F4** | Reforma Tributária (IBS/CBS/IS) | 🔲 A iniciar (greenfield) | `erp-reforma-tributaria` (a criar) |
 | **F5** | SPED Fiscal + Contábil (alimentação geral) | ⚠️ Fiscal parcial | `erp-sped-fiscal-contabil` (a criar) |
@@ -237,9 +237,20 @@ receber e baixa de estoque em cada caminho. Fechar como spec dedicado.
   `GET /nfe/:id/xml`, `POST /nfe/:id/retransmitir` (só REJEITADO; reemite e
   amarra).
 
-**Falta ainda no F2:** PDV emitir NFC-e (`pdv.service.finalizarVenda`),
-encomenda/consignada, frontend NF-e (DANFE/XML/reprocessar/labels de status),
-QA `test_51_nfe.py`, deploy.
+**Concluído também na sessão de 15/09/2026:**
+- **PDV emite NFC-e** (`pdv-nfce.service.ts` chamado por `finalizarVenda`),
+  grava `nfceChave`/`nfceNumero`, baixa estoque pelo kardex (`registrarMovimentacao`);
+  `infRespTec` adicionado ao builder NFC-e.
+- **Frontend NF-e** (`fiscal/nfe/page.tsx`): botões DANFE/XML (blob via axios),
+  ação **Reprocessar** (REJEITADO → `/retransmitir`, mostra orientação amigável),
+  filtros/ações alinhados aos valores MASCULINOS do backend
+  (AUTORIZADO/REJEITADO/CANCELADO).
+- **QA E2E** `test_51_nfe.py` (4 testes) rodando em produção: **3 passed,
+  1 skipped** (skip honesto do cancelamento do seed sem chave/protocolo reais —
+  reversão coberta por unit test). Seed backend `/qa-seed/nfe-autorizada-amarrada`.
+
+**Falta ainda no F2:** encomenda (7.2) e consignada (7.3) — remessa/venda/retorno
+com CFOPs próprios.
 
 **Nota (CT-e):** o CT-e já emite em produção; o padrão "documento fiscal
 autorizado → título financeiro" agora é **consistente** entre NF-e (F2) e CT-e

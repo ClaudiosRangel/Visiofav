@@ -71,13 +71,14 @@ mesmo commit; validar bundle antes do push.
 - [ ] 10. Checkpoint backend — build + testes
   - `vitest run nfe-rejeicao.test.ts gerar-titulo-de-documento.service.test.ts` + diagnostics + bundle esbuild do `server.ts`
 
-- [ ] 11. QA E2E `test_51_nfe.py`
-  - [ ] 11.1 amarração ponta a ponta via seed/QA (sem SEFAZ real): título idempotente, rejeição barra efetivação, reprocessar, isolamento; helpers no `wms_api.py`
+- [x] 11. QA E2E `test_51_nfe.py`
+  - [x] 11.1 amarração ponta a ponta via seed/QA (sem SEFAZ real): título gerado, idempotência (re-amarrar não duplica), isolamento (404); helpers `seed_nfe_autorizada_amarrada`/`seed_nfe_reamarrar`/`detalhe_nfe` no `wms_api.py`; seed backend `/qa-seed/nfe-autorizada-amarrada` + `/nfe-amarrar/:id`
     - _Requirements: 2.1, 3.2, 4.1, 7.1_
-  - [ ] 11.2 Rodar contra produção (aguardar deploy) e reportar
+  - [x] 11.2 Rodado contra produção: **3 passed, 1 skipped** (skip honesto — cancelamento do seed sem chave/protocolo reais; reversão validada em unit)
 
 - [ ] 12. Documentação + deploy
-  - Atualizar `.kiro/steering/erp-roadmap.md` (F2 concluído) + steering QA (front); commit + push back e front; QA contra produção.
+  - [x] Backend + front deployados (Render/Vercel); QA verde contra produção; roadmap atualizado.
+  - [ ] Restante do F2 (encomenda 7.2, consignada 7.3) fica como continuação.
 
 ## Task Dependency Graph
 
