@@ -46,7 +46,9 @@ e lote). Retrocompatível. Migração idempotente no mesmo commit.
 - [x] 7. QA E2E `test_49_baixa.py`
   - [x] 7.1 baixa com juros/multa/desconto; desconto excessivo (422); estorno limpa; isolamento; helpers no `wms_api.py`
     - _Requirements: 1.2, 1.3, 5.3, 6.1_
-  - [ ] 7.2 Rodar contra produção (aguardar ~150s deploy Render) e reportar
+  - [x] 7.2 Rodado contra produção: 4/4 verde (back 40398edc1, front 4d5f8f9)
+
+- [x] 8. Documentação + deploy (documento-mestre + steering QA atualizados; back+front pushados; migração aplicada no start do Render; QA 4/4 em produção)
 
 - [ ] 8. Documentação + deploy
   - Atualizar `docs/PROGRAMA-DOCUMENTOS-FINANCEIROS.md` (baixa profissional) + steering QA (front); commit + push back e front (schema + migrate-prod juntos); QA contra produção.
