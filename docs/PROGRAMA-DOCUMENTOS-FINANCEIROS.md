@@ -124,3 +124,18 @@ produção e validadas por QA E2E:
 - **D5** exportação contábil (ECD religado à D4 + CSV diário/balancete).
 Extra fora das fases: **Baixa Profissional** (liquidação com juros/multa/desconto/
 tarifa/comprovante + resumo em tempo real, pagar e receber).
+
+## Frontend das fases (telas)
+
+- **D3.1** — tela `/financeiro/folha` (folha de pagamento).
+- **D4.1 (15/09/2026)** — tela `/financeiro/contabil` (Next/Mantine, abas):
+  Plano de Contas (criar/listar analítica vs sintética), Lançamentos (manual em
+  partidas dobradas com validação de balanceamento em tempo real + lista com
+  origem/status), Balancete (filtro de período, indicador "fecha", totais),
+  Exportação (gerar ECD + baixar CSV diário/balancete). Item no menu financeiro
+  (`ModuleSidebar.tsx`, ícone IconBook2).
+- **Baixa em lote enriquecida (15/09/2026)** — o modal de baixa em lote (pagar/
+  receber) ganhou data de pagamento, conta origem/destino e lista dos títulos
+  selecionados com total consolidado (`BaixaLoteModal.tsx`), no mesmo nível do
+  modal individual. O backend `baixarEmLote` já suportava data+conta; era só o
+  frontend que estava pobre.
