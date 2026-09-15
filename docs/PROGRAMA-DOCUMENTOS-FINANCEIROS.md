@@ -128,12 +128,15 @@ tarifa/comprovante + resumo em tempo real, pagar e receber).
 ## Frontend das fases (telas)
 
 - **D3.1** — tela `/financeiro/folha` (folha de pagamento).
-- **D4.1 (15/09/2026)** — tela `/financeiro/contabil` (Next/Mantine, abas):
-  Plano de Contas (criar/listar analítica vs sintética), Lançamentos (manual em
-  partidas dobradas com validação de balanceamento em tempo real + lista com
-  origem/status), Balancete (filtro de período, indicador "fecha", totais),
-  Exportação (gerar ECD + baixar CSV diário/balancete). Item no menu financeiro
-  (`ModuleSidebar.tsx`, ícone IconBook2).
+- **D4.1 (15/09/2026)** — tela `/financeiro/contabil` (Next/Mantine, 5 abas):
+  Plano de Contas (criar/listar analítica vs sintética), **De/Para** (liga cada
+  categoria financeira às contas contábeis de débito/crédito de provisão e
+  liquidação — habilita a geração automática de lançamentos), Lançamentos
+  (manual em partidas dobradas com validação de balanceamento em tempo real +
+  lista com origem/status), Balancete (filtro de período, indicador "fecha",
+  totais), Exportação (gerar ECD + baixar CSV diário/balancete). Item no menu
+  financeiro (`ModuleSidebar.tsx`, ícone IconBook2). **Fecha a última lacuna de
+  UI do financeiro — nada mais fica acessível só por API.**
 - **Baixa em lote enriquecida (15/09/2026)** — o modal de baixa em lote (pagar/
   receber) ganhou data de pagamento, conta origem/destino e lista dos títulos
   selecionados com total consolidado (`BaixaLoteModal.tsx`), no mesmo nível do
