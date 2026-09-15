@@ -20,6 +20,9 @@ import { prisma } from '../../../lib/prisma'
 import { nfeEmissaoService } from './nfe/nfe-emissao.service'
 import { nfceEmissaoService } from './nfce/nfce-emissao.service'
 import { danfePdfService } from './nfe/danfe-pdf.service'
+import { mapearRejeicao } from './nfe/nfe-rejeicao'
+import { vendaFiscalService } from '../integracao/venda-fiscal.service'
+import { amarrarPosAutorizacaoNfe, reverterPosAutorizacaoNfe } from '../../financeiro/gerar-titulo-de-documento.service'
 import { cteRoutes } from './cte/cte.routes'
 import { cteTabelaFreteRoutes } from './cte/cte-tabela-frete.routes'
 import { cteEmailsUteisRoutes } from './cte/cte-emails-uteis.routes'
@@ -127,14 +130,14 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
           cnpj: (empresa as any).cnpj || '',
           razaoSocial: (empresa as any).razaoSocial || (empresa as any).nome || '',
           uf: (empresa as any).uf || '',
-          ie: (empresa as any).ie || '',
+          ie: (empresa as any).inscEstadual || '', // campo real é inscEstadual
           crt: (empresa as any).regimeTributario || 3,
           endereco: {
             logradouro: (empresa as any).logradouro || '',
             numero: (empresa as any).numero || '',
             bairro: (empresa as any).bairro || '',
             codigoMunicipio: (empresa as any).codigoMunicipio || '',
-            municipio: (empresa as any).municipio || '',
+            municipio: (empresa as any).cidade || '', // campo real é cidade
             uf: (empresa as any).uf || '',
             cep: (empresa as any).cep || '',
           },
@@ -273,6 +276,10 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
             },
           }),
         ])
+
+        // Reversão pós-cancelamento (F2): cancela títulos em aberto e estorna
+        // estoque baixado por esta NF-e, de forma idempotente e protegida.
+        await reverterPosAutorizacaoNfe(prisma, user.empresaId, id).catch(() => {})
       }
 
       return reply.status(resultado.sucesso ? 200 : 422).send(resultado)
@@ -589,6 +596,167 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
   })
 
   // ==========================================================================
+  // GET /nfe/:id — Detalhe da NF-e (documento + itens + eventos), isolado
+  // Requirements: 6.1
+  // ==========================================================================
+  app.get('/nfe/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    const { id } = idParamsSchema.parse(request.params)
+
+    const doc = await prisma.documentoFiscal.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: {
+        id: true, tipo: true, modelo: true, serie: true, numero: true,
+        chaveAcesso: true, status: true, naturezaOp: true, dataEmissao: true,
+        dataSaida: true, finalidade: true, emitenteCnpj: true, emitenteRazao: true,
+        destCpfCnpj: true, destRazao: true, destUf: true,
+        valorProdutos: true, valorFrete: true, valorDesconto: true, valorTotal: true,
+        valorIcms: true, valorIcmsSt: true, valorIpi: true, valorPis: true, valorCofins: true,
+        protocolo: true, dataAutorizacao: true, codigoRejeicao: true, motivoRejeicao: true,
+        contingencia: true, ambiente: true, criadoEm: true,
+        itens: true,
+        eventos: true,
+      },
+    })
+    if (!doc) return reply.status(404).send({ message: 'NF-e não encontrada' })
+
+    // Anexa orientação amigável se rejeitada
+    let rejeicao: ReturnType<typeof mapearRejeicao> | undefined
+    if (doc.status === 'REJEITADO' && doc.codigoRejeicao) {
+      rejeicao = mapearRejeicao(doc.codigoRejeicao, doc.motivoRejeicao || '')
+    }
+    return { ...doc, rejeicao }
+  })
+
+  // ==========================================================================
+  // GET /nfe/:id/xml — Download do XML autorizado (nfeProc)
+  // Requirements: 6.2
+  // ==========================================================================
+  app.get('/nfe/:id/xml', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    const { id } = idParamsSchema.parse(request.params)
+
+    const doc = await prisma.documentoFiscal.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { chaveAcesso: true, xmlAutorizado: true, xmlEnviado: true, status: true },
+    })
+    if (!doc) return reply.status(404).send({ message: 'NF-e não encontrada' })
+    const xml = doc.xmlAutorizado || doc.xmlEnviado
+    if (!xml) return reply.status(422).send({ message: 'XML ainda não disponível para esta NF-e' })
+
+    reply.header('Content-Type', 'application/xml')
+    reply.header('Content-Disposition', `attachment; filename="NFe-${doc.chaveAcesso || id}.xml"`)
+    return reply.send(xml)
+  })
+
+  // ==========================================================================
+  // POST /nfe/:id/retransmitir — Reprocessa uma NF-e REJEITADA
+  // Regera XML a partir dos dados atuais, reassina e retransmite. Se autorizar,
+  // amarra pós-autorização (título + estoque, idempotente).
+  // Requirements: 4.1, 4.2, 4.3
+  // ==========================================================================
+  app.post('/nfe/:id/retransmitir', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(403).send({ message: 'Usuário sem empresa vinculada' })
+    const { id } = idParamsSchema.parse(request.params)
+
+    const doc = await prisma.documentoFiscal.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, status: true, vendaEfetivadaId: true },
+    })
+    if (!doc) return reply.status(404).send({ message: 'NF-e não encontrada' })
+    if (doc.status !== 'REJEITADO') {
+      return reply.status(422).send({ message: 'Apenas NF-e REJEITADA pode ser retransmitida' })
+    }
+    if (!doc.vendaEfetivadaId) {
+      return reply.status(422).send({
+        message: 'Esta NF-e não tem venda vinculada — reemita a partir do pedido/venda de origem.',
+      })
+    }
+
+    // Reemite pelo caminho de venda (regera dados atuais, número novo) e amarra.
+    const venda = await prisma.vendaEfetivada.findFirst({
+      where: { id: doc.vendaEfetivadaId, empresaId: user.empresaId },
+      select: { pedidoVendaId: true },
+    })
+    if (!venda?.pedidoVendaId) {
+      return reply.status(422).send({ message: 'Pedido de origem não encontrado para reprocessar' })
+    }
+
+    const pedido = await prisma.pedidoVenda.findFirst({
+      where: { id: venda.pedidoVendaId, empresaId: user.empresaId },
+      include: {
+        itens: {
+          include: {
+            produto: { select: { codigo: true, nome: true, ncm: true, cfopEstadual: true, cfopInterest: true, unidade: true } },
+          },
+        },
+      },
+    })
+    if (!pedido) return reply.status(404).send({ message: 'Pedido de origem não encontrado' })
+
+    try {
+      const resultado = await vendaFiscalService.emitirParaVenda({
+        empresaId: user.empresaId,
+        pedidoVenda: {
+          id: pedido.id,
+          numero: pedido.numero,
+          clienteId: pedido.clienteId,
+          valorTotal: pedido.valorTotal,
+          itens: pedido.itens.map((item) => ({
+            produtoId: item.produtoId,
+            quantidade: item.quantidade,
+            precoFinal: item.precoFinal,
+            valorTotal: item.valorTotal,
+            unidade: item.unidade,
+            produto: {
+              codigo: item.produto.codigo,
+              nome: item.produto.nome,
+              ncm: item.produto.ncm,
+              cfopEstadual: item.produto.cfopEstadual,
+              cfopInterest: item.produto.cfopInterest,
+              unidade: item.produto.unidade,
+            },
+          })),
+        } as any,
+      })
+
+      if (resultado.status === 'REJEITADO') {
+        const rej = mapearRejeicao(resultado.codigoRejeicao || 0, resultado.motivoRejeicao || '')
+        return reply.status(422).send({
+          message: 'NF-e rejeitada novamente pela SEFAZ',
+          cStat: resultado.codigoRejeicao,
+          xMotivo: resultado.motivoRejeicao,
+          orientacao: rej.amigavel,
+          acao: rej.acao,
+        })
+      }
+
+      // Vincula a nova NF-e à mesma venda e amarra
+      if (resultado.documentoFiscalId) {
+        await prisma.documentoFiscal.update({
+          where: { id: resultado.documentoFiscalId },
+          data: { vendaEfetivadaId: doc.vendaEfetivadaId },
+        })
+        await amarrarPosAutorizacaoNfe(prisma, resultado.documentoFiscalId)
+      }
+
+      return reply.send({
+        message: 'NF-e retransmitida',
+        documentoFiscalId: resultado.documentoFiscalId,
+        status: resultado.status,
+        chaveAcesso: resultado.chaveAcesso,
+        protocolo: resultado.protocolo,
+      })
+    } catch (err: any) {
+      if (err instanceof ErroFiscal) return reply.status(422).send(err.toJSON())
+      return reply.status(500).send({ message: err.message || 'Erro ao retransmitir NF-e' })
+    }
+  })
+
+  // ==========================================================================
   // POST /nfce/emitir — Emitir NFC-e (modelo 65)
   // Requirements: 5.8
   // ==========================================================================
@@ -630,14 +798,14 @@ export async function emissorDfeRoutes(app: FastifyInstance) {
           cnpj: (empresa as any).cnpj || '',
           razaoSocial: (empresa as any).razaoSocial || (empresa as any).nome || '',
           uf: ufEmitente,
-          ie: (empresa as any).ie || '',
+          ie: (empresa as any).inscEstadual || '', // campo real é inscEstadual
           crt: (empresa as any).regimeTributario || 3,
           endereco: {
             logradouro: (empresa as any).logradouro || '',
             numero: (empresa as any).numero || '',
             bairro: (empresa as any).bairro || '',
             codigoMunicipio: (empresa as any).codigoMunicipio || '',
-            municipio: (empresa as any).municipio || '',
+            municipio: (empresa as any).cidade || '', // campo real é cidade
             uf: ufEmitente,
             cep: (empresa as any).cep || '',
           },

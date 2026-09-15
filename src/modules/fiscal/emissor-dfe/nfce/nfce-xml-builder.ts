@@ -389,6 +389,17 @@ function buildInfAdicNFCe(info: string | undefined): string {
   return `<infAdic>\n<infCpl>${escXml(info)}</infCpl>\n</infAdic>`
 }
 
+/** Grupo infRespTec (responsável técnico) — obrigatório na NFC-e 4.00. */
+function buildInfRespTecNFCe(respTec: { cnpj: string; contato: string; email: string; fone: string } | undefined): string {
+  if (!respTec || !respTec.cnpj) return ''
+  return `<infRespTec>
+<CNPJ>${respTec.cnpj}</CNPJ>
+<xContato>${escXml(respTec.contato)}</xContato>
+<email>${escXml(respTec.email)}</email>
+<fone>${respTec.fone}</fone>
+</infRespTec>`
+}
+
 // === Funções exportadas ===
 
 /**
@@ -483,6 +494,7 @@ export function buildNFCeXml(dados: DadosNFCe): string {
     buildTotalNFCe(dados),
     buildPagNFCe(dados.pagamento),
     buildInfAdicNFCe(dados.informacoesAdicionais),
+    buildInfRespTecNFCe(dados.respTec),
   ].filter(Boolean).join('\n')
 
   // Gerar QRCode e urlChave

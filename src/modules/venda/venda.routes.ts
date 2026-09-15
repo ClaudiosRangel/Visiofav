@@ -5,7 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { vendaFiscalService } from '../fiscal/integracao/venda-fiscal.service'
 import { CodigoErroFiscal, ErroFiscal } from '../fiscal/erros'
-import { registrarMovimentacao } from '../estoque/movimentacao-estoque.service'
+import { amarrarPosAutorizacaoNfe } from '../financeiro/gerar-titulo-de-documento.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -110,14 +110,9 @@ export async function vendaRoutes(app: FastifyInstance) {
     const percentualComissao = pedido.vendedor ? Number(pedido.vendedor.comissao) : 0
     const comissaoValor = Number((valorTotal * percentualComissao / 100).toFixed(2))
 
-    // Encontrar condição de pagamento
-    const condicao = pedido.condicaoPagId
-      ? pedido.tabelaPreco.condicoes.find((c) => c.id === pedido.condicaoPagId)
-      : pedido.tabelaPreco.condicoes[0]
-
-    const parcelas = condicao?.parcelas ?? 1
-    const formaPagamento = condicao?.formaPagamento ?? 'BOLETO'
-    const valorParcela = Number((valorTotal / parcelas).toFixed(2))
+    // NOTA F2: a condição de pagamento (parcelas/forma) é resolvida pelo ponto
+    // único (`gerarTituloDeNfe`) a partir do pedido vinculado — não precisa
+    // mais ser calculada aqui.
 
     // Montar pedido de venda com itens para o serviço fiscal
     const pedidoParaFiscal = {
@@ -189,43 +184,11 @@ export async function vendaRoutes(app: FastifyInstance) {
         data: { vendaEfetivadaId: venda.id },
       })
 
-      // Gerar contas a receber
-      const contasData = Array.from({ length: parcelas }, (_, i) => {
-        const vencimento = new Date()
-        vencimento.setDate(vencimento.getDate() + 30 * (i + 1))
-        return {
-          empresaId: user.empresaId,
-          vendaEfetivadaId: venda.id,
-          clienteId: pedido.clienteId,
-          descricao: `Venda Pedido #${pedido.numero} - Parcela ${i + 1}/${parcelas}`,
-          valor: i === parcelas - 1 ? Number((valorTotal - valorParcela * (parcelas - 1)).toFixed(2)) : valorParcela,
-          dataVencimento: vencimento,
-          formaPagamento,
-          parcela: i + 1,
-          totalParcelas: parcelas,
-        }
-      })
-
-      await tx.contaReceber.createMany({ data: contasData })
-
-      // Kardex — saída automática de Estoque para empresas sem WMS (Requirement 4.5)
-      const produtosComSaldoNegativo: string[] = []
-      if (!empresa.usaWms) {
-        for (const item of pedido.itens) {
-          const resultado = await registrarMovimentacao(tx, {
-            empresaId: user.empresaId,
-            produtoId: item.produtoId,
-            tipo: 'SAIDA_VENDA',
-            quantidade: Number(item.quantidade),
-            origemId: pedido.id,
-          })
-
-          // Requirement 4.7: saldo negativo não bloqueia a venda, apenas é sinalizado na resposta
-          if (resultado.saldoNegativo) {
-            produtosComSaldoNegativo.push(item.produtoId)
-          }
-        }
-      }
+      // NOTA F2: conta a receber e baixa de estoque NÃO são mais geradas inline
+      // aqui. A amarração é feita pelo PONTO ÚNICO (`amarrarPosAutorizacaoNfe`),
+      // idempotente por documento, chamado após esta transação (o documento já
+      // estará vinculado à venda). Isso elimina a duplicação de lógica
+      // "documento → título/estoque" (padrão do CT-e).
 
       // Atualizar status do pedido
       await tx.pedidoVenda.update({
@@ -239,11 +202,18 @@ export async function vendaRoutes(app: FastifyInstance) {
         chaveAcesso: emissaoResult.chaveAcesso,
         protocolo: emissaoResult.protocolo,
         contingencia: isContingencia,
-        produtosComSaldoNegativo,
       }
     })
 
-    return reply.status(201).send(result)
+    // Ponto único pós-autorização (fora da transação de venda): só quando o
+    // documento está AUTORIZADO (contingência amarra depois, ao autorizar).
+    let produtosComSaldoNegativo: string[] = []
+    if (!isContingencia) {
+      const amarracao = await amarrarPosAutorizacaoNfe(prisma, emissaoResult.documentoFiscalId)
+      produtosComSaldoNegativo = amarracao.estoque?.produtosComSaldoNegativo ?? []
+    }
+
+    return reply.status(201).send({ ...result, produtosComSaldoNegativo })
   })
 
   // GET /:id — detalhe

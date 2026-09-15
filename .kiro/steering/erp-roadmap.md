@@ -56,7 +56,7 @@ spec próprio (`requirements → design → tasks`) quando for iniciado.
 | Bloco | Tema | Status | Spec |
 |-------|------|--------|------|
 | **F1** | Financeiro Operacional Completo | ✅ Concluído (14/09/2026) | `erp-financeiro-completo` |
-| **F2** | Vendas com Emissão Real de NF-e (100% no fluxo) | ⚠️ Base existe, falta fechar | `erp-vendas-nfe-real` (a criar) |
+| **F2** | Vendas com Emissão Real de NF-e (100% no fluxo) | 🔄 Backend do núcleo em andamento (15/09/2026) | `erp-vendas-nfe-real` |
 | **F3** | Boletos Bancários + CNAB + PIX + Régua | ✅ Motor concluído (pronto p/ integrar) | `financeiro-cobranca-bancaria` |
 | **F4** | Reforma Tributária (IBS/CBS/IS) | 🔲 A iniciar (greenfield) | `erp-reforma-tributaria` (a criar) |
 | **F5** | SPED Fiscal + Contábil (alimentação geral) | ⚠️ Fiscal parcial | `erp-sped-fiscal-contabil` (a criar) |
@@ -207,9 +207,43 @@ cancelamento, CC-e, inutilização.
 mapeadas para o usuário, reprocessamento, e conferir amarração com contas a
 receber e baixa de estoque em cada caminho. Fechar como spec dedicado.
 
+**Progresso da sessão de 15/09/2026 (backend do núcleo F2):**
+- **Ponto único pós-autorização** (espelha o do CT-e): `gerarTituloDeNfe` +
+  `gerarTituloDeNfeProtegido` + `baixarEstoqueDeNfeProtegido` +
+  `amarrarPosAutorizacaoNfe` + `reverterPosAutorizacaoNfe` em
+  `gerar-titulo-de-documento.service.ts`. Idempotente por `documentoFiscalId`
+  (título) e por `origemId=documento` (estoque, `SAIDA_VENDA`); reversão via
+  `ENTRADA_ESTORNO_VENDA`. `empresaId` sempre do documento. Testado (vitest).
+- **Autorização liga ao ponto único**: `NFeEmissaoService.processarRespostaSefaz`
+  (cStat 100) chama `amarrarPosAutorizacaoNfe`; o cancelamento chama
+  `reverterPosAutorizacaoNfe`. `venda.routes /efetivar` e
+  `faturamento-parcial.service` **deixaram de gerar ContaReceber/baixa inline**
+  (confiam no ponto único, após vincular o documento à venda).
+- **Núcleo de rejeição** `nfe-rejeicao.ts` (`mapearRejeicao`) — cStat→orientação
+  amigável + ação; total e determinístico (property-based). Exposto no retorno
+  da emissão e no detalhe da NF-e.
+- **Ambiente derivado do documento** (corrige risco de cStat 252): `obterAmbiente`
+  prioriza `dadosNFe.ambiente`; env vira fallback. `protNFe` extrai o `tpAmb` do
+  próprio XML assinado.
+- **Cobertura de tags obrigatórias (evitar rejeição)**: `cMunFG`/`emit.cMun`/
+  `dest.cMun` agora lidos de `Empresa.codigoMunicipio`/`Cliente.codigoMunicipio`
+  com **fallback IBGE por nome+UF** (reusa `buscarMunicipiosIBGE` do CT-e);
+  grupo **pag/detPag** real (de/para forma livre → `tPag`, parcelas);
+  **CSOSN** (grupos ICMSSN101/102/201/202/500/900) no builder para Simples;
+  **infRespTec** (novos campos `resp_tec_*` em `Empresa` + migração idempotente
+  testada 2x); **fmtDataHora** com ajuste de fuso -3h (mesmo bug 228 do CT-e);
+  rota manual `POST /nfe/emitir` corrigida (`inscEstadual`/`cidade`).
+- **Rotas novas**: `GET /nfe/:id` (detalhe + rejeição amigável),
+  `GET /nfe/:id/xml`, `POST /nfe/:id/retransmitir` (só REJEITADO; reemite e
+  amarra).
+
+**Falta ainda no F2:** PDV emitir NFC-e (`pdv.service.finalizarVenda`),
+encomenda/consignada, frontend NF-e (DANFE/XML/reprocessar/labels de status),
+QA `test_51_nfe.py`, deploy.
+
 **Nota (CT-e):** o CT-e já emite em produção; o padrão "documento fiscal
-autorizado → título financeiro" deve ser consistente entre NF-e (F2) e CT-e
-(integração no F1), reaproveitando a mesma lógica de geração de conta a receber.
+autorizado → título financeiro" agora é **consistente** entre NF-e (F2) e CT-e
+(F1), reaproveitando o mesmo service de ponto único.
 
 ---
 

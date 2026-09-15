@@ -49,6 +49,15 @@ export interface DadosNFe extends DadosDocumentoFiscal {
   infAdicionais?: string
   /** Chaves de acesso de NF-e referenciadas (para devolução finNFe=4) */
   nfesReferenciadas?: string[]
+  /** Responsável técnico (grupo infRespTec, obrigatório na 4.00) */
+  respTec?: DadosRespTec
+}
+
+export interface DadosRespTec {
+  cnpj: string
+  contato: string
+  email: string
+  fone: string
 }
 
 export interface DadosEmitenteNFe extends DadosEmitente {
@@ -86,7 +95,10 @@ export interface DadosItemNFe extends DadosItemDocumento {
 
 export interface TributosICMS {
   origem: number
+  /** CST (2 dígitos, Regime Normal). Para Simples, usar `csosn`. */
   cst: string
+  /** CSOSN (3 dígitos, Simples Nacional). Quando presente, prevalece sobre CST. */
+  csosn?: string
   baseCalculo: number
   aliquota: number
   valor: number
@@ -193,9 +205,17 @@ function fmtData(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
 
-/** Formata data+hora para formato NF-e: YYYY-MM-DDThh:mm:ss-03:00 */
+/**
+ * Formata data+hora para formato NF-e: YYYY-MM-DDThh:mm:ss-03:00.
+ *
+ * ATENÇÃO — mesmo bug já corrigido no CT-e (cStat 228 "Data de emissão
+ * posterior à data de recebimento"): `toISOString()` retorna UTC; concatenar
+ * `-03:00` sem ajustar gera uma hora 3h no futuro. Subtraímos 3h antes de
+ * formatar para obter a hora local de Brasília.
+ */
 function fmtDataHora(date: Date): string {
-  const iso = date.toISOString().slice(0, 19)
+  const brDate = new Date(date.getTime() - 3 * 60 * 60 * 1000)
+  const iso = brDate.toISOString().slice(0, 19)
   return `${iso}-03:00`
 }
 
@@ -343,7 +363,14 @@ function buildICMS(icms: TributosICMS | undefined): string {
     return `<ICMS>\n<ICMS00>\n<orig>0</orig>\n<CST>00</CST>\n<modBC>3</modBC>\n<vBC>0.00</vBC>\n<pICMS>0.00</pICMS>\n<vICMS>0.00</vICMS>\n</ICMS00>\n</ICMS>\n`
   }
 
-  const cst = icms.cst.padStart(2, '0')
+  // Simples Nacional (CSOSN — 3 dígitos: 101/102/103/201/.../500/900) usa os
+  // grupos ICMSSN*, não os grupos CST de Regime Normal.
+  const codigoLimpo = (icms.cst || '').trim()
+  if (icms.csosn || codigoLimpo.length === 3) {
+    return buildICMSSN(icms, icms.csosn || codigoLimpo)
+  }
+
+  const cst = codigoLimpo.padStart(2, '0')
   const tag = getICMSTag(cst)
 
   let inner = `<orig>${icms.origem}</orig>\n<CST>${cst}</CST>\n`
@@ -368,6 +395,45 @@ function buildICMS(icms: TributosICMS | undefined): string {
   }
 
   return `<ICMS>\n<${tag}>\n${inner}</${tag}>\n</ICMS>\n`
+}
+
+/**
+ * Monta o grupo ICMS do Simples Nacional (CSOSN). Cobre os cenários comuns:
+ * - 101: permite crédito → orig, CSOSN, pCredSN, vCredICMSSN
+ * - 102/103/300/400: sem permissão de crédito / isento → orig, CSOSN
+ * - 500: ICMS cobrado por ST anteriormente → orig, CSOSN
+ * - 900: outros → orig, CSOSN (+ campos de BC/ICMS quando houver)
+ */
+function buildICMSSN(icms: TributosICMS, csosnRaw: string): string {
+  const csosn = (csosnRaw || '').trim()
+  let inner = `<orig>${icms.origem}</orig>\n<CSOSN>${csosn}</CSOSN>\n`
+
+  if (csosn === '101') {
+    inner += `<pCredSN>${fmtDec(icms.aliquota, 4)}</pCredSN>\n`
+    inner += `<vCredICMSSN>${fmtDec(icms.valor)}</vCredICMSSN>\n`
+  } else if (csosn === '900') {
+    // Cenário "outros": informa BC/alíquota/valor quando existirem
+    inner += `<modBC>3</modBC>\n`
+    inner += `<vBC>${fmtDec(icms.baseCalculo)}</vBC>\n`
+    inner += `<pICMS>${fmtDec(icms.aliquota)}</pICMS>\n`
+    inner += `<vICMS>${fmtDec(icms.valor)}</vICMS>\n`
+  }
+  // 102/103/300/400/500: apenas orig + CSOSN
+
+  const tagSN = getICMSSNTag(csosn)
+  return `<ICMS>\n<${tagSN}>\n${inner}</${tagSN}>\n</ICMS>\n`
+}
+
+/** Mapeia o CSOSN para o nome do grupo ICMSSN correspondente. */
+function getICMSSNTag(csosn: string): string {
+  const map: Record<string, string> = {
+    '101': 'ICMSSN101',
+    '102': 'ICMSSN102', '103': 'ICMSSN102', '300': 'ICMSSN102', '400': 'ICMSSN102',
+    '201': 'ICMSSN201', '202': 'ICMSSN202', '203': 'ICMSSN202',
+    '500': 'ICMSSN500',
+    '900': 'ICMSSN900',
+  }
+  return map[csosn] || 'ICMSSN102'
 }
 
 function getICMSTag(cst: string): string {
@@ -524,6 +590,20 @@ function buildInfAdic(info: string | undefined): string {
   return `<infAdic>\n<infCpl>${escXml(info)}</infCpl>\n</infAdic>`
 }
 
+/**
+ * Grupo infRespTec (responsável técnico) — obrigatório na NF-e/NFC-e 4.00.
+ * Só é emitido quando há CNPJ do responsável técnico cadastrado.
+ */
+function buildInfRespTec(respTec: DadosRespTec | undefined): string {
+  if (!respTec || !respTec.cnpj) return ''
+  return `<infRespTec>
+<CNPJ>${respTec.cnpj}</CNPJ>
+<xContato>${escXml(respTec.contato)}</xContato>
+<email>${escXml(respTec.email)}</email>
+<fone>${respTec.fone}</fone>
+</infRespTec>`
+}
+
 // === Função principal exportada ===
 
 /**
@@ -555,6 +635,7 @@ export function buildNFeXml(dados: DadosNFe): string {
     buildTransp(dados.transporte),
     buildPag(dados.pagamento),
     buildInfAdic(dados.informacoesAdicionais),
+    buildInfRespTec(dados.respTec),
   ].filter(Boolean).join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>

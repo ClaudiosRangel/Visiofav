@@ -51,6 +51,11 @@ model Empresa {
   // NFC-e: CSC (Código de Segurança do Contribuinte) para geração do QRCode
   cscIdNfce        String? @map("csc_id_nfce") @db.VarChar(6)
   cscTokenNfce     String? @map("csc_token_nfce") @db.VarChar(36)
+  // Responsável Técnico (grupo infRespTec, obrigatório na NF-e/NFC-e 4.00)
+  respTecCnpj      String? @map("resp_tec_cnpj") @db.VarChar(14)
+  respTecContato   String? @map("resp_tec_contato") @db.VarChar(60)
+  respTecEmail     String? @map("resp_tec_email") @db.VarChar(60)
+  respTecFone      String? @map("resp_tec_fone") @db.VarChar(14)
 
   usuarios                  UsuarioEmpresa[]
   produtos                  Produto[]

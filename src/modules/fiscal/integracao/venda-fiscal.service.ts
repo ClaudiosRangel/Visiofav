@@ -9,6 +9,28 @@ import { prisma } from '../../../lib/prisma'
 import { nfeEmissaoService, type EmissaoNFeResult } from '../emissor-dfe/nfe/nfe-emissao.service'
 import { UF_CODES, type DadosNFe, type DadosItemNFe, type DadosEmitenteNFe, type DadosDestinatarioNFe } from '../emissor-dfe/nfe/nfe-xml-builder'
 import type { DadosTransporte } from '../emissor-dfe/tipos'
+import { buscarMunicipiosIBGE } from '../emissor-dfe/cte/cte-municipios.routes'
+
+/**
+ * Resolve o código IBGE de município (7 dígitos) a partir do nome + UF quando
+ * o código cadastrado está ausente. Reusa o mesmo mecanismo do CT-e (cache
+ * IBGE 24h). Retorna o código informado se já preenchido, ou '' se não achar.
+ */
+async function resolverCodigoMunicipio(
+  codigoAtual: string | null | undefined,
+  nomeMunicipio: string | null | undefined,
+  uf: string | null | undefined,
+): Promise<string> {
+  const atual = (codigoAtual ?? '').trim()
+  if (atual.length === 7) return atual
+  if (!nomeMunicipio || !uf) return atual
+  const municipios = await buscarMunicipiosIBGE(uf)
+  if (municipios.length === 0) return atual
+  const norm = (s: string) => s.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+  const alvo = norm(nomeMunicipio)
+  const achado = municipios.find((m) => norm(m.nome) === alvo)
+  return achado?.codigo ?? atual
+}
 
 // === Tipos ===
 
@@ -61,12 +83,17 @@ export interface EmpresaComEndereco {
   complemento?: string | null
   bairro?: string | null
   cidade?: string | null
+  codigoMunicipio?: string | null
   uf?: string | null
   cep?: string | null
   telefone?: string | null
   regimeTributario: number
   ambienteNFe: number
   serieNFe: number
+  respTecCnpj?: string | null
+  respTecContato?: string | null
+  respTecEmail?: string | null
+  respTecFone?: string | null
 }
 
 export interface ClienteComEndereco {
@@ -79,6 +106,7 @@ export interface ClienteComEndereco {
   complemento?: string | null
   bairro?: string | null
   cidade?: string | null
+  codigoMunicipio?: string | null
   uf?: string | null
   cep?: string | null
 }
@@ -95,6 +123,30 @@ function gerarCNF(): string {
   return String(Math.floor(Math.random() * 99999999)).padStart(8, '0')
 }
 
+/**
+ * De/para de forma de pagamento (texto livre da CondicaoPagamento) → código
+ * `tPag` da NF-e 4.00 (2 dígitos). Sem correspondência → 99 (Outros).
+ *
+ * Tabela tPag: 01=Dinheiro, 02=Cheque, 03=Cartão Crédito, 04=Cartão Débito,
+ * 05=Crédito Loja, 10=Vale Alimentação, 11=Vale Refeição, 13=Vale Combustível,
+ * 15=Boleto, 16=Depósito, 17=PIX, 18=Transferência, 19=Cashback,
+ * 90=Sem pagamento, 99=Outros.
+ */
+export function mapearFormaPagamentoTPag(formaLivre: string | null | undefined): string {
+  const f = (formaLivre ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (!f) return '99'
+  if (/dinheiro|especie|a vista|avista/.test(f)) return '01'
+  if (/cheque/.test(f)) return '02'
+  if (/credito|cartao de credito/.test(f)) return '03'
+  if (/debito/.test(f)) return '04'
+  if (/boleto|duplicata/.test(f)) return '15'
+  if (/deposito/.test(f)) return '16'
+  if (/pix/.test(f)) return '17'
+  if (/transferencia|ted|doc/.test(f)) return '18'
+  if (/cartao/.test(f)) return '03'
+  return '99'
+}
+
 // === Serviço ===
 
 /**
@@ -107,6 +159,8 @@ export function montarDadosNFe(params: {
   pedidoVenda: PedidoVendaComItens
   empresa: EmpresaComEndereco
   cliente: ClienteComEndereco
+  /** Forma de pagamento (texto livre da condição) e nº de parcelas, para o grupo pag/detPag. */
+  pagamento?: { formaLivre?: string | null; parcelas?: number }
 }): DadosNFe {
   const { pedidoVenda, empresa, cliente } = params
 
@@ -126,7 +180,7 @@ export function montarDadosNFe(params: {
       numero: empresa.numero || '',
       complemento: empresa.complemento || undefined,
       bairro: empresa.bairro || '',
-      codigoMunicipio: '', // Será preenchido pelo motor tributário ou pela empresa
+      codigoMunicipio: empresa.codigoMunicipio || '', // fallback IBGE resolvido em emitirParaVenda
       municipio: empresa.cidade || '',
       uf: ufEmitente,
       cep: empresa.cep || '',
@@ -161,7 +215,7 @@ export function montarDadosNFe(params: {
           numero: cliente.numero || '',
           complemento: cliente.complemento || undefined,
           bairro: cliente.bairro || '',
-          codigoMunicipio: '',
+          codigoMunicipio: cliente.codigoMunicipio || '',
           municipio: cliente.cidade || '',
           uf: ufDestinatario,
           cep: cliente.cep || '',
@@ -223,6 +277,20 @@ export function montarDadosNFe(params: {
     ? pedidoVenda.observacaoNota.substring(0, 5000)
     : undefined
 
+  // Grupo pag/detPag obrigatório (4.00). Mapeia a forma livre → tPag e divide
+  // o valor total nas parcelas informadas (mínimo 1). Sem forma → 99 (Outros).
+  const valorTotalNota = toNumber(pedidoVenda.valorTotal)
+  const nParcelas = Math.max(1, params.pagamento?.parcelas ?? 1)
+  const tPag = mapearFormaPagamentoTPag(params.pagamento?.formaLivre)
+  const valorParcelaPag = Number((valorTotalNota / nParcelas).toFixed(2))
+  const pagamento = Array.from({ length: nParcelas }, (_, i) => ({
+    formaPagamento: tPag,
+    valor:
+      i === nParcelas - 1
+        ? Number((valorTotalNota - valorParcelaPag * (nParcelas - 1)).toFixed(2))
+        : valorParcelaPag,
+  }))
+
   const dadosNFe: DadosNFe = {
     modelo: 55,
     serie: empresa.serieNFe,
@@ -241,7 +309,16 @@ export function montarDadosNFe(params: {
     destinatario,
     itens,
     transporte,
+    pagamento,
     informacoesAdicionais,
+    respTec: empresa.respTecCnpj
+      ? {
+          cnpj: empresa.respTecCnpj,
+          contato: empresa.respTecContato || empresa.razaoSocial,
+          email: empresa.respTecEmail || '',
+          fone: empresa.respTecFone || (empresa.telefone ?? ''),
+        }
+      : undefined,
   }
 
   return dadosNFe
@@ -290,12 +367,17 @@ export async function emitirParaVenda(params: {
       complemento: true,
       bairro: true,
       cidade: true,
+      codigoMunicipio: true,
       uf: true,
       cep: true,
       telefone: true,
       regimeTributario: true,
       ambienteNFe: true,
       serieNFe: true,
+      respTecCnpj: true,
+      respTecContato: true,
+      respTecEmail: true,
+      respTecFone: true,
     },
   })
 
@@ -312,6 +394,7 @@ export async function emitirParaVenda(params: {
       complemento: true,
       bairro: true,
       cidade: true,
+      codigoMunicipio: true,
       uf: true,
       cep: true,
     },
@@ -328,8 +411,45 @@ export async function emitirParaVenda(params: {
     }
   }
 
+  // Resolver códigos IBGE de município (obrigatórios: cMunFG/emit.cMun/dest.cMun).
+  // Sem isso a SEFAZ rejeita. Fallback por nome+UF (cache IBGE) quando o
+  // código cadastrado está ausente.
+  const empresaComMun: EmpresaComEndereco = {
+    ...empresa,
+    codigoMunicipio: await resolverCodigoMunicipio(empresa.codigoMunicipio, empresa.cidade, empresa.uf),
+  }
+  const enderecoEntrega = pedidoVenda.enderecoEntrega
+  let pedidoParaMontar = pedidoVenda
+  if (enderecoEntrega && !enderecoEntrega.codigoIbge) {
+    // Endereço de entrega sem código IBGE: resolver por nome+UF
+    const codigoIbge = await resolverCodigoMunicipio(null, enderecoEntrega.cidade, enderecoEntrega.uf)
+    pedidoParaMontar = {
+      ...pedidoVenda,
+      enderecoEntrega: { ...enderecoEntrega, codigoIbge },
+    }
+  }
+  const clienteComMun: ClienteComEndereco = enderecoEntrega
+    ? cliente // com endereço de entrega o cMun vem do próprio endereço (codigoIbge)
+    : {
+        ...cliente,
+        codigoMunicipio: await resolverCodigoMunicipio(cliente.codigoMunicipio, cliente.cidade, cliente.uf),
+      }
+
+  // Resolver forma/parcelas de pagamento a partir da condição do pedido
+  const pedidoBanco = await prisma.pedidoVenda.findUnique({
+    where: { id: pedidoVenda.id },
+    select: { condicaoPagId: true, tabelaPreco: { select: { condicoes: true } } },
+  })
+  const condicao = pedidoBanco?.condicaoPagId
+    ? pedidoBanco.tabelaPreco?.condicoes.find((c) => c.id === pedidoBanco.condicaoPagId)
+    : pedidoBanco?.tabelaPreco?.condicoes[0]
+  const pagamento = {
+    formaLivre: condicao?.formaPagamento ?? null,
+    parcelas: condicao?.parcelas ?? 1,
+  }
+
   // Montar dados da NF-e
-  const dadosNFe = montarDadosNFe({ pedidoVenda, empresa, cliente })
+  const dadosNFe = montarDadosNFe({ pedidoVenda: pedidoParaMontar, empresa: empresaComMun, cliente: clienteComMun, pagamento })
 
   // Obter próximo número da NF-e
   const ultimoDoc = await prisma.documentoFiscal.findFirst({

@@ -17,6 +17,12 @@ import { CodigoErroFiscal, ErroFiscal } from '../../erros'
 
 // === Mocks ===
 
+// Ponto único pós-autorização é testado separadamente — aqui mockamos para
+// não exigir I/O de banco no teste de orquestração da emissão.
+vi.mock('../../../financeiro/gerar-titulo-de-documento.service', () => ({
+  amarrarPosAutorizacaoNfe: vi.fn().mockResolvedValue({ titulos: null, estoque: null }),
+}))
+
 vi.mock('../../../../lib/prisma', () => ({
   prisma: {
     documentoFiscal: {

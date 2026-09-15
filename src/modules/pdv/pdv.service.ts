@@ -7,6 +7,8 @@ import type {
   AdicionarItemInput,
   FinalizarVendaInput,
 } from './pdv.schemas'
+import { registrarMovimentacao } from '../estoque/movimentacao-estoque.service'
+import { emitirNfceDeVendaPdv } from './pdv-nfce.service'
 
 export const pdvService = {
   // ─── CAIXA ──────────────────────────────────────────────────────────────────
@@ -323,16 +325,35 @@ export const pdvService = {
         },
       })
 
-      // Deduz estoque (atualiza saldo se existir)
+      // Deduz estoque via kardex unificado (SAIDA_VENDA, origem = venda PDV)
       for (const item of venda.itens) {
-        await tx.estoque.updateMany({
-          where: { empresaId, produtoId: item.produtoId },
-          data: { quantidade: { decrement: item.quantidade } },
+        await registrarMovimentacao(tx, {
+          empresaId,
+          produtoId: item.produtoId,
+          tipo: 'SAIDA_VENDA',
+          quantidade: Number(item.quantidade),
+          origemId: vendaId,
         })
       }
 
       return vendaFinalizada
     })
+
+    // Emite NFC-e (modelo 65) para a venda de balcão. Não bloqueia a venda
+    // física se a SEFAZ rejeitar/indisponível — grava a chave quando autoriza
+    // e deixa a venda finalizada para reprocesso caso contrário.
+    try {
+      const nfce = await emitirNfceDeVendaPdv(empresaId, vendaId)
+      if (nfce?.chaveAcesso) {
+        await prisma.vendaPdv.update({
+          where: { id: vendaId },
+          data: { nfceChave: nfce.chaveAcesso, nfceNumero: nfce.numero ?? null },
+        })
+        ;(resultado as any).nfce = nfce
+      }
+    } catch (e: any) {
+      ;(resultado as any).nfceErro = String(e?.message ?? e)
+    }
 
     return resultado
   },

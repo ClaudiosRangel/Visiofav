@@ -10,6 +10,7 @@
 import { prisma } from '../../lib/prisma'
 import { vendaFiscalService } from '../fiscal/integracao/venda-fiscal.service'
 import { calcularValorTotalItem } from './pedido-calculo.service'
+import { amarrarPosAutorizacaoNfe } from '../financeiro/gerar-titulo-de-documento.service'
 
 // === Tipos ===
 
@@ -47,7 +48,7 @@ export class FaturamentoParcialService {
     pedidoId: string,
     itensFaturamento: ItemFaturamento[],
   ): Promise<ResultadoFaturamento> {
-    return prisma.$transaction(async (tx) => {
+    const resultado = await prisma.$transaction(async (tx) => {
       // 1. Buscar pedido com itens e transportadora
       const pedido = await tx.pedidoVenda.findFirst({
         where: { id: pedidoId, empresaId },
@@ -205,18 +206,10 @@ export class FaturamentoParcialService {
         })
       }
 
-      // 6. Gerar contas a receber proporcionais
-      await tx.contaReceber.create({
-        data: {
-          empresaId,
-          vendaEfetivadaId: vendaEfetivada.id,
-          clienteId: pedido.clienteId,
-          descricao: `Faturamento parcial - Pedido #${pedido.numero}`,
-          valor: valorTotalVenda,
-          dataVencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          status: 'ABERTA',
-        },
-      })
+      // 6. NOTA F2: a conta a receber NÃO é mais gerada inline aqui. A
+      // amarração (título + estoque) é feita pelo PONTO ÚNICO
+      // (`amarrarPosAutorizacaoNfe`), idempotente por documento, chamado após
+      // o commit desta transação — eliminando a duplicação de lógica.
 
       // 7. Atualizar quantidadeFaturada para cada item faturado
       for (const itemFat of itensFaturamento) {
@@ -255,6 +248,15 @@ export class FaturamentoParcialService {
         statusPedido: statusFinal,
       }
     })
+
+    // Ponto único pós-autorização (fora da transação): gera título + baixa
+    // estoque de forma idempotente, agora que o documento está vinculado à
+    // venda. Só quando há documento autorizado.
+    if (resultado.documentoFiscalId) {
+      await amarrarPosAutorizacaoNfe(prisma, resultado.documentoFiscalId)
+    }
+
+    return resultado
   }
 }
 

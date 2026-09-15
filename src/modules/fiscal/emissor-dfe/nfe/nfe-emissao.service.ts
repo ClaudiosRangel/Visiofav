@@ -22,6 +22,8 @@ import { obterUrlWebservice } from '../sefaz/sefaz-urls'
 import { AmbienteSefaz, ServicoSefaz, type SefazConfig, type RespostaSefaz } from '../sefaz/tipos'
 import { certificadoService, type CertificadoParaUso } from '../../certificado/certificado.service'
 import { type EmissaoResponse, type StatusDocumento } from '../tipos'
+import { amarrarPosAutorizacaoNfe } from '../../../financeiro/gerar-titulo-de-documento.service'
+import { mapearRejeicao } from './nfe-rejeicao'
 
 // === Tipos ===
 
@@ -43,6 +45,10 @@ export interface EmissaoNFeResult {
   xmlAutorizado?: string
   codigoRejeicao?: number
   motivoRejeicao?: string
+  /** Orientação amigável em pt-BR da rejeição (F2). */
+  rejeicaoAmigavel?: string
+  /** Categoria de ação sugerida para corrigir a rejeição (F2). */
+  rejeicaoAcao?: string
   contingencia?: boolean
 }
 
@@ -113,6 +119,9 @@ export class NFeEmissaoService {
       )
     }
 
+    // Ambiente do documento é a fonte única (evita cStat 252). Ver CT-e.
+    const ambienteDoc = dadosNFe.ambiente
+
     // 4. Obter certificado e assinar XML
     const certificado = await certificadoService.obterParaAssinatura(cnpjEmitente, empresaId)
     const { xmlAssinado } = assinarXML({
@@ -139,7 +148,7 @@ export class NFeEmissaoService {
 
     // 6. Transmitir à SEFAZ
     try {
-      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado)
+      const resposta = await this.transmitirSefaz(xmlAssinado, ufEmitente, certificado, ambienteDoc)
 
       // Resetar contador de falhas em caso de sucesso na comunicação
       falhasConsecutivas.set(empresaId, 0)
@@ -229,7 +238,9 @@ export class NFeEmissaoService {
         ...item,
         icms: {
           origem: 0,
+          // Regime Normal usa CST (2 díg.); Simples usa CSOSN (3 díg.) em campo próprio
           cst: preenchido.icmsCst || preenchido.icmsCsosn || '00',
+          csosn: preenchido.icmsCsosn || undefined,
           baseCalculo: preenchido.icmsBase,
           aliquota: preenchido.icmsAliquota,
           valor: preenchido.icmsValor,
@@ -267,8 +278,9 @@ export class NFeEmissaoService {
     xmlAssinado: string,
     ufEmitente: string,
     certificado: CertificadoParaUso,
+    ambienteDoc?: number,
   ): Promise<RespostaSefaz> {
-    const ambiente = this.obterAmbiente()
+    const ambiente = this.obterAmbiente(ambienteDoc)
 
     const sefazConfig: SefazConfig = {
       ambiente,
@@ -321,6 +333,11 @@ export class NFeEmissaoService {
         },
       })
 
+      // Ponto ÚNICO pós-autorização (F2): gera conta a receber + baixa estoque,
+      // ambos idempotentes e protegidos (falha não desfaz a autorização —
+      // registra PendenciaTituloFiscal). Espelha o padrão do CT-e.
+      await amarrarPosAutorizacaoNfe(prisma, documentoFiscalId)
+
       return {
         sucesso: true,
         status: 'AUTORIZADO',
@@ -331,7 +348,9 @@ export class NFeEmissaoService {
       }
     }
 
-    // Rejeição (qualquer outro cStat que não seja infraestrutura)
+    // Rejeição (qualquer outro cStat que não seja infraestrutura).
+    // Mapeia para orientação amigável preservando o técnico (Req 3.1).
+    const rejeicao = mapearRejeicao(cStat, resposta.motivoStatus)
     await prisma.documentoFiscal.update({
       where: { id: documentoFiscalId },
       data: {
@@ -349,6 +368,8 @@ export class NFeEmissaoService {
       chaveAcesso,
       codigoRejeicao: cStat,
       motivoRejeicao: resposta.motivoStatus,
+      rejeicaoAmigavel: rejeicao.amigavel,
+      rejeicaoAcao: rejeicao.acao,
     }
   }
 
@@ -548,9 +569,14 @@ export class NFeEmissaoService {
 
   /**
    * Obtém o ambiente de comunicação (Produção ou Homologação).
+   *
+   * Fonte ÚNICA: o ambiente do documento (`dadosNFe.ambiente`), igual ao que
+   * foi para o XML (`tpAmb`). A env `SEFAZ_AMBIENTE` é apenas fallback quando
+   * o documento não informa. Isso evita o cStat 252 (ambiente informado diverge
+   * do ambiente de recebimento) — mesma correção já aplicada no CT-e.
    */
-  private obterAmbiente(): AmbienteSefaz {
-    const ambiente = Number(process.env.SEFAZ_AMBIENTE) || 2
+  private obterAmbiente(ambienteDoc?: number): AmbienteSefaz {
+    const ambiente = ambienteDoc ?? (Number(process.env.SEFAZ_AMBIENTE) || 2)
     return ambiente === 1 ? AmbienteSefaz.PRODUCAO : AmbienteSefaz.HOMOLOGACAO
   }
 
@@ -591,7 +617,7 @@ export class NFeEmissaoService {
       xmlAssinado.replace('<?xml version="1.0" encoding="UTF-8"?>', '').trim(),
       '<protNFe versao="4.00">',
       '<infProt>',
-      `<tpAmb>${this.obterAmbiente()}</tpAmb>`,
+      `<tpAmb>${this.extrairTpAmbDoXml(xmlAssinado)}</tpAmb>`,
       `<verAplic>VisioFab-1.0.0</verAplic>`,
       `<chNFe>${this.extrairChaveDoXml(xmlAssinado)}</chNFe>`,
       resposta.dataRecebimento ? `<dhRecbto>${resposta.dataRecebimento}</dhRecbto>` : '',
@@ -611,6 +637,15 @@ export class NFeEmissaoService {
   private extrairChaveDoXml(xml: string): string {
     const match = xml.match(/Id="NFe(\d{44})"/)
     return match ? match[1] : ''
+  }
+
+  /**
+   * Extrai o `tpAmb` (ambiente) do próprio XML assinado, para montar o protNFe
+   * coerente com o documento transmitido (nunca de env global). Fallback 2.
+   */
+  private extrairTpAmbDoXml(xml: string): number {
+    const match = xml.match(/<tpAmb>(\d)<\/tpAmb>/)
+    return match ? Number(match[1]) : 2
   }
 
   /**

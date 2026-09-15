@@ -1184,6 +1184,16 @@ async function main() {
   console.log('Empresa: colunas csc_id_nfce e csc_token_nfce adicionadas')
 
   // =========================================================================
+  // Empresa — Responsável Técnico (grupo infRespTec, obrigatório na NF-e/
+  // NFC-e 4.00). Bloco F2. Colunas aditivas nullable.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "resp_tec_cnpj" VARCHAR(14)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "resp_tec_contato" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "resp_tec_email" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "empresa" ADD COLUMN IF NOT EXISTS "resp_tec_fone" VARCHAR(14)`)
+  console.log('Empresa: colunas resp_tec_* (infRespTec) adicionadas')
+
+  // =========================================================================
   // Pedido de Venda Completo — campos de cabeçalho e item que estavam apenas
   // na migration formal 20260702140606_add_pedido_venda_completo, nunca
   // aplicada em produção (o start do container só executa este script,
