@@ -50,7 +50,9 @@ Migração idempotente no mesmo commit. Contabilização nunca bloqueia o financ
 - [x] 9. QA E2E `test_48_contabil.py`
   - [x] 9.1 criar contas; lançamento balanceado (ok) e desbalanceado (422); conta sintética barrada; balancete fecha; isolamento; helpers no `wms_api.py`
     - _Requirements: 3.2, 3.3, 5.1, 6.2_
-  - [ ] 9.2 Rodar contra produção (aguardar ~150s deploy Render) e reportar
+  - [x] 9.2 Rodado contra produção: 6/6 verde (back 58f752f6a, front 9f11497)
+
+- [x] 10. Documentação + deploy (documento-mestre + steering QA atualizados; back+front pushados; migração aplicada no start do Render; QA 6/6 em produção)
 
 - [ ] 10. Documentação + deploy
   - Atualizar `docs/PROGRAMA-DOCUMENTOS-FINANCEIROS.md` (D4 concluída) + steering QA (front); commit + push back e front (schema + migrate-prod juntos); QA contra produção.
