@@ -364,6 +364,7 @@ model Fornecedor {
   cep          String?  @db.VarChar(10)
   telefone     String?  @db.VarChar(20)
   email        String?  @db.VarChar(200)
+  tipoPessoa   String?  @map("tipo_pessoa") @db.VarChar(10) // FISICA | JURIDICA (inferido do documento)
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
@@ -1078,6 +1079,21 @@ model ContaPagar {
   // Onda 1 — operação diária
   canceladoEm       DateTime?        @map("cancelado_em")
   observacao        String?          @db.VarChar(500)
+  // Inclusão de documento (formulário rico)
+  numeroDocumento   String?          @map("numero_documento") @db.VarChar(60)
+  dataEmissao       DateTime?        @map("data_emissao")
+  anexoNome         String?          @map("anexo_nome") @db.VarChar(200)
+  anexoConteudo     String?          @map("anexo_conteudo") @db.Text
+  codigoBarras      String?          @map("codigo_barras_boleto") @db.VarChar(60)
+  // D1 — documento tipado + parceiro livre + contrato + guia de imposto
+  tipoDocumento     String?          @map("tipo_documento") @db.VarChar(20)
+  subtipoDocumento  String?          @map("subtipo_documento") @db.VarChar(60)
+  parceiroNomeLivre String?          @map("parceiro_nome_livre") @db.VarChar(200)
+  parceiroDocLivre  String?          @map("parceiro_doc_livre") @db.VarChar(20)
+  contratoId        String?          @map("contrato_id")
+  codigoReceita     String?          @map("codigo_receita") @db.VarChar(20)
+  competenciaGuia   String?          @map("competencia_guia") @db.VarChar(7)
+  referenciaOrgao   String?          @map("referencia_orgao") @db.VarChar(60)
 
   @@map("conta_pagar")
 }
@@ -1111,6 +1127,16 @@ model ContaReceber {
   // Onda 1 — operação diária
   canceladoEm       DateTime?      @map("cancelado_em")
   observacao        String?        @db.VarChar(500)
+  // Inclusão de documento (formulário rico)
+  numeroDocumento   String?        @map("numero_documento") @db.VarChar(60)
+  dataEmissao       DateTime?      @map("data_emissao")
+  anexoNome         String?        @map("anexo_nome") @db.VarChar(200)
+  anexoConteudo     String?        @map("anexo_conteudo") @db.Text
+  // D1 — documento tipado + parceiro livre
+  tipoDocumento     String?        @map("tipo_documento") @db.VarChar(20)
+  subtipoDocumento  String?        @map("subtipo_documento") @db.VarChar(60)
+  parceiroNomeLivre String?        @map("parceiro_nome_livre") @db.VarChar(200)
+  parceiroDocLivre  String?        @map("parceiro_doc_livre") @db.VarChar(20)
 
   @@map("conta_receber")
 }
@@ -1360,6 +1386,29 @@ model PendenciaCobranca {
 
   @@index([empresaId, resolvido])
   @@map("pendencia_cobranca")
+}
+
+// ============================================================================
+// FINANCEIRO — D1: CONTRATO DE PARCELAMENTO (financiamento, imposto parcelado)
+// ============================================================================
+
+model ContratoParcelamento {
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  descricao         String   @db.VarChar(300)
+  tipo              String   @db.VarChar(20) // FINANCIAMENTO | IMPOSTO | OUTRO
+  fornecedorId      String?  @map("fornecedor_id")
+  parceiroNomeLivre String?  @map("parceiro_nome_livre") @db.VarChar(200)
+  valorTotal        Decimal  @map("valor_total") @db.Decimal(14, 2)
+  entrada           Decimal? @db.Decimal(14, 2)
+  numeroParcelas    Int      @map("numero_parcelas")
+  taxaJuros         Decimal? @map("taxa_juros") @db.Decimal(8, 4)
+  dataPrimeira      DateTime @map("data_primeira")
+  status            String   @default("ATIVO") @db.VarChar(20)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@map("contrato_parcelamento")
 }
 
 // ============================================================================

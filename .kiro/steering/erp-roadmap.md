@@ -61,6 +61,12 @@ spec próprio (`requirements → design → tasks`) quando for iniciado.
 | **F4** | Reforma Tributária (IBS/CBS/IS) | 🔲 A iniciar (greenfield) | `erp-reforma-tributaria` (a criar) |
 | **F5** | SPED Fiscal + Contábil (alimentação geral) | ⚠️ Fiscal parcial | `erp-sped-fiscal-contabil` (a criar) |
 
+> **Programa paralelo — Central de Documentos Financeiros (D1–D5):** projeto
+> dedicado ao lançamento profissional de documentos financeiros (tipagem,
+> fornecedor PF/PJ, contratos parcelados, folha, IA autônoma, contabilidade).
+> Documento-mestre: `docs/PROGRAMA-DOCUMENTOS-FINANCEIROS.md`. A fase D4/D5
+> (contábil + ECD) converge com o F5 deste roadmap.
+
 O detalhamento de cada bloco está na seção **"Frente Atual — Detalhamento"**
 mais abaixo.
 

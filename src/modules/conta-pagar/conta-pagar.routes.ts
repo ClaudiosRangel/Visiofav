@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { ErroFinanceiro } from '../financeiro/conta-financeira.service'
 import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote } from '../financeiro/titulo.service'
+import { incluirTitulo, interpretarLinhaDigitavel, type InclusaoTituloInput } from '../financeiro/inclusao-titulo.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -12,8 +13,25 @@ const createBodySchema = z.object({
   descricao: z.string().min(1, 'Descrição é obrigatória').max(300),
   valor: z.number().positive('Valor deve ser maior que zero'),
   dataVencimento: z.string().datetime({ offset: true }),
+  dataEmissao: z.string().datetime({ offset: true }).optional(),
   fornecedorId: z.string().uuid().optional(),
+  parceiroNomeLivre: z.string().max(200).optional(),
+  parceiroDocLivre: z.string().max(20).optional(),
+  numeroDocumento: z.string().max(60).optional(),
+  categoriaId: z.string().uuid().optional(),
+  centroCustoId: z.string().uuid().optional(),
+  contaFinanceiraId: z.string().uuid().optional(),
   formaPagamento: z.string().optional(),
+  observacao: z.string().max(500).optional(),
+  codigoBarras: z.string().max(60).optional(),
+  parcelas: z.number().int().min(1).max(360).optional(),
+  anexoNome: z.string().max(200).optional(),
+  anexoConteudo: z.string().optional(),
+  tipoDocumento: z.enum(['NF', 'NFS', 'BOLETO', 'DESPESA', 'IMPOSTO', 'FINANCIAMENTO', 'RECORRENTE', 'REEMBOLSO', 'OUTRO']).optional(),
+  subtipoDocumento: z.string().max(60).optional(),
+  codigoReceita: z.string().max(20).optional(),
+  competenciaGuia: z.string().max(7).optional(),
+  referenciaOrgao: z.string().max(60).optional(),
 })
 
 const pagarBodySchema = z.object({
@@ -117,23 +135,52 @@ export async function contaPagarRoutes(app: FastifyInstance) {
     return { data: dataComStatus, total }
   })
 
-  // POST / — cria conta manual
+  // POST / — inclusão de documento rica (tipado, PF/PJ, parcelas, anexo, guia)
   app.post('/', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
-    const body = createBodySchema.parse(request.body)
-
-    const conta = await prisma.contaPagar.create({
-      data: {
-        empresaId: user.empresaId,
+    try {
+      const user = request.user as { id: string; empresaId: string }
+      const body = createBodySchema.parse(request.body)
+      const input: InclusaoTituloInput = {
         descricao: body.descricao,
         valor: body.valor,
         dataVencimento: new Date(body.dataVencimento),
-        fornecedorId: body.fornecedorId,
+        dataEmissao: body.dataEmissao ? new Date(body.dataEmissao) : undefined,
+        parceiroId: body.fornecedorId,
+        parceiroNomeLivre: body.parceiroNomeLivre,
+        parceiroDocLivre: body.parceiroDocLivre,
+        numeroDocumento: body.numeroDocumento,
+        categoriaId: body.categoriaId,
+        centroCustoId: body.centroCustoId,
+        contaFinanceiraId: body.contaFinanceiraId,
         formaPagamento: body.formaPagamento,
-      },
-    })
+        observacao: body.observacao,
+        codigoBarras: body.codigoBarras,
+        parcelas: body.parcelas,
+        anexoNome: body.anexoNome,
+        anexoConteudo: body.anexoConteudo,
+        tipoDocumento: body.tipoDocumento,
+        subtipoDocumento: body.subtipoDocumento,
+        codigoReceita: body.codigoReceita,
+        competenciaGuia: body.competenciaGuia,
+        referenciaOrgao: body.referenciaOrgao,
+      }
+      const res = await incluirTitulo(prisma, user.empresaId, 'PAGAR', input)
+      return reply.status(201).send(res)
+    } catch (err) {
+      return tratar(reply, err)
+    }
+  })
 
-    return reply.status(201).send(conta)
+  // POST /interpretar-boleto — lê linha digitável e sugere valor/vencimento
+  app.post('/interpretar-boleto', async (request, reply) => {
+    try {
+      const body = z.object({ linhaDigitavel: z.string().min(1) }).parse(request.body)
+      const res = interpretarLinhaDigitavel(body.linhaDigitavel)
+      if (!res) return reply.status(422).send({ message: 'Linha digitável inválida (esperados 47 dígitos)' })
+      return res
+    } catch (err) {
+      return tratar(reply, err)
+    }
   })
 
   // GET /:id — detalhe

@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { ErroFinanceiro } from '../financeiro/conta-financeira.service'
 import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote } from '../financeiro/titulo.service'
+import { incluirTitulo, type InclusaoTituloInput } from '../financeiro/inclusao-titulo.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -12,8 +13,21 @@ const createBodySchema = z.object({
   descricao: z.string().min(1, 'Descrição é obrigatória').max(300),
   valor: z.number().positive('Valor deve ser maior que zero'),
   dataVencimento: z.string().datetime({ offset: true }),
+  dataEmissao: z.string().datetime({ offset: true }).optional(),
   clienteId: z.string().uuid().optional(),
+  parceiroNomeLivre: z.string().max(200).optional(),
+  parceiroDocLivre: z.string().max(20).optional(),
+  numeroDocumento: z.string().max(60).optional(),
+  categoriaId: z.string().uuid().optional(),
+  centroCustoId: z.string().uuid().optional(),
+  contaFinanceiraId: z.string().uuid().optional(),
   formaPagamento: z.string().optional(),
+  observacao: z.string().max(500).optional(),
+  parcelas: z.number().int().min(1).max(360).optional(),
+  anexoNome: z.string().max(200).optional(),
+  anexoConteudo: z.string().optional(),
+  tipoDocumento: z.enum(['NF', 'NFS', 'BOLETO', 'DESPESA', 'IMPOSTO', 'FINANCIAMENTO', 'RECORRENTE', 'REEMBOLSO', 'OUTRO']).optional(),
+  subtipoDocumento: z.string().max(60).optional(),
 })
 
 const receberBodySchema = z.object({
@@ -115,23 +129,36 @@ export async function contaReceberRoutes(app: FastifyInstance) {
     return { data: dataComStatus, total }
   })
 
-  // POST / — cria conta manual
+  // POST / — inclusão de documento rica (tipado, PF/PJ, parcelas, anexo)
   app.post('/', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
-    const body = createBodySchema.parse(request.body)
-
-    const conta = await prisma.contaReceber.create({
-      data: {
-        empresaId: user.empresaId,
+    try {
+      const user = request.user as { id: string; empresaId: string }
+      const body = createBodySchema.parse(request.body)
+      const input: InclusaoTituloInput = {
         descricao: body.descricao,
         valor: body.valor,
         dataVencimento: new Date(body.dataVencimento),
-        clienteId: body.clienteId,
+        dataEmissao: body.dataEmissao ? new Date(body.dataEmissao) : undefined,
+        parceiroId: body.clienteId,
+        parceiroNomeLivre: body.parceiroNomeLivre,
+        parceiroDocLivre: body.parceiroDocLivre,
+        numeroDocumento: body.numeroDocumento,
+        categoriaId: body.categoriaId,
+        centroCustoId: body.centroCustoId,
+        contaFinanceiraId: body.contaFinanceiraId,
         formaPagamento: body.formaPagamento,
-      },
-    })
-
-    return reply.status(201).send(conta)
+        observacao: body.observacao,
+        parcelas: body.parcelas,
+        anexoNome: body.anexoNome,
+        anexoConteudo: body.anexoConteudo,
+        tipoDocumento: body.tipoDocumento,
+        subtipoDocumento: body.subtipoDocumento,
+      }
+      const res = await incluirTitulo(prisma, user.empresaId, 'RECEBER', input)
+      return reply.status(201).send(res)
+    } catch (err) {
+      return tratar(reply, err)
+    }
   })
 
   // GET /:id — detalhe

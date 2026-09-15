@@ -15,6 +15,8 @@ const ISOLATED_MODELS: string[] = [
   // Onda 2 — Cobrança bancária
   'ConvenioBancario', 'Boleto', 'RemessaCnab', 'PixCobranca', 'ReguaCobranca',
   'PendenciaCobranca',
+  // D1 — Documentos financeiros
+  'ContratoParcelamento',
 ]
 
 export function createTenantExtension(empresaId: string) {

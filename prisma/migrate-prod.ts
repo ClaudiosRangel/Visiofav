@@ -4143,6 +4143,52 @@ async function seedMateriaisFromOPs() {
   await addFkCobranca(`ALTER TABLE "regua_evento" ADD CONSTRAINT "regua_evento_regua_id_fkey" FOREIGN KEY ("regua_id") REFERENCES "regua_cobranca"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
 
   console.log('✅ Onda 2 Cobrança: convenio_bancario, boleto, remessa_cnab, retorno_cnab_processado, pix_cobranca, regua_cobranca, regua_evento, regua_envio, pendencia_cobranca criados')
+
+  // Inclusão de documento (formulário rico) — colunas aditivas em títulos
+  for (const tabela of ['conta_pagar', 'conta_receber']) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "numero_documento" VARCHAR(60)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "data_emissao" TIMESTAMP(3)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "anexo_nome" VARCHAR(200)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "anexo_conteudo" TEXT`)
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "codigo_barras_boleto" VARCHAR(60)`)
+  console.log('✅ Inclusão documento: numero_documento/data_emissao/anexo/codigo_barras em conta_pagar e conta_receber')
+
+  // ==========================================================================
+  // D1 — Documento tipado + parceiro livre + contrato + guia de imposto
+  // ==========================================================================
+  for (const tabela of ['conta_pagar', 'conta_receber']) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "tipo_documento" VARCHAR(20)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "subtipo_documento" VARCHAR(60)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "parceiro_nome_livre" VARCHAR(200)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "parceiro_doc_livre" VARCHAR(20)`)
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "contrato_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "codigo_receita" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "competencia_guia" VARCHAR(7)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "referencia_orgao" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "fornecedor" ADD COLUMN IF NOT EXISTS "tipo_pessoa" VARCHAR(10)`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "contrato_parcelamento" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "descricao" VARCHAR(300) NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "fornecedor_id" TEXT,
+      "parceiro_nome_livre" VARCHAR(200),
+      "valor_total" DECIMAL(14,2) NOT NULL,
+      "entrada" DECIMAL(14,2),
+      "numero_parcelas" INTEGER NOT NULL,
+      "taxa_juros" DECIMAL(8,4),
+      "data_primeira" TIMESTAMP(3) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVO',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "contrato_parcelamento_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_contrato_parcelamento_empresa" ON "contrato_parcelamento"("empresa_id")`)
+  console.log('✅ D1: tipo_documento/parceiro livre/guia em títulos, tipo_pessoa em fornecedor, contrato_parcelamento criado')
 }
 
 main()

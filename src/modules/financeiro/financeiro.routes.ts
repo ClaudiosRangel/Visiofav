@@ -20,6 +20,7 @@ import { classificarAging, montarDreGerencial, projetarFluxoCaixa, competenciaDe
 import { obterDashboard } from './dashboard.service'
 import { extratoConta } from './extrato.service'
 import { inadimplencia, contasPorPeriodo } from './relatorios.service'
+import { criarContrato, listarContratos, obterContrato } from './contrato-parcelamento.service'
 import {
   criarContaSchema,
   transferenciaSchema,
@@ -374,6 +375,45 @@ export async function financeiroRoutes(app: FastifyInstance) {
         de: q.de ? new Date(q.de) : undefined,
         ate: q.ate ? new Date(q.ate) : undefined,
       })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Contratos de parcelamento (D1) ----
+  app.get('/contratos', async (request) => {
+    const user = request.user as { empresaId: string }
+    return listarContratos(prisma, user.empresaId)
+  })
+
+  app.post('/contratos', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const body = z.object({
+        descricao: z.string().min(1).max(300),
+        tipo: z.enum(['FINANCIAMENTO', 'IMPOSTO', 'OUTRO']),
+        fornecedorId: z.string().uuid().optional(),
+        parceiroNomeLivre: z.string().max(200).optional(),
+        valorTotal: z.number().positive(),
+        entrada: z.number().min(0).optional(),
+        numeroParcelas: z.number().int().min(1).max(360),
+        taxaJuros: z.number().min(0).optional(),
+        dataPrimeira: z.string().datetime({ offset: true }),
+        categoriaId: z.string().uuid().optional(),
+        centroCustoId: z.string().uuid().optional(),
+      }).parse(request.body)
+      const contrato = await criarContrato(prisma, user.empresaId, { ...body, dataPrimeira: new Date(body.dataPrimeira) })
+      return reply.status(201).send(contrato)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/contratos/:id', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      return await obterContrato(prisma, user.empresaId, id)
     } catch (err) {
       return tratarErro(reply, err)
     }
