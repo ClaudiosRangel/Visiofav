@@ -50,7 +50,9 @@ idempotente no mesmo commit. Confirmação humana na efetivação (tela e IA).
 - [x] 9. QA E2E `test_47_folha.py`
   - [x] 9.1 criar folha + itens + encargos → efetivar gera N contas a pagar; 2ª efetivação recusada sem duplicar (Property 3); isolamento (Property 5); CPF inválido barrado no funcionário; helpers no `wms_api.py`
     - _Requirements: 4.2, 4.3, 5.1, 1.2_
-  - [ ] 9.2 Rodar contra produção (aguardar ~150s deploy Render) e reportar
+  - [x] 9.2 Rodado contra produção: 4/4 verde (back f0856ff94, front 1447cc0)
+
+- [x] 10. Documentação + deploy (documento-mestre + steering QA atualizados; back+front pushados; migração aplicada no start do Render; QA 4/4 em produção)
 
 - [ ] 10. Documentação + deploy
   - Atualizar `docs/PROGRAMA-DOCUMENTOS-FINANCEIROS.md` (D3 concluída) + steering QA (front); commit + push back e front (schema + migrate-prod juntos); QA contra produção.
