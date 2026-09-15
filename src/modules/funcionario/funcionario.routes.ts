@@ -3,8 +3,59 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import bcrypt from 'bcryptjs'
 import { authenticate } from '../../middleware/authenticate'
+import { validarDocumento, normalizarDoc } from '../financeiro/documento-validacao'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
+
+// D3 — campos trabalhistas opcionais aceitos em POST/PUT de funcionário.
+const camposTrabalhistas = {
+  cpf: z.string().optional(),
+  cargo: z.string().max(100).optional(),
+  dataAdmissao: z.string().optional(),
+  salarioBase: z.number().nonnegative().optional(),
+  banco: z.string().max(60).optional(),
+  agencia: z.string().max(20).optional(),
+  conta: z.string().max(30).optional(),
+  tipoConta: z.enum(['CORRENTE', 'POUPANCA', 'PIX']).optional(),
+  chavePix: z.string().max(140).optional(),
+}
+
+/**
+ * Valida/normaliza os campos trabalhistas. Valida CPF (se informado) e checa
+ * unicidade de CPF por empresa. Converte dataAdmissao para Date. Lança objeto
+ * { status, message } em erro (tratado pelo caller).
+ */
+async function prepararCamposTrabalhistas(
+  db: any,
+  empresaId: string | undefined,
+  body: any,
+  idAtual?: string,
+): Promise<Record<string, any>> {
+  const out: Record<string, any> = {}
+  if (body.cargo !== undefined) out.cargo = body.cargo
+  if (body.salarioBase !== undefined) out.salarioBase = body.salarioBase
+  if (body.banco !== undefined) out.banco = body.banco
+  if (body.agencia !== undefined) out.agencia = body.agencia
+  if (body.conta !== undefined) out.conta = body.conta
+  if (body.tipoConta !== undefined) out.tipoConta = body.tipoConta
+  if (body.chavePix !== undefined) out.chavePix = body.chavePix
+  if (body.dataAdmissao !== undefined) out.dataAdmissao = body.dataAdmissao ? new Date(body.dataAdmissao) : null
+
+  if (body.cpf !== undefined && body.cpf !== null && String(body.cpf).trim() !== '') {
+    const { valido } = validarDocumento(body.cpf)
+    if (!valido) throw { status: 422, message: 'cpf: CPF/CNPJ inválido (dígito verificador)' }
+    const cpfNorm = normalizarDoc(body.cpf)
+    if (empresaId) {
+      const dup = await db.funcionario.findFirst({
+        where: { empresaId, cpf: cpfNorm, ...(idAtual ? { id: { not: idAtual } } : {}) },
+        select: { id: true },
+      })
+      if (dup) throw { status: 409, message: 'Já existe um funcionário com este CPF nesta empresa' }
+    }
+    out.cpf = cpfNorm
+  }
+  return out
+}
 
 // Segurança: filtro explícito por empresaId como camada extra além do
 // tenant-context (ver zona.routes.ts para o histórico completo do bug).
@@ -81,10 +132,17 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       centroDistribuicaoId: z.string().uuid().optional(),
       email: z.string().email().optional(),
       senha: z.string().min(6).optional(),
+      ...camposTrabalhistas,
     }).parse(request.body)
 
-    const { email, senha, ...rest } = body
-    const data = empresaId ? { ...rest, empresaId } : rest
+    const { email, senha, cpf, cargo, dataAdmissao, salarioBase, banco, agencia, conta, tipoConta, chavePix, ...rest } = body
+    let trabalhistas: Record<string, any>
+    try {
+      trabalhistas = await prepararCamposTrabalhistas(db, empresaId, body)
+    } catch (e: any) {
+      return reply.status(e.status || 422).send({ message: e.message || 'Dados trabalhistas inválidos' })
+    }
+    const data = empresaId ? { ...rest, ...trabalhistas, empresaId } : { ...rest, ...trabalhistas }
     const funcionario = await db.funcionario.create({ data })
 
     // Create user account if email and senha provided (uses global prisma for non-isolated models)
@@ -135,9 +193,17 @@ export async function funcionarioRoutes(app: FastifyInstance) {
       centroDistribuicaoId: z.string().uuid().nullable().optional(),
       email: z.string().email().optional(),
       senha: z.string().min(6).optional(),
+      ...camposTrabalhistas,
     }).parse(request.body)
 
-    const { email, senha, ...data } = body
+    const { email, senha, cpf, cargo, dataAdmissao, salarioBase, banco, agencia, conta, tipoConta, chavePix, ...rest } = body
+    let trabalhistas: Record<string, any>
+    try {
+      trabalhistas = await prepararCamposTrabalhistas(db, empresaId, body, id)
+    } catch (e: any) {
+      return reply.status(e.status || 422).send({ message: e.message || 'Dados trabalhistas inválidos' })
+    }
+    const data = { ...rest, ...trabalhistas }
     const funcionario = await db.funcionario.update({ where: { id }, data })
 
     // Create/update user account if email provided (uses global prisma for non-isolated models)

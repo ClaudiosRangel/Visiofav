@@ -38,7 +38,7 @@ financiamentos parcelados, recorrências, e a ponte para a contabilidade.
 |------|------|--------|------|
 | **D1** | Central de Documento Financeiro tipado + fornecedor PF/PJ + formulário rico + contrato parcelado | ✅ Concluída (15/09/2026) | `financeiro-documentos-d1` |
 | **D2** | Vizor AI: OCR de boleto/fatura + lançamento por documento + classificação automática | ✅ Concluída (15/09/2026) | `financeiro-documentos-d2-ia` |
-| **D3** | Folha de pagamento (lançamento do resultado) + funcionário enriquecido | 🔲 A iniciar | `financeiro-documentos-d3-folha` |
+| **D3** | Folha de pagamento (lançamento do resultado) + funcionário enriquecido | ✅ Concluída (15/09/2026) | `financeiro-documentos-d3-folha` |
 | **D4** | Plano de contas contábil + de/para categoria→conta + partidas dobradas automáticas | 🔲 A iniciar | `financeiro-documentos-d4-contabil` |
 | **D5** | Exportação contábil (ECD/Domínio/Fortes) — conecta ao F5 do roadmap | 🔲 A iniciar | `financeiro-documentos-d5-exportacao` |
 
@@ -81,3 +81,12 @@ _(atualizar a cada avanço)_
   - Tarefa 6: checkpoint backend — 8 testes do núcleo passando (`extrair-campos-documento.test.ts`), diagnostics limpos em todos os arquivos tocados.
   - Tarefa 7: QA E2E `test_46_ia_documentos.py` (lançamento por dados PF/PJ, parcelamento, documento inválido barrado 422, boleto inválido 422, chat da IA responde 200, isolamento multi-tenant). Helper `ai_chat` adicionado no `wms_api.py`.
   - **Confirmação humana obrigatória** preservada (padrão do XML). Sem migração de schema (D2 reusa D1). PRÓXIMO: deploy back + front, rodar QA contra produção; depois iniciar D3 (folha).
+- **D2 deploy**: back `3d39d5043` + hotfix `9e6863a44` (o 1º deploy falhou no build do Render — crases internas no `ai-system-prompt.ts` fecharam a template string; corrigido trocando por aspas e validando com `esbuild --bundle` antes do push). Front `184f186`. QA `test_46` 7/7 verde em produção.
+- **D3 CONCLUÍDA (15/09/2026).** Folha de pagamento — o Vizor lança o RESULTADO da folha (não calcula). Backend completo:
+  - Núcleo puro `folha-parser.ts` (calcularLiquido, calcularTotaisFolha, parsearCsvFolha com cabeçalho flexível/separador/formato BR/divergência), 12 testes.
+  - Schema: models `FolhaPagamento`, `ItemFolha`, `EncargoFolha` + enriquecimento de `Funcionario` (cpf, cargo, dataAdmissao, salarioBase, banco/agencia/conta/tipoConta/chavePix). Migração idempotente no `migrate-prod.ts` (testada 2x local): ADD COLUMN IF NOT EXISTS, CREATE TABLE IF NOT EXISTS, índice único parcial de CPF por empresa (WHERE cpf IS NOT NULL), FKs em try/catch.
+  - `folha.service.ts` (CRUD folha/itens/encargos isolado por empresa, só ABERTA altera, totais recalculados, importarCsv resolve por CPF/matrícula e reporta pendentes) + `folha-efetivacao.service.ts` (transação atômica: 1 título por item via incluirTitulo tipoDocumento FOLHA + 1 por encargo tipoDocumento IMPOSTO; idempotente por status; grava empresaId da folha).
+  - Rotas em `/api/financeiro/folha` (CRUD + itens + encargos + importar-csv + efetivar). Rota de funcionário `/api/funcionarios` aceita campos trabalhistas + valida CPF (validarDocumento D1) + unicidade por empresa. Enum de tipoDocumento ganhou 'FOLHA'.
+  - Vizor AI: tool `efetivar_folha` (por competência ou id) + executor + seção no system prompt (resumir totais, confirmar antes, idempotência; SEM crases — lição D2).
+  - QA `test_47_folha.py`: funcionário com dados trabalhistas, CPF inválido barrado, ciclo criar→item→encargo→efetivar (N contas a pagar), competência ABERTA duplicada 409, idempotência (2ª efetivação 409), isolamento multi-tenant. Helpers de folha/funcionário no `wms_api.py`.
+  - Checkpoint: 12 testes verdes + bundle esbuild do server OK (validado antes do push). PRÓXIMO: deploy back+front, QA contra produção; depois D4 (contabilidade).

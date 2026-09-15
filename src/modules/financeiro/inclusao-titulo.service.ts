@@ -11,7 +11,7 @@ import { validarDocumento, normalizarDoc } from './documento-validacao'
 
 export type TipoTitulo = 'RECEBER' | 'PAGAR'
 
-export const TIPOS_DOCUMENTO = ['NF', 'NFS', 'BOLETO', 'DESPESA', 'IMPOSTO', 'FINANCIAMENTO', 'RECORRENTE', 'REEMBOLSO', 'OUTRO'] as const
+export const TIPOS_DOCUMENTO = ['NF', 'NFS', 'BOLETO', 'DESPESA', 'FOLHA', 'IMPOSTO', 'FINANCIAMENTO', 'RECORRENTE', 'REEMBOLSO', 'OUTRO'] as const
 export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number]
 
 export interface InclusaoTituloInput {

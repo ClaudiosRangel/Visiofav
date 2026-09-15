@@ -254,6 +254,17 @@ export const AI_TOOLS: AITool[] = [
     },
   },
   {
+    name: 'efetivar_folha',
+    description: 'Efetiva a folha de pagamento de uma competência: gera as contas a pagar do resultado da folha (um título por funcionário com o líquido + um título por encargo INSS/FGTS/IRRF). O Vizor NÃO calcula folha — apenas lança o resultado já consolidado. Use SOMENTE após o usuário confirmar explicitamente. Idempotente: uma folha já efetivada não gera títulos duplicados. Informe a competência (YYYY-MM) OU o id da folha.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        competencia: { type: 'string', description: 'Competência da folha no formato YYYY-MM (ex: 2026-09)' },
+        folhaId: { type: 'string', description: 'ID da folha (alternativa à competência)' },
+      },
+    },
+  },
+  {
     name: 'baixar_titulo',
     description: 'Registra o pagamento/recebimento de um título financeiro.',
     input_schema: {

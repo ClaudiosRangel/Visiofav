@@ -47,6 +47,7 @@ export async function executarTool(toolName: string, input: any, empresaId: stri
       case 'consultar_financeiro': return await executarConsultarFinanceiro(input, empresaId)
       case 'criar_conta_pagar': return await executarCriarContaPagar(input, empresaId)
     case 'lancar_documento_financeiro': return await executarLancarDocumentoFinanceiro(input, empresaId)
+      case 'efetivar_folha': return await executarEfetivarFolha(input, empresaId)
       case 'criar_conta_receber': return await executarCriarContaReceber(input, empresaId)
       case 'baixar_titulo': return await executarBaixarTitulo(input, empresaId)
       case 'consultar_nfe': return await executarConsultarNfe(input, empresaId)
@@ -1028,6 +1029,41 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
     return { resposta, acao: { tipo: 'NAVEGAR', rota } }
   } catch (err: any) {
     return { resposta: `❌ Não consegui lançar: ${err?.message || 'erro desconhecido'}` }
+  }
+}
+
+/**
+ * D3 — Efetiva a folha de pagamento de uma competência (ou por id). Gera os
+ * títulos de contas a pagar (funcionários + encargos). Idempotente e isolado
+ * por empresa. A IA só chama isto após confirmação do usuário.
+ */
+async function executarEfetivarFolha(input: { competencia?: string; folhaId?: string }, empresaId: string): Promise<ToolResult> {
+  const { efetivarFolha } = await import('../financeiro/folha-efetivacao.service')
+
+  let folhaId = input.folhaId
+  if (!folhaId && input.competencia) {
+    const folha = await prisma.folhaPagamento.findFirst({
+      where: { empresaId, competencia: input.competencia, status: 'ABERTA' },
+      select: { id: true },
+    })
+    if (!folha) {
+      return { resposta: `⚠️ Não encontrei uma folha ABERTA para a competência **${input.competencia}**. Crie/importe a folha primeiro na tela de Folha de Pagamento.` }
+    }
+    folhaId = folha.id
+  }
+  if (!folhaId) {
+    return { resposta: `⚠️ Informe a competência (ex: 2026-09) ou o id da folha para efetivar.` }
+  }
+
+  try {
+    const r = await efetivarFolha(prisma, empresaId, folhaId)
+    const total = r.titulosFuncionarios + r.titulosEncargos
+    return {
+      resposta: `✅ **Folha ${r.competencia} efetivada!**\n• Títulos de funcionários: **${r.titulosFuncionarios}**\n• Guias/encargos: **${r.titulosEncargos}**\n• Total de contas a pagar geradas: **${total}**`,
+      acao: { tipo: 'NAVEGAR', rota: '/financeiro/contas-pagar' },
+    }
+  } catch (err: any) {
+    return { resposta: `❌ Não consegui efetivar a folha: ${err?.message || 'erro desconhecido'}` }
   }
 }
 

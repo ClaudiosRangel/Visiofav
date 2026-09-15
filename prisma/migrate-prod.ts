@@ -4189,6 +4189,81 @@ async function seedMateriaisFromOPs() {
   `)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_contrato_parcelamento_empresa" ON "contrato_parcelamento"("empresa_id")`)
   console.log('✅ D1: tipo_documento/parceiro livre/guia em títulos, tipo_pessoa em fornecedor, contrato_parcelamento criado')
+
+  // ==========================================================================
+  // D3 — Folha de pagamento (lançamento do resultado) + funcionário enriquecido
+  // ==========================================================================
+  // Enriquecimento do cadastro de funcionário (colunas aditivas, opcionais).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "cpf" VARCHAR(14)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "cargo" VARCHAR(100)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "data_admissao" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "salario_base" DECIMAL(14,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "banco" VARCHAR(60)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "agencia" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "conta" VARCHAR(30)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "tipo_conta" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "funcionario" ADD COLUMN IF NOT EXISTS "chave_pix" VARCHAR(140)`)
+  // Unicidade de CPF por empresa apenas para linhas com CPF preenchido.
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "uq_funcionario_empresa_cpf" ON "funcionario"("empresa_id","cpf") WHERE "cpf" IS NOT NULL`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "folha_pagamento" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "competencia" VARCHAR(7) NOT NULL,
+      "descricao" VARCHAR(200),
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ABERTA',
+      "data_pagamento" TIMESTAMP(3),
+      "total_liquido" DECIMAL(14,2) NOT NULL DEFAULT 0,
+      "total_encargos" DECIMAL(14,2) NOT NULL DEFAULT 0,
+      "efetivada_em" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "folha_pagamento_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "uq_folha_empresa_competencia_status" ON "folha_pagamento"("empresa_id","competencia","status")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "item_folha" (
+      "id" TEXT NOT NULL,
+      "folha_id" TEXT NOT NULL,
+      "funcionario_id" TEXT NOT NULL,
+      "proventos" DECIMAL(14,2) NOT NULL DEFAULT 0,
+      "descontos" DECIMAL(14,2) NOT NULL DEFAULT 0,
+      "liquido" DECIMAL(14,2) NOT NULL DEFAULT 0,
+      "conta_pagar_id" TEXT,
+      CONSTRAINT "item_folha_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_item_folha_folha" ON "item_folha"("folha_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "encargo_folha" (
+      "id" TEXT NOT NULL,
+      "folha_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "beneficiario" VARCHAR(150) NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      "vencimento" TIMESTAMP(3) NOT NULL,
+      "conta_pagar_id" TEXT,
+      CONSTRAINT "encargo_folha_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_encargo_folha_folha" ON "encargo_folha"("folha_id")`)
+
+  const addFkFolha = async (sql: string) => {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('já existe')) return
+      console.log('⚠️ D3 Folha FK skipped:', e.message?.substring(0, 150))
+    }
+  }
+  await addFkFolha(`ALTER TABLE "item_folha" ADD CONSTRAINT "item_folha_folha_id_fkey" FOREIGN KEY ("folha_id") REFERENCES "folha_pagamento"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  await addFkFolha(`ALTER TABLE "item_folha" ADD CONSTRAINT "item_folha_funcionario_id_fkey" FOREIGN KEY ("funcionario_id") REFERENCES "funcionario"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkFolha(`ALTER TABLE "encargo_folha" ADD CONSTRAINT "encargo_folha_folha_id_fkey" FOREIGN KEY ("folha_id") REFERENCES "folha_pagamento"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+
+  console.log('✅ D3 Folha: funcionario enriquecido (cpf/cargo/admissao/salario/banco), folha_pagamento, item_folha, encargo_folha criados')
 }
 
 main()

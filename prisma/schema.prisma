@@ -2141,7 +2141,73 @@ model Funcionario {
   pinHash              String?  @map("pin_hash") @db.VarChar(200)
   pinAtivo             Boolean  @default(false) @map("pin_ativo")
 
+  // D3 — enriquecimento trabalhista (opcional; não quebra o cadastro WMS)
+  cpf                  String?   @db.VarChar(14)
+  cargo                String?   @db.VarChar(100)
+  dataAdmissao         DateTime? @map("data_admissao")
+  salarioBase          Decimal?  @map("salario_base") @db.Decimal(14, 2)
+  banco                String?   @db.VarChar(60)
+  agencia              String?   @db.VarChar(20)
+  conta                String?   @db.VarChar(30)
+  tipoConta            String?   @map("tipo_conta") @db.VarChar(20) // CORRENTE | POUPANCA | PIX
+  chavePix             String?   @map("chave_pix") @db.VarChar(140)
+
+  itensFolha           ItemFolha[]
+
   @@map("funcionario")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOLHA DE PAGAMENTO (D3) — lançamento do RESULTADO da folha em contas a pagar.
+// O Vizor não calcula folha; recebe o resultado consolidado do período.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model FolhaPagamento {
+  id            String    @id @default(uuid())
+  empresaId     String    @map("empresa_id")
+  competencia   String    @db.VarChar(7) // "YYYY-MM"
+  descricao     String?   @db.VarChar(200)
+  status        String    @default("ABERTA") @db.VarChar(20) // ABERTA | EFETIVADA | CANCELADA
+  dataPagamento DateTime? @map("data_pagamento")
+  totalLiquido  Decimal   @default(0) @map("total_liquido") @db.Decimal(14, 2)
+  totalEncargos Decimal   @default(0) @map("total_encargos") @db.Decimal(14, 2)
+  efetivadaEm   DateTime? @map("efetivada_em")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+
+  itens    ItemFolha[]
+  encargos EncargoFolha[]
+
+  @@unique([empresaId, competencia, status])
+  @@map("folha_pagamento")
+}
+
+model ItemFolha {
+  id            String  @id @default(uuid())
+  folhaId       String  @map("folha_id")
+  folha         FolhaPagamento @relation(fields: [folhaId], references: [id], onDelete: Cascade)
+  funcionarioId String  @map("funcionario_id")
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id])
+  proventos     Decimal @default(0) @db.Decimal(14, 2)
+  descontos     Decimal @default(0) @db.Decimal(14, 2)
+  liquido       Decimal @default(0) @db.Decimal(14, 2)
+  contaPagarId  String? @map("conta_pagar_id")
+
+  @@index([folhaId])
+  @@map("item_folha")
+}
+
+model EncargoFolha {
+  id           String   @id @default(uuid())
+  folhaId      String   @map("folha_id")
+  folha        FolhaPagamento @relation(fields: [folhaId], references: [id], onDelete: Cascade)
+  tipo         String   @db.VarChar(20) // INSS | FGTS | IRRF | OUTRO
+  beneficiario String   @db.VarChar(150)
+  valor        Decimal  @db.Decimal(14, 2)
+  vencimento   DateTime
+  contaPagarId String?  @map("conta_pagar_id")
+
+  @@index([folhaId])
+  @@map("encargo_folha")
 }
 
 model EquipamentoMovimentacao {

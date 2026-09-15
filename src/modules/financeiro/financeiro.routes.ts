@@ -21,6 +21,8 @@ import { obterDashboard } from './dashboard.service'
 import { extratoConta } from './extrato.service'
 import { inadimplencia, contasPorPeriodo } from './relatorios.service'
 import { criarContrato, listarContratos, obterContrato } from './contrato-parcelamento.service'
+import * as folha from './folha.service'
+import { efetivarFolha } from './folha-efetivacao.service'
 import {
   criarContaSchema,
   transferenciaSchema,
@@ -414,6 +416,131 @@ export async function financeiroRoutes(app: FastifyInstance) {
       const user = request.user as { empresaId: string }
       const { id } = idParams.parse(request.params)
       return await obterContrato(prisma, user.empresaId, id)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Folha de pagamento (D3) ----
+  const folhaBodySchema = z.object({
+    competencia: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'competencia: formato YYYY-MM'),
+    descricao: z.string().max(200).optional(),
+    dataPagamento: z.string().optional(),
+  })
+  const itemBodySchema = z.object({
+    funcionarioId: z.string().uuid(),
+    proventos: z.number().nonnegative(),
+    descontos: z.number().nonnegative(),
+  })
+  const encargoBodySchema = z.object({
+    tipo: z.enum(['INSS', 'FGTS', 'IRRF', 'OUTRO']),
+    beneficiario: z.string().min(1).max(150),
+    valor: z.number().positive(),
+    vencimento: z.string(),
+  })
+
+  app.get('/folha', async (request) => {
+    const user = request.user as { empresaId: string }
+    return folha.listarFolhas(prisma, user.empresaId)
+  })
+
+  app.post('/folha', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const body = folhaBodySchema.parse(request.body)
+      const criada = await folha.criarFolha(prisma, user.empresaId, {
+        competencia: body.competencia,
+        descricao: body.descricao,
+        dataPagamento: body.dataPagamento ? new Date(body.dataPagamento) : undefined,
+      })
+      return reply.status(201).send(criada)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/folha/:id', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      return await folha.obterFolha(prisma, user.empresaId, id)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.post('/folha/:id/itens', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      const body = itemBodySchema.parse(request.body)
+      return reply.status(201).send(await folha.adicionarItem(prisma, user.empresaId, id, body))
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.put('/folha/:id/itens/:itemId', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(request.params)
+      const body = z.object({ proventos: z.number().nonnegative(), descontos: z.number().nonnegative() }).parse(request.body)
+      return await folha.editarItem(prisma, user.empresaId, id, itemId, body)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.delete('/folha/:id/itens/:itemId', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(request.params)
+      return await folha.removerItem(prisma, user.empresaId, id, itemId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.post('/folha/:id/encargos', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      const body = encargoBodySchema.parse(request.body)
+      return reply.status(201).send(await folha.adicionarEncargo(prisma, user.empresaId, id, {
+        ...body,
+        vencimento: new Date(body.vencimento),
+      }))
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.delete('/folha/:id/encargos/:encargoId', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id, encargoId } = z.object({ id: z.string().uuid(), encargoId: z.string().uuid() }).parse(request.params)
+      return await folha.removerEncargo(prisma, user.empresaId, id, encargoId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.post('/folha/:id/importar-csv', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      const { conteudo } = z.object({ conteudo: z.string().min(1) }).parse(request.body)
+      return await folha.importarCsv(prisma, user.empresaId, id, conteudo)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.post('/folha/:id/efetivar', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParams.parse(request.params)
+      return await efetivarFolha(prisma, user.empresaId, id)
     } catch (err) {
       return tratarErro(reply, err)
     }
