@@ -34,7 +34,9 @@ Reuso do SPEDWriter e da estrutura de blocos existente.
 - [x] 6. QA E2E `test_50_exportacao.py`
   - [x] 6.1 gerar ECD; exportar CSV balancete/diário (cabeçalho); isolamento; helpers no `wms_api.py`
     - _Requirements: 1.1, 3.2, 4.1_
-  - [ ] 6.2 Rodar contra produção (aguardar ~150s deploy Render) e reportar
+  - [x] 6.2 Rodado contra produção: 4/4 verde (back c19cc120c, front feb2d5c)
+
+- [x] 7. Documentação + deploy (documento-mestre PROGRAMA COMPLETO + steering QA; back+front pushados; QA 4/4 em produção)
 
 - [ ] 7. Documentação + deploy
   - Atualizar `docs/PROGRAMA-DOCUMENTOS-FINANCEIROS.md` (D5 concluída — PROGRAMA COMPLETO) + steering QA (front); commit + push back e front; QA contra produção.
