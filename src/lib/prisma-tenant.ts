@@ -12,6 +12,9 @@ const ISOLATED_MODELS: string[] = [
   // F1 — Financeiro operacional
   'ContaFinanceira', 'CategoriaFinanceira', 'CentroCusto', 'LancamentoCaixa',
   'ExtratoBancario', 'FechamentoPeriodo', 'PendenciaTituloFiscal',
+  // Onda 2 — Cobrança bancária
+  'ConvenioBancario', 'Boleto', 'RemessaCnab', 'PixCobranca', 'ReguaCobranca',
+  'PendenciaCobranca',
 ]
 
 export function createTenantExtension(empresaId: string) {

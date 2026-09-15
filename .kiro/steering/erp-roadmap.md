@@ -57,7 +57,7 @@ spec próprio (`requirements → design → tasks`) quando for iniciado.
 |-------|------|--------|------|
 | **F1** | Financeiro Operacional Completo | ✅ Concluído (14/09/2026) | `erp-financeiro-completo` |
 | **F2** | Vendas com Emissão Real de NF-e (100% no fluxo) | ⚠️ Base existe, falta fechar | `erp-vendas-nfe-real` (a criar) |
-| **F3** | Boletos Bancários + CNAB + PIX | 🔲 A iniciar | `erp-cobranca-bancaria` (a criar) |
+| **F3** | Boletos Bancários + CNAB + PIX + Régua | ✅ Motor concluído (pronto p/ integrar) | `financeiro-cobranca-bancaria` |
 | **F4** | Reforma Tributária (IBS/CBS/IS) | 🔲 A iniciar (greenfield) | `erp-reforma-tributaria` (a criar) |
 | **F5** | SPED Fiscal + Contábil (alimentação geral) | ⚠️ Fiscal parcial | `erp-sped-fiscal-contabil` (a criar) |
 

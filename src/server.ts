@@ -54,6 +54,8 @@ import { vendaRoutes } from './modules/venda/venda.routes'
 import { contaPagarRoutes } from './modules/conta-pagar/conta-pagar.routes'
 import { contaReceberRoutes } from './modules/conta-receber/conta-receber.routes'
 import { financeiroRoutes } from './modules/financeiro/financeiro.routes'
+import { financeiroCobrancaRoutes, pixWebhookRoutes } from './modules/financeiro-cobranca/financeiro-cobranca.routes'
+import { startReguaCobrancaScheduler } from './modules/financeiro-cobranca/regua-cobranca.scheduler'
 import { nfeRoutes } from './modules/nfe/nfe.routes'
 import { cteRoutes } from './modules/cte/cte.routes'
 import { agendaWmsRoutes } from './modules/agenda-wms/agenda-wms.routes'
@@ -366,6 +368,8 @@ async function bootstrap() {
   await app.register(contaPagarRoutes, { prefix: '/api/contas-pagar' })
   await app.register(contaReceberRoutes, { prefix: '/api/contas-receber' })
   await app.register(financeiroRoutes, { prefix: '/api/financeiro' })
+  await app.register(financeiroCobrancaRoutes, { prefix: '/api/financeiro-cobranca' })
+  await app.register(pixWebhookRoutes, { prefix: '/api/pix-webhook' })
 
   // Módulo Fiscal — NF-e
   await app.register(nfeRoutes, { prefix: '/api/nfe' })
@@ -602,6 +606,7 @@ async function bootstrap() {
   startBiWorkers()
   startWaveWorker()
   startRecalculoFinanceiroScheduler()
+startReguaCobrancaScheduler()
 }
 
 bootstrap()

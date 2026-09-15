@@ -3993,6 +3993,156 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "observacao" VARCHAR(500)`)
   console.log('✅ F1 Onda 1: colunas cancelado_em/observacao em conta_receber e conta_pagar')
+
+  // ==========================================================================
+  // Onda 2 — Cobrança Bancária (boleto/CNAB/PIX/régua)
+  // ==========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "convenio_bancario" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "conta_financeira_id" TEXT NOT NULL,
+      "tipo" VARCHAR(10) NOT NULL,
+      "banco" VARCHAR(5) NOT NULL,
+      "agencia" VARCHAR(10) NOT NULL,
+      "conta" VARCHAR(15) NOT NULL,
+      "beneficiario" VARCHAR(120) NOT NULL,
+      "carteira" VARCHAR(5),
+      "codigo_convenio" VARCHAR(20),
+      "prox_nosso_numero" BIGINT NOT NULL DEFAULT 1,
+      "chave_pix" VARCHAR(80),
+      "psp" VARCHAR(30),
+      "client_id" VARCHAR(200),
+      "client_secret_cripto" TEXT,
+      "cert_pix_cripto" TEXT,
+      "webhook_secret" VARCHAR(200),
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "convenio_bancario_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_convenio_bancario_empresa" ON "convenio_bancario"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "boleto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "convenio_id" TEXT NOT NULL,
+      "conta_receber_id" TEXT NOT NULL,
+      "nosso_numero" VARCHAR(20) NOT NULL,
+      "linha_digitavel" VARCHAR(60) NOT NULL,
+      "codigo_barras" VARCHAR(44) NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      "vencimento" TIMESTAMP(3) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'GERADO',
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "boleto_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "boleto_convenio_nosso_numero_key" ON "boleto"("convenio_id","nosso_numero")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_boleto_empresa" ON "boleto"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "remessa_cnab" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "convenio_id" TEXT NOT NULL,
+      "sequencial" INTEGER NOT NULL,
+      "conteudo" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "remessa_cnab_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_remessa_cnab_empresa" ON "remessa_cnab"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "retorno_cnab_processado" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "hash_arquivo" VARCHAR(64) NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "retorno_cnab_processado_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "retorno_cnab_empresa_hash_key" ON "retorno_cnab_processado"("empresa_id","hash_arquivo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pix_cobranca" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "convenio_id" TEXT NOT NULL,
+      "conta_receber_id" TEXT NOT NULL,
+      "txid" VARCHAR(35) NOT NULL,
+      "brcode" TEXT NOT NULL,
+      "valor" DECIMAL(14,2) NOT NULL,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVA',
+      "pago_em" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "pix_cobranca_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "pix_cobranca_empresa_txid_key" ON "pix_cobranca"("empresa_id","txid")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "regua_cobranca" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "ativa" BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT "regua_cobranca_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "regua_cobranca_empresa_key" ON "regua_cobranca"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "regua_evento" (
+      "id" TEXT NOT NULL,
+      "regua_id" TEXT NOT NULL,
+      "offset_dias" INTEGER NOT NULL,
+      "assunto" VARCHAR(200) NOT NULL,
+      "template" TEXT NOT NULL,
+      CONSTRAINT "regua_evento_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_regua_evento_regua" ON "regua_evento"("regua_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "regua_envio" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "conta_receber_id" TEXT NOT NULL,
+      "evento_id" TEXT NOT NULL,
+      "dia" VARCHAR(10) NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "regua_envio_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "regua_envio_titulo_evento_dia_key" ON "regua_envio"("conta_receber_id","evento_id","dia")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pendencia_cobranca" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "detalhe" TEXT NOT NULL,
+      "resolvido" BOOLEAN NOT NULL DEFAULT false,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "pendencia_cobranca_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_pendencia_cobranca_empresa" ON "pendencia_cobranca"("empresa_id","resolvido")`)
+
+  const addFkCobranca = async (sql: string) => {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('já existe')) return
+      console.log('⚠️ Onda 2 Cobrança FK skipped:', e.message?.substring(0, 150))
+    }
+  }
+  await addFkCobranca(`ALTER TABLE "convenio_bancario" ADD CONSTRAINT "convenio_bancario_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  await addFkCobranca(`ALTER TABLE "regua_evento" ADD CONSTRAINT "regua_evento_regua_id_fkey" FOREIGN KEY ("regua_id") REFERENCES "regua_cobranca"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+
+  console.log('✅ Onda 2 Cobrança: convenio_bancario, boleto, remessa_cnab, retorno_cnab_processado, pix_cobranca, regua_cobranca, regua_evento, regua_envio, pendencia_cobranca criados')
 }
 
 main()

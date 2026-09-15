@@ -1232,6 +1232,137 @@ model PendenciaTituloFiscal {
 }
 
 // ============================================================================
+// FINANCEIRO — ONDA 2: COBRANÇA BANCÁRIA (boleto/CNAB/PIX/régua)
+// ============================================================================
+
+model ConvenioBancario {
+  id                          String   @id @default(uuid())
+  empresaId                   String   @map("empresa_id")
+  contaFinanceiraId           String   @map("conta_financeira_id")
+  tipo                        String   @db.VarChar(10) // BOLETO | PIX | AMBOS
+  banco                       String   @db.VarChar(5)  // código FEBRABAN
+  agencia                     String   @db.VarChar(10)
+  conta                       String   @db.VarChar(15)
+  beneficiario                String   @db.VarChar(120)
+  carteira                    String?  @db.VarChar(5)
+  codigoConvenio              String?  @map("codigo_convenio") @db.VarChar(20)
+  proxNossoNumero             BigInt   @default(1) @map("prox_nosso_numero")
+  chavePix                    String?  @map("chave_pix") @db.VarChar(80)
+  psp                         String?  @db.VarChar(30)
+  clientId                    String?  @map("client_id") @db.VarChar(200)
+  clientSecretCriptografado   String?  @map("client_secret_cripto") @db.Text
+  certificadoPixCriptografado String?  @map("cert_pix_cripto") @db.Text
+  webhookSecret               String?  @map("webhook_secret") @db.VarChar(200)
+  status                      Boolean  @default(true)
+  criadoEm                    DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@map("convenio_bancario")
+}
+
+model Boleto {
+  id             String   @id @default(uuid())
+  empresaId      String   @map("empresa_id")
+  convenioId     String   @map("convenio_id")
+  contaReceberId String   @map("conta_receber_id")
+  nossoNumero    String   @map("nosso_numero") @db.VarChar(20)
+  linhaDigitavel String   @map("linha_digitavel") @db.VarChar(60)
+  codigoBarras   String   @map("codigo_barras") @db.VarChar(44)
+  valor          Decimal  @db.Decimal(14, 2)
+  vencimento     DateTime
+  status         String   @default("GERADO") @db.VarChar(20) // GERADO|REGISTRADO|LIQUIDADO|BAIXADO
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  @@unique([convenioId, nossoNumero])
+  @@index([empresaId])
+  @@map("boleto")
+}
+
+model RemessaCnab {
+  id         String   @id @default(uuid())
+  empresaId  String   @map("empresa_id")
+  convenioId String   @map("convenio_id")
+  sequencial Int
+  conteudo   String   @db.Text
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@map("remessa_cnab")
+}
+
+model RetornoCnabProcessado {
+  id          String   @id @default(uuid())
+  empresaId   String   @map("empresa_id")
+  hashArquivo String   @map("hash_arquivo") @db.VarChar(64)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, hashArquivo])
+  @@map("retorno_cnab_processado")
+}
+
+model PixCobranca {
+  id             String    @id @default(uuid())
+  empresaId      String    @map("empresa_id")
+  convenioId     String    @map("convenio_id")
+  contaReceberId String    @map("conta_receber_id")
+  txid           String    @db.VarChar(35)
+  brcode         String    @db.Text
+  valor          Decimal   @db.Decimal(14, 2)
+  status         String    @default("ATIVA") @db.VarChar(20) // ATIVA|PAGA|EXPIRADA
+  pagoEm         DateTime? @map("pago_em")
+  criadoEm       DateTime  @default(now()) @map("criado_em")
+
+  @@unique([empresaId, txid])
+  @@map("pix_cobranca")
+}
+
+model ReguaCobranca {
+  id        String        @id @default(uuid())
+  empresaId String        @unique @map("empresa_id")
+  ativa     Boolean       @default(true)
+  eventos   ReguaEvento[]
+
+  @@map("regua_cobranca")
+}
+
+model ReguaEvento {
+  id         String @id @default(uuid())
+  reguaId    String @map("regua_id")
+  offsetDias Int    @map("offset_dias") // negativo=antes, 0=venc, positivo=depois
+  assunto    String @db.VarChar(200)
+  template   String @db.Text
+
+  regua ReguaCobranca @relation(fields: [reguaId], references: [id], onDelete: Cascade)
+
+  @@index([reguaId])
+  @@map("regua_evento")
+}
+
+model ReguaEnvio {
+  id             String   @id @default(uuid())
+  empresaId      String   @map("empresa_id")
+  contaReceberId String   @map("conta_receber_id")
+  eventoId       String   @map("evento_id")
+  dia            String   @db.VarChar(10) // YYYY-MM-DD
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  @@unique([contaReceberId, eventoId, dia])
+  @@map("regua_envio")
+}
+
+model PendenciaCobranca {
+  id        String   @id @default(uuid())
+  empresaId String   @map("empresa_id")
+  tipo      String   @db.VarChar(20) // RETORNO_ORFAO | WEBHOOK_ORFAO
+  detalhe   String   @db.Text
+  resolvido Boolean  @default(false)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, resolvido])
+  @@map("pendencia_cobranca")
+}
+
+// ============================================================================
 // FISCAL - CT-e
 // ============================================================================
 
