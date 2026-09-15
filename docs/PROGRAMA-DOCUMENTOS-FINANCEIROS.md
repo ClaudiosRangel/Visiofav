@@ -40,7 +40,7 @@ financiamentos parcelados, recorrências, e a ponte para a contabilidade.
 | **D2** | Vizor AI: OCR de boleto/fatura + lançamento por documento + classificação automática | ✅ Concluída (15/09/2026) | `financeiro-documentos-d2-ia` |
 | **D3** | Folha de pagamento (lançamento do resultado) + funcionário enriquecido | ✅ Concluída (15/09/2026) | `financeiro-documentos-d3-folha` |
 | **D4** | Plano de contas contábil + de/para categoria→conta + partidas dobradas automáticas | ✅ Concluída (15/09/2026) | `financeiro-documentos-d4-contabil` |
-| **D5** | Exportação contábil (ECD/Domínio/Fortes) — conecta ao F5 do roadmap | 🔲 A iniciar | `financeiro-documentos-d5-exportacao` |
+| **D5** | Exportação contábil (ECD/Domínio/Fortes) — conecta ao F5 do roadmap | ✅ Concluída (15/09/2026) — **PROGRAMA COMPLETO** | `financeiro-documentos-d5-exportacao` |
 
 ## Detalhamento por fase
 
@@ -106,3 +106,21 @@ _(atualizar a cada avanço)_
   - Frontend: `lib/financeiro/baixa.ts` (espelho puro) + `components/financeiro/BaixaTituloModal.tsx` (modal rico: data, conta origem/destino, forma, ajustes juros/multa/desconto/tarifa, comprovante, **resumo de cálculo em tempo real** com bloqueio de líquido negativo). Integrado em Contas a Pagar e a Receber (substituiu o modal pobre); total consolidado no lote.
   - QA `test_49_baixa.py`: baixa com juros/multa/desconto (líquido correto), desconto excessivo barrado (422), estorno limpa componentes, isolamento cross-empresa. Helpers no `wms_api.py`.
   - Checkpoint: 8 testes verdes + bundle esbuild + tsc front sem erros nos arquivos novos.
+- **D5 CONCLUÍDA (15/09/2026) — PROGRAMA COMPLETO.** Exportação contábil. Descoberta importante: o gerador `sped-ecd.generator.ts` já existia com toda a estrutura de blocos (0/I/J/9) e 31 testes, mas derivava lançamentos de documentos fiscais e usava um plano de contas hardcoded — NÃO usava a contabilidade real da D4. A D5 **religou o gerador à D4**:
+  - `carregarDadosContabeis` agora prefere a contabilidade real: se a empresa tem `ContaContabil` + `LancamentoContabil` LANCADO no período, usa plano de contas real (I050) e partidas reais (I200/I250) via `usarContabilidadeReal`/`calcularSaldosReais`; senão mantém o **fallback fiscal** (extraído para `carregarDoFiscal`, comportamento intacto — os 31 testes seguem verdes). +2 testes novos de contabilidade real (33 no total).
+  - Núcleo puro `contabil-export.ts` (diarioParaCsv, balanceteParaCsv; separador ';', decimais BR), 6 testes.
+  - Rotas `GET /api/financeiro/contabil/exportar/{diario,balancete}` (text/csv, attachment, isolado por empresa), reusando contabil.service.
+  - QA `test_50_exportacao.py`: gerar ECD (200 + nomeArquivo ECD_), exportar CSV balancete/diário (cabeçalho correto), isolamento. Helpers no `wms_api.py`.
+  - Checkpoint: 39 testes verdes (6 export + 33 ECD) + bundle esbuild OK. Sem alteração de schema (D5 só lê a D4).
+
+## PROGRAMA CONCLUÍDO
+
+Todas as 5 fases (D1–D5) do programa Central de Documentos Financeiros estão em
+produção e validadas por QA E2E:
+- **D1** documento tipado + fornecedor PF/PJ + formulário rico + contrato parcelado.
+- **D2** Vizor AI: OCR/leitura de boleto/fatura + lançamento por documento.
+- **D3** folha de pagamento (lançamento do resultado) + funcionário enriquecido (+D3.1 tela).
+- **D4** contabilidade em partidas dobradas + de/para + geração automática.
+- **D5** exportação contábil (ECD religado à D4 + CSV diário/balancete).
+Extra fora das fases: **Baixa Profissional** (liquidação com juros/multa/desconto/
+tarifa/comprovante + resumo em tempo real, pagar e receber).

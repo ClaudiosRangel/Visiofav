@@ -9,6 +9,12 @@ vi.mock('../../../lib/prisma', () => ({
     documentoFiscal: {
       findMany: vi.fn(),
     },
+    contaContabil: {
+      findMany: vi.fn(),
+    },
+    lancamentoContabil: {
+      findMany: vi.fn(),
+    },
   },
 }))
 
@@ -96,6 +102,9 @@ describe('SpedECDGenerator', () => {
     // Default mocks
     ;(prisma.empresa.findUniqueOrThrow as any).mockResolvedValue(mockEmpresa)
     ;(prisma.documentoFiscal.findMany as any).mockResolvedValue([])
+    // Por padrão sem contabilidade real → cai no fallback fiscal (preserva testes)
+    ;(prisma as any).contaContabil.findMany.mockResolvedValue([])
+    ;(prisma as any).lancamentoContabil.findMany.mockResolvedValue([])
   })
 
   describe('Bloco 0 - Abertura e Identificação', () => {
@@ -408,6 +417,47 @@ describe('SpedECDGenerator', () => {
       // Should not have I200/I250 records for zero-value document
       const i200Lines = lines.filter(l => l.includes('|I200|'))
       expect(i200Lines.length).toBe(0)
+    })
+  })
+
+  // D5 — quando há contabilidade real (D4), o ECD deve usar plano de contas e
+  // lançamentos reais em vez do fallback fiscal.
+  describe('Contabilidade real (D4)', () => {
+    const contasReais = [
+      { codigo: '1.1.01.001', nome: 'Banco Conta Movimento', natureza: 'DEVEDORA', analitica: true, paiId: null },
+      { codigo: '2.1.01.001', nome: 'Fornecedores Nacionais', natureza: 'CREDORA', analitica: true, paiId: null },
+    ]
+    const lancamentosReais = [
+      {
+        id: 'lc-1', data: new Date(2024, 0, 12), historico: 'Pagamento fornecedor', status: 'LANCADO', refId: 'cp-1',
+        partidas: [
+          { tipo: 'DEBITO', valor: 500, conta: { codigo: '2.1.01.001', natureza: 'CREDORA' } },
+          { tipo: 'CREDITO', valor: 500, conta: { codigo: '1.1.01.001', natureza: 'DEVEDORA' } },
+        ],
+      },
+    ]
+
+    beforeEach(() => {
+      ;(prisma as any).contaContabil.findMany.mockResolvedValue(contasReais)
+      ;(prisma as any).lancamentoContabil.findMany.mockResolvedValue(lancamentosReais)
+    })
+
+    it('usa os códigos de conta reais no I050 (Property 1)', async () => {
+      const result = await generator.gerar(defaultParams)
+      const content = result.conteudo.toString('latin1')
+      expect(content).toContain('1.1.01.001')
+      expect(content).toContain('Banco Conta Movimento')
+      expect(content).toContain('2.1.01.001')
+    })
+
+    it('registra as partidas reais no I250 (Property 3 — lote equilibrado)', async () => {
+      const result = await generator.gerar(defaultParams)
+      const content = result.conteudo.toString('latin1')
+      const lines = content.split('\r\n')
+      const i250 = lines.filter((l) => l.startsWith('|I250|'))
+      expect(i250.length).toBe(2) // 1 débito + 1 crédito
+      const i200 = lines.filter((l) => l.startsWith('|I200|'))
+      expect(i200.length).toBe(1) // 1 lote na data
     })
   })
 })

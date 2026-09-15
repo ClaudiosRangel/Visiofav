@@ -155,6 +155,105 @@ export class SpedECDGenerator {
   // === Carregamento de dados contábeis a partir de dados fiscais ===
 
   private async carregarDadosContabeis(): Promise<void> {
+    // D5 — preferir a contabilidade REAL (módulo contábil D4) quando existir.
+    // Se a empresa tem plano de contas + lançamentos no período, usa-os;
+    // senão, mantém o fallback fiscal (comportamento anterior).
+    const [contasReais, lancamentosReais] = await Promise.all([
+      (prisma as any).contaContabil?.findMany
+        ? (prisma as any).contaContabil.findMany({ where: { empresaId: this.params.empresaId }, orderBy: { codigo: 'asc' } })
+        : Promise.resolve([]),
+      (prisma as any).lancamentoContabil?.findMany
+        ? (prisma as any).lancamentoContabil.findMany({
+            where: { empresaId: this.params.empresaId, status: 'LANCADO', data: { gte: this.dataInicio, lte: this.dataFim } },
+            include: { partidas: { include: { conta: true } } },
+            orderBy: { data: 'asc' },
+          })
+        : Promise.resolve([]),
+    ])
+
+    if (Array.isArray(contasReais) && contasReais.length > 0 && Array.isArray(lancamentosReais) && lancamentosReais.length > 0) {
+      this.usarContabilidadeReal(contasReais, lancamentosReais)
+      return
+    }
+
+    await this.carregarDoFiscal()
+  }
+
+  /** Mapeia o plano de contas e os lançamentos reais da D4 para o modelo interno. */
+  private usarContabilidadeReal(contas: any[], lancamentos: any[]): void {
+    // Plano de contas (I050) a partir de ContaContabil
+    this.planoContas = contas.map((c) => ({
+      codigo: c.codigo,
+      descricao: c.nome,
+      natureza: (c.natureza === 'CREDORA' ? 'C' : 'D') as 'D' | 'C',
+      tipo: (c.analitica ? 'A' : 'S') as 'A' | 'S',
+      nivel: String(c.codigo).split('.').length,
+      codigoPai: c.paiId ? undefined : undefined,
+    }))
+
+    // Lançamentos (I200/I250) a partir de LancamentoContabil + PartidaContabil.
+    // O I250 do SPED registra cada partida isoladamente (conta + valor + IND_DC),
+    // então cada partida vira uma linha interna. Para lançamentos simples de 2
+    // partidas, informamos a contrapartida; para os demais, contrapartida vazia.
+    this.lancamentos = []
+    let num = 1
+    for (const l of lancamentos) {
+      const partidas: any[] = l.partidas ?? []
+      const debitos = partidas.filter((p) => p.tipo === 'DEBITO')
+      const creditos = partidas.filter((p) => p.tipo === 'CREDITO')
+      const contrapartidaSimples = partidas.length === 2 && debitos.length === 1 && creditos.length === 1
+      for (const p of partidas) {
+        this.lancamentos.push({
+          data: l.data,
+          numeroLancamento: num,
+          conta: p.conta?.codigo ?? '',
+          contaContrapartida: contrapartidaSimples
+            ? (p.tipo === 'DEBITO' ? (creditos[0].conta?.codigo ?? '') : (debitos[0].conta?.codigo ?? ''))
+            : '',
+          valor: Number(p.valor) || 0,
+          natureza: (p.tipo === 'DEBITO' ? 'D' : 'C') as 'D' | 'C',
+          historico: l.historico ?? '',
+          documento: l.refId ?? undefined,
+        })
+      }
+      num++
+    }
+
+    this.calcularSaldosReais(lancamentos)
+  }
+
+  /** Saldos por conta analítica a partir das partidas reais. */
+  private calcularSaldosReais(lancamentos: any[]): void {
+    const acc = new Map<string, { debitos: number; creditos: number; natureza: 'D' | 'C' }>()
+    for (const l of lancamentos) {
+      for (const p of (l.partidas ?? [])) {
+        const cod = p.conta?.codigo
+        if (!cod) continue
+        if (!acc.has(cod)) acc.set(cod, { debitos: 0, creditos: 0, natureza: (p.conta?.natureza === 'CREDORA' ? 'C' : 'D') })
+        const e = acc.get(cod)!
+        const v = Number(p.valor) || 0
+        if (p.tipo === 'DEBITO') e.debitos += v
+        else e.creditos += v
+      }
+    }
+    this.saldos = []
+    for (const [conta, e] of acc) {
+      const saldoFinal = e.debitos - e.creditos
+      this.saldos.push({
+        conta,
+        saldoInicial: 0,
+        debitos: e.debitos,
+        creditos: e.creditos,
+        saldoFinal: Math.abs(saldoFinal),
+        naturezaSaldoInicial: e.natureza,
+        naturezaSaldoFinal: saldoFinal >= 0 ? 'D' : 'C',
+      })
+    }
+  }
+
+  /** Fallback fiscal — comportamento original: deriva de documentos fiscais. */
+  private async carregarDoFiscal(): Promise<void> {
+    this.planoContas = PLANO_CONTAS_PADRAO
     // Busca documentos fiscais autorizados do período para gerar lançamentos
     const documentos = await prisma.documentoFiscal.findMany({
       where: {

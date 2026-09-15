@@ -24,6 +24,7 @@ import { criarContrato, listarContratos, obterContrato } from './contrato-parcel
 import * as folha from './folha.service'
 import { efetivarFolha } from './folha-efetivacao.service'
 import * as contabil from './contabil.service'
+import { diarioParaCsv, balanceteParaCsv, type LinhaDiario } from './contabil-export'
 import {
   criarContaSchema,
   transferenciaSchema,
@@ -657,6 +658,56 @@ export async function financeiroRoutes(app: FastifyInstance) {
       const user = request.user as { empresaId: string }
       const q = periodoQuery.parse(request.query)
       return await contabil.balancete(prisma, user.empresaId, q.inicio ? new Date(q.inicio) : undefined, q.fim ? new Date(q.fim + 'T23:59:59') : undefined)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Exportação contábil CSV (D5) ----
+  const fmtDataBR = (d: Date) => {
+    const dt = new Date(d)
+    return `${String(dt.getUTCDate()).padStart(2, '0')}/${String(dt.getUTCMonth() + 1).padStart(2, '0')}/${dt.getUTCFullYear()}`
+  }
+
+  app.get('/contabil/exportar/diario', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = periodoQuery.parse(request.query)
+      const lancamentos = await contabil.listarLancamentos(prisma, user.empresaId, {
+        inicio: q.inicio ? new Date(q.inicio) : undefined,
+        fim: q.fim ? new Date(q.fim + 'T23:59:59') : undefined,
+      })
+      const linhas: LinhaDiario[] = []
+      for (const l of lancamentos as any[]) {
+        for (const p of (l.partidas ?? [])) {
+          linhas.push({
+            data: fmtDataBR(l.data),
+            historico: l.historico,
+            conta: p.conta?.codigo ?? '',
+            tipo: p.tipo,
+            valor: Number(p.valor) || 0,
+          })
+        }
+      }
+      const csv = diarioParaCsv(linhas)
+      reply.header('Content-Type', 'text/csv; charset=utf-8')
+      reply.header('Content-Disposition', 'attachment; filename="diario-contabil.csv"')
+      return reply.send(csv)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/contabil/exportar/balancete', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = periodoQuery.parse(request.query)
+      const bal = await contabil.balancete(prisma, user.empresaId, q.inicio ? new Date(q.inicio) : undefined, q.fim ? new Date(q.fim + 'T23:59:59') : undefined)
+      const linhas = (bal.contas as any[]).map((c) => ({ codigo: c.codigo, nome: c.nome, debito: c.debito, credito: c.credito, saldo: c.saldo }))
+      const csv = balanceteParaCsv(linhas)
+      reply.header('Content-Type', 'text/csv; charset=utf-8')
+      reply.header('Content-Disposition', 'attachment; filename="balancete-contabil.csv"')
+      return reply.send(csv)
     } catch (err) {
       return tratarErro(reply, err)
     }
