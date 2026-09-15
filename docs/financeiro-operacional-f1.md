@@ -79,3 +79,29 @@ receber). Migração idempotente em `prisma/migrate-prod.ts`, testada 2x local.
 - Telas de cadastro de categorias/centros de custo e de lançamentos manuais
   (backend pronto; UI dedicada pode ser adicionada — hoje há contas, fluxo e
   conciliação).
+
+---
+
+## Onda 1 — Operação diária completa (adicionado)
+
+**Spec:** `.kiro/specs/financeiro-operacional-completo/`
+
+Transformou o backend financeiro em produto operável. Novidades:
+
+### Backend (`src/modules/financeiro/`)
+- `titulo.service.ts` — regras unificadas de título (receber/pagar): editar (só ABERTA), cancelar, estornar baixa, baixa individual enriquecida (conta/categoria/centro) e **baixa em lote** (particiona sucesso/ignorados).
+- `dashboard.service.ts` — saldo total, a receber/pagar (hoje/vencido/a vencer), resultado do mês, fluxo de 3 meses, top devedores.
+- `extrato.service.ts` — extrato por conta com saldo corrente acumulado.
+- `relatorios.service.ts` — inadimplência por cliente e contas por período.
+- Rotas novas: `GET /financeiro/dashboard`, `/extrato`, `/relatorios/inadimplencia`, `/relatorios/contas`.
+- `conta-pagar`/`conta-receber` ganharam: `PUT /:id` (editar), `PATCH /:id/cancelar`, `PATCH /:id/estornar`, `POST /baixar-lote`, e baixa individual enriquecida.
+- Schema: colunas `cancelado_em` e `observacao` (nullable) em `conta_receber`/`conta_pagar` (migração idempotente).
+
+### Frontend (`src/app/(interna)/financeiro/`)
+Telas novas: **Dashboard**, **Lançamentos de Caixa**, **Extrato de Conta**, **DRE Gerencial**, **Categorias**, **Centros de Custo**, **Fechamento**, **Relatórios** (com export CSV). Contas a Pagar/Receber ganharam seleção múltipla + baixa em lote, cancelar e estornar. Menu Financeiro com 13 entradas.
+
+### QA
+`tests/e2e-qa/test_43_financeiro.py` (Python+Playwright) cobrindo estrutura, ciclo de títulos, baixa em lote, contas bancárias, lançamentos, extrato, conciliação OFX e isolamento multi-tenant. Helpers em `wms_api.py`.
+
+### Testes
+Backend: 31 testes Vitest (`npx vitest run src/modules/financeiro/`). Front: `format.test.ts`.

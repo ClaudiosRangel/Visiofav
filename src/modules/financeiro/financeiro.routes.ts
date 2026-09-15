@@ -17,6 +17,9 @@ import * as lancamentos from './lancamento-caixa.service'
 import * as conciliacao from './conciliacao.service'
 import * as fechamento from './fechamento.service'
 import { classificarAging, montarDreGerencial, projetarFluxoCaixa, competenciaDe } from './financeiro-calculo'
+import { obterDashboard } from './dashboard.service'
+import { extratoConta } from './extrato.service'
+import { inadimplencia, contasPorPeriodo } from './relatorios.service'
 import {
   criarContaSchema,
   transferenciaSchema,
@@ -315,6 +318,62 @@ export async function financeiroRoutes(app: FastifyInstance) {
         ...pagar.map((p) => ({ tipo: 'DESPESA' as const, categoriaId: p.categoriaId, valor: dec(p.valor), competencia: p.dataCompetencia ?? p.dataVencimento })),
       ]
       return montarDreGerencial(titulos, new Date(q.de), new Date(q.ate))
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Dashboard financeiro ----
+  app.get('/dashboard', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      return await obterDashboard(prisma, user.empresaId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Extrato por conta ----
+  app.get('/extrato', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = z.object({ contaFinanceiraId: z.string().uuid(), de: z.string(), ate: z.string() }).parse(request.query)
+      return await extratoConta(prisma, user.empresaId, q.contaFinanceiraId, new Date(q.de), new Date(q.ate))
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // ---- Relatórios ----
+  app.get('/relatorios/inadimplencia', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      return await inadimplencia(prisma, user.empresaId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  app.get('/relatorios/contas', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = z.object({
+        tipo: z.enum(['RECEBER', 'PAGAR']),
+        status: z.string().optional(),
+        parceiroId: z.string().uuid().optional(),
+        categoriaId: z.string().uuid().optional(),
+        centroCustoId: z.string().uuid().optional(),
+        de: z.string().optional(),
+        ate: z.string().optional(),
+      }).parse(request.query)
+      return await contasPorPeriodo(prisma, user.empresaId, q.tipo, {
+        status: q.status,
+        parceiroId: q.parceiroId,
+        categoriaId: q.categoriaId,
+        centroCustoId: q.centroCustoId,
+        de: q.de ? new Date(q.de) : undefined,
+        ate: q.ate ? new Date(q.ate) : undefined,
+      })
     } catch (err) {
       return tratarErro(reply, err)
     }

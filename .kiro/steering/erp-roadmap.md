@@ -123,7 +123,15 @@ real vs orçado).
 lançamentos manuais de caixa, faz conciliação e fechamentos, e entrega gestão
 no nível dos melhores do mercado.
 
-**Entregue nesta versão:** contas bancárias multi-conta com saldo derivado +
+**Onda 1 (operação diária) — concluída:** dashboard financeiro, baixa em lote
+(pagar/receber), editar/cancelar/estornar títulos, extrato por conta,
+relatórios (inadimplência + export CSV), e telas frontend completas
+(Dashboard, Lançamentos, Extrato, DRE, Categorias, Centros de Custo,
+Fechamento, Relatórios). QA E2E em `test_43_financeiro.py`. Spec:
+`.kiro/specs/financeiro-operacional-completo/`. Próximas ondas: F3 (boleto/
+CNAB/PIX) e amadurecimento (conciliação de cartões, contratos recorrentes).
+
+**Entregue no F1 base:** contas bancárias multi-conta com saldo derivado +
 transferência entre contas; plano de contas gerencial (categorias) + centro de
 custo + rateio; lançamentos manuais de caixa com estorno; **captação automática
 do CT-e** (autorizado → conta a receber do frete, idempotente, no ponto único

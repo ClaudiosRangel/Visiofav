@@ -3986,6 +3986,13 @@ async function seedMateriaisFromOPs() {
   await addFkF1(`ALTER TABLE "pendencia_titulo_fiscal" ADD CONSTRAINT "pendencia_titulo_fiscal_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
 
   console.log('✅ F1 Financeiro: conta_financeira, categoria_financeira, centro_custo, lancamento_caixa, rateio_centro_custo, extrato_bancario, fechamento_periodo, pendencia_titulo_fiscal criados (+ colunas em conta_receber/conta_pagar)')
+
+  // Onda 1 — operação diária: cancelamento + observação em títulos
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_receber" ADD COLUMN IF NOT EXISTS "observacao" VARCHAR(500)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "conta_pagar" ADD COLUMN IF NOT EXISTS "observacao" VARCHAR(500)`)
+  console.log('✅ F1 Onda 1: colunas cancelado_em/observacao em conta_receber e conta_pagar')
 }
 
 main()

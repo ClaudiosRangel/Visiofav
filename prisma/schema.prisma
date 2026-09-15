@@ -1075,6 +1075,9 @@ model ContaPagar {
   centroCustoId     String?          @map("centro_custo_id")
   dataCompetencia   DateTime?        @map("data_competencia")
   documentoFiscalId String?          @map("documento_fiscal_id")
+  // Onda 1 — operação diária
+  canceladoEm       DateTime?        @map("cancelado_em")
+  observacao        String?          @db.VarChar(500)
 
   @@map("conta_pagar")
 }
@@ -1105,6 +1108,9 @@ model ContaReceber {
   dataCompetencia   DateTime?      @map("data_competencia")
   documentoFiscalId String?        @map("documento_fiscal_id")
   cteId             String?        @map("cte_id")
+  // Onda 1 — operação diária
+  canceladoEm       DateTime?      @map("cancelado_em")
+  observacao        String?        @db.VarChar(500)
 
   @@map("conta_receber")
 }

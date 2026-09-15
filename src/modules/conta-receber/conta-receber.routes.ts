@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { ErroFinanceiro } from '../financeiro/conta-financeira.service'
+import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote } from '../financeiro/titulo.service'
 
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
@@ -18,7 +20,34 @@ const receberBodySchema = z.object({
   valorRecebido: z.number().positive('Valor recebido deve ser maior que zero'),
   dataRecebimento: z.string().datetime({ offset: true }).optional(),
   formaPagamento: z.string().min(1),
+  contaFinanceiraId: z.string().uuid().optional(),
+  categoriaId: z.string().uuid().optional(),
+  centroCustoId: z.string().uuid().optional(),
 })
+
+const editarBodySchema = z.object({
+  descricao: z.string().min(1).max(300).optional(),
+  valor: z.number().positive().optional(),
+  dataVencimento: z.string().datetime({ offset: true }).optional(),
+  categoriaId: z.string().uuid().nullable().optional(),
+  centroCustoId: z.string().uuid().nullable().optional(),
+  contaFinanceiraId: z.string().uuid().nullable().optional(),
+  observacao: z.string().max(500).nullable().optional(),
+})
+
+const baixarLoteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
+  formaPagamento: z.string().min(1),
+  dataRecebimento: z.string().datetime({ offset: true }).optional(),
+  contaFinanceiraId: z.string().uuid().optional(),
+  categoriaId: z.string().uuid().optional(),
+  centroCustoId: z.string().uuid().optional(),
+})
+
+function tratar(reply: any, err: any) {
+  if (err instanceof ErroFinanceiro) return reply.status(err.status).send({ message: err.message })
+  throw err
+}
 
 const listQuerySchema = z.object({
   status: z.enum(['ABERTA', 'RECEBIDA', 'VENCIDA']).optional(),
@@ -119,26 +148,76 @@ export async function contaReceberRoutes(app: FastifyInstance) {
     return conta
   })
 
-  // PATCH /:id/receber — registra recebimento
+  // PATCH /:id/receber — registra recebimento (enriquecido)
   app.patch('/:id/receber', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
-    const { id } = idParamsSchema.parse(request.params)
-    const body = receberBodySchema.parse(request.body)
-
-    const conta = await prisma.contaReceber.findFirst({ where: { id, empresaId: user.empresaId } })
-    if (!conta) return reply.status(404).send({ message: 'Conta não encontrada' })
-    if (conta.status === 'RECEBIDA') return reply.status(422).send({ message: 'Conta já foi recebida' })
-
-    const atualizada = await prisma.contaReceber.update({
-      where: { id },
-      data: {
-        status: 'RECEBIDA',
-        valorRecebido: body.valorRecebido,
-        dataRecebimento: body.dataRecebimento ? new Date(body.dataRecebimento) : new Date(),
+    try {
+      const user = request.user as { id: string; empresaId: string }
+      const { id } = idParamsSchema.parse(request.params)
+      const body = receberBodySchema.parse(request.body)
+      return await baixarTitulo(prisma, user.empresaId, 'RECEBER', id, {
+        valor: body.valorRecebido,
+        data: body.dataRecebimento ? new Date(body.dataRecebimento) : undefined,
         formaPagamento: body.formaPagamento,
-      },
-    })
+        contaFinanceiraId: body.contaFinanceiraId,
+        categoriaId: body.categoriaId,
+        centroCustoId: body.centroCustoId,
+      })
+    } catch (err) {
+      return tratar(reply, err)
+    }
+  })
 
-    return atualizada
+  // PUT /:id — editar título aberto
+  app.put('/:id', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParamsSchema.parse(request.params)
+      const body = editarBodySchema.parse(request.body)
+      return await editarTitulo(prisma, user.empresaId, 'RECEBER', id, {
+        ...body,
+        dataVencimento: body.dataVencimento ? new Date(body.dataVencimento) : undefined,
+      })
+    } catch (err) {
+      return tratar(reply, err)
+    }
+  })
+
+  // PATCH /:id/cancelar
+  app.patch('/:id/cancelar', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParamsSchema.parse(request.params)
+      return await cancelarTitulo(prisma, user.empresaId, 'RECEBER', id)
+    } catch (err) {
+      return tratar(reply, err)
+    }
+  })
+
+  // PATCH /:id/estornar
+  app.patch('/:id/estornar', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParamsSchema.parse(request.params)
+      return await estornarBaixa(prisma, user.empresaId, 'RECEBER', id)
+    } catch (err) {
+      return tratar(reply, err)
+    }
+  })
+
+  // POST /baixar-lote
+  app.post('/baixar-lote', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const body = baixarLoteSchema.parse(request.body)
+      return await baixarEmLote(prisma, user.empresaId, 'RECEBER', body.ids, {
+        formaPagamento: body.formaPagamento,
+        data: body.dataRecebimento ? new Date(body.dataRecebimento) : undefined,
+        contaFinanceiraId: body.contaFinanceiraId,
+        categoriaId: body.categoriaId,
+        centroCustoId: body.centroCustoId,
+      })
+    } catch (err) {
+      return tratar(reply, err)
+    }
   })
 }
