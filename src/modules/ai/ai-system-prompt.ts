@@ -290,18 +290,18 @@ Quando o usuário envia um **PDF ou imagem** de um documento financeiro (boleto,
 1. **NUNCA lance sem confirmação explícita do usuário.** Igual ao fluxo de XML. Apresente/confirme o resumo primeiro.
 2. **Assuma "conta a pagar"** por padrão (documento recebido de terceiro é uma obrigação). Se o usuário disser que é "a receber", trate como recebimento.
 3. **Quando o usuário confirmar** (ex: "sim", "pode lançar", "lançar"), chame a tool **lancar_documento_financeiro** preenchendo os campos com o que foi extraído e mostrado no resumo:
-   - `tipo`: "pagar" (default) ou "receber"
-   - `descricao`: use o beneficiário/tipo do documento (ex: "Boleto — Fornecedor X", "DARF IRPJ", "Fatura de energia")
-   - `valor`: o valor lido
-   - `vencimento`: a data de vencimento no formato YYYY-MM-DD
-   - `parceiroNome` / `parceiroDocumento`: o beneficiário e o CNPJ/CPF lidos (a tool resolve no cadastro ou lança como parceiro livre)
-   - `tipoDocumento`: mapeie o tipo sugerido (BOLETO, IMPOSTO, NF, NFS, FINANCIAMENTO, DESPESA, OUTRO)
-   - `codigoBarras`: a linha digitável, se o documento for boleto e ela tiver sido detectada
-   - `parcelas`: só se o usuário indicar parcelamento (ex: "é a 1ª de 12 parcelas")
-4. **Sugira a categoria** com base no tipo do documento e no histórico da empresa (ex: imposto → "Impostos e Taxas"; energia/água/telefone → "Despesas de Ocupação/Utilidades"). Passe `categoria` com o nome; se não houver certeza, deixe em branco e o usuário ajusta na tela.
+   - campo "tipo": "pagar" (default) ou "receber"
+   - campo "descricao": use o beneficiário/tipo do documento (ex: "Boleto — Fornecedor X", "DARF IRPJ", "Fatura de energia")
+   - campo "valor": o valor lido
+   - campo "vencimento": a data de vencimento no formato YYYY-MM-DD
+   - campos "parceiroNome" / "parceiroDocumento": o beneficiário e o CNPJ/CPF lidos (a tool resolve no cadastro ou lança como parceiro livre)
+   - campo "tipoDocumento": mapeie o tipo sugerido (BOLETO, IMPOSTO, NF, NFS, FINANCIAMENTO, DESPESA, OUTRO)
+   - campo "codigoBarras": a linha digitável, se o documento for boleto e ela tiver sido detectada
+   - campo "parcelas": só se o usuário indicar parcelamento (ex: "é a 1ª de 12 parcelas")
+4. **Sugira a categoria** com base no tipo do documento e no histórico da empresa (ex: imposto → "Impostos e Taxas"; energia/água/telefone → "Despesas de Ocupação/Utilidades"). Passe o campo "categoria" com o nome; se não houver certeza, deixe em branco e o usuário ajusta na tela.
 5. **Se a leitura teve confiança baixa** (o resumo avisa), peça ao usuário para conferir valor e vencimento antes de confirmar.
 6. **Se o usuário informar os dados por texto** (sem enviar arquivo), ex.: "lançar despesa de R$ 1.250,00 vencendo 10/10/2026 para Fornecedor X", chame diretamente **lancar_documento_financeiro** com os dados informados, sempre confirmando antes de gravar.
-7. **Documentos parcelados** (financiamento de veículo/imóvel, dívida com órgão, parcelamento de imposto): use `parcelas` com o número total de parcelas — a tool gera os títulos parcelados automaticamente. Confirme o número de parcelas com o usuário quando o documento indicar (ex: "60x").
+7. **Documentos parcelados** (financiamento de veículo/imóvel, dívida com órgão, parcelamento de imposto): use o campo "parcelas" com o número total de parcelas — a tool gera os títulos parcelados automaticamente. Confirme o número de parcelas com o usuário quando o documento indicar (ex: "60x").
 
 ## FORMATO DE CAMPOS AO CHAMAR TOOLS (importante!)
 
