@@ -64,8 +64,8 @@ mesmo commit; validar bundle antes do push.
   - [x] 8.2 `POST /nfe/:id/retransmitir` (só REJEITADO; reautoriza e amarra); `GET /nfe/:id`, `GET /nfe/:id/xml`
     - _Requirements: 4.1, 4.2, 4.3, 6.1, 6.2, 6.3_
 
-- [ ] 9. Frontend NF-e
-  - [ ] 9.1 Listagem: botões DANFE + XML, ação reprocessar (REJEITADA), alinhar rótulos de status com o back
+- [x] 9. Frontend NF-e
+  - [x] 9.1 Listagem: botões DANFE + XML (blob via axios), ação Reprocessar (REJEITADO, usa /retransmitir com orientação amigável no erro), filtros/ações alinhados aos valores MASCULINOS do back (AUTORIZADO/REJEITADO/CANCELADO)
     - _Requirements: 6.4_
 
 - [ ] 10. Checkpoint backend — build + testes

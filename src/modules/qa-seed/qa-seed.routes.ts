@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
+import { amarrarPosAutorizacaoNfe } from '../financeiro/gerar-titulo-de-documento.service'
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -406,5 +407,154 @@ export async function qaSeedRoutes(app: FastifyInstance) {
       clienteId: cliente.id,
       pedidoId: resultado.pedido.id,
     })
+  })
+
+  /**
+   * POST /nfe-autorizada-amarrada  (Bloco F2 — QA da amarração pós-autorização)
+   * Cria a cadeia pedido → venda → DocumentoFiscal NFE AUTORIZADO (com
+   * vendaEfetivadaId) e dispara o PONTO ÚNICO `amarrarPosAutorizacaoNfe`
+   * (gera conta a receber + baixa estoque, idempotente). Permite ao QA validar
+   * a amarração ponta a ponta SEM transmitir à SEFAZ. Chamar duas vezes o
+   * endpoint /amarrar sobre o mesmo doc não duplica título (idempotência).
+   * Retorna { nfeId, pedidoId, vendaId }.
+   */
+  app.post('/nfe-autorizada-amarrada', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = seedNfeSchema.parse(request.body)
+
+    const produtoIds = body.itens.map((i) => i.produtoId)
+    const produtos = await prisma.produto.findMany({
+      where: { id: { in: produtoIds }, empresaId: user.empresaId },
+      select: { id: true, precoBase: true, unidade: true, codigo: true, nome: true },
+    })
+    if (produtos.length !== new Set(produtoIds).size) {
+      return reply.status(422).send({ message: 'Um ou mais produtos não pertencem à empresa' })
+    }
+    const produtoMap = new Map(produtos.map((p) => [p.id, p]))
+
+    const cpfCnpj = body.clienteDoc || `QANFE${Math.floor(Math.random() * 1e8)}`
+    const cliente = await garantirClienteQaNfe(user.empresaId, { cpfCnpj })
+    const tabela = await garantirTabelaPrecoQa(user.empresaId)
+
+    const itensCalc = body.itens.map((item) => {
+      const prod = produtoMap.get(item.produtoId)!
+      const precoBase = Number(prod.precoBase) || 1
+      const valorTotal = Number((precoBase * item.quantidade).toFixed(2))
+      return { prod, item, precoBase, valorTotal }
+    })
+    const valorTotalDoc = itensCalc.reduce((s, i) => s + i.valorTotal, 0)
+
+    const resultado = await prisma.$transaction(async (tx) => {
+      const ultimoPedido = await tx.pedidoVenda.findFirst({
+        where: { empresaId: user.empresaId },
+        orderBy: { numero: 'desc' },
+        select: { numero: true },
+      })
+      const pedido = await tx.pedidoVenda.create({
+        data: {
+          empresaId: user.empresaId,
+          numero: (ultimoPedido?.numero ?? 0) + 1,
+          clienteId: cliente.id,
+          tabelaPrecoId: tabela.id,
+          condicaoPagId: tabela.condicoes[0]?.id ?? null,
+          valorTotal: valorTotalDoc,
+          status: 'FATURADO',
+          origemPedido: 'MANUAL',
+          prioridade: 'NORMAL',
+          observacao: 'Pedido criado via seed de QA (amarração NF-e F2).',
+          itens: {
+            create: itensCalc.map((c) => ({
+              produtoId: c.item.produtoId,
+              quantidade: c.item.quantidade,
+              unidade: c.prod.unidade || 'UN',
+              precoBase: c.precoBase,
+              desconto: 0,
+              precoFinal: c.precoBase,
+              valorTotal: c.valorTotal,
+            })),
+          },
+        },
+      })
+
+      const venda = await tx.vendaEfetivada.create({
+        data: {
+          empresaId: user.empresaId,
+          pedidoVendaId: pedido.id,
+          valorTotal: valorTotalDoc,
+          statusEntrega: 'PENDENTE',
+        },
+      })
+
+      const ultimoDoc = await tx.documentoFiscal.findFirst({
+        where: { empresaId: user.empresaId, tipo: 'NFE', serie: 1, ambiente: 2 },
+        orderBy: { numero: 'desc' },
+        select: { numero: true },
+      })
+      const doc = await tx.documentoFiscal.create({
+        data: {
+          empresaId: user.empresaId,
+          tipo: 'NFE',
+          modelo: 55,
+          serie: 1,
+          numero: (ultimoDoc?.numero ?? 0) + 1,
+          status: 'AUTORIZADO',
+          dataEmissao: new Date(),
+          dataAutorizacao: new Date(),
+          tipoOperacao: 1,
+          emitenteCnpj: '00000000000000',
+          emitenteRazao: 'EMITENTE QA',
+          emitenteUf: 'SP',
+          destRazao: cliente.razaoSocial,
+          destUf: 'SP',
+          valorProdutos: valorTotalDoc,
+          valorTotal: valorTotalDoc,
+          ambiente: 2,
+          vendaEfetivadaId: venda.id,
+          itens: {
+            create: itensCalc.map((c, idx) => ({
+              nItem: idx + 1,
+              produtoId: c.item.produtoId,
+              codigoProd: c.prod.codigo,
+              descricao: (c.prod.nome || c.prod.codigo).substring(0, 120),
+              ncm: '00000000',
+              cfop: '5102',
+              unidade: c.prod.unidade || 'UN',
+              quantidade: c.item.quantidade,
+              valorUnitario: c.precoBase,
+              valorTotal: c.valorTotal,
+            })),
+          },
+        },
+      })
+
+      return { pedido, venda, doc }
+    })
+
+    // Dispara o ponto único (fora da transação de criação, como no fluxo real)
+    await amarrarPosAutorizacaoNfe(prisma, resultado.doc.id)
+
+    return reply.status(201).send({
+      nfeId: resultado.doc.id,
+      numero: resultado.doc.numero,
+      pedidoId: resultado.pedido.id,
+      vendaId: resultado.venda.id,
+      clienteId: cliente.id,
+      valorTotal: valorTotalDoc,
+    })
+  })
+
+  /**
+   * POST /nfe-amarrar/:nfeId — re-dispara a amarração (para testar idempotência).
+   */
+  app.post('/nfe-amarrar/:nfeId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { nfeId } = z.object({ nfeId: z.string().uuid() }).parse(request.params)
+    const doc = await prisma.documentoFiscal.findFirst({
+      where: { id: nfeId, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!doc) return reply.status(404).send({ message: 'NF-e não encontrada' })
+    const r = await amarrarPosAutorizacaoNfe(prisma, nfeId)
+    return reply.send({ ok: true, amarracao: { titulos: r.titulos, estoque: r.estoque } })
   })
 }
