@@ -4342,6 +4342,19 @@ async function seedMateriaisFromOPs() {
   await addFkContabil(`ALTER TABLE "partida_contabil" ADD CONSTRAINT "partida_contabil_conta_id_fkey" FOREIGN KEY ("conta_id") REFERENCES "conta_contabil"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
 
   console.log('✅ D4 Contábil: conta_contabil, mapeamento_contabil, lancamento_contabil, partida_contabil criados')
+
+  // ==========================================================================
+  // Baixa profissional — ajustes de liquidação + comprovante (conta_pagar/receber)
+  // ==========================================================================
+  for (const tabela of ['conta_pagar', 'conta_receber']) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "juros_baixa" DECIMAL(12,2)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "multa_baixa" DECIMAL(12,2)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "desconto_baixa" DECIMAL(12,2)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "tarifa_baixa" DECIMAL(12,2)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "comprovante_nome" VARCHAR(200)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "comprovante_conteudo" TEXT`)
+  }
+  console.log('✅ Baixa profissional: juros/multa/desconto/tarifa/comprovante em conta_pagar e conta_receber')
 }
 
 main()

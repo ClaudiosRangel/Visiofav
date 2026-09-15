@@ -9,6 +9,7 @@
 import type { PrismaClient } from '@prisma/client'
 import { ErroFinanceiro } from './conta-financeira.service'
 import { assertPeriodoAberto } from './fechamento.service'
+import { calcularLiquido } from './baixa-calculo'
 
 export type TipoTitulo = 'RECEBER' | 'PAGAR'
 
@@ -64,9 +65,13 @@ export async function estornarBaixa(prisma: PrismaClient, empresaId: string, tip
   const dataBaixa = tipo === 'RECEBER' ? titulo.dataRecebimento : titulo.dataPagamento
   if (dataBaixa) await assertPeriodoAberto(prisma, empresaId, dataBaixa)
 
+  const limparComponentes = {
+    jurosBaixa: null, multaBaixa: null, descontoBaixa: null, tarifaBaixa: null,
+    comprovanteNome: null, comprovanteConteudo: null,
+  }
   const limpar = tipo === 'RECEBER'
-    ? { status: 'ABERTA', valorRecebido: null, dataRecebimento: null }
-    : { status: 'ABERTA', valorPago: null, dataPagamento: null }
+    ? { status: 'ABERTA', valorRecebido: null, dataRecebimento: null, ...limparComponentes }
+    : { status: 'ABERTA', valorPago: null, dataPagamento: null, ...limparComponentes }
   return (delegate(prisma, tipo) as any).update({ where: { id }, data: limpar })
 }
 
@@ -77,6 +82,13 @@ export interface BaixaInput {
   contaFinanceiraId?: string
   categoriaId?: string
   centroCustoId?: string
+  // Baixa profissional — ajustes de liquidação (opcionais, retrocompatível)
+  juros?: number
+  multa?: number
+  desconto?: number
+  tarifa?: number
+  comprovanteNome?: string
+  comprovanteConteudo?: string
 }
 
 export async function baixarTitulo(prisma: PrismaClient, empresaId: string, tipo: TipoTitulo, id: string, baixa: BaixaInput) {
@@ -86,16 +98,36 @@ export async function baixarTitulo(prisma: PrismaClient, empresaId: string, tipo
   const data = baixa.data ?? new Date()
   await assertPeriodoAberto(prisma, empresaId, data)
 
+  // Calcula o valor líquido efetivamente movimentado a partir dos ajustes.
+  const calc = calcularLiquido(tipo, {
+    valor: baixa.valor,
+    juros: baixa.juros,
+    multa: baixa.multa,
+    desconto: baixa.desconto,
+    tarifa: baixa.tarifa,
+  })
+  if (!calc.valido) throw new ErroFinanceiro(422, 'Desconto maior que valor + acréscimos: o valor líquido ficaria negativo')
+
+  const ajustes = {
+    ...(baixa.juros != null ? { jurosBaixa: baixa.juros } : {}),
+    ...(baixa.multa != null ? { multaBaixa: baixa.multa } : {}),
+    ...(baixa.desconto != null ? { descontoBaixa: baixa.desconto } : {}),
+    ...(baixa.tarifa != null ? { tarifaBaixa: baixa.tarifa } : {}),
+    ...(baixa.comprovanteNome ? { comprovanteNome: baixa.comprovanteNome } : {}),
+    ...(baixa.comprovanteConteudo ? { comprovanteConteudo: baixa.comprovanteConteudo } : {}),
+  }
   const comum = {
     status: STATUS_BAIXADO[tipo],
     formaPagamento: baixa.formaPagamento,
     ...(baixa.contaFinanceiraId ? { contaFinanceiraId: baixa.contaFinanceiraId } : {}),
     ...(baixa.categoriaId ? { categoriaId: baixa.categoriaId } : {}),
     ...(baixa.centroCustoId ? { centroCustoId: baixa.centroCustoId } : {}),
+    ...ajustes,
   }
+  // Persiste o valor LÍQUIDO como valor pago/recebido.
   const especifico = tipo === 'RECEBER'
-    ? { valorRecebido: baixa.valor, dataRecebimento: data }
-    : { valorPago: baixa.valor, dataPagamento: data }
+    ? { valorRecebido: calc.liquido, dataRecebimento: data }
+    : { valorPago: calc.liquido, dataPagamento: data }
   return (delegate(prisma, tipo) as any).update({ where: { id }, data: { ...comum, ...especifico } })
 }
 

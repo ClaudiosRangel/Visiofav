@@ -1094,6 +1094,13 @@ model ContaPagar {
   codigoReceita     String?          @map("codigo_receita") @db.VarChar(20)
   competenciaGuia   String?          @map("competencia_guia") @db.VarChar(7)
   referenciaOrgao   String?          @map("referencia_orgao") @db.VarChar(60)
+  // Baixa profissional — ajustes de liquidação + comprovante
+  jurosBaixa          Decimal? @map("juros_baixa") @db.Decimal(12, 2)
+  multaBaixa          Decimal? @map("multa_baixa") @db.Decimal(12, 2)
+  descontoBaixa       Decimal? @map("desconto_baixa") @db.Decimal(12, 2)
+  tarifaBaixa         Decimal? @map("tarifa_baixa") @db.Decimal(12, 2)
+  comprovanteNome     String?  @map("comprovante_nome") @db.VarChar(200)
+  comprovanteConteudo String?  @map("comprovante_conteudo") @db.Text
 
   @@map("conta_pagar")
 }
@@ -1137,6 +1144,13 @@ model ContaReceber {
   subtipoDocumento  String?        @map("subtipo_documento") @db.VarChar(60)
   parceiroNomeLivre String?        @map("parceiro_nome_livre") @db.VarChar(200)
   parceiroDocLivre  String?        @map("parceiro_doc_livre") @db.VarChar(20)
+  // Baixa profissional — ajustes de liquidação + comprovante
+  jurosBaixa          Decimal? @map("juros_baixa") @db.Decimal(12, 2)
+  multaBaixa          Decimal? @map("multa_baixa") @db.Decimal(12, 2)
+  descontoBaixa       Decimal? @map("desconto_baixa") @db.Decimal(12, 2)
+  tarifaBaixa         Decimal? @map("tarifa_baixa") @db.Decimal(12, 2)
+  comprovanteNome     String?  @map("comprovante_nome") @db.VarChar(200)
+  comprovanteConteudo String?  @map("comprovante_conteudo") @db.Text
 
   @@map("conta_receber")
 }

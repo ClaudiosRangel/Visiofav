@@ -42,6 +42,13 @@ const pagarBodySchema = z.object({
   contaFinanceiraId: z.string().uuid().optional(),
   categoriaId: z.string().uuid().optional(),
   centroCustoId: z.string().uuid().optional(),
+  // Baixa profissional — ajustes de liquidação + comprovante (opcionais)
+  juros: z.number().nonnegative().optional(),
+  multa: z.number().nonnegative().optional(),
+  desconto: z.number().nonnegative().optional(),
+  tarifa: z.number().nonnegative().optional(),
+  comprovanteNome: z.string().max(200).optional(),
+  comprovanteConteudo: z.string().optional(),
 })
 
 const editarBodySchema = z.object({
@@ -219,12 +226,19 @@ export async function contaPagarRoutes(app: FastifyInstance) {
         contaFinanceiraId: body.contaFinanceiraId,
         categoriaId: body.categoriaId,
         centroCustoId: body.centroCustoId,
+        juros: body.juros,
+        multa: body.multa,
+        desconto: body.desconto,
+        tarifa: body.tarifa,
+        comprovanteNome: body.comprovanteNome,
+        comprovanteConteudo: body.comprovanteConteudo,
       })
-      // D4 — contabilização best-effort da liquidação (pagamento)
+      // D4 — contabilização best-effort da liquidação pelo valor LÍQUIDO efetivo
       const cat = body.categoriaId ?? (resultado as any)?.categoriaId ?? undefined
+      const liquido = Number((resultado as any)?.valorPago ?? body.valorPago)
       await contabilizarLiquidacao(prisma, user.empresaId, {
         categoriaId: cat,
-        valor: body.valorPago,
+        valor: liquido,
         data: body.dataPagamento ? new Date(body.dataPagamento) : new Date(),
         historico: `Pagamento título a pagar`,
         refTipo: 'CONTA_PAGAR',

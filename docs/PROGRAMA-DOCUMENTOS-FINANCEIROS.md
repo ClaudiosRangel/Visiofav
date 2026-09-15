@@ -99,3 +99,10 @@ _(atualizar a cada avanço)_
   - Rotas `/api/financeiro/contabil` (contas, mapeamentos, lançamentos, razão, balancete).
   - QA `test_48_contabil.py`: criar conta, lançamento balanceado (ok) e desbalanceado (422), conta sintética barrada, balancete fecha, isolamento multi-tenant. Helpers no `wms_api.py`.
   - Checkpoint: 10 testes verdes + bundle esbuild do server OK (validado antes do push). D4 é base da D5 (exportação ECD/SPED Contábil). PRÓXIMO: deploy back+front, QA em produção; depois D5.
+- **Baixa Profissional (15/09/2026)** — spec `financeiro-baixa-profissional`. Elevou a baixa/liquidação ao padrão de mercado (o usuário apontou que a tela estava simploria). Backend + frontend:
+  - Núcleo puro `baixa-calculo.ts` (`calcularLiquido(tipo, {valor,juros,multa,desconto,tarifa})`; PAGAR soma tarifa, RECEBER subtrai; líquido nunca negativo → valido=false), 8 testes.
+  - Schema: 6 colunas nullable por tabela em `conta_pagar`/`conta_receber` (juros_baixa, multa_baixa, desconto_baixa, tarifa_baixa, comprovante_nome, comprovante_conteudo). Migração idempotente (2x local). Reusa valorPago/valorRecebido para o LÍQUIDO.
+  - `titulo.service.baixarTitulo` estendido (calcula líquido, persiste componentes+comprovante, rejeita líquido<0 com 422); `estornarBaixa` limpa os componentes. Retrocompatível (chamadores sem ajustes → líquido=valor). Rotas pagar/receber aceitam os novos campos; contabilização D4 usa o líquido efetivo.
+  - Frontend: `lib/financeiro/baixa.ts` (espelho puro) + `components/financeiro/BaixaTituloModal.tsx` (modal rico: data, conta origem/destino, forma, ajustes juros/multa/desconto/tarifa, comprovante, **resumo de cálculo em tempo real** com bloqueio de líquido negativo). Integrado em Contas a Pagar e a Receber (substituiu o modal pobre); total consolidado no lote.
+  - QA `test_49_baixa.py`: baixa com juros/multa/desconto (líquido correto), desconto excessivo barrado (422), estorno limpa componentes, isolamento cross-empresa. Helpers no `wms_api.py`.
+  - Checkpoint: 8 testes verdes + bundle esbuild + tsc front sem erros nos arquivos novos.
