@@ -1162,11 +1162,19 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const orcamento = await prisma.orcamentoGrafico.findFirst({
       where: { id, empresaId: user.empresaId },
-      select: { id: true, status: true, validadeAte: true },
+      select: { id: true, status: true, validadeAte: true, precoVenda: true, resultadoCalculo: true },
     })
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
     if (orcamento.status !== 'RASCUNHO') {
       return reply.status(400).send({ message: 'Só é possível enviar orçamentos em RASCUNHO' })
+    }
+    // Não permitir enviar um orçamento sem precificação — senão ele pode ser
+    // aprovado gerando um PedidoVenda com valor zero (bug de negócio real).
+    if (orcamento.precoVenda == null || !orcamento.resultadoCalculo) {
+      return reply.status(400).send({
+        message: 'Calcule o preço do orçamento antes de enviar (etapa Revisão).',
+        code: 'ORCAMENTO_SEM_PRECO',
+      })
     }
 
     const validadeAte = orcamento.validadeAte ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
@@ -1222,6 +1230,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
     if (orcamento.status !== 'ENVIADO') {
       return reply.status(400).send({ message: 'Só é possível aprovar orçamentos com status ENVIADO' })
+    }
+    // Reforço: não aprovar orçamento sem preço (evita PedidoVenda com valor 0)
+    if (orcamento.precoVenda == null) {
+      return reply.status(400).send({
+        message: 'Este orçamento não possui preço calculado e não pode ser aprovado.',
+        code: 'ORCAMENTO_SEM_PRECO',
+      })
     }
 
     const updateData: any = {

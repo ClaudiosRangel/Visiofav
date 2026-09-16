@@ -3410,6 +3410,9 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'RECUSADA' WHERE "status" = 'RECUSADO'`)
   // Opção A: LIBERADA_PEDIDO (status intermediário da Opção B) → PRECIFICADA
   await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'PRECIFICADA' WHERE "status" = 'LIBERADA_PEDIDO'`)
+  // Status legado de seed/demo PROCESSADA → PRECIFICADA (têm orçamento gráfico
+  // vinculado; ficavam travados por não existir na máquina de estados nova).
+  await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'PRECIFICADA' WHERE "status" = 'PROCESSADA'`)
   console.log('✅ SolicitacaoOrcamentoRep: colunas de transição/aprovação + status legados migrados')
 
   // NotificacaoRep
