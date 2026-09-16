@@ -344,12 +344,23 @@ export async function aprovarSolicitacaoRep(
       clienteId: true,
       vendedorId: true,
       precoVenda: true,
+      pedidoVendaId: true,
     },
   })
   if (!orcamento) {
     throw { statusCode: 404, message: 'Orçamento gráfico vinculado não encontrado.' }
   }
-  if (orcamento.status !== 'ENVIADO') {
+  // Se o orçamento já foi APROVADO e já gerou pedido, evita duplicar.
+  if (orcamento.status === 'APROVADO' && orcamento.pedidoVendaId) {
+    throw {
+      statusCode: 400,
+      message: 'Este orçamento já foi aprovado e gerou pedido.',
+      code: 'ORCAMENTO_JA_APROVADO',
+    }
+  }
+  // Aceita ENVIADO (fluxo normal) OU APROVADO-sem-pedido (aprovado internamente
+  // antes, mas sem pedido gerado — a aprovação do rep então gera o pedido).
+  if (orcamento.status !== 'ENVIADO' && orcamento.status !== 'APROVADO') {
     throw {
       statusCode: 400,
       message: `O orçamento gráfico precisa estar ENVIADO para ser aprovado. Status atual: ${orcamento.status}`,
