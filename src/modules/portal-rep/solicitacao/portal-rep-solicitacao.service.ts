@@ -27,6 +27,7 @@ export interface CriarSolicitacaoInput {
   quantidade: number
   acabamentos?: string
   observacoes?: string
+  produtoId?: string // modo Repetição: produto cadastrado que reproduz (opcional)
 }
 
 export interface ListarSolicitacoesFiltros {
@@ -57,6 +58,7 @@ const SOLICITACAO_SELECT = {
   observacoes: true,
   precoVenda: true,
   precoUnitario: true,
+  produtoId: true,
   status: true,
   criadoEm: true,
   atualizadoEm: true,
@@ -136,6 +138,7 @@ export async function criarSolicitacao(
       quantidade: dados.quantidade,
       acabamentos: dados.acabamentos || null,
       observacoes: dados.observacoes || null,
+      produtoId: dados.produtoId || null,
       status: 'PENDENTE',
     },
     select: SOLICITACAO_SELECT,

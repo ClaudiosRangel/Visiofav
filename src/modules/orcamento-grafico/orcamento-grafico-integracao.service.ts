@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma'
-import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
+import { proximoNumeroOp, explodirBomParaOp, gerarEtapasOp } from '../ordem-producao/ordem-producao.service'
 
 /**
  * Resultado da geração de OP a partir de um orçamento gráfico.
@@ -8,6 +8,9 @@ export interface ResultadoGeracaoOp {
   ordemProducaoId: string
   numero: number
   etapasGeradas: number
+  materiaisGerados: number
+  origemMateriais: 'BOM' | 'CALCULO' | 'NENHUM'
+  avisos: string[]
 }
 
 /**
@@ -40,6 +43,8 @@ export async function gerarOpFromOrcamento(
       precoVenda: true,
       resultadoCalculo: true,
       tipoEmbalagemId: true,
+      produtoId: true,
+      gramatura: true,
       tipoEmbalagem: {
         select: { descricao: true, processosObrigatorios: true },
       },
@@ -83,12 +88,30 @@ export async function gerarOpFromOrcamento(
 
   const observacoesOp = tagsObs.length > 0 ? tagsObs.join('\n') : null
 
-  // Criar OrdemProducao
+  const avisos: string[] = []
+  const qtd = Number(orcamento.quantidade)
+
+  // ─── Decidir cenário: Repetição (produto vinculado com BOM) vs Especificação ──
+  let estruturaId: string | null = null
+  if (orcamento.produtoId) {
+    const estrutura = await prisma.estruturaProduto.findFirst({
+      where: { empresaId, produtoId: orcamento.produtoId, status: 'ATIVA' },
+      select: { id: true },
+    })
+    if (estrutura) {
+      estruturaId = estrutura.id
+    } else {
+      avisos.push('Produto de repetição não possui estrutura (BOM) ATIVA — materiais estimados pelo cálculo do orçamento.')
+    }
+  }
+
+  // Criar OrdemProducao (com produto/estrutura no modo repetição)
   const op = await prisma.ordemProducao.create({
     data: {
       empresaId,
       numero,
-      produtoId: null, // orçamento gráfico não tem vínculo formal com produto cadastrado
+      produtoId: orcamento.produtoId ?? null,
+      estruturaProdutoId: estruturaId ?? undefined,
       quantidade: orcamento.quantidade,
       unidadeMedida: 'UN',
       status: 'PLANEJADA',
@@ -103,13 +126,51 @@ export async function gerarOpFromOrcamento(
     select: { id: true, numero: true },
   })
 
-  // Gerar etapas a partir do resultadoCalculo
-  const etapasGeradas = await gerarEtapasFromCalculo(
-    op.id,
-    orcamento.resultadoCalculo as any,
-    orcamento.tipoEmbalagem?.processosObrigatorios ?? [],
-    empresaId,
-  )
+  // ─── Materiais ────────────────────────────────────────────────────────────
+  // Cenário B (repetição com BOM): explode a estrutura do produto.
+  // Cenário A (especificação): gera materiais a partir do resultadoCalculo.
+  let materiaisGerados = 0
+  let origemMateriais: 'BOM' | 'CALCULO' | 'NENHUM' = 'NENHUM'
+  if (estruturaId && orcamento.produtoId) {
+    const bom = await explodirBomParaOp(op.id, estruturaId, qtd, empresaId)
+    materiaisGerados = bom.total
+    origemMateriais = 'BOM'
+  } else {
+    materiaisGerados = await gerarMateriaisFromCalculo(
+      op.id,
+      orcamento.resultadoCalculo as any,
+      { papelDescricao: orcamento.papelDescricao, gramatura: orcamento.gramatura ? Number(orcamento.gramatura) : null },
+      empresaId,
+    )
+    origemMateriais = materiaisGerados > 0 ? 'CALCULO' : 'NENHUM'
+    if (materiaisGerados === 0) {
+      avisos.push('OP gerada sem materiais (orçamento sem resultado de cálculo).')
+    }
+  }
+
+  // ─── Etapas ──────────────────────────────────────────────────────────────
+  // Repetição com roteiro ATIVO usa o roteiro; senão, etapas do cálculo.
+  let etapasGeradas = 0
+  let usouRoteiro = false
+  if (orcamento.produtoId) {
+    const roteiro = await prisma.roteiroProducao.findFirst({
+      where: { empresaId, produtoId: orcamento.produtoId, status: 'ATIVO' },
+      select: { id: true },
+    })
+    if (roteiro) {
+      const r = await gerarEtapasOp(op.id, orcamento.produtoId, qtd, empresaId)
+      etapasGeradas = r.total
+      usouRoteiro = true
+    }
+  }
+  if (!usouRoteiro) {
+    etapasGeradas = await gerarEtapasFromCalculo(
+      op.id,
+      orcamento.resultadoCalculo as any,
+      orcamento.tipoEmbalagem?.processosObrigatorios ?? [],
+      empresaId,
+    )
+  }
 
   // Log de criação
   await prisma.logOrdemProducao.create({
@@ -118,7 +179,7 @@ export async function gerarOpFromOrcamento(
       statusAnterior: '',
       statusNovo: 'PLANEJADA',
       usuarioId: userId,
-      observacao: `Gerada a partir do orçamento gráfico #${orcamento.numero} (pedido #${pedidoVendaId.slice(0, 8)})`,
+      observacao: `Gerada a partir do orçamento gráfico #${orcamento.numero} (pedido #${pedidoVendaId.slice(0, 8)}) — materiais: ${origemMateriais}`,
     },
   })
 
@@ -126,7 +187,96 @@ export async function gerarOpFromOrcamento(
     ordemProducaoId: op.id,
     numero: op.numero,
     etapasGeradas,
+    materiaisGerados,
+    origemMateriais,
+    avisos,
   }
+}
+
+/**
+ * Cenário A (Calcgraf): gera ItemOrdemProducao a partir do resultadoCalculo do
+ * orçamento — papel (pesoKg), uma tinta por cor (consumoKg) e materiais de
+ * acabamento com consumo. São materiais "calculados" pela especificação, sem
+ * BOM formal. Retorna a quantidade de itens criados.
+ */
+async function gerarMateriaisFromCalculo(
+  ordemProducaoId: string,
+  resultadoCalculo: any,
+  papel: { papelDescricao: string | null; gramatura: number | null },
+  empresaId?: string,
+): Promise<number> {
+  if (!resultadoCalculo) return 0
+
+  const itens: Array<{
+    ordemProducaoId: string
+    empresaId?: string
+    descricaoProduto: string
+    quantidade: number
+    unidadeMedida: string
+    tipoMaterial: string
+    status: string
+  }> = []
+
+  // Papel
+  const pesoKg = Number(resultadoCalculo?.papel?.pesoKg ?? 0)
+  if (pesoKg > 0) {
+    const desc = papel.papelDescricao
+      ? papel.papelDescricao
+      : `Papel${papel.gramatura ? ' ' + papel.gramatura + 'g' : ''}`
+    itens.push({
+      ordemProducaoId,
+      empresaId,
+      descricaoProduto: desc,
+      quantidade: Math.round(pesoKg * 10000) / 10000,
+      unidadeMedida: 'KG',
+      tipoMaterial: 'PAPEL',
+      status: 'PENDENTE',
+    })
+  }
+
+  // Tintas (uma por cor)
+  const cores = resultadoCalculo?.tinta?.detalhePorCor
+  if (Array.isArray(cores)) {
+    for (const c of cores) {
+      const consumo = Number(c?.consumoKg ?? 0)
+      if (consumo > 0) {
+        itens.push({
+          ordemProducaoId,
+          empresaId,
+          descricaoProduto: `Tinta ${c?.cor ?? ''}`.trim(),
+          quantidade: Math.round(consumo * 10000) / 10000,
+          unidadeMedida: 'KG',
+          tipoMaterial: 'TINTA',
+          status: 'PENDENTE',
+        })
+      }
+    }
+  }
+
+  // Acabamentos com consumo de material (verniz/laminação) — quando houver
+  const acabs = resultadoCalculo?.acabamentos?.detalhePorAcabamento
+  if (Array.isArray(acabs)) {
+    for (const a of acabs) {
+      const consumo = Number(a?.consumoKg ?? a?.materialKg ?? 0)
+      if (consumo > 0) {
+        const tipoUpper = String(a?.tipo ?? '').toUpperCase()
+        itens.push({
+          ordemProducaoId,
+          empresaId,
+          descricaoProduto: a?.tipo ?? 'Acabamento',
+          quantidade: Math.round(consumo * 10000) / 10000,
+          unidadeMedida: 'KG',
+          tipoMaterial: tipoUpper.includes('VERNIZ') ? 'VERNIZ' : 'OUTRO',
+          status: 'PENDENTE',
+        })
+      }
+    }
+  }
+
+  if (itens.length > 0) {
+    await prisma.itemOrdemProducao.createMany({ data: itens })
+  }
+  return itens.length
 }
 
 /**

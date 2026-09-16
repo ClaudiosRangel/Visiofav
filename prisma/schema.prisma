@@ -3670,6 +3670,9 @@ model OrcamentoGrafico {
   motivoRecusa     String?       @map("motivo_recusa") @db.Text
   aprovadoEm       DateTime?     @map("aprovado_em")
   pedidoVendaId    String?       @map("pedido_venda_id")
+  // Modo Repetição/Reimpressão: produto cadastrado (com BOM/roteiro) que este
+  // orçamento reproduz. Null = orçamento por especificação (produto novo).
+  produtoId        String?       @map("produto_id")
   // Variações de tiragem (simulações)
   variacoes        Json? // [{quantidade, precoUnitario, precoTotal}]
   observacoes      String?       @db.Text
@@ -5547,6 +5550,8 @@ model SolicitacaoOrcamentoRep {
   // Aprovação do cliente registrada pelo representante no Portal (Opção A)
   aprovadaClientePor    String?   @map("aprovada_cliente_por") @db.VarChar(200)
   aprovadaClienteEm     DateTime? @map("aprovada_cliente_em")
+  // Modo Repetição: produto cadastrado que a solicitação reproduz (opcional)
+  produtoId             String?   @map("produto_id")
   criadoEm           DateTime                @default(now()) @map("criado_em")
   atualizadoEm       DateTime                @updatedAt @map("atualizado_em")
 

@@ -79,6 +79,7 @@ export async function criarOrcamentoGraficoDeSolicitacao(
       quantidade: true,
       acabamentos: true,
       observacoes: true,
+      produtoId: true,
     },
   })
 
@@ -152,6 +153,7 @@ export async function criarOrcamentoGraficoDeSolicitacao(
       quantidade: solicitacao.quantidade,
       status: 'RASCUNHO',
       observacoes: obsPartes.join('\n'),
+      produtoId: solicitacao.produtoId ?? null, // modo repetição propagado
       criadoPorId: usuarioId,
     },
     select: { id: true, numero: true },

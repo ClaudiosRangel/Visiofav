@@ -3403,6 +3403,9 @@ async function seedMateriaisFromOPs() {
   // Opção A — aprovação do cliente registrada pelo representante no Portal
   await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "aprovada_cliente_por" VARCHAR(200)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "aprovada_cliente_em" TIMESTAMP(3)`)
+  // Modo Repetição — produto cadastrado vinculado (opcional) na solicitação e no orçamento
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
 
   // Mapeamento de status legados para a nova máquina de estados (idempotente)
   await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'PRECIFICADA' WHERE "status" = 'CALCULADO'`)

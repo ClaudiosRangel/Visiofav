@@ -38,6 +38,7 @@ const criarSolicitacaoSchema = z.object({
   quantidade: z.number().int().positive('Quantidade deve ser maior que zero'),
   acabamentos: z.string().optional(),
   observacoes: z.string().optional(),
+  produtoId: z.string().uuid('produtoId deve ser um UUID válido').optional(),
 })
 
 const listarSolicitacoesQuerySchema = z.object({

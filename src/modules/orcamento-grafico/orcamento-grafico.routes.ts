@@ -636,7 +636,6 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         abaColagemMm: Number(tipo.abaColagemMm),
         sangriaMm: Number(tipo.sangriaMm),
         pincaMm: Number(tipo.pincaMm),
-        parametros: parametrosDoTipo(tipo),
       },
       medidas: body.medidas,
       papel: { gramatura: body.gramatura, precoKg: precoKgPapel },
@@ -692,6 +691,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     motivoRecusa: true,
     aprovadoEm: true,
     pedidoVendaId: true,
+    produtoId: true,
     variacoes: true,
     observacoes: true,
     criadoPorId: true,
@@ -750,6 +750,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       observacoes: z.string().optional().nullable(),
       validadeAte: z.coerce.date().optional().nullable(),
       status: z.enum(['RASCUNHO', 'ENVIADO']).default('RASCUNHO'),
+      // Modo Repetição: produto cadastrado que o orçamento reproduz (opcional)
+      produtoId: z.string().uuid().optional().nullable(),
     }).parse(request.body)
 
     // Verificar tipo de embalagem
@@ -896,6 +898,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         validadeAte: body.validadeAte ?? null,
         variacoes: body.variacoes ?? undefined,
         observacoes: body.observacoes ?? null,
+        produtoId: body.produtoId ?? null,
         criadoPorId: user.id,
       },
       select: orcamentoGraficoSelect,
@@ -1134,7 +1137,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           parametros: parametrosDoTipo(tipo),
         },
         medidas,
-        papel: { gramatura: body.gramatura, precoKg: precoKgPapelPut },
+        papel: { gramatura: body.gramatura, precoKg: precoKgPapelPut as number },
         maquinaImpressao: {
           velocidade: Number(maquina.velocidade) || 6000,
           custoHora: Number(maquina.custoHora) || 250,
