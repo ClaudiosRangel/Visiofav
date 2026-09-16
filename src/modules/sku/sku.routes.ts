@@ -38,6 +38,9 @@ export async function skuRoutes(app: FastifyInstance) {
       sequencia: z.number().min(1),
       descricao: z.string().optional(),
       codigoBarra: z.string().optional(),
+      codigoBarraDun: z.string().optional(),
+      codigoBarraDisplay: z.string().optional(),
+      tipoCodigoBarra: z.string().optional(),
       unidade: z.string().min(1),
       qtdEmbalagem: z.number().min(1).default(1),
       largura: z.number().optional(),
@@ -78,21 +81,30 @@ export async function skuRoutes(app: FastifyInstance) {
       : await db.sku.findUnique({ where: { id } })
     if (empresaId && !existente) return reply.status(404).send({ message: 'Não encontrado' })
 
+    // Campos aceitam `null` explícito para permitir LIMPAR um valor já
+    // cadastrado (o front envia null quando o operador apaga o campo). Um
+    // campo `undefined`/ausente continua significando "não alterar". Sem o
+    // `.nullable()`, apagar um EAN/peso/etc. no formulário não persistia,
+    // porque o Prisma ignora `undefined` (bug reportado pelo QA).
     const body = z.object({
-      descricao: z.string().optional(),
-      codigoBarra: z.string().optional(),
-      unidade: z.string().optional(),
+      descricao: z.string().nullable().optional(),
+      codigoBarra: z.string().nullable().optional(),
+      // Novos códigos de barra (DUN-14/EAN-14, display) e seu tipo
+      codigoBarraDun: z.string().nullable().optional(),
+      codigoBarraDisplay: z.string().nullable().optional(),
+      tipoCodigoBarra: z.string().nullable().optional(),
+      unidade: z.string().min(1).optional(),
       qtdEmbalagem: z.number().optional(),
-      largura: z.number().optional(),
-      altura: z.number().optional(),
-      comprimento: z.number().optional(),
-      volume: z.number().optional(),
-      pesoLiquido: z.number().optional(),
-      pesoBruto: z.number().optional(),
-      pesoPalete: z.number().optional(),
-      lastro: z.number().optional(),
-      camada: z.number().optional(),
-      tipoPalete: z.string().optional(),
+      largura: z.number().nullable().optional(),
+      altura: z.number().nullable().optional(),
+      comprimento: z.number().nullable().optional(),
+      volume: z.number().nullable().optional(),
+      pesoLiquido: z.number().nullable().optional(),
+      pesoBruto: z.number().nullable().optional(),
+      pesoPalete: z.number().nullable().optional(),
+      lastro: z.number().nullable().optional(),
+      camada: z.number().nullable().optional(),
+      tipoPalete: z.string().nullable().optional(),
       status: z.boolean().optional(),
     }).parse(request.body)
 

@@ -2,9 +2,21 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
+import { peekProximoCodigo } from './codigo-sequencial.service'
 
 export async function produtoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
+
+  // GET /proximo-codigo — sugere o próximo código sequencial de Produto
+  // (6 dígitos) para preenchimento automático no formulário. Não consome o
+  // contador (só prévia); o código definitivo é resolvido no create.
+  app.get('/proximo-codigo', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+    const codigo = await peekProximoCodigo(prisma, user.empresaId)
+    if (!codigo) return reply.status(409).send({ message: 'Faixa de códigos sequenciais esgotada' })
+    return { codigo }
+  })
 
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId?: string }

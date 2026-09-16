@@ -50,6 +50,32 @@ export async function gerarProximoCodigo(tx: PrismaTransaction, empresaId: strin
     create: { empresaId, proximoValor: 1 },
   })
 
+  return _consumirProximoCodigo(tx, empresaId)
+}
+
+/**
+ * Lê (sem consumir/incrementar) qual seria o próximo código sequencial da
+ * empresa — usado apenas para PRÉ-VISUALIZAÇÃO no formulário de cadastro de
+ * Produto (o operador vê o código sugerido antes de salvar). O código
+ * definitivo só é gravado no momento do create do Produto (a unicidade é
+ * garantida lá). Retorna null se a faixa estiver esgotada.
+ *
+ * IMPORTANTE: como não incrementa, dois formulários abertos ao mesmo tempo
+ * podem ver o mesmo código de prévia — isso é aceitável para uma sugestão;
+ * a gravação real resolve conflito pela constraint de unicidade do código.
+ */
+export async function peekProximoCodigo(
+  tx: PrismaTransaction,
+  empresaId: string,
+): Promise<string | null> {
+  const seq = await tx.sequenciaProduto.findUnique({ where: { empresaId }, select: { proximoValor: true } })
+  const valor = seq?.proximoValor ?? 1
+  if (valor > CODIGO_SEQUENCIAL_MAXIMO) return null
+  return String(valor).padStart(6, '0')
+}
+
+async function _consumirProximoCodigo(tx: PrismaTransaction, empresaId: string): Promise<string> {
+
   const rows = await tx.$queryRaw<Array<{ valor: number }>>`
     UPDATE sequencia_produto
     SET proximo_valor = proximo_valor + 1
