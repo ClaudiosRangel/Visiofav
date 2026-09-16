@@ -78,6 +78,8 @@ function tratar(reply: any, err: any) {
 const listQuerySchema = z.object({
   status: z.enum(['ABERTA', 'PAGA', 'VENCIDA']).optional(),
   fornecedorId: z.string().uuid().optional(),
+  descricao: z.string().optional(),
+  fornecedorNome: z.string().optional(),
   vencimentoInicio: z.string().optional(),
   vencimentoFim: z.string().optional(),
   pagamentoInicio: z.string().optional(),
@@ -93,11 +95,23 @@ export async function contaPagarRoutes(app: FastifyInstance) {
   // GET / — lista com filtros
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const { status, fornecedorId, vencimentoInicio, vencimentoFim, pagamentoInicio, pagamentoFim, page, limit } = listQuerySchema.parse(request.query)
+    const { status, fornecedorId, descricao, fornecedorNome, vencimentoInicio, vencimentoFim, pagamentoInicio, pagamentoFim, page, limit } = listQuerySchema.parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
 
     if (fornecedorId) where.fornecedorId = fornecedorId
+
+    // Filtro por descrição (texto livre no título)
+    if (descricao) where.descricao = { contains: descricao, mode: 'insensitive' }
+
+    // Filtro por nome do fornecedor (cadastrado OU parceiro livre no próprio título)
+    if (fornecedorNome) {
+      where.OR = [
+        { fornecedor: { razaoSocial: { contains: fornecedorNome, mode: 'insensitive' } } },
+        { fornecedor: { nomeFantasia: { contains: fornecedorNome, mode: 'insensitive' } } },
+        { parceiroNomeLivre: { contains: fornecedorNome, mode: 'insensitive' } },
+      ]
+    }
 
     if (vencimentoInicio || vencimentoFim) {
       where.dataVencimento = {}

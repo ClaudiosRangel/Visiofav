@@ -74,6 +74,8 @@ function tratar(reply: any, err: any) {
 const listQuerySchema = z.object({
   status: z.enum(['ABERTA', 'RECEBIDA', 'VENCIDA']).optional(),
   clienteId: z.string().uuid().optional(),
+  descricao: z.string().optional(),
+  clienteNome: z.string().optional(),
   vencimentoInicio: z.string().optional(),
   vencimentoFim: z.string().optional(),
   recebimentoInicio: z.string().optional(),
@@ -89,11 +91,23 @@ export async function contaReceberRoutes(app: FastifyInstance) {
   // GET / — lista com filtros
   app.get('/', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const { status, clienteId, vencimentoInicio, vencimentoFim, recebimentoInicio, recebimentoFim, page, limit } = listQuerySchema.parse(request.query)
+    const { status, clienteId, descricao, clienteNome, vencimentoInicio, vencimentoFim, recebimentoInicio, recebimentoFim, page, limit } = listQuerySchema.parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
 
     if (clienteId) where.clienteId = clienteId
+
+    // Filtro por descrição (texto livre no título)
+    if (descricao) where.descricao = { contains: descricao, mode: 'insensitive' }
+
+    // Filtro por nome do cliente (cadastrado OU parceiro livre no próprio título)
+    if (clienteNome) {
+      where.OR = [
+        { cliente: { razaoSocial: { contains: clienteNome, mode: 'insensitive' } } },
+        { cliente: { nomeFantasia: { contains: clienteNome, mode: 'insensitive' } } },
+        { parceiroNomeLivre: { contains: clienteNome, mode: 'insensitive' } },
+      ]
+    }
 
     if (vencimentoInicio || vencimentoFim) {
       where.dataVencimento = {}
