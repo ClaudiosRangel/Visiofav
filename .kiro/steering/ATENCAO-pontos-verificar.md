@@ -186,6 +186,11 @@ Arquivos e causas (agrupado por módulo):
   em `MercadoriaTransito`, campo não existe no schema.
 - **`src/modules/ordem-producao/ordem-producao.routes.ts`** — `string | null`
   atribuído a campo `string` obrigatório.
+- **`src/modules/pcp/etapa-operacional.routes.ts`** (1 erro) — `calcularDataConclusao`
+  recebe `turno` de `turnoMap.get()` que é `... | undefined`, mas o parâmetro
+  aceita só `... | null`. Baseline pré-existente (confirmado por `git stash` +
+  `tsc` na sessão de 16/09/2026), não relacionado à coluna "Enviado" da
+  Cortadeira adicionada nessa data.
 - **`src/modules/ordem-servico/ordem-servico.routes.ts`** (6 erros) — módulo
   inteiro usa `prisma.ordemServico`/`prisma.logOrdemServico`, mas o model
   real no schema é `OrdemServicoWms` (renomeado em algum momento, esta rota

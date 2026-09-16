@@ -171,6 +171,17 @@ manualmente/via desmembramento/OP avulsa). Campos operacionais importantes:
   via `POST /pcp/programacao/reextrair-pdf` (que preenche o campo nas etapas de
   colagem já existentes sem recriar a etapa — preserva apontamentos/fila).
 - `dataInicioReal`/`dataFimReal` — usados para calcular `tempoRealMinutos`.
+- `enviadoDepositoId` (FK → `Deposito`) + `enviadoQuantidade` (Decimal) — envio
+  de material da **Cortadeira** para um depósito do WMS. Editável na coluna
+  "Enviado" do painel (só cards CORTADEIRA), via `PATCH /pcp/etapas/:id/enviar`.
+  Exibido como "DEP-001 1500" (código do depósito + quantidade). **Atenção**: o
+  código `DEP-NNN` **NÃO é persistido** no `Deposito` — é derivado da ordem por
+  `descricao asc` (helpers `mapaCodigosDeposito`/`codigoDeposito` em
+  `deposito.routes.ts`, mesma numeração de `GET /depositos`). Logo, se a
+  descrição de um depósito mudar a ponto de reordenar a lista, o código exibido
+  do que já foi enviado muda junto (o vínculo real preservado é o
+  `enviadoDepositoId`, não o texto). O painel monta o mapa depositoId→código
+  uma vez por request (sem N+1).
 
 **`ApontamentoEtapa`** (`apontamento_etapa`) — registro granular de cada
 apontamento do operador numa etapa: `tipo`: `PRODUCAO | PERDA | PARADA |
@@ -707,6 +718,7 @@ que a integração falhe silenciosamente, deixando a OP com todas etapas
 | DELETE | `/etapas/:id/reverter-parte` | Reverte uma parte desmembrada. |
 | GET | `/etapas/:id/apontamentos` | Histórico de apontamentos + totais agregados. |
 | PATCH | `/etapas/:id/observacao` | Atualiza observação inline do operador. |
+| PATCH | `/etapas/:id/enviar` | Registra envio da Cortadeira para um depósito do WMS (coluna "Enviado"): grava `enviadoDepositoId`+`enviadoQuantidade`; retorna código `DEP-NNN` + display "DEP-001 1500". `depositoId=null` limpa. Reusa a permissão `podeEditarObservacao`. |
 | DELETE | `/etapas/:id` | Exclui etapa manual/desmembrada (só `PENDENTE`). |
 | DELETE | `/etapas/:id/reverter-desmembramento` | Reverte desmembramento somando na etapa irmã. |
 | PATCH | `/programacao/postergar-entrega` | Posterga `dataEntregaPrevista`, preserva original. |

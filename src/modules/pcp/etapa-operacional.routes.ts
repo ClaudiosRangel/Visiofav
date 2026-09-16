@@ -17,6 +17,7 @@ import {
   EtapaOperacionalError,
 } from './etapa-operacional.service'
 import { getPermissoes, verificarPermissaoAcao, PermissoesPorProcesso } from './permissoes-pcp.routes'
+import { codigoDeposito } from '../deposito/deposito.routes'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -491,6 +492,73 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     })
 
     return { id: atualizada.id, observacaoOperador: atualizada.observacaoOperador }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/enviar — Registra envio de material da
+  // Cortadeira para um depósito do WMS (coluna "Enviado" do painel).
+  // Grava depositoId + quantidade; retorna o código formatado (DEP-001) e a
+  // string de exibição (ex: "DEP-001 1500"). Passar depositoId=null limpa o
+  // envio.
+  // =========================================================================
+  app.patch('/etapas/:id/enviar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idSchema.parse(request.params)
+    const body = z.object({
+      depositoId: z.string().uuid().nullable().optional(),
+      quantidade: z.coerce.number().min(0).nullable().optional(),
+    }).parse(request.body)
+
+    // Reusa a permissão de edição de observação (mesma natureza: dado
+    // operacional editável na linha do painel).
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeEditarObservacao')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para registrar envio neste tipo de processo' })
+    }
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+      select: { id: true },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    // Limpar envio quando depositoId vem null/vazio
+    if (!body.depositoId) {
+      const atualizada = await prisma.etapaOrdemProducao.update({
+        where: { id },
+        data: { enviadoDepositoId: null, enviadoQuantidade: null },
+      })
+      return { id: atualizada.id, enviado: null }
+    }
+
+    // Valida que o depósito pertence à empresa do usuário
+    const deposito = await prisma.deposito.findFirst({
+      where: { id: body.depositoId, empresaId: user.empresaId },
+      select: { id: true, descricao: true },
+    })
+    if (!deposito) return reply.status(400).send({ message: 'Depósito não encontrado' })
+
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: {
+        enviadoDepositoId: deposito.id,
+        enviadoQuantidade: body.quantidade ?? null,
+      },
+      select: { id: true, enviadoDepositoId: true, enviadoQuantidade: true },
+    })
+
+    const codigo = await codigoDeposito(user.empresaId, deposito.id)
+    const quantidade = atualizada.enviadoQuantidade != null ? Number(atualizada.enviadoQuantidade) : null
+    return {
+      id: atualizada.id,
+      enviado: {
+        depositoId: deposito.id,
+        depositoDescricao: deposito.descricao,
+        codigo,
+        quantidade,
+        display: quantidade != null ? `${codigo} ${quantidade.toLocaleString('pt-BR')}` : codigo,
+      },
+    }
   })
 
   // =========================================================================
@@ -1774,6 +1842,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const clienteMap = new Map(clientes.map(c => [c.id, c.nomeFantasia || c.razaoSocial]))
     const produtoMap = new Map(produtos.map(p => [p.id, `${p.codigo} - ${p.nome}`]))
 
+    // Mapa depositoId → "DEP-NNN" (mesma numeração da tela de Depósitos) +
+    // descrição, para montar a coluna "Enviado" sem consultar o banco por etapa.
+    const depositos = await prisma.deposito.findMany({ where: { empresaId: user.empresaId }, select: { id: true, descricao: true }, orderBy: { descricao: 'asc' } })
+    const depositoDescricaoMap = new Map(depositos.map(d => [d.id, d.descricao] as const))
+    const depositoCodigoMap = new Map(depositos.map((d, idx) => [d.id, `DEP-${String(idx + 1).padStart(3, '0')}`] as const))
+
     // Buscar TODAS as etapas (incluindo concluídas) das OPs presentes no painel,
     // para determinar se o PROCESSO ANTERIOR da OP já foi totalmente concluído.
     // A lógica é por Tipo de Processo (posição): o ✓ aparece quando TODAS as
@@ -2056,6 +2130,19 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             observacaoOperador: (e.observacaoOperador || '').replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim() || null,
             // Tipo de colagem (texto exato do PDF) — exibido só nos centros COLAGEM
             tipoColagem: e.tipoColagem || null,
+            // Envio para depósito do WMS (coluna "Enviado", só cards CORTADEIRA).
+            // display ex.: "DEP-001 1500". null quando nada foi enviado.
+            enviado: e.enviadoDepositoId ? (() => {
+              const codigo = depositoCodigoMap.get(e.enviadoDepositoId) || 'DEP-???'
+              const quantidade = e.enviadoQuantidade != null ? Number(e.enviadoQuantidade) : null
+              return {
+                depositoId: e.enviadoDepositoId,
+                depositoDescricao: depositoDescricaoMap.get(e.enviadoDepositoId) || null,
+                codigo,
+                quantidade,
+                display: quantidade != null ? `${codigo} ${quantidade.toLocaleString('pt-BR')}` : codigo,
+              }
+            })() : null,
             // Campos de material (Requisito 3)
             // Tiragem: prioriza valor explícito do PDF, senão calcula Quantidade/Montagem
             tiragem: (() => {

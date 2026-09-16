@@ -5,6 +5,31 @@ import { authenticate } from '../../middleware/authenticate'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+/**
+ * Reproduz a numeração sequencial "DEP-NNN" exibida na tela de Depósitos.
+ * O código NÃO é persistido no banco — é derivado da ordem por `descricao asc`
+ * (mesmo critério de `GET /depositos`). Retorna um mapa depositoId → código
+ * (ex: "DEP-001") para todos os depósitos da empresa.
+ */
+export async function mapaCodigosDeposito(empresaId?: string): Promise<Map<string, string>> {
+  const depositos = await prisma.deposito.findMany({
+    where: empresaId ? { empresaId } : {},
+    orderBy: { descricao: 'asc' },
+    select: { id: true },
+  })
+  const mapa = new Map<string, string>()
+  depositos.forEach((d, idx) => {
+    mapa.set(d.id, `DEP-${String(idx + 1).padStart(3, '0')}`)
+  })
+  return mapa
+}
+
+/** Código "DEP-NNN" de um depósito específico (ver mapaCodigosDeposito). */
+export async function codigoDeposito(empresaId: string, depositoId: string): Promise<string> {
+  const mapa = await mapaCodigosDeposito(empresaId)
+  return mapa.get(depositoId) || 'DEP-???'
+}
+
 // Segurança: filtro explícito por empresaId como camada extra além do
 // tenant-context (ver zona.routes.ts para o histórico completo do bug).
 function getEmpresaId(request: any): string | undefined {

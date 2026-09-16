@@ -2060,6 +2060,7 @@ model Deposito {
   zonas     Zona[]
   enderecos Endereco[]
   docas     Doca[]
+  etapasEnviadas EtapaOrdemProducao[]
 
   @@map("deposito")
 }
@@ -3218,6 +3219,14 @@ model EtapaOrdemProducao {
   // para etapas de centros do tipo de processo COLAGEM. Exibido como coluna
   // "Tipo Colagem" no painel de Programação (somente leitura).
   tipoColagem            String?          @map("tipo_colagem") @db.VarChar(100)
+  // Envio de material da Cortadeira para um depósito do WMS. Editável na
+  // coluna "Enviado" do painel de Programação (só cards de CORTADEIRA).
+  // `enviadoDepositoId` referencia o Deposito destino; `enviadoQuantidade`
+  // é quanto foi enviado. Exibido como "DEP-001 1500" (código do depósito +
+  // quantidade). Ambos null quando nada foi enviado ainda.
+  enviadoDepositoId      String?          @map("enviado_deposito_id")
+  enviadoDeposito        Deposito?        @relation(fields: [enviadoDepositoId], references: [id])
+  enviadoQuantidade      Decimal?         @map("enviado_quantidade") @db.Decimal(12, 4)
 
   apontamentosEtapa ApontamentoEtapa[]
 

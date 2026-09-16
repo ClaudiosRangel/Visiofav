@@ -2163,6 +2163,21 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "tipo_colagem" VARCHAR(100)`)
   console.log('✅ PCP — Coluna tipo_colagem criada em etapa_ordem_producao')
 
+  // PCP — Envio de material da Cortadeira para um depósito do WMS.
+  // Coluna "Enviado" editável no painel de Programação (cards CORTADEIRA):
+  // grava o depósito destino + quantidade, exibido como "DEP-001 1500".
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "enviado_deposito_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "enviado_quantidade" DECIMAL(12,4)`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_etapa_ordem_producao_enviado_deposito" ON "etapa_ordem_producao"("enviado_deposito_id")`)
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "etapa_ordem_producao" ADD CONSTRAINT "etapa_ordem_producao_enviado_deposito_id_fkey" FOREIGN KEY ("enviado_deposito_id") REFERENCES "deposito"("id") ON DELETE SET NULL ON UPDATE CASCADE`,
+    )
+  } catch {
+    /* constraint já existe — Postgres não tem ADD CONSTRAINT IF NOT EXISTS */
+  }
+  console.log('✅ PCP — Colunas enviado_deposito_id/enviado_quantidade criadas em etapa_ordem_producao')
+
   // ===================================================================
   // PCP — Cadastro de Tipo de Processo (substitui o enum fixo tipoMaquina)
   // ===================================================================
