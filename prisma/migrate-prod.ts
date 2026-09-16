@@ -3390,6 +3390,23 @@ async function seedMateriaisFromOPs() {
     // FK já existe — idempotente
   }
 
+  // SolicitacaoOrcamentoRep — colunas de auditoria de transição (Comercial)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "enviada_orcamento_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "enviada_orcamento_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "precificada_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "precificada_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "liberada_pedido_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "liberada_pedido_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "convertida_pedido_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "pedido_venda_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "motivo_recusa" TEXT`)
+
+  // Mapeamento de status legados para a nova máquina de estados (idempotente)
+  await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'PRECIFICADA' WHERE "status" = 'CALCULADO'`)
+  await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'CONVERTIDA' WHERE "status" = 'ENVIADO'`)
+  await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'RECUSADA' WHERE "status" = 'RECUSADO'`)
+  console.log('✅ SolicitacaoOrcamentoRep: colunas de transição + status legados migrados')
+
   // NotificacaoRep
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "notificacao_rep" (

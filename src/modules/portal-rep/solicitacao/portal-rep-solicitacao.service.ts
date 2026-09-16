@@ -82,6 +82,10 @@ export async function criarSolicitacao(
 ) {
   const { empresaId, vendedorId, representanteId } = portalRepUser
 
+  // Nome do cliente a gravar (congela a razão social no momento da solicitação
+  // quando é cliente da carteira; caso prospect, usa o nome informado).
+  let clienteNomeFinal: string | null = dados.clienteNome || null
+
   // Validar cliente: ou é um cliente existente na carteira, ou é prospect inline
   if (dados.clienteId) {
     // Verificar se o cliente pertence à empresa E à carteira do vendedor
@@ -91,7 +95,7 @@ export async function criarSolicitacao(
         empresaId,
         vendedorId,
       },
-      select: { id: true, razaoSocial: true, cpfCnpj: true },
+      select: { id: true, razaoSocial: true, nomeFantasia: true, cpfCnpj: true },
     })
 
     if (!cliente) {
@@ -101,6 +105,10 @@ export async function criarSolicitacao(
         code: 'CLIENTE_NAO_ENCONTRADO',
       }
     }
+
+    // Congela o nome do cliente na solicitação (corrige o "—" na listagem interna)
+    clienteNomeFinal =
+      dados.clienteNome || cliente.nomeFantasia || cliente.razaoSocial || null
   } else {
     // Prospect inline: exigir nome e CPF/CNPJ (Requirement 2.6)
     if (!dados.clienteNome || !dados.clienteCpfCnpj) {
@@ -119,7 +127,7 @@ export async function criarSolicitacao(
       representanteId,
       vendedorId,
       clienteId: dados.clienteId || null,
-      clienteNome: dados.clienteNome || null,
+      clienteNome: clienteNomeFinal,
       clienteCpfCnpj: dados.clienteCpfCnpj || null,
       tipoEmbalagem: dados.tipoEmbalagem,
       medidaLargura: dados.medidaLargura ?? null,

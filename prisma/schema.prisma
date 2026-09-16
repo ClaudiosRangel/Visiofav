@@ -5534,6 +5534,16 @@ model SolicitacaoOrcamentoRep {
   precoUnitario      Decimal?                @map("preco_unitario") @db.Decimal(12, 4)
   orcamentoGraficoId String?                 @map("orcamento_grafico_id")
   status             String                  @default("PENDENTE") @db.VarChar(20)
+  // Auditoria de transições coordenadas pelo Comercial (Opção B)
+  enviadaOrcamentoEm    DateTime? @map("enviada_orcamento_em")
+  enviadaOrcamentoPorId String?   @map("enviada_orcamento_por_id")
+  precificadaEm         DateTime? @map("precificada_em")
+  precificadaPorId      String?   @map("precificada_por_id")
+  liberadaPedidoEm      DateTime? @map("liberada_pedido_em")
+  liberadaPedidoPorId   String?   @map("liberada_pedido_por_id")
+  convertidaPedidoEm    DateTime? @map("convertida_pedido_em")
+  pedidoVendaId         String?   @map("pedido_venda_id")
+  motivoRecusa          String?   @map("motivo_recusa") @db.Text
   criadoEm           DateTime                @default(now()) @map("criado_em")
   atualizadoEm       DateTime                @updatedAt @map("atualizado_em")
 

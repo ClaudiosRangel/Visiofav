@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { prisma } from '../../../lib/prisma'
 import { criarNotificacao } from '../notificacoes/portal-rep-notificacao.service'
+import { transicaoPermitida, type StatusSolicitacao } from './solicitacao-status'
 
 /**
  * Serviço administrativo do Portal do Representante.
@@ -369,8 +370,36 @@ export async function listarSolicitacoesAdmin(
     prisma.solicitacaoOrcamentoRep.count({ where }),
   ])
 
+  // Resolver nome do cliente para registros antigos com clienteNome nulo mas
+  // clienteId presente (corrige o "—" na listagem). Lookup em lote, isolado
+  // por empresa (o where do findMany já garante a empresa da solicitação).
+  const clienteIdsPendentes = Array.from(
+    new Set(
+      solicitacoes
+        .filter((s: any) => !s.clienteNome && s.clienteId)
+        .map((s: any) => s.clienteId as string),
+    ),
+  )
+
+  const mapaCliente = new Map<string, string>()
+  if (clienteIdsPendentes.length > 0) {
+    const clientes = await prisma.cliente.findMany({
+      where: { id: { in: clienteIdsPendentes }, empresaId },
+      select: { id: true, razaoSocial: true, nomeFantasia: true },
+    })
+    for (const c of clientes) {
+      mapaCliente.set(c.id, c.nomeFantasia || c.razaoSocial)
+    }
+  }
+
+  const solicitacoesComCliente = solicitacoes.map((s: any) => ({
+    ...s,
+    clienteNomeExibicao:
+      s.clienteNome || (s.clienteId ? mapaCliente.get(s.clienteId) ?? null : null),
+  }))
+
   return {
-    solicitacoes: solicitacoes as unknown as Array<Record<string, unknown>>,
+    solicitacoes: solicitacoesComCliente as unknown as Array<Record<string, unknown>>,
     total,
     page,
     pageSize,
@@ -400,6 +429,7 @@ export async function listarSolicitacoesAdmin(
 export async function calcularOrcamento(
   solicitacaoId: string,
   empresaId: string,
+  usuarioId?: string,
 ): Promise<{ precoVenda: number; precoUnitario: number; status: string }> {
   // 1. Buscar solicitação
   const solicitacao = await prisma.solicitacaoOrcamentoRep.findFirst({
@@ -421,18 +451,13 @@ export async function calcularOrcamento(
     throw { statusCode: 404, message: 'Solicitação não encontrada' }
   }
 
-  if (solicitacao.status !== 'PENDENTE') {
+  if (solicitacao.status !== 'EM_ORCAMENTO') {
     throw {
       statusCode: 400,
-      message: `Solicitação não pode ser calculada no status atual: ${solicitacao.status}`,
+      message: `Só é possível precificar solicitações no status EM_ORCAMENTO. Status atual: ${solicitacao.status}`,
+      code: 'TRANSICAO_INVALIDA',
     }
   }
-
-  // 2. Marcar como CALCULANDO
-  await prisma.solicitacaoOrcamentoRep.update({
-    where: { id: solicitacaoId },
-    data: { status: 'CALCULANDO' },
-  })
 
   // 3. Cálculo placeholder — invocar calcularOrcamentoGrafico internamente
   //    quando a integração completa estiver pronta.
@@ -444,13 +469,15 @@ export async function calcularOrcamento(
   const precoVendaCalculado = precoUnitarioCalculado * solicitacao.quantidade
 
   // 4. Gravar resultado
-  // 5. Atualizar status → CALCULADO
+  // 5. Atualizar status → PRECIFICADA (+ carimbo de auditoria)
   await prisma.solicitacaoOrcamentoRep.update({
     where: { id: solicitacaoId },
     data: {
       precoVenda: precoVendaCalculado,
       precoUnitario: precoUnitarioCalculado,
-      status: 'CALCULADO',
+      status: 'PRECIFICADA',
+      precificadaEm: new Date(),
+      precificadaPorId: usuarioId ?? null,
     },
   })
 
@@ -467,7 +494,7 @@ export async function calcularOrcamento(
   return {
     precoVenda: precoVendaCalculado,
     precoUnitario: precoUnitarioCalculado,
-    status: 'CALCULADO',
+    status: 'PRECIFICADA',
   }
 }
 
@@ -571,4 +598,77 @@ export async function listarAprovacoesPendentes(
   })
 
   return aprovacoes as unknown as Array<Record<string, unknown>>
+}
+
+// ─── Transição de Status (coordenada pelo Comercial) ─────────────────────────────
+
+export interface TransicionarOpcoes {
+  usuarioId: string
+  empresaId: string
+  motivo?: string
+}
+
+/**
+ * Ponto único de transição de status da SolicitacaoOrcamentoRep.
+ *
+ * Valida a transição contra a máquina de estados (solicitacao-status.ts) e
+ * grava os carimbos de auditoria correspondentes a cada etapa coordenada pelo
+ * Comercial. A precificação (EM_ORCAMENTO → PRECIFICADA) e a conversão em
+ * pedido (LIBERADA_PEDIDO → CONVERTIDA) têm efeitos colaterais próprios e
+ * continuam em suas funções dedicadas (calcularOrcamento / converterEmPedido);
+ * esta função cobre as transições "puras" de fluxo: enviar-orcamento,
+ * liberar-pedido, recusar e cancelar.
+ *
+ * Requirements: 2.2, 2.3, 2.5, 2.7
+ */
+export async function transicionarSolicitacao(
+  solicitacaoId: string,
+  novoStatus: StatusSolicitacao,
+  opcoes: TransicionarOpcoes,
+): Promise<{ id: string; status: string }> {
+  const solicitacao = await prisma.solicitacaoOrcamentoRep.findFirst({
+    where: { id: solicitacaoId, empresaId: opcoes.empresaId },
+    select: { id: true, status: true },
+  })
+
+  if (!solicitacao) {
+    throw { statusCode: 404, message: 'Solicitação não encontrada' }
+  }
+
+  if (!transicaoPermitida(solicitacao.status, novoStatus)) {
+    throw {
+      statusCode: 400,
+      message: `Transição não permitida a partir do status ${solicitacao.status}`,
+      code: 'TRANSICAO_INVALIDA',
+    }
+  }
+
+  if (novoStatus === 'RECUSADA' && !opcoes.motivo) {
+    throw {
+      statusCode: 400,
+      message: 'Motivo da recusa é obrigatório',
+      code: 'MOTIVO_OBRIGATORIO',
+    }
+  }
+
+  const data: Record<string, unknown> = { status: novoStatus }
+  const agora = new Date()
+
+  if (novoStatus === 'EM_ORCAMENTO') {
+    data.enviadaOrcamentoEm = agora
+    data.enviadaOrcamentoPorId = opcoes.usuarioId
+  } else if (novoStatus === 'LIBERADA_PEDIDO') {
+    data.liberadaPedidoEm = agora
+    data.liberadaPedidoPorId = opcoes.usuarioId
+  } else if (novoStatus === 'RECUSADA') {
+    data.motivoRecusa = opcoes.motivo
+  }
+
+  const atualizada = await prisma.solicitacaoOrcamentoRep.update({
+    where: { id: solicitacaoId },
+    data,
+    select: { id: true, status: true },
+  })
+
+  return atualizada
 }

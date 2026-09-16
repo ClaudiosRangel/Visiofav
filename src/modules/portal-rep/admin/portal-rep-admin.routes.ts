@@ -31,6 +31,7 @@ import {
   calcularOrcamento,
   configurarComissao,
   listarAprovacoesPendentes,
+  transicionarSolicitacao,
 } from './portal-rep-admin.service'
 
 // ─── Schemas Zod ────────────────────────────────────────────────────────────────
@@ -312,8 +313,68 @@ export async function portalRepAdminRoutes(app: FastifyInstance) {
     const { id } = idParamSchema.parse(request.params)
 
     try {
-      const resultado = await calcularOrcamento(id, user.empresaId)
+      const resultado = await calcularOrcamento(id, user.empresaId, user.id)
       return reply.status(200).send(resultado)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
+  // ─── POST /solicitacoes-orcamento/:id/enviar-orcamento (Comercial) ──────────
+  // PENDENTE → EM_ORCAMENTO
+  app.post('/solicitacoes-orcamento/:id/enviar-orcamento', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+    if (!(await verificarPerfilAdmin(user.id))) {
+      return reply.status(403).send({ message: 'Apenas administradores/comercial podem enviar para orçamento' })
+    }
+    const { id } = idParamSchema.parse(request.params)
+    try {
+      const r = await transicionarSolicitacao(id, 'EM_ORCAMENTO', { usuarioId: user.id, empresaId: user.empresaId })
+      return reply.status(200).send(r)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
+  // ─── POST /solicitacoes-orcamento/:id/liberar-pedido (Comercial) ────────────
+  // PRECIFICADA → LIBERADA_PEDIDO
+  app.post('/solicitacoes-orcamento/:id/liberar-pedido', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+    if (!(await verificarPerfilAdmin(user.id))) {
+      return reply.status(403).send({ message: 'Apenas administradores/comercial podem liberar para pedido' })
+    }
+    const { id } = idParamSchema.parse(request.params)
+    try {
+      const r = await transicionarSolicitacao(id, 'LIBERADA_PEDIDO', { usuarioId: user.id, empresaId: user.empresaId })
+      return reply.status(200).send(r)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
+  // ─── POST /solicitacoes-orcamento/:id/recusar (Comercial) ───────────────────
+  app.post('/solicitacoes-orcamento/:id/recusar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId?: string }
+    if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+    if (!(await verificarPerfilAdmin(user.id))) {
+      return reply.status(403).send({ message: 'Apenas administradores/comercial podem recusar' })
+    }
+    const { id } = idParamSchema.parse(request.params)
+    const body = z.object({ motivoRecusa: z.string().min(1, 'Motivo da recusa é obrigatório') }).parse(request.body)
+    try {
+      const r = await transicionarSolicitacao(id, 'RECUSADA', { usuarioId: user.id, empresaId: user.empresaId, motivo: body.motivoRecusa })
+      return reply.status(200).send(r)
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
@@ -397,9 +458,10 @@ export async function portalRepAdminRoutes(app: FastifyInstance) {
         return reply.status(404).send({ message: 'Solicitação não encontrada' })
       }
 
-      if (solicitacao.status !== 'CALCULADO') {
+      if (solicitacao.status !== 'LIBERADA_PEDIDO') {
         return reply.status(400).send({
-          message: `Solicitação precisa estar com status CALCULADO para converter em pedido. Status atual: ${solicitacao.status}`,
+          message: `Solicitação precisa estar LIBERADA para pedido (liberada pelo Comercial) antes de converter. Status atual: ${solicitacao.status}`,
+          code: 'TRANSICAO_INVALIDA',
         })
       }
 
@@ -426,10 +488,14 @@ export async function portalRepAdminRoutes(app: FastifyInstance) {
         select: { id: true, numero: true, status: true, valorTotal: true },
       })
 
-      // Atualizar status da solicitação para ENVIADO (indica que já virou pedido)
+      // Atualizar solicitação: CONVERTIDA + rastreabilidade do pedido gerado
       await prisma.solicitacaoOrcamentoRep.update({
         where: { id },
-        data: { status: 'ENVIADO' },
+        data: {
+          status: 'CONVERTIDA',
+          pedidoVendaId: pedido.id,
+          convertidaPedidoEm: new Date(),
+        },
       })
 
       // Criar notificação para o representante
