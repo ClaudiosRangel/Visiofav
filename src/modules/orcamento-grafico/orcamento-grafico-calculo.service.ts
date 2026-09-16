@@ -11,6 +11,9 @@ export interface ParamsOrcamento {
     abaColagemMm: number
     sangriaMm: number
     pincaMm: number
+    // Parâmetros customizados do tipo (ex.: FUNDO, DOBRA) com seus defaults.
+    // Usados nas fórmulas de planificação quando não vierem em `medidas`.
+    parametros?: Array<{ nome: string; default?: number }>
   }
   medidas: Record<string, number> // ex: {L: 80, A: 150, P: 40}
   papel: { gramatura: number; precoKg: number }
@@ -692,12 +695,24 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
   } = params
 
   // 1. Avaliar fórmulas de planificação
-  // Montar variáveis para o avaliador: medidas + valores do tipo de embalagem
+  // Montar variáveis para o avaliador. Ordem de precedência (menor → maior):
+  //   defaults dos parâmetros customizados do tipo (ex.: FUNDO, DOBRA)
+  //   → ABA/SANGRIA/PINCA do tipo → medidas informadas pelo usuário.
+  // Sem os defaults dos parâmetros, fórmulas que os referenciam (ex.: SACOLA:
+  // "A + FUNDO + DOBRA + SANGRIA*2") quebravam o avaliador (erro 500).
+  const defaultsParametros: Record<string, number> = {}
+  for (const p of tipoEmbalagem.parametros ?? []) {
+    if (p && typeof p.default === 'number') {
+      defaultsParametros[p.nome.toUpperCase()] = p.default
+    }
+  }
+
   const variaveisFormula: Record<string, number> = {
-    ...medidas,
+    ...defaultsParametros,
     ABA: tipoEmbalagem.abaColagemMm,
     SANGRIA: tipoEmbalagem.sangriaMm,
     PINCA: tipoEmbalagem.pincaMm,
+    ...medidas,
   }
 
   const planificacaoLargura = avaliarFormula(tipoEmbalagem.formulaLargura, variaveisFormula)

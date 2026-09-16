@@ -4,6 +4,19 @@ import { randomUUID } from 'crypto'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 
+/**
+ * Extrai os parâmetros customizados (com defaults) de um TipoEmbalagem para o
+ * motor de cálculo. Sem os defaults (ex.: FUNDO/DOBRA da SACOLA), fórmulas que
+ * os referenciam quebram o avaliador (erro 500). Ver orcamento-grafico-calculo.
+ */
+function parametrosDoTipo(tipo: { parametros: unknown }): Array<{ nome: string; default?: number }> | undefined {
+  if (!Array.isArray(tipo.parametros)) return undefined
+  return (tipo.parametros as any[]).map((p) => ({
+    nome: String(p?.nome ?? ''),
+    default: typeof p?.default === 'number' ? p.default : undefined,
+  }))
+}
+
 export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
@@ -617,11 +630,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const resultado = calcularOrcamentoGrafico({
       tipoEmbalagem: {
+        parametros: parametrosDoTipo(tipo),
         formulaLargura: tipo.formulaLargura,
         formulaAltura: tipo.formulaAltura,
         abaColagemMm: Number(tipo.abaColagemMm),
         sangriaMm: Number(tipo.sangriaMm),
         pincaMm: Number(tipo.pincaMm),
+        parametros: parametrosDoTipo(tipo),
       },
       medidas: body.medidas,
       papel: { gramatura: body.gramatura, precoKg: precoKgPapel },
@@ -794,6 +809,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           abaColagemMm: Number(tipo.abaColagemMm),
           sangriaMm: Number(tipo.sangriaMm),
           pincaMm: Number(tipo.pincaMm),
+          parametros: parametrosDoTipo(tipo),
         },
         medidas: body.medidas,
         papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
@@ -1094,6 +1110,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           abaColagemMm: Number(tipo.abaColagemMm),
           sangriaMm: Number(tipo.sangriaMm),
           pincaMm: Number(tipo.pincaMm),
+          parametros: parametrosDoTipo(tipo),
         },
         medidas,
         papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
@@ -1888,6 +1905,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           abaColagemMm: Number(tipo.abaColagemMm),
           sangriaMm: Number(tipo.sangriaMm),
           pincaMm: Number(tipo.pincaMm),
+          parametros: parametrosDoTipo(tipo),
         },
         medidas: body.medidas,
         papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
