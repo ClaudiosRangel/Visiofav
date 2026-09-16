@@ -136,6 +136,19 @@ export async function financeiroRoutes(app: FastifyInstance) {
     }
   })
 
+  // POST /categorias/popular-padrao — cria o plano de contas gerencial padrão
+  // (Brasil) para a empresa. Idempotente: não duplica códigos já existentes.
+  app.post('/categorias/popular-padrao', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { popularPlanoContasPadrao } = await import('./plano-contas-padrao')
+      const r = await popularPlanoContasPadrao(prisma, user.empresaId)
+      return reply.status(201).send(r)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
   // ---- Centros de custo ----
   app.get('/centros-custo', async (request) => {
     const user = request.user as { empresaId: string }
