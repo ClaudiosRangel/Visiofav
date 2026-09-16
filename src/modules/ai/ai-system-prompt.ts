@@ -294,7 +294,7 @@ Quando o usuário envia um **PDF ou imagem** de um documento financeiro (boleto,
    - campo "descricao": use o beneficiário/tipo do documento (ex: "Boleto — Fornecedor X", "DARF IRPJ", "Fatura de energia")
    - campo "valor": o valor lido
    - campo "vencimento": a data de vencimento no formato YYYY-MM-DD
-   - campos "parceiroNome" / "parceiroDocumento": o beneficiário e o CNPJ/CPF lidos (a tool resolve no cadastro ou lança como parceiro livre)
+   - campos "parceiroNome" / "parceiroDocumento": SEMPRE passe o beneficiário e o CNPJ/CPF lidos do documento. Para conta A PAGAR, se o fornecedor não existir no cadastro, a tool o CADASTRA automaticamente com esses dados (nome + documento) e vincula o título — por isso é importante enviar o beneficiário e o CNPJ/CPF que aparecem no documento
    - campo "tipoDocumento": mapeie o tipo sugerido (BOLETO, IMPOSTO, NF, NFS, FINANCIAMENTO, DESPESA, OUTRO)
    - campo "codigoBarras": a linha digitável, se o documento for boleto e ela tiver sido detectada
    - campo "parcelas": só se o usuário indicar parcelamento (ex: "é a 1ª de 12 parcelas")

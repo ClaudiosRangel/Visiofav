@@ -973,6 +973,7 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
 
   // resolve parceiro no cadastro (por documento ou nome); senão, parceiro livre
   let parceiroId: string | undefined
+  let fornecedorCriado = false
   if (tipo === 'PAGAR') {
     const f = await prisma.fornecedor.findFirst({
       where: {
@@ -985,6 +986,23 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
       select: { id: true },
     })
     parceiroId = f?.id
+
+    // Fornecedor não existe → CADASTRA com os dados do documento (nome/CNPJ).
+    // Requisito: documento de conta (luz, boleto, etc.) sem fornecedor no
+    // sistema deve gerar o cadastro automaticamente, não ficar como avulso.
+    if (!parceiroId && input.parceiroNome) {
+      const novo = await prisma.fornecedor.create({
+        data: {
+          empresaId,
+          razaoSocial: input.parceiroNome,
+          cnpj: docNorm || `SEMDOC${Date.now().toString().slice(-8)}`,
+          status: true,
+        },
+        select: { id: true },
+      })
+      parceiroId = novo.id
+      fornecedorCriado = true
+    }
   } else {
     const c = await prisma.cliente.findFirst({
       where: {
@@ -1024,7 +1042,9 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
     })
 
     const rota = tipo === 'PAGAR' ? '/financeiro/contas-pagar' : '/financeiro/contas-receber'
-    const parceiroTxt = parceiroId ? ' _(vinculado ao cadastro)_' : input.parceiroNome ? ` _(${input.parceiroNome}, avulso)_` : ''
+    const parceiroTxt = fornecedorCriado
+      ? ` _(fornecedor **${input.parceiroNome}** cadastrado automaticamente${docNorm ? ` — doc ${input.parceiroDocumento}` : ''})_`
+      : parceiroId ? ' _(vinculado ao cadastro)_' : input.parceiroNome ? ` _(${input.parceiroNome}, avulso)_` : ''
     let resposta = `✅ **Documento lançado!**\n• ${input.descricao}\n• Valor: **R$ ${formatBRL(Number(input.valor))}**${res.parcelas > 1 ? ` em **${res.parcelas}x**` : ''}\n• Vencimento: **${formatDate(new Date(input.vencimento))}**${parceiroTxt}`
     return { resposta, acao: { tipo: 'NAVEGAR', rota } }
   } catch (err: any) {

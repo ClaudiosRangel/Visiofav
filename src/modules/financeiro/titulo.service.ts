@@ -74,6 +74,50 @@ export async function cancelarTitulo(prisma: PrismaClient, empresaId: string, ti
   return (delegate(prisma, tipo) as any).update({ where: { id }, data: { status: 'CANCELADA', canceladoEm: new Date() } })
 }
 
+/**
+ * Exclui DEFINITIVAMENTE um título (remove da base), não apenas marca cancelado.
+ * Só permite títulos que NÃO foram pagos/recebidos (aberto ou cancelado).
+ * Bloqueia se houver cobrança bancária emitida (boleto/PIX) ou vínculo com
+ * folha de pagamento — nesses casos o registro é reflexo de outro processo.
+ * Limpa vínculos "soltos" antes de apagar (régua de cobrança, conciliação).
+ */
+export async function excluirTitulo(prisma: PrismaClient, empresaId: string, tipo: TipoTitulo, id: string) {
+  const titulo = await buscar(prisma, empresaId, tipo, id)
+  if (titulo.status === STATUS_BAIXADO[tipo]) {
+    throw new ErroFinanceiro(409, 'Título já baixado não pode ser excluído; estorne a baixa antes')
+  }
+
+  if (tipo === 'RECEBER') {
+    const [boletos, pix] = await Promise.all([
+      prisma.boleto.count({ where: { contaReceberId: id } }),
+      prisma.pixCobranca.count({ where: { contaReceberId: id } }),
+    ])
+    if (boletos > 0 || pix > 0) {
+      throw new ErroFinanceiro(409, 'Título com boleto/PIX emitido não pode ser excluído; cancele a cobrança bancária antes')
+    }
+    await prisma.$transaction([
+      prisma.reguaEnvio.deleteMany({ where: { contaReceberId: id } }),
+      prisma.extratoBancario.updateMany({ where: { contaReceberId: id }, data: { contaReceberId: null, conciliado: false } }),
+      prisma.contaReceber.delete({ where: { id } }),
+    ])
+    return { ok: true, excluido: id }
+  }
+
+  // PAGAR — bloqueia se veio de folha de pagamento (reflexo de outro processo)
+  const [itensFolha, encargos] = await Promise.all([
+    prisma.itemFolha.count({ where: { contaPagarId: id } }),
+    prisma.encargoFolha.count({ where: { contaPagarId: id } }),
+  ])
+  if (itensFolha > 0 || encargos > 0) {
+    throw new ErroFinanceiro(409, 'Título gerado pela folha de pagamento não pode ser excluído aqui; ajuste pela folha')
+  }
+  await prisma.$transaction([
+    prisma.extratoBancario.updateMany({ where: { contaPagarId: id }, data: { contaPagarId: null, conciliado: false } }),
+    prisma.contaPagar.delete({ where: { id } }),
+  ])
+  return { ok: true, excluido: id }
+}
+
 export async function estornarBaixa(prisma: PrismaClient, empresaId: string, tipo: TipoTitulo, id: string) {
   const titulo = await buscar(prisma, empresaId, tipo, id)
   if (titulo.status !== STATUS_BAIXADO[tipo]) throw new ErroFinanceiro(409, 'Só títulos baixados podem ser estornados')

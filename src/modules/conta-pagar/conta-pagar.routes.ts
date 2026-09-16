@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { ErroFinanceiro } from '../financeiro/conta-financeira.service'
-import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote } from '../financeiro/titulo.service'
+import { editarTitulo, cancelarTitulo, estornarBaixa, baixarTitulo, baixarEmLote, excluirTitulo } from '../financeiro/titulo.service'
 import { incluirTitulo, interpretarLinhaDigitavel, type InclusaoTituloInput } from '../financeiro/inclusao-titulo.service'
 import { contabilizarProvisao, contabilizarLiquidacao } from '../financeiro/contabilizacao.service'
 
@@ -292,6 +292,17 @@ export async function contaPagarRoutes(app: FastifyInstance) {
       const user = request.user as { empresaId: string }
       const { id } = idParamsSchema.parse(request.params)
       return await cancelarTitulo(prisma, user.empresaId, 'PAGAR', id)
+    } catch (err) {
+      return tratar(reply, err)
+    }
+  })
+
+  // DELETE /:id — exclui definitivamente título não pago (remove da base)
+  app.delete('/:id', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const { id } = idParamsSchema.parse(request.params)
+      return await excluirTitulo(prisma, user.empresaId, 'PAGAR', id)
     } catch (err) {
       return tratar(reply, err)
     }

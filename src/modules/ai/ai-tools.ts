@@ -235,7 +235,7 @@ export const AI_TOOLS: AITool[] = [
   },
   {
     name: 'lancar_documento_financeiro',
-    description: 'Lança um documento financeiro completo a pagar/receber (boleto, fatura, guia de imposto, despesa, financiamento) a partir do documento enviado no chat (PDF/imagem, cujos campos já foram extraídos) OU dos dados informados pelo usuário em texto. Resolve o parceiro no cadastro (por documento/nome) ou lança como parceiro livre (nome+CPF/CNPJ). Suporta parcelamento. Use SOMENTE após o usuário confirmar. Isola por empresa.',
+    description: 'Lança um documento financeiro completo a pagar/receber (boleto, fatura, guia de imposto, despesa, financiamento) a partir do documento enviado no chat (PDF/imagem, cujos campos já foram extraídos) OU dos dados informados pelo usuário em texto. Resolve o parceiro no cadastro por documento/nome; se for A PAGAR e o fornecedor NÃO existir, CADASTRA automaticamente o fornecedor com os dados do documento (nome/beneficiário e CNPJ/CPF) e vincula o título a ele — por isso passe SEMPRE parceiroNome e parceiroDocumento quando o documento os tiver. Suporta parcelamento. Use SOMENTE após o usuário confirmar. Isola por empresa.',
     input_schema: {
       type: 'object',
       properties: {
