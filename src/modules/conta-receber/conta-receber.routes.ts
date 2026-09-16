@@ -55,6 +55,12 @@ const editarBodySchema = z.object({
   centroCustoId: z.string().uuid().nullable().optional(),
   contaFinanceiraId: z.string().uuid().nullable().optional(),
   observacao: z.string().max(500).nullable().optional(),
+  numeroDocumento: z.string().max(60).nullable().optional(),
+  formaPagamento: z.string().max(30).nullable().optional(),
+  tipoDocumento: z.string().max(20).nullable().optional(),
+  clienteId: z.string().uuid().nullable().optional(),
+  parceiroNomeLivre: z.string().max(200).nullable().optional(),
+  parceiroDocLivre: z.string().max(20).nullable().optional(),
 })
 
 const baixarLoteSchema = z.object({
@@ -248,8 +254,10 @@ export async function contaReceberRoutes(app: FastifyInstance) {
       const user = request.user as { empresaId: string }
       const { id } = idParamsSchema.parse(request.params)
       const body = editarBodySchema.parse(request.body)
+      const { clienteId, ...resto } = body
       return await editarTitulo(prisma, user.empresaId, 'RECEBER', id, {
-        ...body,
+        ...resto,
+        parceiroId: clienteId,
         dataVencimento: body.dataVencimento ? new Date(body.dataVencimento) : undefined,
       })
     } catch (err) {

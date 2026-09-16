@@ -27,6 +27,13 @@ export interface EditarTituloInput {
   centroCustoId?: string | null
   contaFinanceiraId?: string | null
   observacao?: string | null
+  numeroDocumento?: string | null
+  formaPagamento?: string | null
+  tipoDocumento?: string | null
+  /** ID do parceiro (grava em fornecedorId p/ PAGAR, clienteId p/ RECEBER). */
+  parceiroId?: string | null
+  parceiroNomeLivre?: string | null
+  parceiroDocLivre?: string | null
 }
 
 async function buscar(prisma: PrismaClient, empresaId: string, tipo: TipoTitulo, id: string) {
@@ -38,6 +45,8 @@ async function buscar(prisma: PrismaClient, empresaId: string, tipo: TipoTitulo,
 export async function editarTitulo(prisma: PrismaClient, empresaId: string, tipo: TipoTitulo, id: string, dados: EditarTituloInput) {
   const titulo = await buscar(prisma, empresaId, tipo, id)
   if (titulo.status !== 'ABERTA') throw new ErroFinanceiro(409, 'Só títulos em aberto podem ser editados')
+  // Campo de parceiro depende do tipo do título
+  const campoParceiro = tipo === 'RECEBER' ? 'clienteId' : 'fornecedorId'
   return (delegate(prisma, tipo) as any).update({
     where: { id },
     data: {
@@ -48,6 +57,12 @@ export async function editarTitulo(prisma: PrismaClient, empresaId: string, tipo
       ...(dados.centroCustoId !== undefined ? { centroCustoId: dados.centroCustoId } : {}),
       ...(dados.contaFinanceiraId !== undefined ? { contaFinanceiraId: dados.contaFinanceiraId } : {}),
       ...(dados.observacao !== undefined ? { observacao: dados.observacao } : {}),
+      ...(dados.numeroDocumento !== undefined ? { numeroDocumento: dados.numeroDocumento } : {}),
+      ...(dados.formaPagamento !== undefined ? { formaPagamento: dados.formaPagamento } : {}),
+      ...(dados.tipoDocumento !== undefined ? { tipoDocumento: dados.tipoDocumento } : {}),
+      ...(dados.parceiroId !== undefined ? { [campoParceiro]: dados.parceiroId } : {}),
+      ...(dados.parceiroNomeLivre !== undefined ? { parceiroNomeLivre: dados.parceiroNomeLivre } : {}),
+      ...(dados.parceiroDocLivre !== undefined ? { parceiroDocLivre: dados.parceiroDocLivre } : {}),
     },
   })
 }
