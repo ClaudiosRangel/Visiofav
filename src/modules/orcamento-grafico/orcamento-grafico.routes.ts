@@ -740,6 +740,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       quantidade: z.number().int().positive(),
       // Parâmetros de cálculo (opcionais — só necessários se não vier resultadoCalculo)
       precoKgPapel: z.number().positive().optional(),
+      precoKg: z.number().positive().optional(), // alias enviado pelo wizard
       maquinaId: z.string().uuid().optional(),
       tabelaMargemId: z.string().uuid().optional(),
       // Resultado pré-calculado (se o frontend já chamou /calcular)
@@ -767,12 +768,22 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     let precoUnitario: number | null = null
     let margemReal: number | null = null
 
-    if (!resultadoCalculo && body.gramatura && body.precoKgPapel && body.maquinaId) {
-      // Buscar máquina
-      const maquina = await prisma.centroProducao.findFirst({
-        where: { id: body.maquinaId, empresaId: user.empresaId },
-      })
-      if (!maquina) return reply.status(404).send({ message: 'Máquina não encontrada' })
+    const precoKgPapelPost = body.precoKgPapel ?? body.precoKg
+    if (!resultadoCalculo && body.gramatura && precoKgPapelPost) {
+      // Máquina: usa a informada OU a primeira de impressão da empresa (mesmo
+      // fallback do /calcular). Antes exigia maquinaId, mas o wizard não envia
+      // esse campo — então o orçamento era salvo SEM preço e não podia ser
+      // enviado. Agora calcula/grava o preço no salvar, como no preview.
+      let maquina = body.maquinaId
+        ? await prisma.centroProducao.findFirst({ where: { id: body.maquinaId, empresaId: user.empresaId } })
+        : null
+      if (!maquina) {
+        maquina = await prisma.centroProducao.findFirst({
+          where: { empresaId: user.empresaId, status: true, tipoProcesso: { codigo: 'IMPRESSAO' } },
+          orderBy: { posicao: 'asc' },
+        })
+      }
+      if (!maquina) return reply.status(404).send({ message: 'Nenhuma máquina de impressão encontrada. Cadastre um Centro de Produção do tipo Impressão.' })
 
       // Buscar tabela de margem
       let margem = { impostos: 15, comissao: 5, despAdm: 5, markup: 30 }
@@ -812,7 +823,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           parametros: parametrosDoTipo(tipo),
         },
         medidas: body.medidas,
-        papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
+        papel: { gramatura: body.gramatura, precoKg: precoKgPapelPost },
         maquinaImpressao: {
           velocidade: Number(maquina.velocidade) || 6000,
           custoHora: Number(maquina.custoHora) || 250,
@@ -1029,6 +1040,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })).optional().nullable(),
       quantidade: z.number().int().positive().optional(),
       precoKgPapel: z.number().positive().optional(),
+      precoKg: z.number().positive().optional(), // alias enviado pelo wizard
       maquinaId: z.string().uuid().optional(),
       tabelaMargemId: z.string().uuid().optional(),
       resultadoCalculo: z.any().optional().nullable(),
@@ -1080,13 +1092,22 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       updateData.precoVenda = body.resultadoCalculo.precoVenda ?? null
       updateData.precoUnitario = body.resultadoCalculo.precoUnitario ?? null
       updateData.margemReal = body.resultadoCalculo.margemReal ?? null
-    } else if (body.gramatura && body.precoKgPapel && body.maquinaId) {
-      // Recalcular com os novos parâmetros
+    } else if (body.gramatura && (body.precoKgPapel ?? body.precoKg)) {
+      // Recalcular com os novos parâmetros (máquina informada OU default de impressão)
+      const precoKgPapelPut = body.precoKgPapel ?? body.precoKg
       const tipo = await prisma.tipoEmbalagem.findFirst({ where: { id: tipoEmbalagemId, empresaId: user.empresaId } })
       if (!tipo) return reply.status(404).send({ message: 'Tipo de embalagem não encontrado' })
 
-      const maquina = await prisma.centroProducao.findFirst({ where: { id: body.maquinaId, empresaId: user.empresaId } })
-      if (!maquina) return reply.status(404).send({ message: 'Máquina não encontrada' })
+      let maquina = body.maquinaId
+        ? await prisma.centroProducao.findFirst({ where: { id: body.maquinaId, empresaId: user.empresaId } })
+        : null
+      if (!maquina) {
+        maquina = await prisma.centroProducao.findFirst({
+          where: { empresaId: user.empresaId, status: true, tipoProcesso: { codigo: 'IMPRESSAO' } },
+          orderBy: { posicao: 'asc' },
+        })
+      }
+      if (!maquina) return reply.status(404).send({ message: 'Nenhuma máquina de impressão encontrada. Cadastre um Centro de Produção do tipo Impressão.' })
 
       let margem = { impostos: 15, comissao: 5, despAdm: 5, markup: 30 }
       if (body.tabelaMargemId) {
@@ -1113,7 +1134,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           parametros: parametrosDoTipo(tipo),
         },
         medidas,
-        papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
+        papel: { gramatura: body.gramatura, precoKg: precoKgPapelPut },
         maquinaImpressao: {
           velocidade: Number(maquina.velocidade) || 6000,
           custoHora: Number(maquina.custoHora) || 250,
