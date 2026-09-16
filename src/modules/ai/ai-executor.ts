@@ -1036,6 +1036,7 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
       parceiroNomeLivre: parceiroId ? undefined : input.parceiroNome,
       parceiroDocLivre: parceiroId ? undefined : (docNorm || undefined),
       categoriaId,
+      numeroDocumento: input.numeroDocumento,
       parcelas: input.parcelas ? Number(input.parcelas) : 1,
       tipoDocumento: input.tipoDocumento,
       codigoBarras: tipo === 'PAGAR' ? input.codigoBarras : undefined,

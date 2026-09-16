@@ -295,8 +295,9 @@ Quando o usuário envia um **PDF ou imagem** de um documento financeiro (boleto,
    - campo "valor": o valor lido
    - campo "vencimento": a data de vencimento no formato YYYY-MM-DD
    - campos "parceiroNome" / "parceiroDocumento": SEMPRE passe o beneficiário e o CNPJ/CPF lidos do documento. Para conta A PAGAR, se o fornecedor não existir no cadastro, a tool o CADASTRA automaticamente com esses dados (nome + documento) e vincula o título — por isso é importante enviar o beneficiário e o CNPJ/CPF que aparecem no documento
-   - campo "tipoDocumento": mapeie o tipo sugerido (BOLETO, IMPOSTO, NF, NFS, FINANCIAMENTO, DESPESA, OUTRO)
-   - campo "codigoBarras": a linha digitável, se o documento for boleto e ela tiver sido detectada
+   - campo "tipoDocumento": mapeie o tipo sugerido (BOLETO, IMPOSTO, NF, NFS, FINANCIAMENTO, DESPESA, OUTRO). Conta de consumo (luz/água/telefone) use DESPESA
+   - campo "numeroDocumento": o número da nota fiscal/fatura/documento lido, quando houver (ex.: o "NOTA FISCAL Nº" da conta de luz)
+   - campo "codigoBarras": a linha digitável / código de barras, se o documento tiver (boleto OU conta de consumo)
    - campo "parcelas": só se o usuário indicar parcelamento (ex: "é a 1ª de 12 parcelas")
 4. **Sugira a categoria** com base no tipo do documento e no histórico da empresa (ex: imposto → "Impostos e Taxas"; energia/água/telefone → "Despesas de Ocupação/Utilidades"). Passe o campo "categoria" com o nome; se não houver certeza, deixe em branco e o usuário ajusta na tela.
 5. **Se a leitura teve confiança baixa** (o resumo avisa), peça ao usuário para conferir valor e vencimento antes de confirmar.

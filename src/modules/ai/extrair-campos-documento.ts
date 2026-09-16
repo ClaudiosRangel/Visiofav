@@ -12,8 +12,15 @@ export interface CamposDocumento {
   linhaDigitavel?: string
   beneficiario?: string
   documento?: string
+  numeroDocumento?: string
   tipoSugerido?: TipoDocumento
   confianca: number
+}
+
+/** Extrai número de nota/documento (ex.: "NOTA FISCAL Nº 002169824", "NF 12345"). */
+function acharNumeroDocumento(texto: string): string | null {
+  const m = texto.match(/(?:nota\s+fiscal|nf-?e|nfs-?e|nf|fatura|documento|n[º°o]\.?)\D{0,6}(\d{4,12})/i)
+  return m ? m[1] : null
 }
 
 /** Extrai a primeira linha digitável de boleto (47 dígitos) do texto. */
@@ -73,6 +80,7 @@ export function extrairCamposDocumento(texto: string): CamposDocumento {
   const linhaDigitavel = acharLinhaDigitavel(t) ?? undefined
   const tipoSugerido = sugerirTipo(t)
   const documento = acharDocumento(t) ?? undefined
+  const numeroDocumento = acharNumeroDocumento(t) ?? undefined
 
   let valor: number | undefined
   let vencimento: Date | undefined
@@ -97,5 +105,5 @@ export function extrairCamposDocumento(texto: string): CamposDocumento {
   if (documento) achados++
   const confianca = Math.min(1, achados / 4)
 
-  return { valor, vencimento, linhaDigitavel, documento, tipoSugerido, confianca }
+  return { valor, vencimento, linhaDigitavel, documento, numeroDocumento, tipoSugerido, confianca }
 }

@@ -479,6 +479,7 @@ export const aiService = {
     resposta += `• Vencimento: **${fmtData(campos.vencimento)}**\n`
     if (campos.beneficiario) resposta += `• Beneficiário: **${campos.beneficiario}**\n`
     if (campos.documento) resposta += `• CNPJ/CPF: ${campos.documento}\n`
+    if ((campos as any).numeroDocumento) resposta += `• Nº do documento: ${(campos as any).numeroDocumento}\n`
     if (campos.linhaDigitavel) resposta += `• Linha digitável detectada ✓\n`
 
     const confiancaBaixa = (campos.confianca ?? 0) < 0.5

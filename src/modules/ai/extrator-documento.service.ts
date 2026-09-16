@@ -52,8 +52,8 @@ async function extrairPorVisao(buffer: Buffer, mime: string): Promise<(CamposDoc
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-  const prompt = `Você é um extrator de dados de documentos financeiros brasileiros (boleto, fatura, DARF/guia, nota).
-Extraia e responda APENAS um JSON com as chaves: valor (número), vencimento (YYYY-MM-DD), linhaDigitavel (string só dígitos ou null), beneficiario (string ou null), documento (CNPJ/CPF só dígitos ou null), tipoSugerido (um de: NF, NFS, BOLETO, DESPESA, IMPOSTO, FINANCIAMENTO, OUTRO). Se não encontrar um campo, use null. Não escreva mais nada além do JSON.`
+  const prompt = `Você é um extrator de dados de documentos financeiros brasileiros (boleto, fatura, conta de consumo como luz/água/telefone, DARF/guia, nota).
+Extraia e responda APENAS um JSON com as chaves: valor (número, o TOTAL A PAGAR), vencimento (YYYY-MM-DD), linhaDigitavel (string só dígitos da linha/código de barras, ou null), beneficiario (nome de quem RECEBE o pagamento — a empresa/concessionária emissora, ex.: "Light", "Enel", "Sabesp"; NÃO o cliente/consumidor; ou null), documento (CNPJ/CPF do beneficiário só dígitos ou null), numeroDocumento (número da nota fiscal/fatura/documento, ex.: o "NOTA FISCAL Nº" — só dígitos, ou null), tipoSugerido (um de: NF, NFS, BOLETO, DESPESA, IMPOSTO, FINANCIAMENTO, OUTRO — use DESPESA para contas de consumo). Se não encontrar um campo, use null. Não escreva mais nada além do JSON.`
 
   const contentBlock: any = isPdf
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
@@ -82,6 +82,7 @@ Extraia e responda APENAS um JSON com as chaves: valor (número), vencimento (YY
       linhaDigitavel: parsed.linhaDigitavel ? String(parsed.linhaDigitavel).replace(/\D/g, '') : undefined,
       beneficiario: parsed.beneficiario ?? undefined,
       documento: parsed.documento ? String(parsed.documento).replace(/\D/g, '') : undefined,
+      numeroDocumento: parsed.numeroDocumento ? String(parsed.numeroDocumento).replace(/\D/g, '') : undefined,
       tipoSugerido: parsed.tipoSugerido ?? undefined,
       confianca: Math.min(1, achados / 4),
     }
