@@ -21,6 +21,8 @@ import {
   listarSolicitacoes,
   obterSolicitacao,
   cancelarSolicitacao,
+  aprovarSolicitacaoRep,
+  recusarSolicitacaoRep,
 } from './portal-rep-solicitacao.service'
 
 // ─── Schemas Zod ────────────────────────────────────────────────────────────────
@@ -117,6 +119,45 @@ export async function portalRepSolicitacaoRoutes(app: FastifyInstance) {
     try {
       const cancelada = await cancelarSolicitacao(id, request.portalRepUser)
       return reply.status(200).send(cancelada)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
+  // POST /:id/aprovar — rep aprova o orçamento em nome do cliente (Opção A)
+  app.post('/:id/aprovar', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const body = z.object({
+      aprovadoPor: z.string().min(1, 'Informe quem aprovou em nome do cliente').max(200),
+    }).parse(request.body)
+
+    try {
+      const resultado = await aprovarSolicitacaoRep(id, body.aprovadoPor, request.portalRepUser)
+      return reply.status(201).send({
+        message: `Orçamento aprovado. Pedido #${resultado.pedido.numero} gerado.`,
+        ...resultado,
+      })
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
+      if (err.code) response.code = err.code
+      return reply.status(statusCode).send(response)
+    }
+  })
+
+  // POST /:id/recusar — rep recusa o orçamento em nome do cliente
+  app.post('/:id/recusar', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const body = z.object({
+      motivoRecusa: z.string().min(1, 'Motivo da recusa é obrigatório'),
+    }).parse(request.body)
+
+    try {
+      const recusada = await recusarSolicitacaoRep(id, body.motivoRecusa, request.portalRepUser)
+      return reply.status(200).send(recusada)
     } catch (err: any) {
       const statusCode = err.statusCode || 500
       const response: Record<string, unknown> = { message: err.message || 'Erro interno' }

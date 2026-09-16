@@ -351,6 +351,7 @@ export async function listarSolicitacoesAdmin(
         observacoes: true,
         precoVenda: true,
         precoUnitario: true,
+        orcamentoGraficoId: true,
         status: true,
         criadoEm: true,
         atualizadoEm: true,
@@ -657,9 +658,6 @@ export async function transicionarSolicitacao(
   if (novoStatus === 'EM_ORCAMENTO') {
     data.enviadaOrcamentoEm = agora
     data.enviadaOrcamentoPorId = opcoes.usuarioId
-  } else if (novoStatus === 'LIBERADA_PEDIDO') {
-    data.liberadaPedidoEm = agora
-    data.liberadaPedidoPorId = opcoes.usuarioId
   } else if (novoStatus === 'RECUSADA') {
     data.motivoRecusa = opcoes.motivo
   }

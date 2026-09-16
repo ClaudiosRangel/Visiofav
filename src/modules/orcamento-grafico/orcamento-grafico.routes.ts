@@ -1160,6 +1160,20 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       select: orcamentoGraficoSelect,
     })
 
+    // Opção A: se este orçamento nasceu de uma solicitação do Portal do
+    // Representante, refletir na solicitação (PRECIFICADA) e copiar o preço
+    // para o rep ver no Portal — sem expor custo/margem.
+    await prisma.solicitacaoOrcamentoRep.updateMany({
+      where: { orcamentoGraficoId: id, empresaId: user.empresaId, status: 'EM_ORCAMENTO' },
+      data: {
+        status: 'PRECIFICADA',
+        precoVenda: (atualizado as any).precoVenda ?? null,
+        precoUnitario: (atualizado as any).precoUnitario ?? null,
+        precificadaEm: new Date(),
+        precificadaPorId: user.id,
+      },
+    })
+
     return atualizado
   })
 
@@ -1272,6 +1286,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'RECUSADO', motivoRecusa: body.motivoRecusa },
       select: orcamentoGraficoSelect,
+    })
+
+    // Opção A: refletir recusa na solicitação do Portal vinculada
+    await prisma.solicitacaoOrcamentoRep.updateMany({
+      where: {
+        orcamentoGraficoId: id,
+        empresaId: user.empresaId,
+        status: { in: ['EM_ORCAMENTO', 'PRECIFICADA'] },
+      },
+      data: { status: 'RECUSADA', motivoRecusa: body.motivoRecusa },
     })
 
     return atualizado

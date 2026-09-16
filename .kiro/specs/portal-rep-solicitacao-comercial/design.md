@@ -1,197 +1,197 @@
-# Design — Solicitação de Orçamento do Representante coordenada pelo Comercial
+# Design — Solicitação do Representante integrada ao Orçamento Gráfico (Opção A)
 
 ## Visão geral
 
-Hoje o representante cria uma **Solicitação de Orçamento** no Portal
-(`solicitacao_orcamento_rep`). Do lado interno, em **Portal Representante →
-Solicitações de Orçamento**, um admin faz duas ações: **Calcular** (preço
-placeholder) e **Converter em Pedido**. Dois problemas motivam esta spec:
+O representante cria uma **Solicitação de Orçamento** no Portal
+(`solicitacao_orcamento_rep`). O fluxo correto de negócio (Opção A) é:
 
-1. **Cliente aparece como "—"** na listagem interna, mesmo quando o
-   representante selecionou um cliente da carteira (`clienteId` preenchido).
-2. **Não há coordenação do Comercial** sobre *quando* enviar a solicitação
-   para orçamento e *quando* ela vira pedido — hoje qualquer ADMIN dispara
-   ambas as ações sem etapa intermediária de responsabilidade comercial.
+```
+Rep cria Solicitação (PENDENTE)
+  → Comercial "Enviar para orçamento"  → cria um OrcamentoGrafico (RASCUNHO)
+                                          pré-preenchido; solicitação = EM_ORCAMENTO
+  → Orçamentista precifica no Orçamento Gráfico (motor real: papel, gramatura,
+    acabamentos, margem) e envia (OrcamentoGrafico: RASCUNHO → ENVIADO);
+    solicitação = PRECIFICADA
+  → Rep vê o preço no Portal e APROVA em nome do cliente (registra quem aprovou)
+    → OrcamentoGrafico ENVIADO → APROVADO → gera PedidoVenda; solicitação = CONVERTIDA
+  → PedidoVenda segue para OP pela Análise de Produção do PCP (inalterado)
+```
 
-Esta spec segue a **Opção B**: a Solicitação do Representante **não** se
-transforma em `OrcamentoGrafico`. Ela permanece na sua própria tabela e
-converge no `PedidoVenda` (que depois vira OP pela Análise de Produção do
-PCP, fluxo já existente e inalterado). O que muda é o **controle das
-transições pelo setor Comercial** e a **correção da exibição do cliente**.
+Esta é uma **revisão da spec** que antes seguia a Opção B (precificação
+placeholder dentro da própria solicitação). Agora a solicitação **passa por
+Orçamento Gráfico de verdade** e a aprovação é feita pelo próprio
+representante no Portal externo.
 
 ### Escopo
 
-- **Dentro do escopo**: correção do nome do cliente na listagem interna e na
-  gravação; introdução de um fluxo de status coordenado pelo Comercial com
-  etapas explícitas (enviar para orçamento → precificar → liberar para
-  pedido → converter); registro de quem/quando executou cada transição;
-  ajuste da tela interna para refletir as novas ações.
-- **Fora do escopo**: integração com o motor `calcularOrcamentoGrafico`
-  (continua placeholder por ora — a precificação real é uma decisão separada);
-  transformar a solicitação em `OrcamentoGrafico`; alterar o fluxo
-  PedidoVenda → OP (Análise de Produção permanece igual).
+- Ligar a Solicitação do Representante ao `OrcamentoGrafico` real.
+- Criação automática do `OrcamentoGrafico` (RASCUNHO) a partir da solicitação.
+- Aprovação pelo representante no Portal externo, com registro de quem aprovou.
+- Correção da exibição do cliente (já implementada — mantida).
+- Reaproveitar a máquina de estados da solicitação (já implementada), ajustando
+  o significado das transições para refletir o ciclo do orçamento gráfico.
+
+### Fora do escopo
+
+- Reescrever o motor `calcularOrcamentoGrafico` (já existe e será usado como está).
+- Alterar o fluxo PedidoVenda → OP (Análise de Produção permanece igual).
+
+## Descompasso de dados (ponto crítico)
+
+A solicitação e o orçamento gráfico têm formatos diferentes:
+
+| Campo | SolicitacaoOrcamentoRep | OrcamentoGrafico (exigido) |
+|---|---|---|
+| Tipo de embalagem | `tipoEmbalagem` **string livre** ("Trem Embalagens") | `tipoEmbalagemId` **FK** para `TipoEmbalagem` |
+| Medidas | `medidaLargura/Altura/Comprimento` (colunas) | `medidas` **JSON** (`{L,A,P,...}`) |
+| Cores | — | `cores` JSON (opcional na criação) |
+| Acabamentos | `acabamentos` **string livre** | `acabamentos` JSON (opcional na criação) |
+| Cliente | `clienteId?` + `clienteNome` | `clienteId?` + `clienteNome` |
+| Quantidade | `quantidade` | `quantidade` |
+
+Consequência: a criação automática do `OrcamentoGrafico` **não consegue
+resolver o `tipoEmbalagemId` sozinha** quando a solicitação traz texto livre.
+
+**Estratégia de resolução do tipo de embalagem** (na criação automática):
+1. Tentar casar `solicitacao.tipoEmbalagem` (normalizado, sem acento, case-insensitive)
+   com `TipoEmbalagem.codigo` ou `TipoEmbalagem.descricao` da empresa.
+2. Se houver match único → usar esse `tipoEmbalagemId`.
+3. Se não houver match → o Comercial deve escolher o Tipo de Embalagem no ato
+   de "Enviar para orçamento" (o endpoint aceita um `tipoEmbalagemId` opcional
+   que, quando presente, tem prioridade sobre o match automático). A tela
+   interna abre um seletor de Tipo de Embalagem quando o match automático falha.
+
+As medidas viram JSON: `{ L: medidaLargura, A: medidaAltura, P: medidaComprimento }`
+(chaves omitidas quando nulas). `cores`/`acabamentos` ficam vazios no RASCUNHO —
+o orçamentista completa no Orçamento Gráfico antes de calcular.
 
 ## Modelo de dados
 
-### `SolicitacaoOrcamentoRep` (tabela `solicitacao_orcamento_rep`)
+### `SolicitacaoOrcamentoRep`
 
-Model já existente. Alterações:
+Já possui (desta e da sessão anterior): `orcamentoGraficoId` (vínculo com o
+orçamento gerado), campos de auditoria de transição, `pedidoVendaId`,
+`motivoRecusa`. Adicionar:
 
-- **Novos campos de auditoria de transição** (todos opcionais, sem quebra):
-  - `enviadaOrcamentoEm DateTime?` (`enviada_orcamento_em`) — quando o
-    Comercial enviou para orçamento.
-  - `enviadaOrcamentoPorId String?` (`enviada_orcamento_por_id`) — usuário
-    interno que enviou.
-  - `precificadaEm DateTime?` (`precificada_em`) — quando o preço foi gravado.
-  - `precificadaPorId String?` (`precificada_por_id`).
-  - `liberadaPedidoEm DateTime?` (`liberada_pedido_em`) — quando o Comercial
-    liberou para virar pedido.
-  - `liberadaPedidoPorId String?` (`liberada_pedido_por_id`).
-  - `convertidaPedidoEm DateTime?` (`convertida_pedido_em`).
-  - `pedidoVendaId String?` (`pedido_venda_id`) — id do PedidoVenda gerado
-    (rastreabilidade; hoje não é persistido na solicitação).
-  - `motivoRecusa String? @db.Text` (`motivo_recusa`).
-- **Campo `clienteNome`**: passa a ser **sempre preenchido na criação**
-  quando houver `clienteId` (congela a razão social/nome fantasia no momento
-  da solicitação). Continua preenchido diretamente no caso prospect.
+- `aprovadaClientePor String?` (`aprovada_cliente_por`) — nome de quem aprovou
+  em nome do cliente (informado pelo rep no Portal).
+- `aprovadaClienteEm DateTime?` (`aprovada_cliente_em`).
 
-> Regra de migração (obrigatória neste projeto): toda alteração de
-> `schema.prisma` entra no mesmo commit em `prisma/migrate-prod.ts`, de forma
-> idempotente (`ADD COLUMN IF NOT EXISTS`), testada 2x local. Ver steering
-> `database-migrations.md`.
+> Migração idempotente em `prisma/migrate-prod.ts` (regra obrigatória do projeto).
 
-### Máquina de estados (nova, explícita)
+### Máquina de estados (ajuste de significado)
 
-O `status` continua `String @db.VarChar(20)` (não vira enum Prisma, mantendo
-o padrão atual do model). A máquina de estados passa a ser validada em um
-único ponto no serviço:
+Mantém os status já criados, com o significado alinhado ao orçamento gráfico:
 
 ```
-PENDENTE            → EM_ORCAMENTO | CANCELADA
-EM_ORCAMENTO        → PRECIFICADA | RECUSADA | CANCELADA
-PRECIFICADA         → LIBERADA_PEDIDO | RECUSADA | CANCELADA
-LIBERADA_PEDIDO     → CONVERTIDA | RECUSADA
-CONVERTIDA          → (terminal)
-RECUSADA            → (terminal)
-CANCELADA           → (terminal)
+PENDENTE        → EM_ORCAMENTO | CANCELADA
+EM_ORCAMENTO    → PRECIFICADA | RECUSADA | CANCELADA     (orçamentista trabalha no OG)
+PRECIFICADA     → CONVERTIDA | RECUSADA | CANCELADA      (rep aprova no Portal)
+CONVERTIDA      → (terminal)
+RECUSADA        → (terminal)
+CANCELADA       → (terminal)
 ```
 
-Mapeamento de responsabilidade (quem dispara cada transição):
+A etapa intermediária `LIBERADA_PEDIDO` da Opção B **deixa de existir** — na
+Opção A a "liberação" é a aprovação do cliente, feita pelo rep. O status
+`PRECIFICADA` passa a significar "orçamento gráfico enviado, aguardando
+aprovação do cliente".
 
-| De → Para | Ação | Quem |
-|---|---|---|
-| PENDENTE → EM_ORCAMENTO | "Enviar para orçamento" | **Comercial** |
-| EM_ORCAMENTO → PRECIFICADA | "Precificar" (calcular) | Orçamentista/Comercial |
-| PRECIFICADA → LIBERADA_PEDIDO | "Liberar para pedido" | **Comercial** |
-| LIBERADA_PEDIDO → CONVERTIDA | "Converter em pedido" | **Comercial** |
-| qualquer não-terminal → RECUSADA | "Recusar" (com motivo) | Comercial |
-| PENDENTE/EM_ORCAMENTO → CANCELADA | "Cancelar" | Rep (só PENDENTE) / Comercial |
-
-> **Compatibilidade de status legados**: registros existentes com status
-> `CALCULADO` e `ENVIADO` (usados hoje) são mapeados na migração:
-> `CALCULADO → PRECIFICADA`, `ENVIADO → CONVERTIDA` (o `ENVIADO` de hoje já
-> significa "virou pedido"). `ACEITO`/`RECUSADO` do enum do frontend: `ACEITO`
-> não é gerado por nenhuma rota atual; `RECUSADO → RECUSADA`.
-
-A escolha de separar **PRECIFICADA** de **LIBERADA_PEDIDO** é o que atende ao
-seu requisito: precificar não libera automaticamente para pedido — o
-Comercial precisa dar o aval explícito ("liberar") antes de converter.
-
-## Autorização
-
-Hoje as rotas admin exigem `verificarPerfilAdmin(user.id)` (ADMIN/SUPER_ADMIN).
-Para "coordenado pelo Comercial", introduzir uma verificação de papel
-comercial:
-
-- Reaproveitar o mecanismo de perfis existente. Se já houver um perfil/registro
-  de vendedor/comercial, exigir que as transições **PENDENTE→EM_ORCAMENTO**,
-  **PRECIFICADA→LIBERADA_PEDIDO** e **LIBERADA_PEDIDO→CONVERTIDA** sejam feitas
-  por ADMIN/SUPER_ADMIN **ou** por usuário com papel comercial.
-- Decisão a validar na fase de tarefas: se não existe hoje um papel
-  "COMERCIAL" distinto, o guard inicial mantém ADMIN/SUPER_ADMIN e deixamos um
-  ponto de extensão (`verificarPerfilComercial`) para plugar o papel quando
-  existir — sem inventar tabela nova nesta spec.
+| De → Para | Gatilho | Quem | Efeito no OrcamentoGrafico |
+|---|---|---|---|
+| PENDENTE → EM_ORCAMENTO | "Enviar para orçamento" | Comercial | **cria** OrcamentoGrafico RASCUNHO |
+| EM_ORCAMENTO → PRECIFICADA | orçamentista calcula e envia | Orçamentista | OG RASCUNHO → ENVIADO |
+| PRECIFICADA → CONVERTIDA | rep aprova (em nome do cliente) | **Representante (Portal)** | OG ENVIADO → APROVADO → gera PedidoVenda |
+| * → RECUSADA | recusar (com motivo) | Comercial ou Rep | OG → RECUSADO (se existir) |
 
 ## Componentes e mudanças
 
-### Backend — `src/modules/portal-rep/`
+### Backend
 
-1. **`solicitacao/portal-rep-solicitacao.service.ts` — `criarSolicitacao`**
-   - Quando `clienteId` presente: gravar `clienteNome` a partir do
-     `cliente.nomeFantasia || cliente.razaoSocial` (o registro já é buscado na
-     validação de carteira — só reaproveitar).
-   - Isolamento: a busca do cliente já filtra por `empresaId + vendedorId`.
+1. **Serviço de integração — nova função `criarOrcamentoGraficoDeSolicitacao(solicitacaoId, empresaId, usuarioId, tipoEmbalagemIdOverride?)`**
+   (em `orcamento-grafico` ou no admin do portal-rep):
+   - Resolve `tipoEmbalagemId` (match automático ou override).
+   - Monta `medidas` JSON a partir das colunas da solicitação.
+   - Cria `OrcamentoGrafico` (status RASCUNHO), com `clienteId/clienteNome`,
+     `quantidade`, `observacoes` (inclui referência à solicitação).
+   - Grava `orcamentoGraficoId` na solicitação e transiciona para EM_ORCAMENTO.
+   - Idempotente: se a solicitação já tem `orcamentoGraficoId`, não recria.
 
-2. **`admin/portal-rep-admin.service.ts`**
-   - **`listarSolicitacoesAdmin`**: incluir no `select` a relação
-     `cliente: { select: { razaoSocial: true, nomeFantasia: true } }` e montar
-     um campo derivado `clienteNomeExibicao = clienteNome || cliente?.nomeFantasia
-     || cliente?.razaoSocial || null`. Retornar esse campo (o frontend passa a
-     lê-lo, com fallback para `clienteNome`).
-   - **Nova função `transicionarSolicitacao(id, novoStatus, { usuarioId, empresaId, motivo? })`**:
-     valida a transição contra a máquina de estados, grava os carimbos de
-     auditoria correspondentes e o status. Ponto único de validação.
-   - **`calcularOrcamento`**: passa a exigir status `EM_ORCAMENTO` (não mais
-     `PENDENTE`) e a gravar status `PRECIFICADA` + `precificadaEm/PorId`.
-     Precificação continua placeholder (fora de escopo trocar o motor).
-   - **`converterEmPedido`** (hoje em `converter-pedido` na rota): passa a
-     exigir status `LIBERADA_PEDIDO`; grava `pedidoVendaId`,
-     `convertidaPedidoEm` e status `CONVERTIDA`. Mantém
-     `PedidoVenda.origemPedido = 'ORCAMENTO'` e **sem** `orcamentoOrigemId`
-     (Opção B — não reaproveita etapas de orçamento gráfico).
+2. **`admin/portal-rep-admin.routes.ts`**:
+   - `POST /solicitacoes-orcamento/:id/enviar-orcamento` passa a **criar o
+     OrcamentoGrafico** (aceita `tipoEmbalagemId` opcional no body).
+   - **Remover** o caminho placeholder de `calcular` e a etapa
+     `liberar-pedido` (não fazem mais parte do fluxo). A precificação real
+     acontece na tela de Orçamento Gráfico já existente.
+   - `converter-pedido` deixa de ser o gerador do pedido — quem gera é a
+     aprovação do orçamento gráfico (item 4).
 
-3. **`admin/portal-rep-admin.routes.ts`**
-   - Nova rota `POST /solicitacoes-orcamento/:id/enviar-orcamento`
-     (PENDENTE → EM_ORCAMENTO).
-   - Nova rota `POST /solicitacoes-orcamento/:id/liberar-pedido`
-     (PRECIFICADA → LIBERADA_PEDIDO).
-   - Nova rota `POST /solicitacoes-orcamento/:id/recusar` (com `motivoRecusa`).
-   - Rotas existentes `/calcular` e `/converter-pedido` mantêm o path, com as
-     novas pré-condições de status. Todas com o guard de papel comercial.
+3. **Sincronização de status** — quando o OrcamentoGrafico muda de status
+   (ENVIADO/APROVADO/RECUSADO), refletir na solicitação vinculada:
+   - Ao **enviar** o OG (rota existente `POST /orcamento-grafico/:id/enviar`):
+     se houver solicitação com esse `orcamentoGraficoId`, marcar PRECIFICADA e
+     copiar `precoVenda/precoUnitario` para a solicitação (para o rep ver no
+     Portal sem expor custo/margem).
+   - Ao **aprovar** o OG: marcar a solicitação CONVERTIDA + `pedidoVendaId`.
+   - Ao **recusar** o OG: marcar a solicitação RECUSADA.
 
-### Frontend — `src/app/(interna)/portal-representante/solicitacoes-orcamento/page.tsx`
+4. **Aprovação pelo Representante (Portal externo)** — nova rota:
+   - `POST /api/portal-rep/solicitacoes-orcamento/:id/aprovar`
+     (`portalRepAuth`), body `{ aprovadoPor: string }` (nome de quem aprovou).
+     Valida que a solicitação é do vendedor do token e está PRECIFICADA.
+     Chama a aprovação do OrcamentoGrafico vinculado (reaproveita a lógica de
+     `POST /orcamento-grafico/:id/aprovar` que gera o PedidoVenda), grava
+     `aprovadaClientePor/Em`, e sincroniza a solicitação para CONVERTIDA.
+   - `POST /api/portal-rep/solicitacoes-orcamento/:id/recusar` (opcional, rep
+     recusa em nome do cliente).
+   - **Isolamento**: filtrar por `empresaId + vendedorId` do token; nunca
+     retornar custo/margem ao rep (Property já existente do portal).
 
-- Coluna **Cliente**: ler `item.clienteNomeExibicao || item.clienteNome || '—'`.
-- Coluna **Ações**: renderizar o botão conforme o status atual:
-  - `PENDENTE` → botão "Enviar para orçamento".
-  - `EM_ORCAMENTO` → botão "Precificar" (o atual "Calcular").
-  - `PRECIFICADA` → botão "Liberar para pedido".
-  - `LIBERADA_PEDIDO` → botão "Converter em pedido" (o atual).
-  - Ação secundária "Recusar" disponível nos estados não-terminais.
-- Atualizar `StatusSolicitacao` e `statusSolicitacaoColors` em
-  `data/hooks/portal-representante/types.ts` com os novos status
-  (`EM_ORCAMENTO`, `PRECIFICADA`, `LIBERADA_PEDIDO`, `CONVERTIDA`, `RECUSADA`,
-  `CANCELADA`) e adicionar hooks React Query para as novas rotas.
+5. **PedidoVenda gerado** — a aprovação do OG cria o pedido (hoje em RASCUNHO
+   com `origemPedido='ORCAMENTO_GRAFICO'` e `orcamentoOrigemId`). Para ele
+   entrar na Análise de Produção, precisa chegar a status elegível
+   (CONFIRMADO/APROVADO). **Decisão**: a rota de aprovação criará o pedido já
+   como CONFIRMADO (mesma escolha da conversão atual), preservando
+   `orcamentoOrigemId` — assim a OP nasce com etapas do cálculo do orçamento
+   gráfico (`gerarOpFromOrcamento`).
 
-## Fluxo completo resultante
+### Frontend
 
-```
-Rep cria (Portal)              → PENDENTE            [clienteNome congelado]
-Comercial "Enviar p/ orçamento"→ EM_ORCAMENTO
-Orçamentista "Precificar"      → PRECIFICADA         [preço placeholder por ora]
-Comercial "Liberar p/ pedido"  → LIBERADA_PEDIDO
-Comercial "Converter"          → CONVERTIDA          → cria PedidoVenda CONFIRMADO
-                                                       (origemPedido='ORCAMENTO')
-PedidoVenda → OP               → PCP → Análise de Produção → Gerar OP  (inalterado)
-```
+- **Interno** (`portal-representante/solicitacoes-orcamento/page.tsx`):
+  - Ação "Enviar para orçamento" abre seletor de Tipo de Embalagem quando o
+    match automático não resolve; ao confirmar, cria o OG e leva a solicitação
+    para EM_ORCAMENTO. Adicionar link/atalho para abrir o Orçamento Gráfico
+    gerado (`orcamentoGraficoId`).
+  - Remover botões "Precificar" e "Liberar para pedido" (a precificação é na
+    tela de Orçamento Gráfico). Manter "Recusar".
+- **Portal externo** (`(portal-rep)/portal-rep/orcamentos`):
+  - Quando a solicitação está PRECIFICADA, exibir o **preço** e botões
+    **Aprovar** / **Recusar**. "Aprovar" abre um campo obrigatório "Aprovado
+    por (nome)" e chama a nova rota de aprovação.
+- **Tipos/hooks** (`data/hooks/portal-representante`): ajustar status
+  (remover LIBERADA_PEDIDO), adicionar hook de aprovar no portal.
 
 ## Tratamento de erros
 
-- Transição inválida: HTTP 400 com mensagem "Transição não permitida a partir
-  do status X" e `code: 'TRANSICAO_INVALIDA'`.
-- Recusa sem motivo: HTTP 400 `code: 'MOTIVO_OBRIGATORIO'`.
-- Conversão sem `LIBERADA_PEDIDO`: HTTP 400 explicando que precisa liberar antes.
-- Falta de papel comercial: HTTP 403.
+- "Enviar para orçamento" sem tipo resolvido e sem override: HTTP 400
+  `code: TIPO_EMBALAGEM_NAO_RESOLVIDO` (frontend abre o seletor).
+- Aprovar solicitação fora de PRECIFICADA: HTTP 400 `TRANSICAO_INVALIDA`.
+- Aprovar sem `aprovadoPor`: HTTP 400 `APROVADOR_OBRIGATORIO`.
+- Rep tentando aprovar solicitação de outro vendedor: HTTP 404 (isolamento).
 
 ## Estratégia de testes
 
-- **Unit (Vitest)**: função de validação da máquina de estados — todas as
-  transições válidas e uma amostra representativa de inválidas.
-- **Serviço**: `criarSolicitacao` grava `clienteNome` quando há `clienteId`;
-  `listarSolicitacoesAdmin` resolve o nome do cliente pelo join quando
-  `clienteNome` está nulo.
-- **E2E (suíte Python/Playwright, `test_02_portal_representante`)**: estender
-  para cobrir o ciclo PENDENTE → EM_ORCAMENTO → PRECIFICADA → LIBERADA_PEDIDO →
-  CONVERTIDA e a exibição correta do cliente.
-- **Isolamento multi-tenant**: garantir que o join com `Cliente` na listagem
-  não vaza clientes de outra empresa (o `where` já filtra `empresaId`).
+- Unit: resolução do tipo de embalagem (match/normalização), montagem do JSON
+  de medidas, máquina de estados ajustada.
+- Serviço: criação idempotente do OG; sincronização de status OG→solicitação.
+- E2E: ciclo completo PENDENTE → EM_ORCAMENTO (OG criado) → precificar/enviar OG
+  → rep aprova no Portal → CONVERTIDA + PedidoVenda + OP.
+
+## Migração da Opção B já implementada
+
+O que já subiu (Opção B) e precisa ser ajustado:
+- `calcular` (placeholder) e `liberar-pedido`: descontinuar.
+- `enviar-orcamento`: reescrever para criar o OG.
+- `converter-pedido`: a geração do pedido migra para a aprovação (OG/portal).
+- Frontend: remover LIBERADA_PEDIDO e os botões correspondentes.
+Os campos de auditoria já adicionados permanecem úteis.

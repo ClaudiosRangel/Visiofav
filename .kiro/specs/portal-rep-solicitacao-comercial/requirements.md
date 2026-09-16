@@ -1,84 +1,97 @@
-# Requirements — Solicitação de Orçamento do Representante coordenada pelo Comercial
+# Requirements — Solicitação do Representante integrada ao Orçamento Gráfico (Opção A)
 
 ## Introdução
 
-A Solicitação de Orçamento criada pelo representante no Portal
-(`solicitacao_orcamento_rep`) precisa de duas melhorias: exibir corretamente
-o cliente na tela interna e passar a ter um fluxo de status coordenado pelo
-setor **Comercial**, com etapas explícitas até virar Pedido de Venda.
-Mantém-se a **Opção B**: a solicitação não se transforma em Orçamento Gráfico;
-converge no `PedidoVenda` e segue para OP pela Análise de Produção (inalterada).
+A Solicitação de Orçamento criada pelo representante deve percorrer o
+Orçamento Gráfico real antes de virar pedido. O Comercial envia a solicitação
+para orçamento (gerando um Orçamento Gráfico pré-preenchido), o orçamentista
+precifica/envia, e o **representante aprova pelo Portal em nome do cliente**,
+o que gera o Pedido de Venda que segue para OP (Análise de Produção, inalterada).
 
 ## Requirements
 
-### Requisito 1 — Exibição correta do cliente
+### Requisito 1 — Exibição correta do cliente (mantido)
 
 **User Story:** Como usuário interno, quero ver o nome do cliente na listagem
-de solicitações, para identificar a solicitação sem abrir o detalhe.
+de solicitações.
 
 #### Acceptance Criteria
-1. QUANDO o representante cria uma solicitação com `clienteId` de sua carteira,
-   ENTÃO o sistema DEVE gravar `clienteNome` com o nome do cliente
-   (nomeFantasia ou razaoSocial) no momento da criação.
-2. QUANDO a listagem interna é exibida E `clienteNome` está nulo mas há
-   `clienteId`, ENTÃO o sistema DEVE resolver o nome via relação com `Cliente`.
-3. QUANDO nenhuma das fontes tem nome, ENTÃO a tela DEVE exibir "—".
-4. O join com `Cliente` NÃO DEVE expor clientes de outra empresa (isolamento
-   por `empresaId` preservado).
+1. QUANDO o rep cria com `clienteId`, ENTÃO o sistema DEVE gravar `clienteNome`.
+2. QUANDO `clienteNome` está nulo mas há `clienteId`, ENTÃO a listagem DEVE
+   resolver o nome via `Cliente`, isolado por `empresaId`.
+3. QUANDO não há nome, ENTÃO a tela exibe "—".
 
-### Requisito 2 — Fluxo de status coordenado pelo Comercial
+### Requisito 2 — Enviar para orçamento cria Orçamento Gráfico
 
-**User Story:** Como Comercial, quero controlar quando a solicitação vai para
-orçamento e quando ela vira pedido, para coordenar o processo.
+**User Story:** Como Comercial, quero enviar a solicitação para orçamento,
+gerando um Orçamento Gráfico pré-preenchido.
 
 #### Acceptance Criteria
-1. O sistema DEVE suportar os status: PENDENTE, EM_ORCAMENTO, PRECIFICADA,
-   LIBERADA_PEDIDO, CONVERTIDA, RECUSADA, CANCELADA.
-2. QUANDO uma transição é solicitada, ENTÃO o sistema DEVE validá-la contra a
-   máquina de estados e rejeitar transições inválidas com HTTP 400
-   (`code: TRANSICAO_INVALIDA`).
-3. QUANDO o Comercial envia para orçamento (PENDENTE → EM_ORCAMENTO), ENTÃO o
-   sistema DEVE gravar `enviadaOrcamentoEm/PorId`.
-4. QUANDO ocorre a precificação (EM_ORCAMENTO → PRECIFICADA), ENTÃO o sistema
-   DEVE gravar preço e `precificadaEm/PorId`.
-5. QUANDO o Comercial libera para pedido (PRECIFICADA → LIBERADA_PEDIDO),
-   ENTÃO o sistema DEVE gravar `liberadaPedidoEm/PorId`.
-6. A conversão em pedido SÓ DEVE ser permitida a partir de LIBERADA_PEDIDO.
-7. QUANDO uma solicitação é recusada, ENTÃO o sistema DEVE exigir `motivoRecusa`
-   (HTTP 400 `code: MOTIVO_OBRIGATORIO` se ausente) e gravar status RECUSADA.
+1. QUANDO o Comercial envia (PENDENTE → EM_ORCAMENTO), ENTÃO o sistema DEVE
+   criar um `OrcamentoGrafico` em status RASCUNHO vinculado à solicitação
+   (`orcamentoGraficoId`).
+2. O sistema DEVE pré-preencher o Orçamento Gráfico com cliente, quantidade,
+   medidas (JSON a partir das colunas da solicitação) e observações.
+3. QUANDO `tipoEmbalagem` (texto) casar unicamente com um `TipoEmbalagem` da
+   empresa, ENTÃO o sistema DEVE usar esse `tipoEmbalagemId`.
+4. QUANDO não houver match, ENTÃO o sistema DEVE exigir `tipoEmbalagemId`
+   informado pelo Comercial (HTTP 400 `TIPO_EMBALAGEM_NAO_RESOLVIDO` se ausente).
+5. A criação DEVE ser idempotente: se a solicitação já tem `orcamentoGraficoId`,
+   não recriar.
 
-### Requisito 3 — Conversão em Pedido de Venda (Opção B)
+### Requisito 3 — Precificação e envio no Orçamento Gráfico
 
-**User Story:** Como Comercial, quero converter a solicitação liberada em
-Pedido de Venda, para dar continuidade à produção.
+**User Story:** Como orçamentista, quero precificar no Orçamento Gráfico e
+enviá-lo, refletindo o status na solicitação.
 
 #### Acceptance Criteria
-1. QUANDO a solicitação está LIBERADA_PEDIDO E o Comercial converte, ENTÃO o
-   sistema DEVE criar um `PedidoVenda` com status CONFIRMADO,
-   `origemPedido='ORCAMENTO'` e SEM `orcamentoOrigemId`.
-2. O sistema DEVE gravar `pedidoVendaId`, `convertidaPedidoEm` e status
-   CONVERTIDA na solicitação.
-3. O fluxo PedidoVenda → OP (Análise de Produção do PCP) NÃO DEVE ser alterado.
+1. A precificação DEVE usar o motor real do Orçamento Gráfico (não placeholder).
+2. QUANDO o Orçamento Gráfico é enviado (RASCUNHO → ENVIADO), ENTÃO a
+   solicitação vinculada DEVE ir para PRECIFICADA e copiar `precoVenda`/
+   `precoUnitario` (para o rep ver o preço).
+3. O rep NUNCA DEVE receber custo/margem.
 
-### Requisito 4 — Autorização
+### Requisito 4 — Aprovação pelo Representante no Portal
 
-**User Story:** Como gestor, quero que apenas usuários autorizados executem as
-transições, para manter o controle do processo.
-
-#### Acceptance Criteria
-1. As transições coordenadas pelo Comercial DEVEM exigir perfil ADMIN/SUPER_ADMIN
-   (com ponto de extensão para um futuro papel COMERCIAL).
-2. QUANDO um usuário sem permissão tenta executar, ENTÃO o sistema DEVE
-   retornar HTTP 403.
-
-### Requisito 5 — Compatibilidade de dados existentes
-
-**User Story:** Como responsável pelo deploy, quero que os registros atuais
-continuem consistentes após a mudança.
+**User Story:** Como representante, quero aprovar o orçamento em nome do
+cliente pelo Portal, registrando quem aprovou.
 
 #### Acceptance Criteria
-1. A migração DEVE mapear status legados: CALCULADO → PRECIFICADA,
-   ENVIADO → CONVERTIDA, RECUSADO → RECUSADA.
-2. Os novos campos DEVEM ser adicionados de forma idempotente
-   (`ADD COLUMN IF NOT EXISTS`) em `prisma/migrate-prod.ts`, testados 2x local.
+1. QUANDO a solicitação está PRECIFICADA, ENTÃO o Portal DEVE exibir o preço e
+   permitir Aprovar/Recusar.
+2. QUANDO o rep aprova, ENTÃO o sistema DEVE exigir `aprovadoPor` (nome)
+   (HTTP 400 `APROVADOR_OBRIGATORIO` se ausente) e gravar
+   `aprovadaClientePor/Em`.
+3. A aprovação DEVE aprovar o Orçamento Gráfico vinculado (ENVIADO → APROVADO),
+   gerando o `PedidoVenda`, e marcar a solicitação CONVERTIDA + `pedidoVendaId`.
+4. A aprovação DEVE respeitar isolamento por `empresaId + vendedorId` do token
+   (rep de outro vendedor recebe 404).
+5. QUANDO o rep recusa, ENTÃO a solicitação e o Orçamento Gráfico vão para
+   RECUSADA/RECUSADO.
+
+### Requisito 5 — Pedido de Venda e OP
+
+**User Story:** Como PCP, quero que o pedido gerado siga para OP com as etapas
+do orçamento gráfico.
+
+#### Acceptance Criteria
+1. O `PedidoVenda` gerado na aprovação DEVE ter `origemPedido='ORCAMENTO_GRAFICO'`,
+   `orcamentoOrigemId` preenchido e status elegível (CONFIRMADO).
+2. O fluxo PedidoVenda → OP (Análise de Produção) NÃO DEVE ser alterado; a OP
+   nasce com etapas do `resultadoCalculo` do orçamento (via `gerarOpFromOrcamento`).
+
+### Requisito 6 — Autorização
+
+#### Acceptance Criteria
+1. As ações internas (enviar para orçamento, recusar) DEVEM exigir
+   ADMIN/SUPER_ADMIN.
+2. As ações do Portal (aprovar/recusar) DEVEM exigir `portalRepAuth`.
+
+### Requisito 7 — Compatibilidade e migração
+
+#### Acceptance Criteria
+1. Novos campos (`aprovada_cliente_por`, `aprovada_cliente_em`) DEVEM ser
+   adicionados idempotentemente em `migrate-prod.ts`.
+2. Registros em `LIBERADA_PEDIDO` (status intermediário da Opção B, se
+   existirem) DEVEM ser mapeados para PRECIFICADA.
 3. Nenhum dado existente DEVE ser perdido.

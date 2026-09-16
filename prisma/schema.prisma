@@ -5544,6 +5544,9 @@ model SolicitacaoOrcamentoRep {
   convertidaPedidoEm    DateTime? @map("convertida_pedido_em")
   pedidoVendaId         String?   @map("pedido_venda_id")
   motivoRecusa          String?   @map("motivo_recusa") @db.Text
+  // Aprovação do cliente registrada pelo representante no Portal (Opção A)
+  aprovadaClientePor    String?   @map("aprovada_cliente_por") @db.VarChar(200)
+  aprovadaClienteEm     DateTime? @map("aprovada_cliente_em")
   criadoEm           DateTime                @default(now()) @map("criado_em")
   atualizadoEm       DateTime                @updatedAt @map("atualizado_em")
 

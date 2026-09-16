@@ -4,20 +4,22 @@
  *
  * Ponto único de verdade sobre quais transições são permitidas.
  *
- *   PENDENTE        → EM_ORCAMENTO | CANCELADA
- *   EM_ORCAMENTO    → PRECIFICADA | RECUSADA | CANCELADA
- *   PRECIFICADA     → LIBERADA_PEDIDO | RECUSADA | CANCELADA
- *   LIBERADA_PEDIDO → CONVERTIDA | RECUSADA
- *   CONVERTIDA      → (terminal)
- *   RECUSADA        → (terminal)
- *   CANCELADA       → (terminal)
+ *   PENDENTE      → EM_ORCAMENTO | CANCELADA
+ *   EM_ORCAMENTO  → PRECIFICADA | RECUSADA | CANCELADA   (orçamentista trabalha no OG)
+ *   PRECIFICADA   → CONVERTIDA | RECUSADA | CANCELADA    (rep aprova no Portal)
+ *   CONVERTIDA    → (terminal)
+ *   RECUSADA      → (terminal)
+ *   CANCELADA     → (terminal)
+ *
+ * Opção A: a solicitação passa por um OrcamentoGrafico real. PRECIFICADA
+ * significa "orçamento gráfico enviado, aguardando aprovação do cliente"
+ * (feita pelo representante no Portal). Não existe mais LIBERADA_PEDIDO.
  */
 
 export type StatusSolicitacao =
   | 'PENDENTE'
   | 'EM_ORCAMENTO'
   | 'PRECIFICADA'
-  | 'LIBERADA_PEDIDO'
   | 'CONVERTIDA'
   | 'RECUSADA'
   | 'CANCELADA'
@@ -25,8 +27,7 @@ export type StatusSolicitacao =
 export const TRANSICOES_VALIDAS: Record<StatusSolicitacao, StatusSolicitacao[]> = {
   PENDENTE: ['EM_ORCAMENTO', 'CANCELADA'],
   EM_ORCAMENTO: ['PRECIFICADA', 'RECUSADA', 'CANCELADA'],
-  PRECIFICADA: ['LIBERADA_PEDIDO', 'RECUSADA', 'CANCELADA'],
-  LIBERADA_PEDIDO: ['CONVERTIDA', 'RECUSADA'],
+  PRECIFICADA: ['CONVERTIDA', 'RECUSADA', 'CANCELADA'],
   CONVERTIDA: [],
   RECUSADA: [],
   CANCELADA: [],

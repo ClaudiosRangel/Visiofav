@@ -286,3 +286,185 @@ export async function cancelarSolicitacao(id: string, portalRepUser: PortalRepUs
 
   return cancelada
 }
+
+// ─── Aprovar Solicitação (Portal do Representante — Opção A) ─────────────────────
+
+/**
+ * Aprova a solicitação em nome do cliente (feita pelo representante no Portal).
+ *
+ * Pré-condições:
+ * - Solicitação pertence ao vendedor do token (isolamento) e está PRECIFICADA
+ * - Tem orcamentoGraficoId vinculado, com o Orçamento Gráfico em ENVIADO
+ *
+ * Efeitos:
+ * - Aprova o OrcamentoGrafico (ENVIADO → APROVADO)
+ * - Gera PedidoVenda CONFIRMADO com origemPedido='ORCAMENTO_GRAFICO' e
+ *   orcamentoOrigemId (para a OP nascer com etapas do cálculo)
+ * - Marca a solicitação CONVERTIDA + aprovadaClientePor/Em + pedidoVendaId
+ */
+export async function aprovarSolicitacaoRep(
+  id: string,
+  aprovadoPor: string,
+  portalRepUser: PortalRepUser,
+) {
+  const { empresaId, vendedorId } = portalRepUser
+
+  if (!aprovadoPor || !aprovadoPor.trim()) {
+    throw {
+      statusCode: 400,
+      message: 'Informe o nome de quem aprovou (em nome do cliente).',
+      code: 'APROVADOR_OBRIGATORIO',
+    }
+  }
+
+  const solicitacao = await prisma.solicitacaoOrcamentoRep.findFirst({
+    where: { id, empresaId, vendedorId },
+    select: { id: true, status: true, orcamentoGraficoId: true },
+  })
+
+  if (!solicitacao) {
+    throw { statusCode: 404, message: 'Solicitação não encontrada' }
+  }
+  if (solicitacao.status !== 'PRECIFICADA') {
+    throw {
+      statusCode: 400,
+      message: `Só é possível aprovar solicitações precificadas. Status atual: ${solicitacao.status}`,
+      code: 'TRANSICAO_INVALIDA',
+    }
+  }
+  if (!solicitacao.orcamentoGraficoId) {
+    throw { statusCode: 400, message: 'Solicitação não possui orçamento gráfico vinculado.' }
+  }
+
+  const orcamento = await prisma.orcamentoGrafico.findFirst({
+    where: { id: solicitacao.orcamentoGraficoId, empresaId },
+    select: {
+      id: true,
+      status: true,
+      clienteId: true,
+      vendedorId: true,
+      precoVenda: true,
+    },
+  })
+  if (!orcamento) {
+    throw { statusCode: 404, message: 'Orçamento gráfico vinculado não encontrado.' }
+  }
+  if (orcamento.status !== 'ENVIADO') {
+    throw {
+      statusCode: 400,
+      message: `O orçamento gráfico precisa estar ENVIADO para ser aprovado. Status atual: ${orcamento.status}`,
+      code: 'ORCAMENTO_NAO_ENVIADO',
+    }
+  }
+
+  // PedidoVenda exige clienteId e tabelaPrecoId (não-nulos no schema).
+  if (!orcamento.clienteId) {
+    throw {
+      statusCode: 400,
+      message: 'Não é possível aprovar: o orçamento não tem cliente vinculado. Vincule um cliente antes.',
+      code: 'CLIENTE_OBRIGATORIO',
+    }
+  }
+  const tabelaPreco = await prisma.tabelaPreco.findFirst({
+    where: { empresaId, status: true },
+    select: { id: true },
+  })
+  if (!tabelaPreco) {
+    throw {
+      statusCode: 400,
+      message: 'Não é possível gerar o pedido: nenhuma tabela de preço ativa cadastrada.',
+      code: 'TABELA_PRECO_AUSENTE',
+    }
+  }
+
+  // Gerar PedidoVenda CONFIRMADO (elegível para Análise de Produção → OP)
+  const ultimoPedido = await prisma.pedidoVenda.findFirst({
+    where: { empresaId },
+    orderBy: { numero: 'desc' },
+    select: { numero: true },
+  })
+  const numeroPedido = (ultimoPedido?.numero ?? 0) + 1
+
+  const pedido = await prisma.pedidoVenda.create({
+    data: {
+      empresaId,
+      numero: numeroPedido,
+      clienteId: orcamento.clienteId,
+      vendedorId: orcamento.vendedorId ?? vendedorId,
+      tabelaPrecoId: tabelaPreco.id,
+      valorTotal: orcamento.precoVenda ?? 0,
+      status: 'CONFIRMADO',
+      origemPedido: 'ORCAMENTO_GRAFICO',
+      orcamentoOrigemId: orcamento.id,
+      observacao: `Aprovado pelo representante em nome do cliente: ${aprovadoPor.trim()} (solicitação ${solicitacao.id})`,
+    },
+    select: { id: true, numero: true },
+  })
+
+  // Aprovar o orçamento gráfico e vincular o pedido
+  await prisma.orcamentoGrafico.update({
+    where: { id: orcamento.id },
+    data: { status: 'APROVADO', aprovadoEm: new Date(), pedidoVendaId: pedido.id },
+  })
+
+  // Marcar a solicitação CONVERTIDA + auditoria da aprovação do cliente
+  const atualizada = await prisma.solicitacaoOrcamentoRep.update({
+    where: { id: solicitacao.id },
+    data: {
+      status: 'CONVERTIDA',
+      pedidoVendaId: pedido.id,
+      convertidaPedidoEm: new Date(),
+      aprovadaClientePor: aprovadoPor.trim(),
+      aprovadaClienteEm: new Date(),
+    },
+    select: SOLICITACAO_SELECT,
+  })
+
+  return { solicitacao: atualizada, pedido }
+}
+
+/**
+ * Recusa a solicitação em nome do cliente (representante no Portal).
+ * Reflete no orçamento gráfico vinculado quando aplicável.
+ */
+export async function recusarSolicitacaoRep(
+  id: string,
+  motivoRecusa: string,
+  portalRepUser: PortalRepUser,
+) {
+  const { empresaId, vendedorId } = portalRepUser
+
+  if (!motivoRecusa || !motivoRecusa.trim()) {
+    throw { statusCode: 400, message: 'Motivo da recusa é obrigatório', code: 'MOTIVO_OBRIGATORIO' }
+  }
+
+  const solicitacao = await prisma.solicitacaoOrcamentoRep.findFirst({
+    where: { id, empresaId, vendedorId },
+    select: { id: true, status: true, orcamentoGraficoId: true },
+  })
+  if (!solicitacao) {
+    throw { statusCode: 404, message: 'Solicitação não encontrada' }
+  }
+  if (!['EM_ORCAMENTO', 'PRECIFICADA'].includes(solicitacao.status)) {
+    throw {
+      statusCode: 400,
+      message: `Não é possível recusar no status atual: ${solicitacao.status}`,
+      code: 'TRANSICAO_INVALIDA',
+    }
+  }
+
+  if (solicitacao.orcamentoGraficoId) {
+    await prisma.orcamentoGrafico.updateMany({
+      where: { id: solicitacao.orcamentoGraficoId, empresaId, status: { in: ['RASCUNHO', 'ENVIADO'] } },
+      data: { status: 'RECUSADO', motivoRecusa: motivoRecusa.trim() },
+    })
+  }
+
+  const atualizada = await prisma.solicitacaoOrcamentoRep.update({
+    where: { id: solicitacao.id },
+    data: { status: 'RECUSADA', motivoRecusa: motivoRecusa.trim() },
+    select: SOLICITACAO_SELECT,
+  })
+
+  return atualizada
+}

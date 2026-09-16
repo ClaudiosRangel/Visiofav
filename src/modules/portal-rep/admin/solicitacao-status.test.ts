@@ -16,15 +16,13 @@ describe('Máquina de estados da Solicitação de Orçamento (Comercial)', () =>
   })
 
   it('bloqueia transições fora do mapa', () => {
-    // PENDENTE não pode pular direto para PRECIFICADA/LIBERADA/CONVERTIDA
+    // PENDENTE não pode pular direto para PRECIFICADA/CONVERTIDA
     expect(transicaoPermitida('PENDENTE', 'PRECIFICADA')).toBe(false)
-    expect(transicaoPermitida('PENDENTE', 'LIBERADA_PEDIDO')).toBe(false)
     expect(transicaoPermitida('PENDENTE', 'CONVERTIDA')).toBe(false)
-    // EM_ORCAMENTO não pode ir direto para LIBERADA/CONVERTIDA
-    expect(transicaoPermitida('EM_ORCAMENTO', 'LIBERADA_PEDIDO')).toBe(false)
+    // EM_ORCAMENTO não pode ir direto para CONVERTIDA (precisa precificar antes)
     expect(transicaoPermitida('EM_ORCAMENTO', 'CONVERTIDA')).toBe(false)
-    // PRECIFICADA não converte sem liberar
-    expect(transicaoPermitida('PRECIFICADA', 'CONVERTIDA')).toBe(false)
+    // LIBERADA_PEDIDO não existe mais na Opção A
+    expect(transicaoPermitida('PRECIFICADA', 'LIBERADA_PEDIDO')).toBe(false)
   })
 
   it('trata status terminais como sem saída', () => {
@@ -39,12 +37,11 @@ describe('Máquina de estados da Solicitação de Orçamento (Comercial)', () =>
     expect(proximasTransicoes('XPTO')).toEqual([])
   })
 
-  it('cobre o caminho feliz completo coordenado pelo Comercial', () => {
+  it('cobre o caminho feliz completo (Opção A)', () => {
     const caminho: StatusSolicitacao[] = [
       'PENDENTE',
       'EM_ORCAMENTO',
       'PRECIFICADA',
-      'LIBERADA_PEDIDO',
       'CONVERTIDA',
     ]
     for (let i = 0; i < caminho.length - 1; i++) {

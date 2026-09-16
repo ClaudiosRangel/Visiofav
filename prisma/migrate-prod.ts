@@ -3400,12 +3400,17 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "convertida_pedido_em" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "pedido_venda_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "motivo_recusa" TEXT`)
+  // Opção A — aprovação do cliente registrada pelo representante no Portal
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "aprovada_cliente_por" VARCHAR(200)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "aprovada_cliente_em" TIMESTAMP(3)`)
 
   // Mapeamento de status legados para a nova máquina de estados (idempotente)
   await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'PRECIFICADA' WHERE "status" = 'CALCULADO'`)
   await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'CONVERTIDA' WHERE "status" = 'ENVIADO'`)
   await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'RECUSADA' WHERE "status" = 'RECUSADO'`)
-  console.log('✅ SolicitacaoOrcamentoRep: colunas de transição + status legados migrados')
+  // Opção A: LIBERADA_PEDIDO (status intermediário da Opção B) → PRECIFICADA
+  await prisma.$executeRawUnsafe(`UPDATE "solicitacao_orcamento_rep" SET "status" = 'PRECIFICADA' WHERE "status" = 'LIBERADA_PEDIDO'`)
+  console.log('✅ SolicitacaoOrcamentoRep: colunas de transição/aprovação + status legados migrados')
 
   // NotificacaoRep
   await prisma.$executeRawUnsafe(`
