@@ -175,3 +175,74 @@ export async function popularPlanoContasPadrao(
     PLANO_CONTAS_PADRAO.reduce((s, g) => s + (g.filhos?.length ?? 0), 0)
   return { criadas, existentes: totalPadrao - criadas }
 }
+
+
+/**
+ * Classificador automático: dado um texto (descrição/beneficiário/tipo do
+ * documento), sugere o CÓDIGO da categoria do plano padrão mais provável.
+ * Heurística por palavra-chave — usada pela IA ao lançar um documento quando
+ * o usuário não informou a categoria. Retorna o código (ex.: '4.02') ou null.
+ *
+ * `tipo` ('pagar'|'receber') restringe o universo (despesa vs receita).
+ */
+export function sugerirCategoriaPorTexto(
+  texto: string,
+  tipo: 'pagar' | 'receber',
+): string | null {
+  const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (!t) return null
+
+  if (tipo === 'receber') {
+    if (/servic|consultoria|honorario/.test(t)) return '1.03'
+    if (/frete/.test(t)) return '1.04'
+    if (/juro|multa|rendiment/.test(t)) return '7.01'
+    if (/venda|produto|mercadoria|nota fiscal|nf-?e/.test(t)) return '1.01'
+    return null
+  }
+
+  // DESPESA — ordem importa (mais específico primeiro)
+  const regras: Array<[RegExp, string]> = [
+    [/energia|eletric|light|enel|cemig|copel|celesc|cpfl|neoenergia|equatorial/, '4.02'],
+    [/agua|esgoto|saneament|sabesp|cedae|copasa|sanepar|caesb/, '4.03'],
+    [/telefon|internet|celular|vivo|claro|tim|oi\b|net\b|banda larga/, '4.04'],
+    [/aluguel|condominio|locacao de imovel/, '4.01'],
+    [/darf|das\b|gps\b|inss|fgts|iss\b|icms|simples nacional|imposto|tributo|guia/, tipoImpostoParaCodigo(t)],
+    [/combustivel|gasolina|diesel|etanol|posto|frota/, '4.12'],
+    [/software|assinatura|saas|licenc|sistema|hospedagem|nuvem|cloud/, '4.09'],
+    [/marketing|publicidade|anuncio|google ads|meta ads|propaganda/, '4.10'],
+    [/contab|contador|escritorio contabil/, '4.14'],
+    [/advogad|juridic|honorario advocatic/, '4.15'],
+    [/salario|folha|ordenado/, '5.01'],
+    [/pro-?labore|prolabore/, '5.02'],
+    [/vale.?transporte|vt\b/, '5.07'],
+    [/vale.?alimentac|vale.?refeic|va\b|vr\b|ticket|sodexo|alelo/, '5.08'],
+    [/plano de saude|unimed|amil|bradesco saude|convenio medico/, '5.09'],
+    [/comissao|bonificac/, '5.10'],
+    [/tarifa bancaria|tarifa|manutencao de conta/, '6.02'],
+    [/iof/, '6.03'],
+    [/taxa de cartao|adquirente|cielo|rede\b|getnet|stone|pagseguro/, '6.04'],
+    [/juro|multa|encargo/, '6.01'],
+    [/seguro/, '4.08'],
+    [/material de escritorio|papelaria|material de consumo/, '4.05'],
+    [/manutencao|reparo|conserto/, '4.06'],
+    [/limpeza|conservacao/, '4.07'],
+    [/viagem|hotel|passagem|hospedagem|deslocament/, '4.11'],
+    [/materia.?prima|insumo|papel|tinta|embalagem/, '3.04'],
+    [/frete sobre compra|frete de compra/, '3.05'],
+    [/emprestimo|financiamento/, '9.02'],
+    [/imobilizado|maquina|equipamento|veiculo/, '9.01'],
+  ]
+  for (const [re, codigo] of regras) {
+    if (re.test(t)) return codigo
+  }
+  return '4.99' // fallback: Outras Despesas Administrativas
+}
+
+/** Distingue impostos sobre venda (2.03/2.04) de tributos sobre lucro (8.x). */
+function tipoImpostoParaCodigo(t: string): string {
+  if (/irpj/.test(t)) return '8.01'
+  if (/csll/.test(t)) return '8.02'
+  if (/simples nacional|das\b/.test(t)) return '2.04'
+  if (/icms|iss|pis|cofins/.test(t)) return '2.03'
+  return '4.99'
+}

@@ -19,7 +19,7 @@ import * as fechamento from './fechamento.service'
 import { classificarAging, montarDreGerencial, projetarFluxoCaixa, competenciaDe } from './financeiro-calculo'
 import { obterDashboard } from './dashboard.service'
 import { extratoConta } from './extrato.service'
-import { inadimplencia, contasPorPeriodo } from './relatorios.service'
+import { inadimplencia, contasPorPeriodo, resumoExecutivo } from './relatorios.service'
 import { criarContrato, listarContratos, obterContrato } from './contrato-parcelamento.service'
 import * as folha from './folha.service'
 import { efetivarFolha } from './folha-efetivacao.service'
@@ -367,6 +367,20 @@ export async function financeiroRoutes(app: FastifyInstance) {
     try {
       const user = request.user as { empresaId: string }
       return await inadimplencia(prisma, user.empresaId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // GET /relatorios/resumo-executivo?de=&ate= — raio-x do período
+  app.get('/relatorios/resumo-executivo', async (request, reply) => {
+    try {
+      const user = request.user as { empresaId: string }
+      const q = z.object({ de: z.string().optional(), ate: z.string().optional() }).parse(request.query)
+      const agora = new Date()
+      const de = q.de ? new Date(q.de) : new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1))
+      const ate = q.ate ? new Date(q.ate) : new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth() + 1, 0, 23, 59, 59))
+      return await resumoExecutivo(prisma, user.empresaId, de, ate, agora)
     } catch (err) {
       return tratarErro(reply, err)
     }

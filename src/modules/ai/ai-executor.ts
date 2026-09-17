@@ -1019,12 +1019,30 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
 
   // resolve categoria por nome/código
   let categoriaId: string | undefined
+  let categoriaAuto = false
   if (input.categoria) {
     const cat = await prisma.categoriaFinanceira.findFirst({
-      where: { empresaId, OR: [{ codigo: input.categoria }, { nome: { contains: input.categoria, mode: 'insensitive' } }] },
+      where: { empresaId, status: true, OR: [{ codigo: input.categoria }, { nome: { contains: input.categoria, mode: 'insensitive' } }] },
       select: { id: true },
     })
     categoriaId = cat?.id
+  }
+
+  // Classificação automática pelo plano de contas: se a IA não informou/achou
+  // categoria, sugere pelo texto (descrição + fornecedor + tipo do documento)
+  // e busca a categoria correspondente no plano da empresa. Só classifica se a
+  // empresa já tem o plano de contas populado.
+  if (!categoriaId) {
+    const { sugerirCategoriaPorTexto } = await import('../financeiro/plano-contas-padrao')
+    const textoClassificar = [input.descricao, input.parceiroNome, input.tipoDocumento].filter(Boolean).join(' ')
+    const codigoSugerido = sugerirCategoriaPorTexto(textoClassificar, tipo === 'PAGAR' ? 'pagar' : 'receber')
+    if (codigoSugerido) {
+      const cat = await prisma.categoriaFinanceira.findFirst({
+        where: { empresaId, status: true, codigo: codigoSugerido },
+        select: { id: true },
+      })
+      if (cat) { categoriaId = cat.id; categoriaAuto = true }
+    }
   }
 
   try {
@@ -1042,11 +1060,18 @@ async function executarLancarDocumentoFinanceiro(input: any, empresaId: string):
       codigoBarras: tipo === 'PAGAR' ? input.codigoBarras : undefined,
     })
 
+    // Nome da categoria aplicada (para exibir na confirmação)
+    let categoriaTxt = ''
+    if (categoriaId) {
+      const cat = await prisma.categoriaFinanceira.findUnique({ where: { id: categoriaId }, select: { codigo: true, nome: true } })
+      if (cat) categoriaTxt = `\n• Categoria: **${cat.codigo} — ${cat.nome}**${categoriaAuto ? ' _(classificada automaticamente)_' : ''}`
+    }
+
     const rota = tipo === 'PAGAR' ? '/financeiro/contas-pagar' : '/financeiro/contas-receber'
     const parceiroTxt = fornecedorCriado
       ? ` _(fornecedor **${input.parceiroNome}** cadastrado automaticamente${docNorm ? ` — doc ${input.parceiroDocumento}` : ''})_`
       : parceiroId ? ' _(vinculado ao cadastro)_' : input.parceiroNome ? ` _(${input.parceiroNome}, avulso)_` : ''
-    let resposta = `✅ **Documento lançado!**\n• ${input.descricao}\n• Valor: **R$ ${formatBRL(Number(input.valor))}**${res.parcelas > 1 ? ` em **${res.parcelas}x**` : ''}\n• Vencimento: **${formatDate(new Date(input.vencimento))}**${parceiroTxt}`
+    let resposta = `✅ **Documento lançado!**\n• ${input.descricao}\n• Valor: **R$ ${formatBRL(Number(input.valor))}**${res.parcelas > 1 ? ` em **${res.parcelas}x**` : ''}\n• Vencimento: **${formatDate(new Date(input.vencimento))}**${categoriaTxt}${parceiroTxt}`
     return { resposta, acao: { tipo: 'NAVEGAR', rota } }
   } catch (err: any) {
     return { resposta: `❌ Não consegui lançar: ${err?.message || 'erro desconhecido'}` }
