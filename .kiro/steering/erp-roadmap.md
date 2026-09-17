@@ -345,6 +345,44 @@ NF-e de transferência (CFOP 5152/6152), remessa/retorno para industrialização
 (5901/6901, 5902/6902), transferência entre depósitos, controle de filiais,
 relatório de movimentação.
 
+### Grupo Econômico (Matriz/Filial) — solicitado 17/09/2026, executar em sequência
+
+Permitir agrupar empresas cadastradas como **grupo econômico** (matriz +
+filiais) e, a partir de uma sessão, lançar contas a pagar/receber e despesas
+para OUTRA empresa do mesmo grupo (à qual o usuário tem acesso), além de
+relatórios consolidados do grupo. Recurso de ERP "grande" (equivalente a
+coligadas/filiais do TOTVS/Sankhya).
+
+**Análise de impacto (resumo — detalhar no spec):**
+- **Dados (baixo):** `Empresa.grupoId` + `tipoUnidade` (MATRIZ/FILIAL), aditivo/
+  nullable; opcional tabela `GrupoEmpresarial`. Filial compartilha a raiz do CNPJ
+  (8 primeiros dígitos) com a matriz — dá para sugerir o vínculo.
+- **Isolamento multi-tenant (ALTO — ponto sensível):** hoje o isolamento é
+  rígido (`createTenantExtension` injeta o `empresaId` da sessão em toda query).
+  Lançar para outra empresa = cruzar a fronteira de tenant DE FORMA CONTROLADA.
+  Regra de ouro: NUNCA confiar num `empresaId` vindo do frontend; validar sempre
+  contra `empresasDoGrupoComAcesso(usuarioId, empresaAtiva)` (mesmo grupo +
+  `UsuarioEmpresa`), com todo o bypass concentrado numa única função auditável
+  (mesmo padrão do ponto único fiscal que usa o `empresaId` do documento).
+- **Rotas contas a pagar/receber (médio):** aceitar `empresaIdDestino` opcional,
+  validar acesso, gravar com o `empresaId` validado + auditoria.
+- **Rateio entre empresas (médio/alto):** 1 despesa dividida em N empresas gera N
+  títulos independentes (um por `empresaId`) vinculados por `rateioGrupoId`.
+- **Relatórios consolidados (médio, alto valor):** DRE/Fluxo/Resumo Executivo em
+  modo "consolidado do grupo" (`empresaId IN` empresas do grupo com acesso).
+- **UX/segurança:** seletor de empresa no lançamento (só se há grupo); perfil que
+  pode lançar cross-empresa; auditoria de todo lançamento cross-empresa.
+
+**Faseamento sugerido (do seguro ao avançado):**
+1. Fundação: `Empresa.grupoId`/`tipoUnidade` + tela de vínculo matriz/filial +
+   helper `empresasDoGrupoComAcesso` (guarda única).
+2. Lançar título para outra empresa do grupo (`empresaIdDestino` validado).
+3. Rateio de despesa entre empresas (`rateioGrupoId`).
+4. Relatórios consolidados do grupo.
+
+Spec a criar: `erp-grupo-empresarial`. **Não iniciar antes de fechar o F2** (não
+pular sem pedido explícito).
+
 ### Prioridade 3
 Contábil (exportação Domínio/Fortes — parte em F5), integrações
 (marketplaces, Open Finance), CRM integrado.
@@ -360,9 +398,10 @@ Contábil (exportação Domínio/Fortes — parte em F5), integrações
 | 3 | `erp-cobranca-bancaria` | F3 | Boleto/CNAB/PIX (depende de F1) |
 | 4 | `erp-reforma-tributaria` | F4 | Compliance futura (segue calendário legal) |
 | 5 | `erp-sped-fiscal-contabil` | F5 | Alimenta SPED do movimento real |
+| 6 | `erp-grupo-empresarial` | Grupo | Matriz/filial + lançamento e relatórios cross-empresa (solicitado 17/09/2026) |
 
 Depois da Frente Atual: `erp-compras-completo`, `erp-transferencia-fiscal`,
-e os refinos do Trilho Gráfico.
+`erp-grupo-empresarial`, e os refinos do Trilho Gráfico.
 
 ---
 
