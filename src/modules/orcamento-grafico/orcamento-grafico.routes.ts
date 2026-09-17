@@ -1031,6 +1031,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       clienteId: z.string().uuid().optional().nullable(),
       clienteNome: z.string().max(200).optional().nullable(),
       vendedorId: z.string().uuid().optional().nullable(),
+      produtoId: z.string().uuid().optional().nullable(), // modo Repetição
       tipoEmbalagemId: z.string().uuid().optional(),
       medidas: z.record(z.number()).optional(),
       papelId: z.string().uuid().optional().nullable(),
@@ -1090,6 +1091,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (body.variacoes !== undefined) updateData.variacoes = body.variacoes ?? undefined
     if (body.observacoes !== undefined) updateData.observacoes = body.observacoes
     if (body.validadeAte !== undefined) updateData.validadeAte = body.validadeAte
+    if (body.produtoId !== undefined) updateData.produtoId = body.produtoId
 
     // Recalcular se temos parâmetros suficientes
     const tipoEmbalagemId = body.tipoEmbalagemId ?? existente.tipoEmbalagemId

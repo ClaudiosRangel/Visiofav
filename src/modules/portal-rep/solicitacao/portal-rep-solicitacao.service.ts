@@ -347,6 +347,9 @@ export async function aprovarSolicitacaoRep(
       clienteId: true,
       vendedorId: true,
       precoVenda: true,
+      precoUnitario: true,
+      quantidade: true,
+      produtoId: true,
       pedidoVendaId: true,
     },
   })
@@ -414,6 +417,24 @@ export async function aprovarSolicitacaoRep(
     },
     select: { id: true, numero: true },
   })
+
+  // Modo Repetição: se o orçamento tem produto cadastrado, cria o item do
+  // pedido com esse produto (para a OP herdar o produto e a BOM).
+  if (orcamento.produtoId) {
+    const precoUnit = Number(orcamento.precoUnitario ?? 0)
+    const qtdItem = Number(orcamento.quantidade ?? 0)
+    await prisma.itemPedidoVenda.create({
+      data: {
+        pedidoVendaId: pedido.id,
+        produtoId: orcamento.produtoId,
+        quantidade: qtdItem,
+        unidade: 'UN',
+        precoBase: precoUnit,
+        precoFinal: precoUnit,
+        valorTotal: Number(orcamento.precoVenda ?? 0),
+      },
+    })
+  }
 
   // Aprovar o orçamento gráfico e vincular o pedido
   await prisma.orcamentoGrafico.update({
