@@ -999,7 +999,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
 
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
-    return orcamento
+
+    // Resolver nome do produto de repetição (modo Repetição), se houver
+    let produtoNome: string | null = null
+    if ((orcamento as any).produtoId) {
+      const prod = await prisma.produto.findFirst({
+        where: { id: (orcamento as any).produtoId, empresaId: user.empresaId },
+        select: { codigo: true, nome: true },
+      })
+      if (prod) produtoNome = `${prod.codigo} - ${prod.nome}`
+    }
+
+    return { ...orcamento, produtoNome }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
