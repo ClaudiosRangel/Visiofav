@@ -68,12 +68,23 @@ export async function explodirBomParaOp(
   }
 
   const fatorBase = quantidadeOp / Number(estrutura.rendimento)
+  // Mapeia o tipoComponente da BOM (MATERIA_PRIMA/COMPONENTE/INSUMO/EMBALAGEM)
+  // para o tipoMaterial do item da OP (PAPEL/TINTA/VERNIZ/COLA/FACA/OUTRO), para
+  // a coluna "Tipo" da Análise/Programação não ficar vazia.
+  const mapTipo = (t: string | null): string => {
+    const u = (t || '').toUpperCase()
+    if (u === 'MATERIA_PRIMA') return 'PAPEL'
+    if (u === 'EMBALAGEM') return 'OUTRO'
+    return u === 'INSUMO' || u === 'COMPONENTE' ? 'OUTRO' : 'OUTRO'
+  }
   const itensParaCriar: Array<{
     ordemProducaoId: string
+    empresaId: string
     produtoComponenteId: string
     descricaoProduto: string
     quantidade: number
     unidadeMedida: string
+    tipoMaterial: string
   }> = []
 
   // Explosão de primeiro nível (para OP, usamos nível direto)
@@ -87,10 +98,12 @@ export async function explodirBomParaOp(
 
     itensParaCriar.push({
       ordemProducaoId,
+      empresaId,
       produtoComponenteId: item.produtoComponenteId,
       descricaoProduto: produto ? `${produto.codigo} - ${produto.nome}` : item.produtoComponenteId,
       quantidade: Math.round(qtdNecessaria * 10000) / 10000,
       unidadeMedida: item.unidadeMedida,
+      tipoMaterial: mapTipo(item.tipoComponente),
     })
   }
 
