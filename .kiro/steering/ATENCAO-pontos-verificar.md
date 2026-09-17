@@ -57,6 +57,49 @@ filtro — porque a query "funciona" (retorna dados), só que retorna dados de
 QUALQUER empresa, não só a do usuário. Não gera erro, só vaza dado. **Sempre
 suspeitar quando a entidade não tem `@map("empresa_id")` direto no schema.**
 
+## 2.1 SUPER_ADMIN bypass no `prismaScoped` → rotas sem filtro manual VAZAM (17/09/2026)
+
+Bug real: empresa nova **MPL** (recém-criada, nada cadastrado) exibia no
+Dashboard WMS e na Consulta de Estoque (aba "Por Endereço") os dados de QA da
+**VisioFab Testes** (38 endereços, 75 saldos, 14 notas, "Rua QA", produtos
+"PRODUTO QA ...").
+
+**Causa raiz**: `tenant-context.ts` dá **bypass para SUPER_ADMIN** —
+`request.prismaScoped = prisma` (cliente GLOBAL, sem injeção de `empresaId`).
+Isso é proposital (SUPER_ADMIN precisa de visão cross-empresa em telas
+administrativas), MAS significa que **qualquer rota que dependa SÓ do
+`prismaScoped` para isolar vaza todos os dados quando um SUPER_ADMIN está
+logado** — mesmo com uma empresa selecionada na sessão. O login de QA/admin
+(`admin@visiofab.com`) é SUPER_ADMIN, por isso o vazamento aparecia sempre.
+
+Diagnóstico confirmado no banco de produção (Neon, read-only): os saldos/
+endereços/notas eram TODOS da VisioFab Testes; a MPL tinha 0. O
+`saldo-consolidado.service.ts` (aba "Por Produto") NÃO vazava porque recebe
+`user.empresaId` **explícito** — prova de que o filtro manual é a proteção
+correta, não o `prismaScoped`.
+
+**Corrigido** (filtro manual por `user.empresaId` nas rotas reportadas):
+- `saldo.routes.ts` → `GET /saldos` (aba Por Endereço) e `GET /saldos/resumo`
+  passaram a filtrar `OR: [{empresaId}, {empresaId: null}]`.
+- `dashboard-wms.routes.ts` → as 4 queries de armazém/saldo/notas (endereços,
+  saldos findMany+count, notas pendentes/conferidas) ganharam filtro de empresa.
+- `relatorios-wms.routes.ts` → `GET /ocupacao-enderecos` (gráfico "Ocupação por
+  Rua") ganhou filtro de empresa.
+
+**REGRA daqui pra frente**: NUNCA confiar apenas no `request.prismaScoped`
+para isolamento multi-tenant — ele NÃO isola para SUPER_ADMIN. Toda rota deve
+filtrar por `user.empresaId` explicitamente (padrão `getEmpresaId(request)` já
+usado em zona/deposito/sku). O `prismaScoped` é uma camada extra, não a única.
+
+**DÍVIDA — outras rotas com o MESMO padrão (não corrigidas, não reportadas —
+tratar quando tocar nelas ou em varredura dedicada)**: `enderecamento-wms.routes.ts`
+(`/notas-conferidas` sem empresa; várias buscas de endereço/saldo por nível),
+`enderecamento.routes.ts` (`endereco.findMany` por CD sem empresa),
+`etiqueta.routes.ts` (`endereco.findMany` por rua/ids sem empresa),
+`inventario.routes.ts` e `ressuprimento.routes.ts` (buscas de saldo/endereço
+sem filtro de empresa explícito). Todas vazam sob SUPER_ADMIN. `kpi.routes.ts`
+e `posicionamento.routes.ts` JÁ filtram corretamente.
+
 ## 3. Configuração dedicada em vez de flag genérica reaproveitada
 
 Bug relacionado ao de isolamento: a integração PCP → WMS checava

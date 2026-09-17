@@ -6,6 +6,15 @@ import { listarSaldoConsolidado } from './saldo-consolidado.service'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
+// Filtro explícito por empresaId — camada obrigatória além do prismaScoped.
+// O tenant-context dá bypass para SUPER_ADMIN (usa prisma global sem filtro),
+// então rotas que dependem SÓ do prismaScoped vazam dados de todas as empresas
+// quando um SUPER_ADMIN está logado (bug real: empresa nova MPL exibindo saldos
+// da VisioFab Testes). Sempre filtrar por user.empresaId aqui.
+function getEmpresaId(request: any): string | undefined {
+  return (request.user as { empresaId?: string } | undefined)?.empresaId
+}
+
 export async function saldoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
@@ -24,21 +33,30 @@ export async function saldoRoutes(app: FastifyInstance) {
 
   app.get('/', async (request) => {
     const db = getDb(request)
+    const empresaId = getEmpresaId(request)
     const q = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(50),
       search: z.string().optional(),
     }).parse(request.query)
 
-    const where: any = {}
-
-    if (q.search) {
-      where.OR = [
-        { endereco: { enderecoCompleto: { contains: q.search, mode: 'insensitive' } } },
-        { produto: { nome: { contains: q.search, mode: 'insensitive' } } },
-        { produto: { codigo: { contains: q.search, mode: 'insensitive' } } },
-      ]
+    // Isola por empresa da sessão (inclui saldos legados com empresaId null,
+    // mesma tolerância do saldo-consolidado.service.ts). Usa AND para não
+    // conflitar com o OR do filtro de busca.
+    const filtros: any[] = []
+    if (empresaId) {
+      filtros.push({ OR: [{ empresaId }, { empresaId: null }] })
     }
+    if (q.search) {
+      filtros.push({
+        OR: [
+          { endereco: { enderecoCompleto: { contains: q.search, mode: 'insensitive' } } },
+          { produto: { nome: { contains: q.search, mode: 'insensitive' } } },
+          { produto: { codigo: { contains: q.search, mode: 'insensitive' } } },
+        ],
+      })
+    }
+    const where: any = filtros.length > 0 ? { AND: filtros } : {}
 
     const [data, total] = await Promise.all([
       db.saldoEndereco.findMany({
@@ -60,9 +78,11 @@ export async function saldoRoutes(app: FastifyInstance) {
   // Resumo de estoque
   app.get('/resumo', async (request) => {
     const db = getDb(request)
-    const total = await db.saldoEndereco.count()
-    const totalQtd = await db.saldoEndereco.aggregate({ _sum: { quantidade: true } })
-    const produtosComSaldo = await db.saldoEndereco.groupBy({ by: ['produtoId'], _count: true })
+    const empresaId = getEmpresaId(request)
+    const where: any = empresaId ? { OR: [{ empresaId }, { empresaId: null }] } : {}
+    const total = await db.saldoEndereco.count({ where })
+    const totalQtd = await db.saldoEndereco.aggregate({ _sum: { quantidade: true }, where })
+    const produtosComSaldo = await db.saldoEndereco.groupBy({ by: ['produtoId'], _count: true, where })
     return {
       totalRegistros: total,
       quantidadeTotal: totalQtd._sum.quantidade || 0,

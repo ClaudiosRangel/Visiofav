@@ -28,9 +28,9 @@ export async function dashboardWmsRoutes(app: FastifyInstance) {
       notasPendentes,
       notasConferidas,
     ] = await Promise.all([
-      prisma.endereco.count({ where: { status: true, tipo: 'ARMAZENAGEM' } }),
+      prisma.endereco.count({ where: { status: true, tipo: 'ARMAZENAGEM', OR: [{ empresaId: user.empresaId }, { empresaId: null }] } }),
       prisma.saldoEndereco.findMany({
-        where: { quantidade: { gt: 0 } },
+        where: { quantidade: { gt: 0 }, OR: [{ empresaId: user.empresaId }, { empresaId: null }] },
         select: { enderecoId: true },
         distinct: ['enderecoId'],
       }),
@@ -57,9 +57,9 @@ export async function dashboardWmsRoutes(app: FastifyInstance) {
         },
         select: { status: true },
       }),
-      prisma.saldoEndereco.count({ where: { quantidade: { gt: 0 } } }),
-      prisma.notaEntrada.count({ where: { status: { in: ['PENDENTE', 'EM_CONFERENCIA'] } } }),
-      prisma.notaEntrada.count({ where: { status: 'CONFERIDA' } }),
+      prisma.saldoEndereco.count({ where: { quantidade: { gt: 0 }, OR: [{ empresaId: user.empresaId }, { empresaId: null }] } }),
+      prisma.notaEntrada.count({ where: { status: { in: ['PENDENTE', 'EM_CONFERENCIA'] }, empresaId: user.empresaId } }),
+      prisma.notaEntrada.count({ where: { status: 'CONFERIDA', empresaId: user.empresaId } }),
     ])
 
     // Ocupação do armazém

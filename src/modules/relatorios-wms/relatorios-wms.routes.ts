@@ -113,14 +113,20 @@ export async function relatoriosWmsRoutes(app: FastifyInstance) {
   })
 
   // GET /ocupacao-enderecos — ocupação por zona/rua
-  app.get('/ocupacao-enderecos', async () => {
+  app.get('/ocupacao-enderecos', async (request) => {
+    // Filtro explícito por empresa — o tenant-context dá bypass para
+    // SUPER_ADMIN, então sem isso a ocupação mistura endereços de todas as
+    // empresas (bug: "Rua QA" da VisioFab Testes aparecia na MPL).
+    const user = request.user as { empresaId?: string }
+    const escopoEmpresa = user.empresaId ? { OR: [{ empresaId: user.empresaId }, { empresaId: null }] } : {}
+
     const enderecos = await prisma.endereco.findMany({
-      where: { status: true, tipo: 'ARMAZENAGEM' },
+      where: { status: true, tipo: 'ARMAZENAGEM', ...escopoEmpresa },
       select: { id: true, codigoRua: true, codigoZona: true, zonaId: true },
     })
 
     const saldos = await prisma.saldoEndereco.findMany({
-      where: { quantidade: { gt: 0 } },
+      where: { quantidade: { gt: 0 }, ...escopoEmpresa },
       select: { enderecoId: true },
       distinct: ['enderecoId'],
     })
