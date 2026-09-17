@@ -103,15 +103,12 @@ export async function depositoRoutes(app: FastifyInstance) {
     const bodySchema = z.object({
       descricao: z.string().min(1),
       centroDistribuicaoId: z.string().uuid(),
-      logradouro: z.string().optional(),
-      numero: z.string().optional(),
-      complemento: z.string().optional(),
-      bairro: z.string().optional(),
       cidade: z.string().optional(),
       uf: z.string().max(2).optional(),
-      cep: z.string().optional(),
-      telefone1: z.string().optional(),
-      telefone2: z.string().optional(),
+      cep: z.string().max(9).optional(),
+      telefone1: z.string().max(20).optional(),
+      telefone2: z.string().max(20).optional(),
+      formatoEnderecoId: z.string().uuid().nullable().optional(),
     })
 
     const body = bodySchema.parse(request.body)
@@ -131,15 +128,11 @@ export async function depositoRoutes(app: FastifyInstance) {
     const bodySchema = z.object({
       descricao: z.string().min(1).optional(),
       status: z.boolean().optional(),
-      logradouro: z.string().optional(),
-      numero: z.string().optional(),
-      complemento: z.string().optional(),
-      bairro: z.string().optional(),
       cidade: z.string().optional(),
       uf: z.string().max(2).optional(),
-      cep: z.string().optional(),
-      telefone1: z.string().optional(),
-      telefone2: z.string().optional(),
+      cep: z.string().max(9).optional(),
+      telefone1: z.string().max(20).optional(),
+      telefone2: z.string().max(20).optional(),
       formatoEnderecoId: z.string().uuid().nullable().optional(),
       centroDistribuicaoId: z.string().uuid().optional(),
     })

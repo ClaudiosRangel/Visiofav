@@ -2466,6 +2466,11 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "motivo_bloqueio" VARCHAR(200)`)
 
+  // Deposito — contato/endereço (CEP e telefones do formulário de cadastro)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "cep" VARCHAR(9)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "telefone1" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "deposito" ADD COLUMN IF NOT EXISTS "telefone2" VARCHAR(20)`)
+
   // Zona — campos de bloqueio, quarentena, tipo de área
   await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "bloqueado" BOOLEAN DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "zona" ADD COLUMN IF NOT EXISTS "motivo_bloqueio" VARCHAR(200)`)
