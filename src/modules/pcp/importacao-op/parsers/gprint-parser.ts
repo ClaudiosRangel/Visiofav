@@ -42,6 +42,10 @@ export interface CabecalhoOp {
   excedente: number | null
   pedido: string | null
   codigoAcabado: string | null
+  // Todos os códigos acabados do PDF. Quando > 1, a OP agrupa múltiplos
+  // produtos (ex.: 1031707/4471/4472) e NÃO deve ser vinculada a um único
+  // produto cadastrado — a descrição do PDF prevalece.
+  codigosAcabados: string[]
   vendedor: string | null
   calculo: string | null
   dataEmissao: string | null
@@ -190,6 +194,7 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
     excedente: null,
     pedido: null,
     codigoAcabado: null,
+    codigosAcabados: [],
     vendedor: null,
     calculo: null,
     dataEmissao: null,
@@ -270,10 +275,28 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
     cabecalho.pedido = matchPedido[1].replace(/\./g, '')
   }
 
-  // Código Acabado
-  const matchCodAcabado = texto.match(/C[óo]d\.?\s*Acabado:?\s*(\d+)/i)
-  if (matchCodAcabado) {
-    cabecalho.codigoAcabado = matchCodAcabado[1]
+  // Código(s) Acabado(s). O GPrint pode listar VÁRIOS códigos empilhados
+  // (ex.: 1031707 / 4471 / 4472) quando a OP agrupa múltiplos produtos. O
+  // primeiro vem na linha "Cód. Acabado:"; os demais nas linhas seguintes,
+  // só com o número. Capturamos todos.
+  const linhas = texto.split('\n')
+  const idxAcab = linhas.findIndex((l) => /C[óo]d\.?\s*Acabado/i.test(l))
+  const codigosAcabados: string[] = []
+  if (idxAcab >= 0) {
+    // Número na própria linha do rótulo
+    const m0 = linhas[idxAcab].match(/C[óo]d\.?\s*Acabado:?\s*(\d+)/i)
+    if (m0) codigosAcabados.push(m0[1])
+    // Linhas seguintes que contêm APENAS um número (códigos empilhados).
+    // Para até 5 linhas ou quando a linha deixa de ser um número puro.
+    for (let i = idxAcab + 1; i < Math.min(linhas.length, idxAcab + 6); i++) {
+      const t = linhas[i].trim()
+      if (/^\d{3,}$/.test(t)) codigosAcabados.push(t)
+      else if (t.length > 0) break // parou o bloco de códigos
+    }
+  }
+  if (codigosAcabados.length > 0) {
+    cabecalho.codigosAcabados = codigosAcabados
+    cabecalho.codigoAcabado = codigosAcabados[0] // compatibilidade
   }
 
   // Vendedor

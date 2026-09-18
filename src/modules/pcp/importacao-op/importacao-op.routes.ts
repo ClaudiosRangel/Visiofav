@@ -740,13 +740,26 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
     }
   }
 
-  // Buscar produto acabado pelo cÃ³digo
-  if (dados.cabecalho.codigoAcabado) {
+  // Buscar produto acabado pelo código.
+  // REGRA: só sugere vínculo a UM produto quando o PDF tem EXATAMENTE UM código
+  // acabado. Quando há vários (ex.: 1031707/4471/4472), a OP agrupa produtos
+  // diferentes — vincular ao primeiro geraria produto errado (foi o bug da
+  // OP 3079). Nesse caso não sugere produto; a descrição do PDF prevalece.
+  const codigosAcab = dados.cabecalho.codigosAcabados?.length
+    ? dados.cabecalho.codigosAcabados
+    : (dados.cabecalho.codigoAcabado ? [dados.cabecalho.codigoAcabado] : [])
+  if (codigosAcab.length === 1) {
     const produto = await prisma.produto.findFirst({
-      where: { empresaId, codigo: dados.cabecalho.codigoAcabado },
+      where: { empresaId, codigo: codigosAcab[0] },
       select: { id: true, codigo: true, nome: true },
     })
     if (produto) sugestoes.produto = { ...produto, origem: 'codigo_exato' }
+  } else if (codigosAcab.length > 1) {
+    // OP multi-produto: sinaliza para o frontend não auto-vincular
+    ;(sugestoes as any).produtoMultiplo = {
+      codigos: codigosAcab,
+      aviso: `Esta OP agrupa ${codigosAcab.length} produtos (${codigosAcab.join(', ')}). Não é vinculada a um único produto cadastrado — a descrição do PDF é mantida.`,
+    }
   }
 
   // Buscar materiais
