@@ -31,6 +31,18 @@ function extrairClienteObs(obs: string | null): string | null {
   return m ? m[1].trim() : null
 }
 
+/**
+ * Extrai a descrição do produto da tag [Produto] em observacoes. OPs importadas
+ * via PDF que agrupam múltiplos códigos acabados (ex.: "1031707 4471 4472") NÃO
+ * são vinculadas a um único Produto cadastrado (produtoId = null) — a descrição
+ * real do agrupamento fica na tag [Produto]. Mesmo padrão de extrairClienteObs.
+ */
+function extrairProdutoObs(obs: string | null): string | null {
+  if (!obs) return null
+  const m = obs.match(/\[Produto\]\s*(.+?)(?:\n|$)/)
+  return m ? m[1].trim() : null
+}
+
 const idParamsSchema = z.object({ id: z.string().uuid() })
 
 const criarOpSchema = z.object({
@@ -253,7 +265,9 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
 
     const dataComPercentual = data.map((op) => ({
       ...op,
-      produtoNome: (op.produtoId && produtoMap.get(op.produtoId)) || op.produtoId || 'Produto não vinculado',
+      // Produto: cadastro formal quando vinculado; senão a tag [Produto] do PDF
+      // (OPs multi-código não vinculam a um único produto — ver extrairProdutoObs).
+      produtoNome: (op.produtoId && produtoMap.get(op.produtoId)) || extrairProdutoObs(op.observacoes) || 'Produto não vinculado',
       // OPs importadas via PDF (PDF_GPRINT) muitas vezes não têm clienteId vinculado
       // a um cadastro de Cliente — o nome real do cliente do PDF fica salvo na tag
       // [Cliente] dentro de observacoes. Priorizar essa tag e só cair para o
@@ -400,7 +414,11 @@ export async function ordemProducaoRoutes(app: FastifyInstance) {
     // como fallback (mesmo padrão usado no painel de programação).
     const clienteNome = extrairClienteObs(op.observacoes) || (cliente ? (cliente.nomeFantasia || cliente.razaoSocial) : null)
 
-    return { ...op, produtoNome: produto ? `${produto.codigo} - ${produto.nome}` : (op.produtoId || 'Produto não vinculado'), clienteNome, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
+    const produtoNome = produto
+      ? `${produto.codigo} - ${produto.nome}`
+      : (extrairProdutoObs(op.observacoes) || 'Produto não vinculado')
+
+    return { ...op, produtoNome, clienteNome, percentualConcluido, transicoesPermitidas: getTransicoesPermitidas(op.status) }
   })
 
   // =========================================================================

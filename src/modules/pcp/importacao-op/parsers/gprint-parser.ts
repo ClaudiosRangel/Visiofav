@@ -296,7 +296,12 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
   }
   if (codigosAcabados.length > 0) {
     cabecalho.codigosAcabados = codigosAcabados
-    cabecalho.codigoAcabado = codigosAcabados[0] // compatibilidade
+    // codigoAcabado: chave usada no de-para. Com 1 código = o próprio; com
+    // vários (extensão de códigos abaixo) = concatenados por espaço, na ordem
+    // do PDF (ex.: "1031707 4471 4472"). Assim o de-para distingue o produto
+    // único do agrupamento multi-produto.
+    cabecalho.codigoAcabado =
+      codigosAcabados.length === 1 ? codigosAcabados[0] : codigosAcabados.join(' ')
   }
 
   // Vendedor

@@ -749,16 +749,26 @@ async function buscarSugestoes(empresaId: string, dados: DadosOpGprint) {
     ? dados.cabecalho.codigosAcabados
     : (dados.cabecalho.codigoAcabado ? [dados.cabecalho.codigoAcabado] : [])
   if (codigosAcab.length === 1) {
+    // 1 código: vincula ao produto cadastrado (comportamento normal)
     const produto = await prisma.produto.findFirst({
       where: { empresaId, codigo: codigosAcab[0] },
       select: { id: true, codigo: true, nome: true },
     })
     if (produto) sugestoes.produto = { ...produto, origem: 'codigo_exato' }
   } else if (codigosAcab.length > 1) {
-    // OP multi-produto: sinaliza para o frontend não auto-vincular
+    // Multi-produto (extensão de códigos): a chave do de-para é a concatenação
+    // "1031707 4471 4472". Buscamos o de-para tipo PRODUTO por essa chave só
+    // para RECONHECER a descrição do agrupamento — NÃO vincula a um produto
+    // único (produtoId fica null). Ver correção da OP 3079.
+    const chaveConcat = codigosAcab.join(' ')
+    const deParaGrupo = await prisma.deParaImportacao.findFirst({
+      where: { empresaId, sistemaOrigem: 'GPRINT', tipoEntidade: 'PRODUTO', codigoExterno: chaveConcat },
+    })
     ;(sugestoes as any).produtoMultiplo = {
       codigos: codigosAcab,
-      aviso: `Esta OP agrupa ${codigosAcab.length} produtos (${codigosAcab.join(', ')}). Não é vinculada a um único produto cadastrado — a descrição do PDF é mantida.`,
+      chave: chaveConcat,
+      descricao: deParaGrupo?.nomeExterno ?? dados.cabecalho.descricao ?? null,
+      aviso: `Esta OP agrupa ${codigosAcab.length} produtos (${chaveConcat}). Não é vinculada a um único produto — a descrição do PDF é mantida.`,
     }
   }
 
