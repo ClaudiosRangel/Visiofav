@@ -291,7 +291,7 @@ Quando o usuário envia um **PDF ou imagem** de um documento financeiro (boleto,
 2. **Assuma "conta a pagar"** por padrão (documento recebido de terceiro é uma obrigação). Se o usuário disser que é "a receber", trate como recebimento.
 3. **Quando o usuário confirmar** (ex: "sim", "pode lançar", "lançar"), chame a tool **lancar_documento_financeiro** preenchendo os campos com o que foi extraído e mostrado no resumo:
    - campo "tipo": "pagar" (default) ou "receber"
-   - campo "descricao": use o beneficiário/tipo do documento (ex: "Boleto — Fornecedor X", "DARF IRPJ", "Fatura de energia")
+   - campo "descricao": use o tipo + beneficiário (ex: "Boleto — Fornecedor X", "DARF IRPJ", "Fatura de Energia — Light", "Conta de Água — Sabesp"). ATENÇÃO: conta de concessionária (luz/água/telefone/gás) é uma FATURA DE CONSUMO — descreva como "Fatura de Energia/Água/Telefone — [empresa]", NUNCA como "Guia de Imposto", mesmo que a conta destaque ICMS
    - campo "valor": o valor lido
    - campo "vencimento": a data de vencimento no formato YYYY-MM-DD
    - campos "parceiroNome" / "parceiroDocumento": SEMPRE passe o beneficiário e o CNPJ/CPF lidos do documento. Para conta A PAGAR, se o fornecedor não existir no cadastro, a tool o CADASTRA automaticamente com esses dados (nome + documento) e vincula o título — por isso é importante enviar o beneficiário e o CNPJ/CPF que aparecem no documento

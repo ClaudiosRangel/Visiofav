@@ -457,12 +457,22 @@ export const aiService = {
       }
     }
 
+    // Descrição sugerida coerente com o tipo (evita rótulos errados como
+    // "Guia de Imposto - Light" para uma conta de consumo).
+    const rotuloDescricao: Record<string, string> = {
+      NF: 'Nota Fiscal', NFS: 'Nota de Serviço', BOLETO: 'Boleto',
+      DESPESA: 'Fatura/Conta', IMPOSTO: 'Guia de Imposto', FINANCIAMENTO: 'Financiamento', OUTRO: 'Documento',
+    }
+    const benef = campos.beneficiario?.trim()
+    const rotuloDesc = rotuloDescricao[campos.tipoSugerido ?? 'OUTRO'] ?? 'Documento'
+    const descricaoSugerida = benef ? `${rotuloDesc} - ${benef}` : rotuloDesc
+
     // Guarda os campos extraídos em cache pendente (assume "pagar" — documento
     // recebido de terceiro é tipicamente uma obrigação; o usuário pode corrigir).
     salvarDocPendente(empresaId, {
       ...campos,
       tipo: 'pagar',
-      descricaoSugerida: campos.beneficiario || undefined,
+      descricaoSugerida,
     })
 
     // Monta o resumo conversacional.
@@ -470,7 +480,7 @@ export const aiService = {
     const fmtData = (d?: Date) => d ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—'
     const rotuloTipo: Record<string, string> = {
       NF: 'Nota Fiscal', NFS: 'Nota de Serviço', BOLETO: 'Boleto',
-      DESPESA: 'Despesa', IMPOSTO: 'Imposto/Guia', FINANCIAMENTO: 'Financiamento', OUTRO: 'Documento',
+      DESPESA: 'Conta/Fatura', IMPOSTO: 'Imposto/Guia', FINANCIAMENTO: 'Financiamento', OUTRO: 'Documento',
     }
     const tipoTxt = campos.tipoSugerido ? (rotuloTipo[campos.tipoSugerido] || 'Documento') : 'Documento'
 

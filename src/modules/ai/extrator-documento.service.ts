@@ -22,7 +22,7 @@ export async function extrairDocumentoFinanceiro(buffer: Buffer, mime: string): 
       const res = await extrairTextoPdf(buffer)
       if (res.temTexto) {
         const campos = extrairCamposDocumento(res.texto)
-        return { ...campos, textoOriginal: res.texto.substring(0, 4000) }
+        return corrigirTipoConcessionaria({ ...campos, textoOriginal: res.texto.substring(0, 4000) })
       }
     } catch {
       // segue para visão
@@ -32,10 +32,30 @@ export async function extrairDocumentoFinanceiro(buffer: Buffer, mime: string): 
   // 2) Visão multimodal (imagem ou PDF escaneado)
   if (isImagem || isPdf) {
     const porVisao = await extrairPorVisao(buffer, isPdf ? 'application/pdf' : mime).catch(() => null)
-    if (porVisao) return porVisao
+    if (porVisao) return corrigirTipoConcessionaria(porVisao)
   }
 
   return { confianca: 0 }
+}
+
+/**
+ * Reforço determinístico: se o beneficiário/texto indica uma CONCESSIONÁRIA de
+ * serviço público (energia/água/telefone/gás), o documento é uma conta de
+ * consumo (DESPESA) — nunca IMPOSTO, mesmo que destaque ICMS. Sobrepõe um
+ * eventual palpite errado do modelo de visão. Não lança.
+ */
+function corrigirTipoConcessionaria<T extends { beneficiario?: string; tipoSugerido?: any; textoOriginal?: string }>(campos: T): T {
+  const alvo = `${campos.beneficiario ?? ''} ${campos.textoOriginal ?? ''}`
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const ehConcessionaria =
+    /energia|eletric|\blight\b|\benel\b|cemig|copel|celesc|\bcpfl\b|neoenergia|equatorial|energisa/.test(alvo) ||
+    /agua|esgoto|saneament|sabesp|cedae|copasa|sanepar|caesb|\bagespisa\b/.test(alvo) ||
+    /telefon|internet|banda larga|\bvivo\b|\bclaro\b|\btim\b|\boi\b/.test(alvo) ||
+    /\bgas\b|comgas|naturgy|ultragaz/.test(alvo)
+  if (ehConcessionaria && campos.tipoSugerido === 'IMPOSTO') {
+    return { ...campos, tipoSugerido: 'DESPESA' }
+  }
+  return campos
 }
 
 /**
@@ -53,7 +73,8 @@ async function extrairPorVisao(buffer: Buffer, mime: string): Promise<(CamposDoc
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
   const prompt = `Você é um extrator de dados de documentos financeiros brasileiros (boleto, fatura, conta de consumo como luz/água/telefone, DARF/guia, nota).
-Extraia e responda APENAS um JSON com as chaves: valor (número, o TOTAL A PAGAR), vencimento (YYYY-MM-DD), linhaDigitavel (string só dígitos da linha/código de barras, ou null), beneficiario (nome de quem RECEBE o pagamento — a empresa/concessionária emissora, ex.: "Light", "Enel", "Sabesp"; NÃO o cliente/consumidor; ou null), documento (CNPJ/CPF do beneficiário só dígitos ou null), numeroDocumento (número da nota fiscal/fatura/documento, ex.: o "NOTA FISCAL Nº" — só dígitos, ou null), tipoSugerido (um de: NF, NFS, BOLETO, DESPESA, IMPOSTO, FINANCIAMENTO, OUTRO — use DESPESA para contas de consumo). Se não encontrar um campo, use null. Não escreva mais nada além do JSON.`
+Extraia e responda APENAS um JSON com as chaves: valor (número, o TOTAL A PAGAR), vencimento (YYYY-MM-DD), linhaDigitavel (string só dígitos da linha/código de barras, ou null), beneficiario (nome de quem RECEBE o pagamento — a empresa/concessionária emissora, ex.: "Light", "Enel", "Sabesp"; NÃO o cliente/consumidor; ou null), documento (CNPJ/CPF do beneficiário só dígitos ou null), numeroDocumento (número da nota fiscal/fatura/documento, ex.: o "NOTA FISCAL Nº" — só dígitos, ou null), tipoSugerido (um de: NF, NFS, BOLETO, DESPESA, IMPOSTO, FINANCIAMENTO, OUTRO).
+REGRA IMPORTANTE sobre tipoSugerido: conta de CONCESSIONÁRIA de serviço público — energia elétrica (Light, Enel, Cemig, Copel, CPFL, Neoenergia, Equatorial), água/esgoto (Sabesp, Cedae, Copasa), telefone/internet (Vivo, Claro, Tim, Oi), gás — é SEMPRE tipo "DESPESA" (fatura de consumo), NUNCA "IMPOSTO", mesmo que a conta destaque ICMS ou outros tributos no corpo. Só use "IMPOSTO" para guias tributárias propriamente ditas (DARF, DAS, GPS, GARE, GNRE, boleto de tributo). Se não encontrar um campo, use null. Não escreva mais nada além do JSON.`
 
   const contentBlock: any = isPdf
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
