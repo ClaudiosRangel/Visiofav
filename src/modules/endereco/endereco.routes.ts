@@ -115,7 +115,29 @@ export async function enderecoRoutes(app: FastifyInstance) {
     }
     const enderecoCompleto = compositionService.compor(formato, valores)
 
-    return reply.status(201).send(await db.endereco.create({ data: { ...data, enderecoCompleto, ...(empresaId ? { empresaId } : {}) } }))
+    // A criação estava sem tratamento de erro: qualquer exceção do Prisma
+    // (FK inválida, endereço duplicado, etc.) virava HTTP 500 sem corpo, e o
+    // frontend só mostrava "Falha ao criar" genérico. Agora mapeamos as causas
+    // conhecidas para 4xx com mensagem clara.
+    try {
+      const criado = await db.endereco.create({ data: { ...data, enderecoCompleto, ...(empresaId ? { empresaId } : {}) } })
+      return reply.status(201).send(criado)
+    } catch (err: any) {
+      // Endereço já existente (unique constraint, se configurada)
+      if (err?.code === 'P2002') {
+        return reply.status(409).send({ message: `Já existe um endereço "${enderecoCompleto}" neste depósito.` })
+      }
+      // Relacionamento inválido (CD, depósito, zona, estrutura inexistente ou de outra empresa)
+      if (err?.code === 'P2003' || err?.code === 'P2025') {
+        return reply.status(400).send({ message: 'CD, depósito ou zona informados não foram encontrados. Verifique a seleção e tente novamente.' })
+      }
+      // Erro de negócio lançado por serviços (ex.: { status, message })
+      if (err?.status && err?.message) {
+        return reply.status(err.status).send({ message: err.message })
+      }
+      request.log.error({ err }, 'Falha ao criar endereço')
+      return reply.status(500).send({ message: `Falha ao criar endereço: ${err?.message ?? 'erro desconhecido'}` })
+    }
   })
 
   // Geração automática de endereços
