@@ -228,10 +228,39 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
     cabecalho.produto = matchProduto[1].trim()
   }
 
-  // Descrição
-  const matchDescricao = texto.match(/Descri[çc][ãa]o:\s*(.+?)(?:\s{2,}|Formato|$)/i)
-  if (matchDescricao) {
-    cabecalho.descricao = matchDescricao[1].trim()
+  // Descrição — pode quebrar em VÁRIAS linhas visuais no PDF.
+  // A 1ª linha traz "Descrição:  <texto>  [Cód. Acabado: NNNN]" (o rótulo do
+  // código acabado costuma vir na MESMA linha). Quando o texto do produto é
+  // longo, ele continua nas linhas SEGUINTES — que não são um novo rótulo
+  // (Formato/Quantidade/Programação/Plano/Materiais) NEM um número puro (esses
+  // números são os códigos acabados adicionais, capturados mais abaixo).
+  // Ex. real (OP-2963): "CARTUCHOS BROMOPRIDA / CLORIDRATO DE AMBROXOL 7,5ML"
+  // + linha seguinte "SOLUÇÃO ORAL 50ML" → descrição completa concatenada.
+  {
+    const linhasDesc = texto.split('\n')
+    const idxDesc = linhasDesc.findIndex((l) => /Descri[çc][ãa]o:/i.test(l))
+    if (idxDesc >= 0) {
+      // 1ª linha: tudo após "Descrição:" e antes de "Cód. Acabado" (se estiver na mesma linha)
+      const m1 = linhasDesc[idxDesc].match(/Descri[çc][ãa]o:\s*(.+?)(?:\s{2,}C[óo]d\.?\s*Acabado|$)/i)
+      const partes: string[] = []
+      if (m1 && m1[1].trim()) partes.push(m1[1].trim())
+
+      // Rótulos que marcam o FIM do bloco de descrição (início de outra seção).
+      const ehNovaSecao = (t: string) =>
+        /^(Formato|Quantidade|Pedido|Programa[çc][ãa]o|Plano|Materiais|Cliente|Produto|Fone|Contato|Vendedor|Obs\.)/i.test(t)
+
+      for (let i = idxDesc + 1; i < Math.min(linhasDesc.length, idxDesc + 5); i++) {
+        const t = linhasDesc[i].trim()
+        if (!t) continue
+        if (ehNovaSecao(t)) break // chegou noutra seção
+        if (/^\d{3,}$/.test(t)) continue // código acabado empilhado, não é descrição
+        partes.push(t) // linha de continuação da descrição
+      }
+
+      if (partes.length > 0) {
+        cabecalho.descricao = partes.join(' ').replace(/\s{2,}/g, ' ').trim()
+      }
+    }
   }
 
   // Formato Final
@@ -286,12 +315,20 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
     // Número na própria linha do rótulo
     const m0 = linhas[idxAcab].match(/C[óo]d\.?\s*Acabado:?\s*(\d+)/i)
     if (m0) codigosAcabados.push(m0[1])
-    // Linhas seguintes que contêm APENAS um número (códigos empilhados).
-    // Para até 5 linhas ou quando a linha deixa de ser um número puro.
-    for (let i = idxAcab + 1; i < Math.min(linhas.length, idxAcab + 6); i++) {
+    // Linhas seguintes: os códigos acabados empilhados vêm como números puros,
+    // mas podem estar INTERCALADOS com linhas de continuação da DESCRIÇÃO do
+    // produto (texto não-numérico) — ver OP-2963 real: "Cód. Acabado: 4694" /
+    // "SOLUÇÃO ORAL 50ML" (continuação) / "4688" (2º código). Por isso NÃO
+    // paramos no 1º texto não-numérico: coletamos todos os números puros e só
+    // encerramos ao chegar num novo rótulo de seção (Formato/Quantidade/etc.).
+    const ehNovaSecao = (t: string) =>
+      /^(Formato|Quantidade|Pedido|Programa[çc][ãa]o|Plano|Materiais|Vendedor|Obs\.)/i.test(t)
+    for (let i = idxAcab + 1; i < Math.min(linhas.length, idxAcab + 8); i++) {
       const t = linhas[i].trim()
-      if (/^\d{3,}$/.test(t)) codigosAcabados.push(t)
-      else if (t.length > 0) break // parou o bloco de códigos
+      if (!t) continue
+      if (ehNovaSecao(t)) break // fim do bloco de cabeçalho
+      if (/^\d{3,}$/.test(t)) codigosAcabados.push(t) // código acabado empilhado
+      // senão: linha de continuação da descrição — ignorar aqui (tratada acima)
     }
   }
   if (codigosAcabados.length > 0) {

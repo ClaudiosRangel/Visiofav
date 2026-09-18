@@ -121,3 +121,79 @@ describe('parseGprintPdf — seção de Acabamentos', () => {
     expect(descricoes).toContain('Guilhotina maior')
   })
 })
+
+describe('parseGprintPdf — descrição do produto (multi-linha)', () => {
+  it('captura descrição de uma única linha (comportamento anterior preservado)', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 2.965 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   NATIVITA   Cód. Cliente:   776',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHO DIGEVITA   Cód. Acabado:   4691',
+      'Formato Final:   42 x 36x113 mm',
+      'Quantidade:   90.000',
+    ].join('\n')
+
+    const dados = parseGprintPdf(texto)
+    expect(dados.cabecalho.descricao).toBe('CARTUCHO DIGEVITA')
+  })
+
+  it('concatena descrição que quebra em duas linhas (bug real: OP-2963 "SOLUÇÃO ORAL 50ML" na 2ª linha)', () => {
+    // A 1ª linha traz descrição + "Cód. Acabado: 4694"; a 2ª linha ("SOLUÇÃO
+    // ORAL 50ML") é continuação da descrição; a 3ª ("4688") é um código
+    // acabado empilhado (não faz parte da descrição).
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 2.963 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   NATIVITA   Cód. Cliente:   776',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHOS BROMOPRIDA / CLORIDRATO DE AMBROXOL 7,5ML  Cód. Acabado:   4694',
+      'SOLUÇÃO ORAL 50ML',
+      '4688',
+      'Formato Final:   42 x 36x113 mm',
+      'Quantidade:   200.000',
+    ].join('\n')
+
+    const dados = parseGprintPdf(texto)
+    expect(dados.cabecalho.descricao).toBe(
+      'CARTUCHOS BROMOPRIDA / CLORIDRATO DE AMBROXOL 7,5ML SOLUÇÃO ORAL 50ML',
+    )
+  })
+
+  it('concatena descrição de três linhas com múltiplos códigos acabados (imagem do cliente: NATIVITA Cartuchos)', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.079 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   NATIVITA',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHOS CLORIDRATO DE AMBROXOL INFANTIL /  Cód. Acabado:   1031707',
+      'CARBOCISTEINA ADULTO / CARBOCISTEINA INFANTIL',
+      '4471',
+      '4472',
+      'Formato Final:   42 x 36x113 mm',
+      'Quantidade:   200.000',
+    ].join('\n')
+
+    const dados = parseGprintPdf(texto)
+    expect(dados.cabecalho.descricao).toBe(
+      'CARTUCHOS CLORIDRATO DE AMBROXOL INFANTIL / CARBOCISTEINA ADULTO / CARBOCISTEINA INFANTIL',
+    )
+    // os 3 códigos acabados continuam sendo capturados
+    expect(dados.cabecalho.codigosAcabados).toEqual(['1031707', '4471', '4472'])
+  })
+
+  it('para a descrição ao encontrar um novo rótulo de seção (não engole Formato/Quantidade)', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 2.997 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   COMPACTOR',
+      'Produto:   Cartuchos',
+      'Descrição:   CAIXA KIT ESF. C1 VASCO   Cód. Acabado:   4735',
+      'Formato Final:   76 x 76x146 mm',
+      'Quantidade:   16.000',
+    ].join('\n')
+
+    const dados = parseGprintPdf(texto)
+    expect(dados.cabecalho.descricao).toBe('CAIXA KIT ESF. C1 VASCO')
+  })
+})
