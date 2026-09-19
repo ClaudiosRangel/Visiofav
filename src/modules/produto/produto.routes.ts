@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
-import { peekProximoCodigo } from './codigo-sequencial.service'
+import { peekProximoCodigo, gerarProximoCodigo, CodigoSequencialEsgotadoError } from './codigo-sequencial.service'
 
 export async function produtoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -112,8 +112,46 @@ export async function produtoRoutes(app: FastifyInstance) {
     }).parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
+    const empresaId = user.empresaId
 
-    return reply.status(201).send(await prisma.produto.create({ data: { ...data, empresaId: user.empresaId } }))
+    // Correção do bug do código automático: o `GET /proximo-codigo` só faz peek
+    // (não incrementa), e o create gravava o código sem NUNCA consumir o
+    // contador — deixando o sequencial travado, gerando o mesmo número
+    // repetidamente e permitindo duplicidade. Agora, quando o código enviado é
+    // exatamente o próximo sequencial sugerido, o create consome o contador
+    // atomicamente (gerarProximoCodigo) dentro de uma transação; se colidir,
+    // avança para o próximo automaticamente. Código manual (diferente da
+    // sugestão) é respeitado como está.
+    try {
+      const criado = await prisma.$transaction(async (tx) => {
+        const proximoSugerido = await peekProximoCodigo(tx, empresaId)
+        let codigoFinal = data.codigo
+
+        if (proximoSugerido && data.codigo === proximoSugerido) {
+          // Veio da sugestão automática → consome o contador de fato.
+          codigoFinal = await gerarProximoCodigo(tx, empresaId)
+          // Se o valor consumido já existir (colisão por estado inconsistente),
+          // continua avançando até achar um livre dentro da faixa.
+          // eslint-disable-next-line no-await-in-loop
+          while (await tx.produto.findFirst({ where: { empresaId, codigo: codigoFinal }, select: { id: true } })) {
+            codigoFinal = await gerarProximoCodigo(tx, empresaId)
+          }
+        }
+
+        return tx.produto.create({ data: { ...data, codigo: codigoFinal, empresaId } })
+      })
+      return reply.status(201).send(criado)
+    } catch (err: any) {
+      if (err instanceof CodigoSequencialEsgotadoError) {
+        return reply.status(409).send({ message: 'Faixa de códigos sequenciais de produto esgotada.' })
+      }
+      // Código duplicado (manual ou colisão): mensagem clara em vez de 500.
+      if (err?.code === 'P2002') {
+        return reply.status(409).send({ message: `Já existe um produto com o código "${data.codigo}" nesta empresa.` })
+      }
+      request.log.error({ err }, 'Falha ao criar produto')
+      return reply.status(500).send({ message: `Falha ao criar produto: ${err?.message ?? 'erro desconhecido'}` })
+    }
   })
 
   app.put('/:id', async (request, reply) => {
