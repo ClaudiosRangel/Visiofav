@@ -193,10 +193,26 @@ export async function produtoRoutes(app: FastifyInstance) {
       aceitarSenha: z.boolean().optional(),
       aceitarCcePendente: z.boolean().optional(),
       toleranciaQuantidadePercentual: z.number().min(0).max(100).nullable().optional(),
+      // Hierarquia Mercadológica — vínculo ao nível folha (Família).
+      familiaId: z.string().uuid().nullable().optional(),
     }).parse(request.body)
 
     // Separar campos de ConfigConferenciaProduto dos campos do Produto
     const { aceitarSenha, aceitarCcePendente, ...produtoData } = data
+
+    // Validar que a Família informada existe, é do tipo FAMILIA e pertence à
+    // mesma empresa (Req 3.3). null limpa o vínculo.
+    if (produtoData.familiaId) {
+      const user = request.user as { empresaId?: string }
+      const familia = await prisma.nivelMercadologico.findFirst({
+        where: { id: produtoData.familiaId, ...(user.empresaId ? { empresaId: user.empresaId } : {}) },
+        select: { tipo: true },
+      })
+      if (!familia) return reply.status(400).send({ message: 'Família (nível mercadológico) não encontrada.' })
+      if (familia.tipo !== 'FAMILIA') {
+        return reply.status(400).send({ message: 'O vínculo mercadológico do produto deve ser um nível do tipo FAMILIA.' })
+      }
+    }
 
     const produtoAtualizado = await prisma.produto.update({ where: { id }, data: produtoData })
 

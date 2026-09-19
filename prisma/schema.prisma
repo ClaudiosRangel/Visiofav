@@ -505,8 +505,40 @@ model Produto {
   itensVendaPdv                 ItemVendaPdv[]
   movimentacoesEstoque          MovimentacaoEstoque[]
 
+  // Hierarquia Mercadológica — vínculo ao nível folha (Família). Opcional;
+  // os níveis superiores são derivados subindo a árvore.
+  // Nota: o campo legado `familia` (texto livre) é preservado com outro nome.
+  familiaId                     String?                @map("familia_id")
+  hierarquiaFamilia             NivelMercadologico?    @relation(fields: [familiaId], references: [id])
+
   @@unique([empresaId, codigo])
   @@map("produto")
+}
+
+// ── HIERARQUIA MERCADOLÓGICA ──────────────────────────────────────────────────
+// 5 níveis fixos encadeados: DEPARTAMENTO → SECAO → CATEGORIA → SUBCATEGORIA → FAMILIA.
+// Uma única tabela auto-referenciada cobre todos os tipos via campo `tipo`.
+// O `codigo` é o segmento do nível (2 dígitos para os 4 primeiros; 3 para FAMILIA).
+// O `codigoHierarquico` é composto e imutável (ex.: "01.02.04.001"), único por empresa.
+model NivelMercadologico {
+  id                String    @id @default(uuid())
+  empresaId         String    @map("empresa_id")
+  tipo              String    @db.VarChar(20)
+  // DEPARTAMENTO | SECAO | CATEGORIA | SUBCATEGORIA | FAMILIA
+  codigo            String    @db.VarChar(4)
+  codigoHierarquico String    @map("codigo_hierarquico") @db.VarChar(30)
+  descricao         String    @db.VarChar(200)
+  status            Boolean   @default(true)
+  paiId             String?   @map("pai_id")
+  pai               NivelMercadologico?  @relation("PaiFilho", fields: [paiId], references: [id], onDelete: Restrict)
+  filhos            NivelMercadologico[] @relation("PaiFilho")
+  produtos          Produto[]
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigoHierarquico])
+  @@index([empresaId, tipo, status])
+  @@map("nivel_mercadologico")
 }
 
 model Vendedor {

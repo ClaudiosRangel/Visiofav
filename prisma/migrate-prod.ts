@@ -3889,6 +3889,61 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "agenda_wms" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
   console.log('✅ AgendaWms: campos de auditoria de cancelamento adicionados')
 
+  // -- HIERARQUIA MERCADOLOGICA -----------------------------------------------
+  // 5 niveis fixos encadeados (DEPARTAMENTO->SECAO->CATEGORIA->SUBCATEGORIA->FAMILIA).
+  // Uma unica tabela auto-referenciada cobre todos os tipos via campo tipo.
+  // produto.familia_id - vinculo opcional ao nivel folha (Familia).
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "nivel_mercadologico" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "codigo" VARCHAR(4) NOT NULL,
+      "codigo_hierarquico" VARCHAR(30) NOT NULL,
+      "descricao" VARCHAR(200) NOT NULL,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "pai_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "nivel_mercadologico_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "nivel_mercadologico_empresa_codigo_hier_key"
+    ON "nivel_mercadologico"("empresa_id","codigo_hierarquico")
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "nivel_mercadologico_empresa_tipo_status_idx"
+    ON "nivel_mercadologico"("empresa_id","tipo","status")
+  `)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "nivel_mercadologico"
+      ADD CONSTRAINT "nivel_mercadologico_pai_id_fkey"
+      FOREIGN KEY ("pai_id") REFERENCES "nivel_mercadologico"("id")
+      ON DELETE RESTRICT ON UPDATE CASCADE
+    `)
+  } catch (e) {
+    if (!e.message?.includes('already exists')) {
+      console.log('nivel_mercadologico pai FK:', e.message?.substring(0, 120))
+    }
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "familia_id" TEXT`)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "produto"
+      ADD CONSTRAINT "produto_familia_id_fkey"
+      FOREIGN KEY ("familia_id") REFERENCES "nivel_mercadologico"("id")
+      ON DELETE RESTRICT ON UPDATE CASCADE
+    `)
+  } catch (e) {
+    if (!e.message?.includes('already exists')) {
+      console.log('produto familia_id FK:', e.message?.substring(0, 120))
+    }
+  }
+  console.log('Hierarquia Mercadologica: nivel_mercadologico + produto.familia_id criados')
+
+
   // ==========================================================================
   // F1 — Financeiro Operacional Completo
   // ==========================================================================
