@@ -2,15 +2,26 @@
 
 ## Overview
 
-Implementar a Hierarquia Mercadológica com 5 níveis fixos encadeados
-(Departamento → Seção → Categoria → Subcategoria → Família), código hierárquico
+> **Atualização pós-entrega:** o modelo foi reduzido de 5 para **4 níveis de
+> agrupamento** (padrão SAP Retail + GS1 GPC). A folha passou a ser a
+> **Subcategoria** (também chamada "Subcategoria/Família", 3 dígitos, pai =
+> Categoria); o tipo `FAMILIA` foi removido. O código do produto/SKU é o
+> "nível 5" — **não** é um nó da árvore. Como o campo `tipo` é `VARCHAR(20)`
+> livre (não é enum no schema), a redução foi puramente de lógica de
+> aplicação, **sem migration**. Além disso, a tela passou a ter uma **rota
+> própria no módulo Compras** (`/compras/hierarquia`) além da rota do WMS
+> (`/configurador/hierarquia`), ambas renderizando um componente
+> compartilhado. As seções abaixo refletem o estado final (4 níveis).
+
+Implementar a Hierarquia Mercadológica com 4 níveis fixos encadeados
+(Departamento → Seção → Categoria → Subcategoria/Família), código hierárquico
 gerado automaticamente, CRUD de cada nível e vínculo do produto ao nível folha
-(Família). O Produto passa a ter `familiaId` opcional; os 4 níveis superiores são
-derivados subindo a árvore, sem redundância.
+(Subcategoria/Família). O Produto passa a ter `familiaId` opcional; os 3 níveis
+superiores são derivados subindo a árvore, sem redundância.
 
 O design segue os padrões do projeto: Fastify + Prisma + Zod, `request.prismaScoped`
 com filtro explícito por `empresaId` para isolamento multi-tenant. Uma única tabela
-`NivelMercadologico` cobre os 5 tipos com auto-referência. O processo obrigatório de
+`NivelMercadologico` cobre os 4 tipos com auto-referência. O processo obrigatório de
 migrations (`schema.prisma` + `migrate-prod.ts` no mesmo commit, testado 2x local)
 é respeitado integralmente.
 
@@ -29,23 +40,26 @@ Backend (VisioFab.Wms.Back)
 Backend — produto.routes.ts         — aceitar familiaId no PUT /:id
 
 Frontend (VisioFab.Wms.Front)
-  src/app/(interna)/configurador/hierarquia/page.tsx   — tela de gestão da árvore
+  src/components/hierarquia/HierarquiaMercadologicaView.tsx  — UI compartilhada da árvore
+  src/app/(interna)/configurador/hierarquia/page.tsx   — wrapper (contexto WMS)
+  src/app/(interna)/compras/hierarquia/page.tsx        — wrapper (contexto Compras)
+  src/components/layout/ModuleSidebar.tsx  — menu Compras aponta p/ /compras/hierarquia
   src/app/(interna)/configurador/produtos/ProdutoModal.tsx
-                                    — campo de seleção de Família + breadcrumb
+                                    — cascata guiada (Dep→Seção→Categoria→Subcategoria) + familiaId
 ```
 
 ## Components and Interfaces
 
 ### 1. Model Prisma — NivelMercadologico
 
-Uma única tabela auto-referenciada cobre os 5 tipos via campo `tipo`.
+Uma única tabela auto-referenciada cobre os 4 tipos via campo `tipo`.
 
 ```prisma
 model NivelMercadologico {
   id                String    @id @default(uuid())
   empresaId         String    @map("empresa_id")
   tipo              String    @db.VarChar(20)
-  // DEPARTAMENTO | SECAO | CATEGORIA | SUBCATEGORIA | FAMILIA
+  // 4 níveis: DEPARTAMENTO | SECAO | CATEGORIA | SUBCATEGORIA (folha)
   codigo            String    @db.VarChar(4)
   codigoHierarquico String    @map("codigo_hierarquico") @db.VarChar(30)
   descricao         String    @db.VarChar(200)
@@ -73,17 +87,17 @@ familia   NivelMercadologico?  @relation(fields: [familiaId], references: [id])
 
 ```ts
 export type TipoNivel =
-  'DEPARTAMENTO' | 'SECAO' | 'CATEGORIA' | 'SUBCATEGORIA' | 'FAMILIA'
+  'DEPARTAMENTO' | 'SECAO' | 'CATEGORIA' | 'SUBCATEGORIA'
 
-// Largura de dígitos por tipo (Req 2.3)
+// Largura de dígitos por tipo (Req 2.3). SUBCATEGORIA é a folha (3 dígitos).
 export const LARGURA_SEGMENTO: Record<TipoNivel, number> = {
-  DEPARTAMENTO: 2, SECAO: 2, CATEGORIA: 2, SUBCATEGORIA: 2, FAMILIA: 3,
+  DEPARTAMENTO: 2, SECAO: 2, CATEGORIA: 2, SUBCATEGORIA: 3,
 }
 
 // Tipo pai exigido por tipo filho (Req 1.2)
 export const TIPO_PAI_OBRIGATORIO: Partial<Record<TipoNivel, TipoNivel>> = {
   SECAO: 'DEPARTAMENTO', CATEGORIA: 'SECAO',
-  SUBCATEGORIA: 'CATEGORIA', FAMILIA: 'SUBCATEGORIA',
+  SUBCATEGORIA: 'CATEGORIA',
 }
 
 // Valida código de segmento: só dígitos, largura exata para o tipo.
@@ -119,18 +133,32 @@ Guardas do POST:
 5. P2002 → 409 legível ("código hierárquico já existe").
 6. Escrita: ADMIN/SUPER_ADMIN. Leitura: aberta ao módulo.
 
-### 4. Frontend — tela /configurador/hierarquia
+### 4. Frontend — tela compartilhada + rotas por módulo
 
-- Painel com abas por tipo de nível (Departamento, Seção, Categoria, Subcategoria, Família).
-- Por aba: lista filtrada por tipo + seleção do pai + formulário novo/editar.
+- **`HierarquiaMercadologicaView`** (`src/components/hierarquia/`): componente
+  único com a UI de gestão. Recebe `breadcrumb` e `modulosPermitidos` por props.
+- Painel com abas por tipo de nível (Departamento, Seção, Categoria,
+  Subcategoria/Família). Por aba: lista filtrada + seleção do pai + form.
 - Exibe `codigoHierarquico` (readonly) + `descricao` + status toggle.
+- **Rotas (wrappers finos)**: `/configurador/hierarquia` (breadcrumb WMS) e
+  `/compras/hierarquia` (breadcrumb Compras). `detectModule` mantém o contexto
+  Compras para paths `/compras/*` — por isso a rota própria não leva ao WMS.
+- **Menu**: no `ModuleSidebar`, o item de Compras aponta para
+  `/compras/hierarquia`; o de WMS (grupo Cadastros) para `/configurador/hierarquia`.
+- **Guard**: `useModuloGuard(['WMS', 'COMPRAS'])` libera com qualquer um dos módulos.
 
-### 5. Frontend — ProdutoModal (campo Família)
+### 5. Frontend — ProdutoModal (cascata guiada)
 
-- `Select` de Família: `GET /hierarquia-mercadologica?tipo=FAMILIA&status=true`.
-- Ao selecionar: `GET /hierarquia-mercadologica/:id` → exibe breadcrumb do caminho.
-- Sem Família: texto "Sem hierarquia definida".
-- `PUT /produtos/:id` passa `familiaId`.
+- **Cascata** de 4 `Select` (Departamento → Seção → Categoria →
+  Subcategoria/Família), cada um filtrando o próximo pelo `paiId`. Carrega
+  todos os níveis ativos via `GET /hierarquia-mercadologica?status=true`.
+- O vínculo persistido é sempre a folha (Subcategoria/Família), via `familiaId`.
+- Ao reabrir um produto, a cascata é **pré-preenchida** subindo a árvore a
+  partir da folha salva; ao trocar de produto, os selects são **resetados**.
+- Sem folha: texto "Sem hierarquia definida".
+- `familiaId` é enviado tanto no **POST** (criação) quanto no **PUT** (edição)
+  de `/produtos`; o backend valida em ambos que a folha é do tipo `SUBCATEGORIA`
+  e da mesma empresa.
 
 ## Data Models
 
@@ -140,7 +168,7 @@ Guardas do POST:
 |---|---|---|
 | `id` | UUID PK | |
 | `empresa_id` | TEXT | isolamento |
-| `tipo` | VARCHAR(20) | DEPARTAMENTO..FAMILIA |
+| `tipo` | VARCHAR(20) | DEPARTAMENTO..SUBCATEGORIA (folha) |
 | `codigo` | VARCHAR(4) | segmento (2 ou 3 dígitos) |
 | `codigo_hierarquico` | VARCHAR(30) | ex.: `01.02.04.001`; único por empresa |
 | `descricao` | VARCHAR(200) | |

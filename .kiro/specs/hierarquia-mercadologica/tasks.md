@@ -2,8 +2,14 @@
 
 ## Overview
 
-Plano de implementação da Hierarquia Mercadológica (5 níveis fixos: Departamento →
-Seção → Categoria → Subcategoria → Família). O `Produto` passa a ter `familiaId`
+> **Atualização pós-entrega:** o modelo foi reduzido de 5 para **4 níveis**
+> (folha = Subcategoria/Família, 3 dígitos), sem migration (o campo `tipo` é
+> VARCHAR livre). A tela ganhou rota própria no Compras e o ProdutoModal virou
+> cascata guiada. Ver Tarefa 8 (ajustes) ao final. As Tarefas 1–7 abaixo
+> registram a entrega original.
+
+Plano de implementação da Hierarquia Mercadológica (4 níveis fixos: Departamento →
+Seção → Categoria → Subcategoria/Família). O `Produto` passa a ter `familiaId`
 opcional. Uma tabela auto-referenciada `nivel_mercadologico` persiste todos os
 níveis. O trabalho envolve backend (schema + migration + serviço puro + rotas) e
 frontend (tela de cadastro + campo no ProdutoModal).
@@ -65,6 +71,13 @@ frontend (tela de cadastro + campo no ProdutoModal).
   - Confirmar `schema.prisma` e `migrate-prod.ts` foram commitados juntos na Tarefa 1.
   - _Requirements: 5.1, 5.3_
 
+- [x] 8. Ajustes pós-entrega (4 níveis, cascata, POST familiaId, rota Compras)
+  - [x] 8.1 Reduzir de 5 para 4 níveis: remover o tipo `FAMILIA`; a folha passa a ser `SUBCATEGORIA` (3 dígitos, pai `CATEGORIA`). Ajustar `TipoNivel`, `LARGURA_SEGMENTO`, `TIPO_PAI_OBRIGATORIO` e os testes property-based. Sem migration (campo `tipo` é VARCHAR livre). _Requirements: 1.1, 1.2, 2.3_
+  - [x] 8.2 ProdutoModal: trocar o `Select` único de Família por uma **cascata guiada** (Departamento → Seção → Categoria → Subcategoria/Família); resetar os selects ao trocar de produto e pré-preencher subindo a árvore a partir da folha salva. _Requirements: 3.1, 3.2, 3.5_
+  - [x] 8.3 Produto: aceitar e validar `familiaId` também no **POST /produtos** (antes só o PUT validava; o vínculo escolhido na criação era descartado). Validar tipo `SUBCATEGORIA` + mesma empresa. _Requirements: 3.3_
+  - [x] 8.4 Extrair a UI para `HierarquiaMercadologicaView` (componente compartilhado) e criar **rota própria `/compras/hierarquia`** (wrapper), além da `/configurador/hierarquia` (WMS). Apontar o menu do Compras para a rota nova, mantendo o contexto Compras (`detectModule`). _Requirements: 6.1, 6.2, 6.3, 6.4_
+  - [x] 8.5 Verificação: 11 testes property-based passando; `get_diagnostics` limpo nos arquivos tocados (back e front). _Requirements: 5.3_
+
 ## Task Dependency Graph
 
 ```mermaid
@@ -97,15 +110,17 @@ graph TD
     { "wave": 2, "tasks": ["2.2"] },
     { "wave": 3, "tasks": ["3", "4"] },
     { "wave": 4, "tasks": ["5", "6"] },
-    { "wave": 5, "tasks": ["7"] }
+    { "wave": 5, "tasks": ["7"] },
+    { "wave": 6, "tasks": ["8.1", "8.2", "8.3", "8.4", "8.5"] }
   ]
 }
 ```
 
 ## Notes
 
-- Feature em `VisioFab.Wms.Back` (maioria) + `VisioFab.Wms.Front` (Tarefas 5 e 6).
-- **Migration obrigatória**: a Tarefa 1 altera `schema.prisma` — `migrate-prod.ts` deve ir no mesmo commit, testado 2x local.
+- Feature em `VisioFab.Wms.Back` (maioria) + `VisioFab.Wms.Front` (Tarefas 5, 6 e 8).
+- **Migration obrigatória**: a Tarefa 1 altera `schema.prisma` — `migrate-prod.ts` deve ir no mesmo commit, testado 2x local. A Tarefa 8 (4 níveis) **não** tem migration: `tipo` é VARCHAR livre.
+- **4 níveis** (padrão SAP Retail + GS1 GPC): Departamento → Seção → Categoria → Subcategoria/Família (folha, 3 dígitos). O código do produto é o "nível 5", não um nó da árvore.
 - Os campos legados `familia`/`subFamilia` (texto livre) no produto são preservados nesta entrega.
-- Criar branch nova antes de commitar (padrão do repositório).
 - Baseline de `tsc`: ~65-85 erros pré-existentes conhecidos; a mudança não deve aumentar esse número.
+- Nesta sessão o usuário autorizou commit direto na `main` com deploy automático (Render/Vercel).
