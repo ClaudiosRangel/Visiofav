@@ -3943,6 +3943,64 @@ async function seedMateriaisFromOPs() {
   }
   console.log('Hierarquia Mercadologica: nivel_mercadologico + produto.familia_id criados')
 
+  // -- HIERARQUIA MERCADOLOGICA FASE 2 ----------------------------------------
+  // Historico da migracao assistida (familia/subFamilia -> familiaId), reversivel.
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "migracao_hierarquia_execucao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "usuario_id" TEXT,
+      "total_afetados" INTEGER NOT NULL DEFAULT 0,
+      "revertida_em" TIMESTAMP(3),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "migracao_hierarquia_execucao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "migracao_hierarquia_execucao_empresa_id_idx"
+    ON "migracao_hierarquia_execucao"("empresa_id")
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "migracao_hierarquia_item" (
+      "id" TEXT NOT NULL,
+      "execucao_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "familia_id_anterior" TEXT,
+      "familia_id_novo" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "migracao_hierarquia_item_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "migracao_hierarquia_item_execucao_id_idx"
+    ON "migracao_hierarquia_item"("execucao_id")
+  `)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "migracao_hierarquia_item"
+      ADD CONSTRAINT "migracao_hierarquia_item_execucao_id_fkey"
+      FOREIGN KEY ("execucao_id") REFERENCES "migracao_hierarquia_execucao"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+    `)
+  } catch (e) {
+    if (!e.message?.includes('already exists')) {
+      console.log('migracao_hierarquia_item execucao FK:', e.message?.substring(0, 120))
+    }
+  }
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "migracao_hierarquia_item"
+      ADD CONSTRAINT "migracao_hierarquia_item_produto_id_fkey"
+      FOREIGN KEY ("produto_id") REFERENCES "produto"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+    `)
+  } catch (e) {
+    if (!e.message?.includes('already exists')) {
+      console.log('migracao_hierarquia_item produto FK:', e.message?.substring(0, 120))
+    }
+  }
+  console.log('Hierarquia Mercadologica Fase 2: migracao_hierarquia_execucao + item criados')
+
 
   // ==========================================================================
   // F1 — Financeiro Operacional Completo

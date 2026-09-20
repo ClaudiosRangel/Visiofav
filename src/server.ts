@@ -89,6 +89,8 @@ import { manutencaoEstoqueRoutes } from './modules/manutencao-estoque/manutencao
 import { conferenciaEntradaRoutes } from './modules/conferencia/conferencia-entrada.routes'
 import { wmsConfigMenusRoutes } from './modules/wms-config-menus/wms-config-menus.routes'
 import { hierarquiaMercadologicaRoutes } from './modules/hierarquia-mercadologica/hierarquia.routes'
+import { hierarquiaRelatorioRoutes } from './modules/hierarquia-mercadologica/hierarquia-relatorio.routes'
+import { hierarquiaMigracaoRoutes } from './modules/hierarquia-mercadologica/hierarquia-migracao.routes'
 import { filaExcecoesRoutes } from './modules/fila-excecoes/fila-excecoes.routes'
 import { enderecamentoWmsRoutes } from './modules/enderecamento/enderecamento-wms.routes'
 import { etiquetaRoutes } from './modules/etiqueta/etiqueta.routes'
@@ -420,6 +422,8 @@ async function bootstrap() {
   await app.register(wmsPutawayConfigRoutes, { prefix: '/api/wms/putaway' })
   await app.register(wmsConfigMenusRoutes, { prefix: '/api/wms' })
   await app.register(hierarquiaMercadologicaRoutes, { prefix: '/api/hierarquia-mercadologica' })
+  await app.register(hierarquiaRelatorioRoutes, { prefix: '/api/hierarquia-mercadologica/relatorio' })
+  await app.register(hierarquiaMigracaoRoutes, { prefix: '/api/hierarquia-mercadologica/migracao' })
   await app.register(formatoEnderecoRoutes, { prefix: '/api/formato-endereco' })
 
   // Módulo Geolocalização — Roteirização

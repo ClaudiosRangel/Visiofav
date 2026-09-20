@@ -18,7 +18,7 @@ export async function produtoRoutes(app: FastifyInstance) {
     return { codigo }
   })
 
-  app.get('/', async (request) => {
+  app.get('/', async (request, reply) => {
     const user = request.user as { id: string; empresaId?: string }
     const q = z.object({
       page: z.coerce.number().default(1),
@@ -26,6 +26,9 @@ export async function produtoRoutes(app: FastifyInstance) {
       busca: z.string().optional(),
       search: z.string().optional(),
       status: z.string().optional(),
+      // Hierarquia Mercadológica Fase 2 — filtro por qualquer nível da árvore.
+      nivelId: z.string().uuid().optional(),
+      semHierarquia: z.coerce.boolean().optional(),
     }).parse(request.query)
 
     const search = q.busca || q.search
@@ -39,6 +42,35 @@ export async function produtoRoutes(app: FastifyInstance) {
       ]
     }
     if (q.status) where.status = q.status === 'true'
+
+    // Filtro de hierarquia (Fase 2). "semHierarquia" tem prioridade e ignora
+    // "nivelId" (Req 1.7). Sem nenhum dos dois, não filtra por hierarquia (Req 1.6).
+    if (q.semHierarquia) {
+      where.familiaId = null
+    } else if (q.nivelId) {
+      // Resolve o nível na própria empresa (isolamento explícito — Req 1.8/1.9).
+      const nivel = await prisma.nivelMercadologico.findFirst({
+        where: { id: q.nivelId, ...(user.empresaId ? { empresaId: user.empresaId } : {}) },
+        select: { codigoHierarquico: true },
+      })
+      if (!nivel) {
+        return reply.status(400).send({ message: 'Nível inválido para esta empresa.' })
+      }
+      // Todas as folhas (SUBCATEGORIA) descendentes do nível: o próprio código
+      // ou qualquer código que comece por "<codigo>." (filtro por prefixo).
+      const folhas = await prisma.nivelMercadologico.findMany({
+        where: {
+          ...(user.empresaId ? { empresaId: user.empresaId } : {}),
+          tipo: 'SUBCATEGORIA',
+          OR: [
+            { codigoHierarquico: nivel.codigoHierarquico },
+            { codigoHierarquico: { startsWith: `${nivel.codigoHierarquico}.` } },
+          ],
+        },
+        select: { id: true },
+      })
+      where.familiaId = { in: folhas.map((f) => f.id) }
+    }
 
     const [data, total] = await Promise.all([
       prisma.produto.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { nome: 'asc' } }),

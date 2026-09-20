@@ -542,6 +542,38 @@ model NivelMercadologico {
   @@map("nivel_mercadologico")
 }
 
+// ── HIERARQUIA MERCADOLÓGICA — FASE 2 ─────────────────────────────────────────
+// Histórico da migração assistida dos campos legados (familia/subFamilia) para
+// o vínculo estruturado (Produto.familiaId). Não-destrutivo e reversível: cada
+// execução registra, por produto afetado, o familiaId anterior e o novo.
+// Ver .kiro/specs/hierarquia-mercadologica-fase2.
+model MigracaoHierarquiaExecucao {
+  id            String    @id @default(uuid())
+  empresaId     String    @map("empresa_id")
+  usuarioId     String?   @map("usuario_id")
+  totalAfetados Int       @default(0) @map("total_afetados")
+  revertidaEm   DateTime? @map("revertida_em")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+
+  itens MigracaoHierarquiaItem[]
+
+  @@index([empresaId])
+  @@map("migracao_hierarquia_execucao")
+}
+
+model MigracaoHierarquiaItem {
+  id                String                     @id @default(uuid())
+  execucaoId        String                     @map("execucao_id")
+  execucao          MigracaoHierarquiaExecucao @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+  produtoId         String                     @map("produto_id")
+  familiaIdAnterior String?                    @map("familia_id_anterior")
+  familiaIdNovo     String                     @map("familia_id_novo")
+  criadoEm          DateTime                   @default(now()) @map("criado_em")
+
+  @@index([execucaoId])
+  @@map("migracao_hierarquia_item")
+}
+
 model Vendedor {
   id           String   @id @default(uuid())
   empresaId    String   @map("empresa_id")
