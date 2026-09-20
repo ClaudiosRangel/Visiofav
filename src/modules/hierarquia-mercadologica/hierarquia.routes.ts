@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import {
   validarCodigoSegmento,
+  normalizarCodigoSegmento,
   composeCodigoHierarquico,
   montarCaminhoCompleto,
   TIPO_PAI_OBRIGATORIO,
@@ -93,8 +94,13 @@ export async function hierarquiaMercadologicaRoutes(app: FastifyInstance) {
       paiId: z.string().uuid().optional().nullable(),
     }).parse(request.body)
 
-    // Validação de largura do segmento.
-    const valSeg = validarCodigoSegmento(body.tipo, body.codigo)
+    // Ajuste 2 — auto-padding de zeros à esquerda conforme a largura do nível
+    // (ex.: "4" no CATEGORIA → "04"; "1" no FAMILIA → "001"). Aplicado antes de
+    // validar e compor, para que o operador possa digitar sem os zeros.
+    const codigoNormalizado = normalizarCodigoSegmento(body.tipo, body.codigo)
+
+    // Validação de largura do segmento (após normalização).
+    const valSeg = validarCodigoSegmento(body.tipo, codigoNormalizado)
     if (!valSeg.valido) return reply.status(400).send({ message: valSeg.erro })
 
     // Validação do pai conforme o tipo.
@@ -118,13 +124,13 @@ export async function hierarquiaMercadologicaRoutes(app: FastifyInstance) {
       codigoHierarquicoPai = pai.codigoHierarquico
     }
 
-    const codigoHierarquico = composeCodigoHierarquico(body.tipo, codigoHierarquicoPai, body.codigo)
+    const codigoHierarquico = composeCodigoHierarquico(body.tipo, codigoHierarquicoPai, codigoNormalizado)
 
     try {
       const criado = await db.nivelMercadologico.create({
         data: {
           tipo: body.tipo,
-          codigo: body.codigo,
+          codigo: codigoNormalizado,
           codigoHierarquico,
           descricao: body.descricao,
           paiId: body.tipo === 'DEPARTAMENTO' ? null : body.paiId,

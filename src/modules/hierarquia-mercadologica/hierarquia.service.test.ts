@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
 import {
   validarCodigoSegmento,
+  normalizarCodigoSegmento,
   composeCodigoHierarquico,
   montarCaminhoCompleto,
   LARGURA_SEGMENTO,
@@ -98,6 +99,31 @@ describe('hierarquia.service (property-based)', () => {
     expect(validarCodigoSegmento('FAMILIA', '01').valido).toBe(false)
     expect(validarCodigoSegmento('DEPARTAMENTO', '01').valido).toBe(true)
     expect(validarCodigoSegmento('DEPARTAMENTO', '001').valido).toBe(false)
+  })
+
+  // Ajuste 2 — normalização com zero-padding conforme a largura do nível.
+  it('normalizarCodigoSegmento: aplica zeros à esquerda pela largura do nível', () => {
+    expect(normalizarCodigoSegmento('DEPARTAMENTO', '1')).toBe('01')
+    expect(normalizarCodigoSegmento('CATEGORIA', '4')).toBe('04')
+    expect(normalizarCodigoSegmento('FAMILIA', '1')).toBe('001')
+    expect(normalizarCodigoSegmento('FAMILIA', '85')).toBe('085')
+    // Já no tamanho: mantém
+    expect(normalizarCodigoSegmento('FAMILIA', '001')).toBe('001')
+    // Excede a largura: deixa como está (validação recusa depois)
+    expect(normalizarCodigoSegmento('DEPARTAMENTO', '123')).toBe('123')
+    // Não-numérico: mantém (validação recusa)
+    expect(normalizarCodigoSegmento('FAMILIA', 'AB')).toBe('AB')
+  })
+
+  it('P5 — normalizar seguido de validar sempre aprova entradas numéricas dentro da largura', () => {
+    fc.assert(
+      fc.property(arbTipo, fc.integer({ min: 0, max: 999 }), (tipo, n) => {
+        const bruto = String(n)
+        if (bruto.length > LARGURA_SEGMENTO[tipo]) return // fora do escopo
+        const norm = normalizarCodigoSegmento(tipo, bruto)
+        expect(validarCodigoSegmento(tipo, norm).valido).toBe(true)
+      }),
+    )
   })
 
   it('montarCaminhoCompleto: raiz primeiro, folha por último', () => {

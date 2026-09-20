@@ -26,7 +26,26 @@ export const LARGURA_SEGMENTO: Record<TipoNivel, number> = {
   SECAO: 2,
   CATEGORIA: 2,
   SUBCATEGORIA: 2,
+  // FAMILIA é o nível folha (Subcategoria/Família) — 3 dígitos, alinhado ao
+  // relatório e ao padrão de mercado (SAP Retail / GS1 GPC). O produto/SKU NÃO
+  // é um nível da hierarquia: ele se vincula à Família e usa seu próprio código.
   FAMILIA: 3,
+}
+
+/**
+ * Normaliza o código de segmento aplicando zero-padding à esquerda conforme a
+ * largura do nível (Ajuste 2). Aceita entradas com menos dígitos que a largura
+ * (ex.: "4" no nível CATEGORIA → "04"; "1" no FAMILIA → "001"). Só faz padding
+ * quando o valor é puramente numérico e não excede a largura; caso contrário
+ * retorna o valor original (a validação posterior rejeita).
+ */
+export function normalizarCodigoSegmento(tipo: TipoNivel, codigo: string): string {
+  const largura = LARGURA_SEGMENTO[tipo]
+  const bruto = (codigo ?? '').trim()
+  if (largura === undefined) return bruto
+  if (!/^\d+$/.test(bruto)) return bruto
+  if (bruto.length > largura) return bruto // excede → deixa a validação recusar
+  return bruto.padStart(largura, '0')
 }
 
 /**
