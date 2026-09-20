@@ -524,7 +524,8 @@ model NivelMercadologico {
   id                String    @id @default(uuid())
   empresaId         String    @map("empresa_id")
   tipo              String    @db.VarChar(20)
-  // DEPARTAMENTO | SECAO | CATEGORIA | SUBCATEGORIA | FAMILIA
+  // 4 níveis (padrão SAP Retail / GS1 GPC): DEPARTAMENTO | SECAO | CATEGORIA | SUBCATEGORIA (folha).
+  // O produto vincula-se à SUBCATEGORIA (também chamada "Subcategoria/Família") via Produto.familiaId.
   codigo            String    @db.VarChar(4)
   codigoHierarquico String    @map("codigo_hierarquico") @db.VarChar(30)
   descricao         String    @db.VarChar(200)

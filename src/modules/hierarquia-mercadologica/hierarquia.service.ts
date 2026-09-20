@@ -1,35 +1,36 @@
 /**
  * Serviço puro da Hierarquia Mercadológica.
  *
- * 5 níveis fixos encadeados: DEPARTAMENTO → SECAO → CATEGORIA → SUBCATEGORIA →
- * FAMILIA. Funções puras (sem I/O) para validação de segmento, composição do
+ * 4 níveis fixos encadeados: DEPARTAMENTO → SECAO → CATEGORIA → SUBCATEGORIA
+ * (folha). Funções puras (sem I/O) para validação de segmento, composição do
  * código hierárquico e montagem do caminho completo — testáveis isoladamente.
  */
 
+// 4 níveis de agrupamento (padrão SAP Retail / GS1 GPC). O produto/SKU NÃO é
+// um nível da árvore — ele se vincula ao nível folha (SUBCATEGORIA, também
+// chamada "Subcategoria/Família" no relatório) e usa seu próprio código.
+// Estrutura: DEPARTAMENTO → SECAO → CATEGORIA → SUBCATEGORIA (folha).
 export type TipoNivel =
   | 'DEPARTAMENTO'
   | 'SECAO'
   | 'CATEGORIA'
   | 'SUBCATEGORIA'
-  | 'FAMILIA'
 
 export const TIPOS_NIVEL: TipoNivel[] = [
-  'DEPARTAMENTO', 'SECAO', 'CATEGORIA', 'SUBCATEGORIA', 'FAMILIA',
+  'DEPARTAMENTO', 'SECAO', 'CATEGORIA', 'SUBCATEGORIA',
 ]
 
 /**
  * Largura de dígitos do código de segmento por nível (Req 2.3).
- * Todos os 5 tipos têm uma regra — nenhum segmento é aceito sem largura ativa.
+ * Todos os tipos têm uma regra — nenhum segmento é aceito sem largura ativa.
  */
 export const LARGURA_SEGMENTO: Record<TipoNivel, number> = {
   DEPARTAMENTO: 2,
   SECAO: 2,
   CATEGORIA: 2,
-  SUBCATEGORIA: 2,
-  // FAMILIA é o nível folha (Subcategoria/Família) — 3 dígitos, alinhado ao
-  // relatório e ao padrão de mercado (SAP Retail / GS1 GPC). O produto/SKU NÃO
-  // é um nível da hierarquia: ele se vincula à Família e usa seu próprio código.
-  FAMILIA: 3,
+  // SUBCATEGORIA é o nível folha (Subcategoria/Família) — 3 dígitos, alinhado
+  // ao relatório. É o nível ao qual o produto se vincula.
+  SUBCATEGORIA: 3,
 }
 
 /**
@@ -40,6 +41,7 @@ export const LARGURA_SEGMENTO: Record<TipoNivel, number> = {
  * retorna o valor original (a validação posterior rejeita).
  */
 export function normalizarCodigoSegmento(tipo: TipoNivel, codigo: string): string {
+  // ex.: "4" no CATEGORIA → "04"; "1" no SUBCATEGORIA → "001".
   const largura = LARGURA_SEGMENTO[tipo]
   const bruto = (codigo ?? '').trim()
   if (largura === undefined) return bruto
@@ -56,7 +58,6 @@ export const TIPO_PAI_OBRIGATORIO: Partial<Record<TipoNivel, TipoNivel>> = {
   SECAO: 'DEPARTAMENTO',
   CATEGORIA: 'SECAO',
   SUBCATEGORIA: 'CATEGORIA',
-  FAMILIA: 'SUBCATEGORIA',
 }
 
 export interface ValidacaoResult {

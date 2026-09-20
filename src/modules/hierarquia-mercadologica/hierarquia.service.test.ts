@@ -76,9 +76,9 @@ describe('hierarquia.service (property-based)', () => {
     )
   })
 
-  // P4 — todos os 5 tipos têm regra de largura
+  // P4 — todos os 4 tipos têm regra de largura
   // **Validates: Requirements 2.3**
-  it('P4 — LARGURA_SEGMENTO cobre todos os 5 tipos', () => {
+  it('P4 — LARGURA_SEGMENTO cobre todos os 4 tipos', () => {
     for (const tipo of TIPOS_NIVEL) {
       expect(typeof LARGURA_SEGMENTO[tipo]).toBe('number')
       expect(LARGURA_SEGMENTO[tipo]).toBeGreaterThan(0)
@@ -90,13 +90,13 @@ describe('hierarquia.service (property-based)', () => {
     const dep = composeCodigoHierarquico('DEPARTAMENTO', null, '01')
     const sec = composeCodigoHierarquico('SECAO', dep, '02')
     const cat = composeCodigoHierarquico('CATEGORIA', sec, '04')
-    const fam = composeCodigoHierarquico('FAMILIA', cat, '001')
-    expect([dep, sec, cat, fam]).toEqual(['01', '01.02', '01.02.04', '01.02.04.001'])
+    const sub = composeCodigoHierarquico('SUBCATEGORIA', cat, '001')
+    expect([dep, sec, cat, sub]).toEqual(['01', '01.02', '01.02.04', '01.02.04.001'])
   })
 
-  it('validarCodigoSegmento: FAMILIA exige 3 dígitos', () => {
-    expect(validarCodigoSegmento('FAMILIA', '001').valido).toBe(true)
-    expect(validarCodigoSegmento('FAMILIA', '01').valido).toBe(false)
+  it('validarCodigoSegmento: SUBCATEGORIA (folha) exige 3 dígitos', () => {
+    expect(validarCodigoSegmento('SUBCATEGORIA', '001').valido).toBe(true)
+    expect(validarCodigoSegmento('SUBCATEGORIA', '01').valido).toBe(false)
     expect(validarCodigoSegmento('DEPARTAMENTO', '01').valido).toBe(true)
     expect(validarCodigoSegmento('DEPARTAMENTO', '001').valido).toBe(false)
   })
@@ -105,14 +105,14 @@ describe('hierarquia.service (property-based)', () => {
   it('normalizarCodigoSegmento: aplica zeros à esquerda pela largura do nível', () => {
     expect(normalizarCodigoSegmento('DEPARTAMENTO', '1')).toBe('01')
     expect(normalizarCodigoSegmento('CATEGORIA', '4')).toBe('04')
-    expect(normalizarCodigoSegmento('FAMILIA', '1')).toBe('001')
-    expect(normalizarCodigoSegmento('FAMILIA', '85')).toBe('085')
+    expect(normalizarCodigoSegmento('SUBCATEGORIA', '1')).toBe('001')
+    expect(normalizarCodigoSegmento('SUBCATEGORIA', '85')).toBe('085')
     // Já no tamanho: mantém
-    expect(normalizarCodigoSegmento('FAMILIA', '001')).toBe('001')
+    expect(normalizarCodigoSegmento('SUBCATEGORIA', '001')).toBe('001')
     // Excede a largura: deixa como está (validação recusa depois)
     expect(normalizarCodigoSegmento('DEPARTAMENTO', '123')).toBe('123')
     // Não-numérico: mantém (validação recusa)
-    expect(normalizarCodigoSegmento('FAMILIA', 'AB')).toBe('AB')
+    expect(normalizarCodigoSegmento('SUBCATEGORIA', 'AB')).toBe('AB')
   })
 
   it('P5 — normalizar seguido de validar sempre aprova entradas numéricas dentro da largura', () => {
@@ -128,7 +128,7 @@ describe('hierarquia.service (property-based)', () => {
 
   it('montarCaminhoCompleto: raiz primeiro, folha por último', () => {
     const arvore: NivelComPai = {
-      id: 'f', tipo: 'FAMILIA', codigo: '001', codigoHierarquico: '01.02.04.001', descricao: 'Fam',
+      id: 'f', tipo: 'SUBCATEGORIA', codigo: '001', codigoHierarquico: '01.02.04.001', descricao: 'Sub',
       pai: {
         id: 'c', tipo: 'CATEGORIA', codigo: '04', codigoHierarquico: '01.02.04', descricao: 'Cat',
         pai: {
@@ -137,7 +137,7 @@ describe('hierarquia.service (property-based)', () => {
       },
     }
     const caminho = montarCaminhoCompleto(arvore)
-    expect(caminho.map((n) => n.tipo)).toEqual(['DEPARTAMENTO', 'CATEGORIA', 'FAMILIA'])
+    expect(caminho.map((n) => n.tipo)).toEqual(['DEPARTAMENTO', 'CATEGORIA', 'SUBCATEGORIA'])
     expect(caminho[0].id).toBe('d')
     expect(caminho[caminho.length - 1].id).toBe('f')
   })

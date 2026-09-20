@@ -109,10 +109,25 @@ export async function produtoRoutes(app: FastifyInstance) {
       curvaAbc: z.enum(['A', 'B', 'C']).nullable().optional(),
       ambienteExigido: z.enum(['SECO', 'REFRIGERADO', 'CONGELADO']).nullable().optional(),
       classificacaoArmazenagemId: z.string().uuid().nullable().optional(),
+      // Hierarquia Mercadológica — vínculo ao nível folha (Subcategoria/Família).
+      familiaId: z.string().uuid().nullable().optional(),
     }).parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
     const empresaId = user.empresaId
+
+    // Validar que a Família informada existe, é do tipo SUBCATEGORIA (nível
+    // folha) e pertence à mesma empresa (Req 3.3). null/ausente = sem vínculo.
+    if (data.familiaId) {
+      const familia = await prisma.nivelMercadologico.findFirst({
+        where: { id: data.familiaId, empresaId },
+        select: { tipo: true },
+      })
+      if (!familia) return reply.status(400).send({ message: 'Subcategoria/Família (nível mercadológico) não encontrada.' })
+      if (familia.tipo !== 'SUBCATEGORIA') {
+        return reply.status(400).send({ message: 'O vínculo mercadológico do produto deve ser um nível folha (Subcategoria/Família).' })
+      }
+    }
 
     // Correção do bug do código automático: o `GET /proximo-codigo` só faz peek
     // (não incrementa), e o create gravava o código sem NUNCA consumir o
@@ -200,17 +215,17 @@ export async function produtoRoutes(app: FastifyInstance) {
     // Separar campos de ConfigConferenciaProduto dos campos do Produto
     const { aceitarSenha, aceitarCcePendente, ...produtoData } = data
 
-    // Validar que a Família informada existe, é do tipo FAMILIA e pertence à
-    // mesma empresa (Req 3.3). null limpa o vínculo.
+    // Validar que a Família informada existe, é do tipo SUBCATEGORIA (nível
+    // folha) e pertence à mesma empresa (Req 3.3). null limpa o vínculo.
     if (produtoData.familiaId) {
       const user = request.user as { empresaId?: string }
       const familia = await prisma.nivelMercadologico.findFirst({
         where: { id: produtoData.familiaId, ...(user.empresaId ? { empresaId: user.empresaId } : {}) },
         select: { tipo: true },
       })
-      if (!familia) return reply.status(400).send({ message: 'Família (nível mercadológico) não encontrada.' })
-      if (familia.tipo !== 'FAMILIA') {
-        return reply.status(400).send({ message: 'O vínculo mercadológico do produto deve ser um nível do tipo FAMILIA.' })
+      if (!familia) return reply.status(400).send({ message: 'Subcategoria/Família (nível mercadológico) não encontrada.' })
+      if (familia.tipo !== 'SUBCATEGORIA') {
+        return reply.status(400).send({ message: 'O vínculo mercadológico do produto deve ser um nível folha (Subcategoria/Família).' })
       }
     }
 
