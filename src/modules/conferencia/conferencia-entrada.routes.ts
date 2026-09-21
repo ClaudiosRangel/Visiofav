@@ -54,6 +54,7 @@ const conferirItemSchema = z.object({
   quantidadeConferida: z.number().min(0),
   lote: z.string().optional(),
   validade: z.string().optional(),
+  dataFabricacao: z.string().optional(),
   observacao: z.string().optional(),
 })
 
@@ -164,6 +165,7 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       quantidade: z.number().positive(),
       lote: z.string().optional(),
       validade: z.string().optional(),
+      dataFabricacao: z.string().optional(),
     }).parse(request.body)
 
     // Verificar pendências logísticas — bloqueia conferência
@@ -186,14 +188,15 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     // Validação de validade (produto vencido + shelf life) — regra única do helper.
     // Produto encontrado basta: PRODUTO_VENCIDO bloqueia mesmo com shelfLifeMinimo nulo.
-    if (body.validade) {
+    if (body.validade || body.dataFabricacao) {
       const produto = await prisma.produto.findFirst({
         where: { empresaId: user.empresaId, codigo: body.codigoProduto },
         select: { shelfLifeMinimo: true, nome: true, shelfLifeTotalDias: true, percentualVidaUtilMinimoRecebimento: true },
       })
       if (produto) {
         const resultado = validarValidadeProduto({
-          validadeDigitada: parseDateBR(body.validade),
+          validadeDigitada: body.validade ? parseDateBR(body.validade) : null,
+          dataFabricacao: body.dataFabricacao ? parseDateBR(body.dataFabricacao) : null,
           shelfLifeMinimo: produto.shelfLifeMinimo,
           shelfLifeTotalDias: produto.shelfLifeTotalDias,
           percentualVidaUtilMinimo: produto.percentualVidaUtilMinimoRecebimento != null ? Number(produto.percentualVidaUtilMinimoRecebimento) : null,
@@ -434,14 +437,15 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
 
     // Validação de validade (produto vencido + shelf life) — regra única do helper.
     // Produto encontrado basta: PRODUTO_VENCIDO bloqueia mesmo com shelfLifeMinimo nulo.
-    if (body.validade && item.codigoProduto) {
+    if ((body.validade || body.dataFabricacao) && item.codigoProduto) {
       const produto = await prisma.produto.findFirst({
         where: { empresaId: userConf.empresaId, codigo: item.codigoProduto },
         select: { shelfLifeMinimo: true, nome: true, shelfLifeTotalDias: true, percentualVidaUtilMinimoRecebimento: true },
       })
       if (produto) {
         const resultado = validarValidadeProduto({
-          validadeDigitada: parseDateBR(body.validade),
+          validadeDigitada: body.validade ? parseDateBR(body.validade) : null,
+          dataFabricacao: body.dataFabricacao ? parseDateBR(body.dataFabricacao) : null,
           shelfLifeMinimo: produto.shelfLifeMinimo,
           shelfLifeTotalDias: produto.shelfLifeTotalDias,
           percentualVidaUtilMinimo: produto.percentualVidaUtilMinimoRecebimento != null ? Number(produto.percentualVidaUtilMinimoRecebimento) : null,
