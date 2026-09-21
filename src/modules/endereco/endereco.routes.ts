@@ -81,6 +81,8 @@ export async function enderecoRoutes(app: FastifyInstance) {
       classificacaoProdutoId: z.string().uuid().optional(),
       // Área de overflow (transbordo) — ver melhoria-endereco-overflow-putaway.md.
       permiteOverflow: z.boolean().optional().default(false),
+      // Área apta a produtos perigosos/inflamáveis (spec atributos-logisticos-shelf-life).
+      permitePerigosos: z.boolean().optional().default(false),
     }).parse(request.body)
 
     // Resolver formato de endereço aplicável (Zona > Depósito > Padrão)
@@ -247,6 +249,8 @@ export async function enderecoRoutes(app: FastifyInstance) {
       // de qualquer produto mesmo já ocupado, como 4ª prioridade da
       // distribuição inteligente (ver melhoria-endereco-overflow-putaway.md).
       permiteOverflow: z.boolean().optional(),
+      // Área apta a produtos perigosos/inflamáveis (spec atributos-logisticos-shelf-life).
+      permitePerigosos: z.boolean().optional(),
     }).parse(request.body)
 
     // Check if any segment field is being updated

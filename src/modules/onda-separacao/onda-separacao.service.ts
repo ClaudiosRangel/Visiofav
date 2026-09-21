@@ -1,16 +1,41 @@
 import { prisma } from '../../lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
+import {
+  diasEntre,
+  elegivelParaCliente,
+  deveEntrarEmQuarentena,
+} from '../conferencia-entrada/shelf-life-avancado.service'
+
+/** Opções de restrição de validade na seleção de lotes (spec atributos-logisticos-shelf-life). */
+export interface OpcoesSelecaoLote {
+  /** Cliente.shelfLifeMinimoExpedicaoDias — pula lotes que vencem antes disso. */
+  diasMinimosCliente?: number | null
+  /** Produto.diasQuarentenaVencimento — pula lotes a ≤ este nº de dias do vencimento. */
+  diasQuarentenaVencimento?: number | null
+  /** Data de referência (default: hoje). */
+  dataReferencia?: Date
+}
 
 /**
  * Seleciona endereços de origem usando FEFO (validade mais próxima) ou FIFO (mais antigo).
  * Consulta dados logísticos do produto para determinar a norma.
  * Distribui a quantidade entre múltiplos endereços se necessário.
+ *
+ * Regras de saída (spec atributos-logisticos-shelf-life):
+ * - Exclui saldos bloqueados (`SaldoEndereco.bloqueado = true`) — inclui a
+ *   quarentena aplicada a nível de lote.
+ * - Pula lotes cujo vencimento não atende `diasMinimosCliente` (shelf life de
+ *   expedição do cliente do pedido).
+ * - Pula lotes em quarentena automática por proximidade de vencimento
+ *   (`diasQuarentenaVencimento` do produto).
  */
 export async function selecionarEnderecosFIFO(
   produtoId: string,
   quantidadeNecessaria: number,
   tx: any,
+  opcoes: OpcoesSelecaoLote = {},
 ): Promise<{ enderecoId: string; quantidade: number }[]> {
+  const dataRef = opcoes.dataReferencia ?? new Date()
   // Verificar tipo de norma nos dados logísticos
   let tipoNorma = 'FIFO'
   try {
@@ -25,9 +50,10 @@ export async function selecionarEnderecosFIFO(
 
   let saldos
   if (tipoNorma === 'FEFO') {
-    // FEFO: priorizar validade mais próxima (não nula primeiro, depois por data)
+    // FEFO: priorizar validade mais próxima (não nula primeiro, depois por data).
+    // Exclui saldos bloqueados (quarentena manual/automática a nível de lote).
     saldos = await tx.saldoEndereco.findMany({
-      where: { produtoId, quantidade: { gt: 0 } },
+      where: { produtoId, quantidade: { gt: 0 }, bloqueado: false },
       orderBy: [{ validade: 'asc' }, { atualizadoEm: 'asc' }],
     })
     // Colocar itens sem validade no final
@@ -37,7 +63,7 @@ export async function selecionarEnderecosFIFO(
   } else {
     // FIFO: mais antigo primeiro
     saldos = await tx.saldoEndereco.findMany({
-      where: { produtoId, quantidade: { gt: 0 } },
+      where: { produtoId, quantidade: { gt: 0 }, bloqueado: false },
       orderBy: { atualizadoEm: 'asc' },
     })
   }
@@ -47,6 +73,20 @@ export async function selecionarEnderecosFIFO(
 
   for (const saldo of saldos) {
     if (restante <= 0) break
+
+    // Filtros de validade (só quando o saldo tem validade conhecida).
+    if (saldo.validade) {
+      const diasRestantes = diasEntre(dataRef, new Date(saldo.validade))
+      // Quarentena automática por proximidade de vencimento.
+      if (deveEntrarEmQuarentena(diasRestantes, opcoes.diasQuarentenaVencimento ?? null)) {
+        continue
+      }
+      // Shelf life mínimo de expedição do cliente.
+      if (!elegivelParaCliente(diasRestantes, opcoes.diasMinimosCliente ?? null)) {
+        continue
+      }
+    }
+
     const disponivel = Number(saldo.quantidade)
     const alocar = Math.min(disponivel, restante)
     alocacoes.push({ enderecoId: saldo.enderecoId, quantidade: alocar })
@@ -178,6 +218,20 @@ export async function iniciarOnda(ondaId: string, empresaId: string) {
     include: { produto: { select: { id: true, nome: true } } },
   })
 
+  // Shelf life de expedição por cliente (spec atributos-logisticos-shelf-life):
+  // resolve o dia mínimo exigido por pedido (via Cliente do pedido). Uma onda
+  // pode ter vários clientes; ao agrupar por produto usamos o critério MAIS
+  // restritivo (maior nº de dias) entre os clientes que pedem aquele produto,
+  // garantindo que nenhum cliente receba lote abaixo do seu mínimo.
+  const pedidos = await prisma.pedidoVenda.findMany({
+    where: { id: { in: pedidoIds } },
+    select: { id: true, cliente: { select: { shelfLifeMinimoExpedicaoDias: true } } },
+  })
+  const diasMinPorPedido = new Map<string, number | null>()
+  for (const p of pedidos) {
+    diasMinPorPedido.set(p.id, p.cliente?.shelfLifeMinimoExpedicaoDias ?? null)
+  }
+
   // Agrupar por produto (somar quantidades)
   const porProduto = new Map<string, { produtoId: string; quantidade: number; pedidoVendaId: string }[]>()
   for (const item of itensPedidos) {
@@ -190,14 +244,35 @@ export async function iniciarOnda(ondaId: string, empresaId: string) {
     })
   }
 
+  // Limiar de quarentena automática por produto (fallback: null).
+  const produtoIds = [...porProduto.keys()]
+  const produtosInfo = await prisma.produto.findMany({
+    where: { id: { in: produtoIds } },
+    select: { id: true, diasQuarentenaVencimento: true },
+  })
+  const quarentenaPorProduto = new Map<string, number | null>(
+    produtosInfo.map((p) => [p.id, p.diasQuarentenaVencimento ?? null]),
+  )
+
   const result = await prisma.$transaction(async (tx) => {
     const todosItens: any[] = []
 
     for (const [produtoId, itens] of porProduto) {
       const quantidadeTotal = itens.reduce((s, i) => s + i.quantidade, 0)
 
-      // FIFO: selecionar endereços de origem
-      const alocacoes = await selecionarEnderecosFIFO(produtoId, quantidadeTotal, tx)
+      // Critério mais restritivo de shelf life de expedição entre os clientes
+      // que pedem este produto (maior nº de dias exigido).
+      const diasMinimosCliente = itens.reduce<number | null>((max, i) => {
+        const d = diasMinPorPedido.get(i.pedidoVendaId) ?? null
+        if (d === null) return max
+        return max === null ? d : Math.max(max, d)
+      }, null)
+
+      // FEFO/FIFO com filtros de validade (cliente + quarentena) e sem bloqueados
+      const alocacoes = await selecionarEnderecosFIFO(produtoId, quantidadeTotal, tx, {
+        diasMinimosCliente,
+        diasQuarentenaVencimento: quarentenaPorProduto.get(produtoId) ?? null,
+      })
 
       // Reservar estoque
       await reservarEstoque(empresaId, produtoId, quantidadeTotal, tx)

@@ -2237,6 +2237,9 @@ model Endereco {
   // prioridade da distribuição inteligente (evita put-away "travado" com o
   // armazém cheio). Ver docs/melhoria-endereco-overflow-putaway.md.
   permiteOverflow        Boolean               @default(false) @map("permite_overflow")
+  // Área apta a receber produtos perigosos/inflamáveis (spec atributos-logisticos-shelf-life).
+  // Produto com periculosidade PERIGOSO/INFLAMAVEL só é endereçado onde isto for true.
+  permitePerigosos       Boolean               @default(false) @map("permite_perigosos")
   criadoEm               DateTime              @default(now()) @map("criado_em")
   empresaId              String?               @map("empresa_id")
 

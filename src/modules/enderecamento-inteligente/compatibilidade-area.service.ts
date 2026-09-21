@@ -25,6 +25,12 @@ export interface ProdutoRestricaoArea {
   ambienteExigido: string | null
   /** Produto.classificacaoArmazenagemId (FK para ClassificacaoProduto) ou null */
   classificacaoArmazenagemId: string | null
+  /**
+   * Produto.periculosidade: 'ISENTO' | 'CARGA_GERAL' | 'PERIGOSO' | 'INFLAMAVEL'
+   * | null. PERIGOSO/INFLAMAVEL só podem ir a endereço com `permitePerigosos`.
+   * (spec atributos-logisticos-shelf-life)
+   */
+  periculosidade?: string | null
 }
 
 export interface EnderecoArea {
@@ -37,6 +43,8 @@ export interface EnderecoArea {
   ambienteTemperatura: string | null
   /** Endereco.classificacaoProdutoId ou null */
   classificacaoProdutoId: string | null
+  /** Endereco.permitePerigosos — área apta a produtos perigosos/inflamáveis. */
+  permitePerigosos?: boolean
 }
 
 /** Normaliza para comparação: trim + uppercase; vazio/nulo vira null. */
@@ -68,6 +76,16 @@ export function areaCompativel(produto: ProdutoRestricaoArea, endereco: Endereco
       !endereco.classificacaoProdutoId ||
       endereco.classificacaoProdutoId !== produto.classificacaoArmazenagemId
     ) {
+      return false
+    }
+  }
+
+  // ── Critério 3: periculosidade (spec atributos-logisticos-shelf-life) ──
+  // Produto PERIGOSO/INFLAMAVEL só é compatível com endereço marcado
+  // `permitePerigosos`. ISENTO/CARGA_GERAL/null não impõem restrição.
+  const peric = norm(produto.periculosidade)
+  if (peric === 'PERIGOSO' || peric === 'INFLAMAVEL') {
+    if (endereco.permitePerigosos !== true) {
       return false
     }
   }

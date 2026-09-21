@@ -4008,7 +4008,8 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "percentual_vida_util_minimo_recebimento" DECIMAL(5,2)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "dias_quarentena_vencimento" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "shelf_life_minimo_expedicao_dias" INTEGER`)
-  console.log('Atributos Logisticos e Shelf Life: colunas em produto/cliente criadas')
+  await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "permite_perigosos" BOOLEAN NOT NULL DEFAULT false`)
+  console.log('Atributos Logisticos e Shelf Life: colunas em produto/cliente/endereco criadas')
 
 
   // ==========================================================================

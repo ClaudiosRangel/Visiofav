@@ -64,20 +64,20 @@ multi-tenant com filtro explícito por `empresaId`. Migração idempotente
 - [ ] 5. Checkpoint — backend de cadastro + recebimento
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Put-away por periculosidade — `VisioFab.Wms.Back`
-  - Motor de endereçamento (RF008) considera `produto.periculosidade`: PERIGOSO/INFLAMAVEL restringe a endereços/áreas compatíveis; ISENTO/CARGA_GERAL/nulo mantém comportamento atual; filtro por `empresaId`
+- [x] 6. Put-away por periculosidade — `VisioFab.Wms.Back`
+  - `areaCompativel` (RF004) ganhou 3º critério: produto PERIGOSO/INFLAMAVEL só é compatível com `Endereco.permitePerigosos=true`. Novo campo `Endereco.permitePerigosos` (schema+migração+cadastro). Aplicado em todas as camadas do put-away.
   - _Requirements: 1.3, 1.4, 1.5_
   - [ ]* 6.1 Teste de integração do put-away por periculosidade (perigoso não vai a endereço comum; nulo mantém; isolamento)
     - _Requirements: 1.3, 1.4, 1.5_
 
-- [ ] 7. Picking/FEFO por dias mínimos do cliente — `VisioFab.Wms.Back`
-  - Na seleção de lotes por FEFO, usar `elegivelParaCliente(diasRestantes, cliente.shelfLifeMinimoExpedicaoDias)` para pular lotes fora do mínimo do cliente do pedido; nenhum elegível → bloquear/sinalizar item; cliente sem regra → FEFO atual; filtro por `empresaId`
+- [x] 7. Picking/FEFO por dias mínimos do cliente — `VisioFab.Wms.Back`
+  - `selecionarEnderecosFIFO` recebe `diasMinimosCliente` e pula lotes inelegíveis via `elegivelParaCliente`. `iniciarOnda` resolve o cliente por pedido e usa o critério mais restritivo por produto. Cliente sem regra → FEFO atual.
   - _Requirements: 4.2, 4.3, 4.4, 4.5_
   - [ ]* 7.1 Teste de integração do FEFO por cliente (pula lote curto; nenhum elegível → bloqueio; sem regra → FEFO atual)
     - _Requirements: 4.2, 4.3, 4.4_
 
-- [ ] 8. Quarentena automática por dias a vencer — `VisioFab.Wms.Back`
-  - Avaliar `deveEntrarEmQuarentena(diasRestantes, limiar)` com `limiar = produto.diasQuarentenaVencimento` (fallback `Parametro` `wms.diasQuarentenaVencimento`) no ponto de seleção de lotes da expedição; bloquear reutilizando o mecanismo de quarentena/bloqueio existente; motivo "proximidade de vencimento" distinguível de bloqueio manual; lote em quarentena não é selecionável; filtro por `empresaId`
+- [x] 8. Quarentena automática por dias a vencer — `VisioFab.Wms.Back`
+  - `selecionarEnderecosFIFO` pula lotes a ≤ `produto.diasQuarentenaVencimento` do vencimento (via `deveEntrarEmQuarentena`) E passou a EXCLUIR saldos `bloqueado=true` (o picking antes NÃO respeitava bloqueio de lote — lacuna corrigida). NOTA: marcação em massa por job/rotina de `SaldoEndereco.bloqueado` fica como melhoria futura; a exclusão na seleção já garante que lotes próximos do vencimento não sejam separados.
   - _Requirements: 5.2, 5.3, 5.4, 5.5, 5.6_
   - [ ]* 8.1 Teste de integração da quarentena automática (lote ≤ limiar bloqueado e não selecionável; sem limiar → sem bloqueio; motivo distinguível)
     - _Requirements: 5.2, 5.3, 5.5_

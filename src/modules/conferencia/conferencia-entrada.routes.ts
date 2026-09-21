@@ -1243,20 +1243,23 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       // cadeia completa fixo → consolidação → livre (proximidade RF008) →
       // overflow, com compatibilidade de área (RF004) e isolamento por empresa.
 
-      // Restrição de área do produto (RF004).
+      // Restrição de área do produto (RF004 + periculosidade).
       const produtoArea = {
         ambienteExigido: produto.ambienteExigido,
         classificacaoArmazenagemId: produto.classificacaoArmazenagemId,
+        periculosidade: produto.periculosidade,
       }
       const compat = (end: {
         ambienteArmazenagemId: string | null
         ambienteArmazenagem?: { temperatura: string | null } | null
         classificacaoProdutoId: string | null
+        permitePerigosos?: boolean
       }) =>
         areaCompativel(produtoArea, {
           ambienteArmazenagemId: end.ambienteArmazenagemId,
           ambienteTemperatura: end.ambienteArmazenagem?.temperatura ?? null,
           classificacaoProdutoId: end.classificacaoProdutoId,
+          permitePerigosos: end.permitePerigosos,
         })
 
       const incluiAmbiente = { estrutura: true, ambienteArmazenagem: { select: { temperatura: true } } }
