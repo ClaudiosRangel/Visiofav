@@ -54,22 +54,46 @@ export async function gerarProximoCodigo(tx: PrismaTransaction, empresaId: strin
 }
 
 /**
- * Lê (sem consumir/incrementar) qual seria o próximo código sequencial da
- * empresa — usado apenas para PRÉ-VISUALIZAÇÃO no formulário de cadastro de
+ * Lê (sem consumir/incrementar) qual seria o próximo código sequencial LIVRE
+ * da empresa — usado apenas para PRÉ-VISUALIZAÇÃO no formulário de cadastro de
  * Produto (o operador vê o código sugerido antes de salvar). O código
  * definitivo só é gravado no momento do create do Produto (a unicidade é
  * garantida lá). Retorna null se a faixa estiver esgotada.
  *
+ * Pula códigos já ocupados por produtos existentes: o contador
+ * (`SequenciaProduto.proximoValor`) é independente da tabela `produto`, então
+ * quando há produtos criados com código manual, importados ou migrados de
+ * outra origem, o valor "cru" do contador pode colidir com um código que já
+ * existe. Aqui avançamos a partir do contador até o primeiro código realmente
+ * livre — sem consumir o contador (continua sendo só uma prévia).
+ *
  * IMPORTANTE: como não incrementa, dois formulários abertos ao mesmo tempo
- * podem ver o mesmo código de prévia — isso é aceitável para uma sugestão;
- * a gravação real resolve conflito pela constraint de unicidade do código.
+ * podem ver o mesmo código de prévia — aceitável para uma sugestão; a gravação
+ * real resolve conflito pela constraint de unicidade do código.
  */
 export async function peekProximoCodigo(
   tx: PrismaTransaction,
   empresaId: string,
 ): Promise<string | null> {
   const seq = await tx.sequenciaProduto.findUnique({ where: { empresaId }, select: { proximoValor: true } })
-  const valor = seq?.proximoValor ?? 1
+  let valor = seq?.proximoValor ?? 1
+
+  // Avança sobre códigos já ocupados por produtos desta empresa (defensivo:
+  // limita o número de saltos para não varrer indefinidamente em bases grandes).
+  const MAX_SALTOS = 10000
+  for (let i = 0; i < MAX_SALTOS; i += 1) {
+    if (valor > CODIGO_SEQUENCIAL_MAXIMO) return null
+    const codigo = String(valor).padStart(6, '0')
+    // eslint-disable-next-line no-await-in-loop
+    const existe = await tx.produto.findFirst({
+      where: { empresaId, codigo },
+      select: { id: true },
+    })
+    if (!existe) return codigo
+    valor += 1
+  }
+  // Excedeu o limite de saltos: devolve o valor atual (a gravação ainda protege
+  // contra duplicidade); evita loop longo no peek.
   if (valor > CODIGO_SEQUENCIAL_MAXIMO) return null
   return String(valor).padStart(6, '0')
 }
