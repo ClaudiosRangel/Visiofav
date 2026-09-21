@@ -143,6 +143,11 @@ export async function produtoRoutes(app: FastifyInstance) {
       classificacaoArmazenagemId: z.string().uuid().nullable().optional(),
       // Hierarquia Mercadológica — vínculo ao nível folha (Subcategoria/Família).
       familiaId: z.string().uuid().nullable().optional(),
+      // Atributos Logísticos e Shelf Life (spec atributos-logisticos-shelf-life).
+      periculosidade: z.enum(['ISENTO', 'CARGA_GERAL', 'PERIGOSO', 'INFLAMAVEL']).nullable().optional(),
+      shelfLifeTotalDias: z.number().int().positive().nullable().optional(),
+      percentualVidaUtilMinimoRecebimento: z.number().min(0).max(100).nullable().optional(),
+      diasQuarentenaVencimento: z.number().int().min(0).nullable().optional(),
     }).parse(request.body)
 
     if (!user.empresaId) return reply.status(400).send({ message: 'Empresa não selecionada' })
@@ -242,6 +247,11 @@ export async function produtoRoutes(app: FastifyInstance) {
       toleranciaQuantidadePercentual: z.number().min(0).max(100).nullable().optional(),
       // Hierarquia Mercadológica — vínculo ao nível folha (Família).
       familiaId: z.string().uuid().nullable().optional(),
+      // Atributos Logísticos e Shelf Life (spec atributos-logisticos-shelf-life).
+      periculosidade: z.enum(['ISENTO', 'CARGA_GERAL', 'PERIGOSO', 'INFLAMAVEL']).nullable().optional(),
+      shelfLifeTotalDias: z.number().int().positive().nullable().optional(),
+      percentualVidaUtilMinimoRecebimento: z.number().min(0).max(100).nullable().optional(),
+      diasQuarentenaVencimento: z.number().int().min(0).nullable().optional(),
     }).parse(request.body)
 
     // Separar campos de ConfigConferenciaProduto dos campos do Produto

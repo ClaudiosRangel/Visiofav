@@ -411,6 +411,10 @@ model Cliente {
 
   vendedorId String? @map("vendedor_id")
 
+  // Shelf life mínimo de expedição exigido por este cliente (dias de validade a
+  // vencer). Aplicado no picking/FEFO. Opcional (spec atributos-logisticos-shelf-life).
+  shelfLifeMinimoExpedicaoDias Int? @map("shelf_life_minimo_expedicao_dias")
+
   pedidosVenda         PedidoVenda[]
   orcamentos           Orcamento[]
   contasReceber        ContaReceber[]
@@ -467,6 +471,12 @@ model Produto {
   // Tolerância de quantidade na conferência de entrada — percentual de desvio
   // aceito automaticamente sem gerar divergência. Null usa o padrão da empresa.
   toleranciaQuantidadePercentual Decimal? @map("tolerancia_quantidade_percentual") @db.Decimal(5, 2)
+  // Atributos Logísticos e Shelf Life (spec atributos-logisticos-shelf-life;
+  // relatorio-validacao-cadastral). Todos opcionais/nullable.
+  periculosidade                 String?  @map("periculosidade") @db.VarChar(20) // ISENTO | CARGA_GERAL | PERIGOSO | INFLAMAVEL
+  shelfLifeTotalDias             Int?     @map("shelf_life_total_dias") // prazo do fabricante (dias) — calcula vencimento por data de fabricação
+  percentualVidaUtilMinimoRecebimento Decimal? @map("percentual_vida_util_minimo_recebimento") @db.Decimal(5, 2) // RLM % (0-100)
+  diasQuarentenaVencimento       Int?     @map("dias_quarentena_vencimento") // limiar de quarentena automática por dias a vencer
   criadoEm                       DateTime @default(now()) @map("criado_em")
   atualizadoEm                   DateTime @updatedAt @map("atualizado_em")
 

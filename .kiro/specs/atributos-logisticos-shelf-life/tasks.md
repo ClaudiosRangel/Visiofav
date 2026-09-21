@@ -17,8 +17,8 @@ multi-tenant com filtro explícito por `empresaId`. Migração idempotente
 
 ## Tasks
 
-- [ ] 1. Lógica pura de datas/percentuais com property-based tests (TDD) — `VisioFab.Wms.Back`
-  - [ ]* 1.1 Escrever os testes fast-check ANTES da implementação (Properties 1–7)
+- [x] 1. Lógica pura de datas/percentuais com property-based tests (TDD) — `VisioFab.Wms.Back`
+  - [x]* 1.1 Escrever os testes fast-check ANTES da implementação (Properties 1–7)
     - Criar `src/modules/conferencia-entrada/shelf-life-avancado.service.test.ts`
     - Mín. 100 iterações por propriedade; comentário `// Feature: atributos-logisticos-shelf-life, Property {n}: {texto}`
     - Geradores: datas (fabricação/validade/referência, nulas e futuras), shelfLifeTotal (0..N), percentuais (0..100 e nulos), dias mínimos/limiar (0..N e nulos)
@@ -29,13 +29,13 @@ multi-tenant com filtro explícito por `empresaId`. Migração idempotente
     - **Property 5** (`deveEntrarEmQuarentena`, limiar exato) — **Validates: 5.2, 6.5**
     - **Property 6** (neutralidade sob entradas ausentes) — **Validates: 6.6**
     - **Property 7** (combinação de critérios no recebimento) — **Validates: 3.5**
-  - [ ] 1.2 Implementar `shelf-life-avancado.service.ts`
+  - [x] 1.2 Implementar `shelf-life-avancado.service.ts`
     - `calcularVencimentoPorFabricacao`, `diasEntre`, `percentualVidaUtilRestante`, `recusaPorPercentualRecebimento`, `elegivelParaCliente`, `deveEntrarEmQuarentena`
     - Todas puras, determinísticas, neutras sob nulos (nunca lançam)
     - Rodar 1.1 até as 7 propriedades passarem
     - _Requirements: 2.2, 3.2, 3.3, 4.2, 4.3, 5.2, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-- [ ] 2. Schema Prisma + migração idempotente no MESMO commit — `VisioFab.Wms.Back`
+- [x] 2. Schema Prisma + migração idempotente no MESMO commit — `VisioFab.Wms.Back`
   - Adicionar em `Produto`: `periculosidade` (String? VarChar(20)), `shelfLifeTotalDias` (Int?), `percentualVidaUtilMinimoRecebimento` (Decimal? 5,2), `diasQuarentenaVencimento` (Int?)
   - Adicionar em `Cliente`: `shelfLifeMinimoExpedicaoDias` (Int?)
   - `migrate-prod.ts`: `ADD COLUMN IF NOT EXISTS` para as 5 colunas (aditivo, nullable)
@@ -43,20 +43,20 @@ multi-tenant com filtro explícito por `empresaId`. Migração idempotente
   - Commit único: `schema.prisma` + `migrate-prod.ts`
   - _Requirements: 7.1, 7.2, 7.3_
 
-- [ ] 3. Produto e Cliente: aceitar os campos novos — `VisioFab.Wms.Back`
-  - [ ] 3.1 `produto.routes.ts` (POST e PUT): schema Zod com `periculosidade` (enum), `shelfLifeTotalDias`, `percentualVidaUtilMinimoRecebimento` (0–100), `diasQuarentenaVencimento`; todos opcionais/nullable; filtro por `empresaId` preservado
+- [x] 3. Produto e Cliente: aceitar os campos novos — `VisioFab.Wms.Back`
+  - [x] 3.1 `produto.routes.ts` (POST e PUT): schema Zod com `periculosidade` (enum), `shelfLifeTotalDias`, `percentualVidaUtilMinimoRecebimento` (0–100), `diasQuarentenaVencimento`; todos opcionais/nullable; filtro por `empresaId` preservado
     - _Requirements: 1.1, 1.2, 3.1, 5.1, 7.4_
-  - [ ] 3.2 `cliente.routes.ts` (POST e PUT): `shelfLifeMinimoExpedicaoDias` (int≥0, nullable); filtro por `empresaId`
+  - [x] 3.2 `cliente.routes.ts` (POST e PUT): `shelfLifeMinimoExpedicaoDias` (int≥0, nullable); filtro por `empresaId`
     - _Requirements: 4.1, 7.4_
 
-- [ ] 4. Conferência de entrada: RLM % + vencimento por fabricação — `VisioFab.Wms.Back`
-  - [ ] 4.1 Estender `validar-validade-produto.service.ts`
+- [x] 4. Conferência de entrada: RLM % + vencimento por fabricação — `VisioFab.Wms.Back`
+  - [x] 4.1 Estender `validar-validade-produto.service.ts`
     - Novas entradas: `dataFabricacao?`, `shelfLifeTotalDias?`, `percentualVidaUtilMinimo?`
     - Calcular vencimento por fabricação quando validade ausente (Req 2.2); aviso de divergência (Req 2.3); rejeitar fabricação futura (Req 2.5)
     - Novo bloqueio `RLM_PERCENTUAL` via `recusaPorPercentualRecebimento` (Req 3.2/3.3); aplicar junto com dias quando ambos configurados (Req 3.5)
     - Reusar a lógica pura da Tarefa 1 (não duplicar datas)
     - _Requirements: 2.2, 2.3, 2.5, 3.2, 3.3, 3.4, 3.5_
-  - [ ] 4.2 `conferencia-entrada.routes.ts`: passar os novos campos do produto e a data de fabricação ao helper nos três canais (padrão/senha/cega), mantendo a uniformidade
+  - [x] 4.2 `conferencia-entrada.routes.ts`: passar os novos campos do produto (`shelfLifeTotalDias`, `percentualVidaUtilMinimoRecebimento`) ao helper nos três canais. NOTA: a captura da **data de fabricação** na UI da doca ficou como pendência de frontend (o helper já a suporta); o RLM % já opera com a validade digitada.
     - _Requirements: 3.3, 3.6_
   - [ ]* 4.3 Testes de integração da conferência (vencimento por fabricação; RLM %; dois critérios juntos; fabricação futura → erro; isolamento)
     - _Requirements: 2.2, 2.3, 2.5, 3.2, 3.3, 3.5, 3.6_

@@ -186,12 +186,14 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     if (body.validade) {
       const produto = await prisma.produto.findFirst({
         where: { empresaId: user.empresaId, codigo: body.codigoProduto },
-        select: { shelfLifeMinimo: true, nome: true },
+        select: { shelfLifeMinimo: true, nome: true, shelfLifeTotalDias: true, percentualVidaUtilMinimoRecebimento: true },
       })
       if (produto) {
         const resultado = validarValidadeProduto({
           validadeDigitada: parseDateBR(body.validade),
           shelfLifeMinimo: produto.shelfLifeMinimo,
+          shelfLifeTotalDias: produto.shelfLifeTotalDias,
+          percentualVidaUtilMinimo: produto.percentualVidaUtilMinimoRecebimento != null ? Number(produto.percentualVidaUtilMinimoRecebimento) : null,
           dataAtual: new Date(),
           produtoNome: produto.nome,
         })
@@ -201,6 +203,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             bloqueio: resultado.bloqueio,
             ...(resultado.bloqueio === 'SHELF_LIFE'
               ? { diasRestantes: resultado.diasRestantes, dataMinima: resultado.dataMinima }
+              : {}),
+            ...(resultado.bloqueio === 'RLM_PERCENTUAL'
+              ? { percentualEncontrado: resultado.percentualEncontrado, percentualMinimo: resultado.percentualMinimo }
               : {}),
           })
         }
@@ -429,12 +434,14 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
     if (body.validade && item.codigoProduto) {
       const produto = await prisma.produto.findFirst({
         where: { empresaId: userConf.empresaId, codigo: item.codigoProduto },
-        select: { shelfLifeMinimo: true, nome: true },
+        select: { shelfLifeMinimo: true, nome: true, shelfLifeTotalDias: true, percentualVidaUtilMinimoRecebimento: true },
       })
       if (produto) {
         const resultado = validarValidadeProduto({
           validadeDigitada: parseDateBR(body.validade),
           shelfLifeMinimo: produto.shelfLifeMinimo,
+          shelfLifeTotalDias: produto.shelfLifeTotalDias,
+          percentualVidaUtilMinimo: produto.percentualVidaUtilMinimoRecebimento != null ? Number(produto.percentualVidaUtilMinimoRecebimento) : null,
           dataAtual: new Date(),
           produtoNome: produto.nome,
         })
@@ -444,6 +451,9 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
             bloqueio: resultado.bloqueio,
             ...(resultado.bloqueio === 'SHELF_LIFE'
               ? { diasRestantes: resultado.diasRestantes, dataMinima: resultado.dataMinima }
+              : {}),
+            ...(resultado.bloqueio === 'RLM_PERCENTUAL'
+              ? { percentualEncontrado: resultado.percentualEncontrado, percentualMinimo: resultado.percentualMinimo }
               : {}),
           })
         }
@@ -605,12 +615,14 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       if (conferido.validade && item.codigoProduto) {
         const produto = await prisma.produto.findFirst({
           where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto },
-          select: { shelfLifeMinimo: true, nome: true },
+          select: { shelfLifeMinimo: true, nome: true, shelfLifeTotalDias: true, percentualVidaUtilMinimoRecebimento: true },
         })
         if (produto) {
           const resultado = validarValidadeProduto({
             validadeDigitada: parseDateBR(conferido.validade),
             shelfLifeMinimo: produto.shelfLifeMinimo,
+            shelfLifeTotalDias: produto.shelfLifeTotalDias,
+            percentualVidaUtilMinimo: produto.percentualVidaUtilMinimoRecebimento != null ? Number(produto.percentualVidaUtilMinimoRecebimento) : null,
             dataAtual: new Date(),
             produtoNome: produto.nome,
           })

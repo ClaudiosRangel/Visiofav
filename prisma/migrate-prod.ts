@@ -4001,6 +4001,15 @@ async function seedMateriaisFromOPs() {
   }
   console.log('Hierarquia Mercadologica Fase 2: migracao_hierarquia_execucao + item criados')
 
+  // -- ATRIBUTOS LOGISTICOS E SHELF LIFE --------------------------------------
+  // Fecha o Relatorio de Validacao Cadastral. Colunas aditivas/nullable.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "periculosidade" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "shelf_life_total_dias" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "percentual_vida_util_minimo_recebimento" DECIMAL(5,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "dias_quarentena_vencimento" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "shelf_life_minimo_expedicao_dias" INTEGER`)
+  console.log('Atributos Logisticos e Shelf Life: colunas em produto/cliente criadas')
+
 
   // ==========================================================================
   // F1 — Financeiro Operacional Completo

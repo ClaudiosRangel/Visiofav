@@ -54,6 +54,8 @@ export async function clienteRoutes(app: FastifyInstance) {
       telefone: z.string().optional(),
       email: z.string().optional(),
       rotaId: z.string().uuid().optional().nullable(),
+      // Shelf life mínimo de expedição exigido pelo cliente (dias). Opcional.
+      shelfLifeMinimoExpedicaoDias: z.number().int().min(0).nullable().optional(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(
@@ -99,6 +101,8 @@ export async function clienteRoutes(app: FastifyInstance) {
       telefone: z.string().optional(),
       email: z.string().optional(),
       rotaId: z.string().uuid().optional().nullable(),
+      // Shelf life mínimo de expedição exigido pelo cliente (dias). Opcional.
+      shelfLifeMinimoExpedicaoDias: z.number().int().min(0).nullable().optional(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(
