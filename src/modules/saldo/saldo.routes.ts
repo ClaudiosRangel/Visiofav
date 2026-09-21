@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { listarSaldoConsolidado } from './saldo-consolidado.service'
+import { resolverFolhasDoNivel } from '../hierarquia-mercadologica/resolver-folhas-nivel.service'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
@@ -31,13 +32,16 @@ export async function saldoRoutes(app: FastifyInstance) {
     }
   })
 
-  app.get('/', async (request) => {
+  app.get('/', async (request, reply) => {
     const db = getDb(request)
     const empresaId = getEmpresaId(request)
     const q = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().default(50),
       search: z.string().optional(),
+      // Filtro por Hierarquia Mercadológica (Fase 2).
+      nivelId: z.string().uuid().optional(),
+      semHierarquia: z.coerce.boolean().optional(),
     }).parse(request.query)
 
     // Isola por empresa da sessão (inclui saldos legados com empresaId null,
@@ -55,6 +59,17 @@ export async function saldoRoutes(app: FastifyInstance) {
           { produto: { codigo: { contains: q.search, mode: 'insensitive' } } },
         ],
       })
+    }
+    // Filtro de hierarquia sobre o produto do saldo. "semHierarquia" tem
+    // prioridade e ignora "nivelId".
+    if (q.semHierarquia) {
+      filtros.push({ produto: { familiaId: null } })
+    } else if (q.nivelId) {
+      const folhaIds = await resolverFolhasDoNivel(db, empresaId, q.nivelId)
+      if (folhaIds === null) {
+        return reply.status(400).send({ message: 'Nível inválido para esta empresa.' })
+      }
+      filtros.push({ produto: { familiaId: { in: folhaIds } } })
     }
     const where: any = filtros.length > 0 ? { AND: filtros } : {}
 

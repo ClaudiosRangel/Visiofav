@@ -63,6 +63,9 @@ const conferirTodosSchema = z.object({
     quantidadeConferida: z.number().min(0),
     lote: z.string().optional(),
     validade: z.string().optional(),
+    // Data de fabricação (DD/MM/AAAA) — base para calcular o vencimento a
+    // partir do shelf life total do produto (spec atributos-logisticos-shelf-life).
+    dataFabricacao: z.string().optional(),
   })),
 })
 
@@ -612,14 +615,15 @@ export async function conferenciaEntradaRoutes(app: FastifyInstance) {
       // (sem exigir shelfLifeMinimo) para que PRODUTO_VENCIDO bloqueie mesmo
       // quando o shelf life mínimo é nulo. A validade NÃO é mais comparada
       // contra a NF-e aqui.
-      if (conferido.validade && item.codigoProduto) {
+      if ((conferido.validade || conferido.dataFabricacao) && item.codigoProduto) {
         const produto = await prisma.produto.findFirst({
           where: { empresaId: userConf2.empresaId, codigo: item.codigoProduto },
           select: { shelfLifeMinimo: true, nome: true, shelfLifeTotalDias: true, percentualVidaUtilMinimoRecebimento: true },
         })
         if (produto) {
           const resultado = validarValidadeProduto({
-            validadeDigitada: parseDateBR(conferido.validade),
+            validadeDigitada: conferido.validade ? parseDateBR(conferido.validade) : null,
+            dataFabricacao: conferido.dataFabricacao ? parseDateBR(conferido.dataFabricacao) : null,
             shelfLifeMinimo: produto.shelfLifeMinimo,
             shelfLifeTotalDias: produto.shelfLifeTotalDias,
             percentualVidaUtilMinimo: produto.percentualVidaUtilMinimoRecebimento != null ? Number(produto.percentualVidaUtilMinimoRecebimento) : null,

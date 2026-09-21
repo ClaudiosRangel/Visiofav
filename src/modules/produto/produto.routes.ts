@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { peekProximoCodigo, gerarProximoCodigo, CodigoSequencialEsgotadoError } from './codigo-sequencial.service'
+import { resolverFolhasDoNivel } from '../hierarquia-mercadologica/resolver-folhas-nivel.service'
 
 export async function produtoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -48,28 +49,12 @@ export async function produtoRoutes(app: FastifyInstance) {
     if (q.semHierarquia) {
       where.familiaId = null
     } else if (q.nivelId) {
-      // Resolve o nível na própria empresa (isolamento explícito — Req 1.8/1.9).
-      const nivel = await prisma.nivelMercadologico.findFirst({
-        where: { id: q.nivelId, ...(user.empresaId ? { empresaId: user.empresaId } : {}) },
-        select: { codigoHierarquico: true },
-      })
-      if (!nivel) {
+      // Resolve as folhas descendentes do nível (isolamento explícito por empresa).
+      const folhaIds = await resolverFolhasDoNivel(prisma, user.empresaId, q.nivelId)
+      if (folhaIds === null) {
         return reply.status(400).send({ message: 'Nível inválido para esta empresa.' })
       }
-      // Todas as folhas (SUBCATEGORIA) descendentes do nível: o próprio código
-      // ou qualquer código que comece por "<codigo>." (filtro por prefixo).
-      const folhas = await prisma.nivelMercadologico.findMany({
-        where: {
-          ...(user.empresaId ? { empresaId: user.empresaId } : {}),
-          tipo: 'SUBCATEGORIA',
-          OR: [
-            { codigoHierarquico: nivel.codigoHierarquico },
-            { codigoHierarquico: { startsWith: `${nivel.codigoHierarquico}.` } },
-          ],
-        },
-        select: { id: true },
-      })
-      where.familiaId = { in: folhas.map((f) => f.id) }
+      where.familiaId = { in: folhaIds }
     }
 
     const [data, total] = await Promise.all([
