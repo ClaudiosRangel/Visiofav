@@ -85,13 +85,13 @@ multi-tenant com filtro explícito por `empresaId`. Migração idempotente
 - [ ] 9. Checkpoint — backend WMS (put-away, picking, quarentena)
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Frontend — cadastro dos novos atributos — `VisioFab.Wms.Front`
-  - [ ] 10.1 `ProdutoModal.tsx`: na aba de logística/validade, adicionar Periculosidade (Select), Shelf Life Total (dias), RLM % (0–100) e Dias de Quarentena; enviar no POST e PUT; exibir valores ao editar
+- [x] 10. Frontend — cadastro dos novos atributos — `VisioFab.Wms.Front`
+  - [x] 10.1 `ProdutoModal.tsx`: seção "Atributos Logísticos e Validade" com Periculosidade (Select), Shelf Life Total (dias), RLM % (0–100) e Quarentena (dias); enviados no POST/PUT; exibidos ao editar.
     - _Requirements: 1.1, 2.1, 3.1, 5.1_
-  - [ ] 10.2 Cadastro de Cliente: adicionar campo "Shelf life mínimo p/ expedição (dias)"; enviar no POST e PUT; exibir ao editar
+  - [x] 10.2 `ClienteModal.tsx`: campo "Shelf life mínimo p/ expedição (dias)"; enviado no POST/PUT; exibido ao editar.
     - _Requirements: 4.1_
 
-- [ ] 11. Verificação final e atualização do steering
+- [x] 11. Verificação final e atualização do steering
   - `VisioFab.Wms.Back`: vitest do `shelf-life-avancado.service.test.ts` (Properties 1–7) + integração passando; `tsc --noEmit` sem novos erros além da baseline; `migrate-prod.ts` 2x local
   - `VisioFab.Wms.Front`: `tsc --noEmit` sem novos erros; `get_diagnostics` limpo nos arquivos tocados
   - Atualizar `.kiro/steering/relatorio-validacao-cadastral.md`: marcar os blocos 2 (periculosidade) e 3 (shelf lifes/quarentena) como ✅ com data e commits
