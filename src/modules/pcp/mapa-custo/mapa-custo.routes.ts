@@ -282,6 +282,27 @@ export async function mapaCustoRoutes(app: FastifyInstance) {
     return atualizado
   })
 
+  // POST /mapa-custo/:id/reabrir — volta de FECHADO para RASCUNHO (ação de
+  // controladoria; restrita a ADMIN/SUPER_ADMIN). Simétrica ao /fechar.
+  app.post('/mapa-custo/:id/reabrir', async (request, reply) => {
+    const user = request.user as User
+    const perfil = (user.perfil ?? '').toUpperCase()
+    if (perfil !== 'ADMIN' && perfil !== 'SUPER_ADMIN') {
+      return reply.status(403).send({ message: 'Apenas ADMIN pode reabrir um mapa fechado.' })
+    }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const mapa = await getMapaDaEmpresa(id, user.empresaId)
+    if (!mapa) return reply.status(404).send({ message: 'Mapa não encontrado' })
+    if ((mapa as { status: string }).status !== 'FECHADO') {
+      return reply.status(409).send({ message: 'Mapa não está fechado.' })
+    }
+    const atualizado = await prisma.mapaCusto.update({
+      where: { id },
+      data: { status: 'RASCUNHO', fechadoEm: null } as never,
+    })
+    return atualizado
+  })
+
   // ══════════════════════════════════════════════════════════════════════
   // Cadastros do mapa — CRUD (todos exigem mapa RASCUNHO)
   // ══════════════════════════════════════════════════════════════════════
