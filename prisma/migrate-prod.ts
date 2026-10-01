@@ -4536,6 +4536,139 @@ async function seedMateriaisFromOPs() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "comprovante_conteudo" TEXT`)
   }
   console.log('✅ Baixa profissional: juros/multa/desconto/tarifa/comprovante em conta_pagar e conta_receber')
+
+  // ==========================================================================
+  // MAPA DE CUSTOS RKW — custeio por centro (spec: .kiro/specs/mapa-custos-rkw)
+  // ==========================================================================
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "mapa_custo" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "competencia" VARCHAR(7) NOT NULL,
+    "descricao" VARCHAR(200),
+    "status" VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
+    "perc_encargos" DECIMAL(5,2) NOT NULL DEFAULT 60,
+    "horas_produtivas_base" INTEGER NOT NULL DEFAULT 150,
+    "ajuste_praticar_perc" DECIMAL(5,2) NOT NULL DEFAULT 24,
+    "custo_fixo_total" DECIMAL(14,2),
+    "taxa_administrativa" DECIMAL(5,2),
+    "total_funcionarios" INTEGER,
+    "ativo_imobilizado" DECIMAL(14,2),
+    "depreciacao_mensal" DECIMAL(14,2),
+    "fechado_em" TIMESTAMP(3),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "mapa_custo_empresa_competencia_key" ON "mapa_custo"("empresa_id","competencia")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mapa_custo_empresa_id" ON "mapa_custo"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "mapa_centro" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "mapa_custo_id" TEXT NOT NULL,
+    "codigo" VARCHAR(30) NOT NULL,
+    "descricao" VARCHAR(200) NOT NULL,
+    "natureza" VARCHAR(20) NOT NULL,
+    "centro_producao_id" TEXT,
+    "uso_orcamento" BOOLEAN NOT NULL DEFAULT true,
+    "unidades_produtivas" INTEGER NOT NULL DEFAULT 1,
+    "turnos" INTEGER NOT NULL DEFAULT 1,
+    "horas_extras" INTEGER NOT NULL DEFAULT 0,
+    "horas_produtivas" DECIMAL(10,2),
+    "posicao" INTEGER NOT NULL DEFAULT 0,
+    "status" BOOLEAN NOT NULL DEFAULT true
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "mapa_centro_mapa_codigo_key" ON "mapa_centro"("mapa_custo_id","codigo")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mapa_centro_empresa_id" ON "mapa_centro"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_mapa_centro_mapa_custo_id" ON "mapa_centro"("mapa_custo_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "bem_depreciar" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "mapa_custo_id" TEXT NOT NULL,
+    "centro_custo_id" TEXT NOT NULL,
+    "grupo" VARCHAR(60) NOT NULL,
+    "descricao" VARCHAR(200) NOT NULL,
+    "valor" DECIMAL(14,2) NOT NULL,
+    "estado" VARCHAR(20) NOT NULL,
+    "anos_vida_util" INTEGER NOT NULL,
+    "residual_perc" DECIMAL(5,2) NOT NULL DEFAULT 0,
+    "depreciacao_mensal" DECIMAL(14,2),
+    "status" BOOLEAN NOT NULL DEFAULT true
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_bem_depreciar_empresa_id" ON "bem_depreciar"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_bem_depreciar_mapa_custo_id" ON "bem_depreciar"("mapa_custo_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_bem_depreciar_centro_custo_id" ON "bem_depreciar"("centro_custo_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "funcionario_custo" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "mapa_custo_id" TEXT NOT NULL,
+    "centro_custo_id" TEXT,
+    "nome" VARCHAR(200) NOT NULL,
+    "cargo" VARCHAR(120),
+    "salario" DECIMAL(12,2) NOT NULL,
+    "ajuda_custo" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "rateado" BOOLEAN NOT NULL DEFAULT false,
+    "status" BOOLEAN NOT NULL DEFAULT true
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_funcionario_custo_empresa_id" ON "funcionario_custo"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_funcionario_custo_mapa_custo_id" ON "funcionario_custo"("mapa_custo_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_funcionario_custo_centro_custo_id" ON "funcionario_custo"("centro_custo_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "despesa_custo" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "mapa_custo_id" TEXT NOT NULL,
+    "descricao" VARCHAR(200) NOT NULL,
+    "valor" DECIMAL(14,2) NOT NULL,
+    "chave_rateio_id" TEXT NOT NULL,
+    "status" BOOLEAN NOT NULL DEFAULT true
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_despesa_custo_empresa_id" ON "despesa_custo"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_despesa_custo_mapa_custo_id" ON "despesa_custo"("mapa_custo_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "chave_rateio" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "mapa_custo_id" TEXT NOT NULL,
+    "nome" VARCHAR(120) NOT NULL,
+    "tipo" VARCHAR(20) NOT NULL,
+    "funcionario_custo_id" TEXT
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "chave_rateio_mapa_nome_key" ON "chave_rateio"("mapa_custo_id","nome")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_chave_rateio_empresa_id" ON "chave_rateio"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_chave_rateio_mapa_custo_id" ON "chave_rateio"("mapa_custo_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "destino_rateio" (
+    "id" TEXT PRIMARY KEY,
+    "chave_rateio_id" TEXT NOT NULL,
+    "centro_custo_id" TEXT NOT NULL,
+    "peso" DECIMAL(12,4) NOT NULL
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_destino_rateio_chave_rateio_id" ON "destino_rateio"("chave_rateio_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "resultado_centro" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "mapa_custo_id" TEXT NOT NULL,
+    "centro_custo_id" TEXT NOT NULL,
+    "salarios_encargos" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "depreciacoes" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "despesas" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "custo_fixo" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "rateio_auxiliar" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "rateio_administracao" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "custo_fixo_final" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "horas_produtivas" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "custo_hora_apurado" DECIMAL(12,4) NOT NULL DEFAULT 0,
+    "custo_hora_praticar" DECIMAL(12,4) NOT NULL DEFAULT 0,
+    "ajuste_perc" DECIMAL(6,2) NOT NULL DEFAULT 0
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "resultado_centro_centro_custo_id_key" ON "resultado_centro"("centro_custo_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_resultado_centro_empresa_id" ON "resultado_centro"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_resultado_centro_mapa_custo_id" ON "resultado_centro"("mapa_custo_id")`)
+
+  console.log('✅ Mapa de Custos RKW: mapa_custo, mapa_centro, bem_depreciar, funcionario_custo, despesa_custo, chave_rateio, destino_rateio, resultado_centro criados')
 }
 
 main()

@@ -589,6 +589,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })).default([]),
       quantidade: z.number().int().positive(),
       tabelaMargemId: z.string().uuid().optional(),
+      // ── Paridade Calcgraf (opcionais/aditivos) ─────────────────────────
+      servicosExternos: z.array(z.object({ descricao: z.string(), valor: z.number() })).optional(),
+      itensDiversos: z.array(z.object({ descricao: z.string(), valor: z.number() })).optional(),
+      itensFornecidos: z.array(z.object({ descricao: z.string(), valor: z.number() })).optional(),
+      creditosFiscais: z.number().optional(),
+      encargoFinanceiroPerc: z.number().optional(),
+      cev: z.object({ icms: z.number(), juros: z.number(), pisCofins: z.number(), comissoes: z.number() }).optional(),
     }).parse(request.body)
 
     const precoKgPapel = body.precoKgPapel || body.precoKg
@@ -652,6 +659,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       quantidade: body.quantidade,
       perdas,
       margem,
+      // paridade Calcgraf (repassados quando informados)
+      servicosExternos: body.servicosExternos,
+      itensDiversos: body.itensDiversos,
+      itensFornecidos: body.itensFornecidos,
+      creditosFiscais: body.creditosFiscais,
+      encargoFinanceiroPerc: body.encargoFinanceiroPerc,
+      cev: body.cev,
     })
 
     return resultado

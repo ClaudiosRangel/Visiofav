@@ -5,3 +5,7 @@ dist/
 *.log
 .DS_Store
 prisma/seed-prod.ts
+
+# Backup e dados reais do cliente (Calcgraf/Carton Wega) — NUNCA commitar (dados sensíveis)
+/cartoon/
+/scripts/_tmp-*

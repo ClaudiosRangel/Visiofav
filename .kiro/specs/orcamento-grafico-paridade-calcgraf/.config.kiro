@@ -1,0 +1,6 @@
+{
+  "specType": "feature",
+  "workflowType": "design-first",
+  "featureName": "orcamento-grafico-paridade-calcgraf",
+  "designArtifacts": ["high-level", "low-level"]
+}

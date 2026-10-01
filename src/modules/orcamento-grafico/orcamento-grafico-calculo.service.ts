@@ -53,6 +53,27 @@ export interface ParamsOrcamento {
     despAdm: number
     markup: number
   }
+  // ── Paridade Calcgraf (todos opcionais/aditivos) ─────────────────────────
+  /** Serviços terceirizados (entram no Custo de Produção). */
+  servicosExternos?: Array<{ descricao: string; valor: number }>
+  /** Custos avulsos lançados no cálculo (entram no Material Direto). */
+  itensDiversos?: Array<{ descricao: string; valor: number }>
+  /** Materiais fornecidos pelo cliente — NÃO cobrados (deduzidos do MD). */
+  itensFornecidos?: Array<{ descricao: string; valor: number }>
+  /** Créditos fiscais que reduzem o custo total (ex.: Cr.IPI). */
+  creditosFiscais?: number
+  /** Encargo financeiro (%) somado ao custo total (ex.: C.Finan 0,13%). */
+  encargoFinanceiroPerc?: number
+  /**
+   * CEV (Custos de Venda) detalhado como no Calcgraf. Se ausente, é derivado de
+   * `margem` (impostos+comissao+despAdm) para compatibilidade.
+   */
+  cev?: {
+    icms: number
+    juros: number
+    pisCofins: number
+    comissoes: number
+  }
 }
 
 export interface ResultadoOrcamento {
@@ -86,6 +107,15 @@ export interface ResultadoOrcamento {
     maquinaPercent: number
     acabamentoPercent: number
   }
+  // ── Paridade Calcgraf (aditivo) — decomposição estilo memória de cálculo ──
+  materialDireto: number
+  custoTransformacao: number
+  servicoExterno: number
+  custoProducao: number // = MD + CT + SE
+  cevPerc: number
+  cevValor: number
+  contribuicaoMarginalValor: number
+  contribuicaoMarginalPerc: number
 }
 
 // Interfaces auxiliares para funções individuais
@@ -648,28 +678,32 @@ interface ParamsMargem {
 }
 
 /**
- * Forma o preço de venda a partir do custo total.
- * Fórmula: precoVenda = custoTotal / (1 - impostos/100 - comissao/100 - despAdm/100) * (1 + markup/100)
+ * Forma o preço de venda pelo MÉTODO DIVISOR ÚNICO (gross-up), igual ao
+ * Calcgraf (ver docs/calcgraf-formulas-decompostas.md):
  *
- * A primeira parte (divisão) "embutir" os custos percentuais no preço (método divisor),
- * e o markup é aplicado sobre esse resultado como margem de lucro.
+ *   Preço = Custo Total / (1 − (Margem% + CEV%)/100)
+ *
+ * onde CEV% = impostos + comissão + desp. administrativas (agrupados como
+ * Custos de Venda) e Margem% = markup (lucro). Confirmado nos golden cases:
+ * 7.310,24 / (1 − 0,30 − 0,1825) = 14.128 ✓.
+ *
+ * Mantida a assinatura `(custoTotal, ParamsMargem)` por compatibilidade — o
+ * markup entra NO divisor (não mais por fora), alinhando ao Calcgraf.
  */
 export function formarPrecoVenda(custoTotal: number, margem: ParamsMargem): number {
   const { impostos, comissao, despAdm, markup } = margem
 
-  const somaDespesasPercent = (impostos + comissao + despAdm) / 100
+  // CEV = custos de venda; Margem = markup (lucro). Ambos entram no divisor.
+  const fatorTotal = (impostos + comissao + despAdm + markup) / 100
 
-  // Proteção: se a soma de despesas >= 100%, o divisor fica 0 ou negativo
-  if (somaDespesasPercent >= 1) {
+  if (fatorTotal >= 1) {
     throw new Error(
-      `Soma de impostos (${impostos}%) + comissão (${comissao}%) + desp. administrativas (${despAdm}%) ` +
-      `= ${(somaDespesasPercent * 100).toFixed(1)}% — não pode ser ≥ 100%`,
+      `Margem (${markup}%) + CEV (impostos ${impostos}% + comissão ${comissao}% + desp.adm ${despAdm}%) ` +
+      `= ${(fatorTotal * 100).toFixed(1)}% — não pode ser ≥ 100%`,
     )
   }
 
-  const precoBase = custoTotal / (1 - somaDespesasPercent)
-  const precoVenda = precoBase * (1 + markup / 100)
-
+  const precoVenda = custoTotal / (1 - fatorTotal)
   return Math.round(precoVenda * 100) / 100
 }
 
@@ -784,26 +818,59 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
     alturaMm: maquinaImpressao.formatoAltura,
   })
 
-  // 7. Somar custos
-  const custoTotal =
-    resultadoPapel.custo +
-    resultadoTinta.custoTotal +
-    resultadoMaquinas.custoTotal +
-    resultadoAcabamentos.custoTotal
+  // 7. Decomposição de custo estilo Calcgraf (ver docs/calcgraf-formulas-decompostas.md)
+  const somaExtras = (arr?: Array<{ valor: number }>) => (arr ?? []).reduce((s, i) => s + (i.valor || 0), 0)
+  const totalItensDiversos = somaExtras(params.itensDiversos)
+  const totalItensFornecidos = somaExtras(params.itensFornecidos)
+  const totalServicoExterno = somaExtras(params.servicosExternos)
+
+  // Material Direto = papel + tinta + itens diversos − itens fornecidos (cliente)
+  const materialDireto = Math.max(
+    0,
+    resultadoPapel.custo + resultadoTinta.custoTotal + totalItensDiversos - totalItensFornecidos,
+  )
+  // Custo de Transformação = máquinas (impressão) + acabamentos (horas × custo-hora)
+  const custoTransformacao = resultadoMaquinas.custoTotal + resultadoAcabamentos.custoTotal
+  const servicoExterno = totalServicoExterno
+
+  // Custo de Produção = MD + CT + SE
+  const custoProducao = materialDireto + custoTransformacao + servicoExterno
+  // Custo Total = Custo Produção − créditos fiscais + encargo financeiro%
+  const creditos = params.creditosFiscais ?? 0
+  const encFinPerc = params.encargoFinanceiroPerc ?? 0
+  const custoTotal = custoProducao - creditos + custoProducao * (encFinPerc / 100)
 
   const custoTotalArredondado = Math.round(custoTotal * 100) / 100
 
-  // 8. Formar preço de venda
-  const precoVenda = formarPrecoVenda(custoTotalArredondado, margem)
+  // 8. CEV (Custos de Venda) — detalhado se vier, senão derivado da margem (compat)
+  const cevPerc = params.cev
+    ? params.cev.icms + params.cev.juros + params.cev.pisCofins + params.cev.comissoes
+    : margem.impostos + margem.comissao + margem.despAdm
+
+  // 9. Preço de venda (divisor único: Margem + CEV). Se `cev` veio, usa CEV
+  // detalhado + markup; senão usa os campos atuais de `margem` (compat total).
+  const margemParaPreco: ParamsMargem = params.cev
+    ? { impostos: params.cev.icms + params.cev.juros + params.cev.pisCofins, comissao: params.cev.comissoes, despAdm: 0, markup: margem.markup }
+    : margem
+  const precoVenda = formarPrecoVenda(custoTotalArredondado, margemParaPreco)
   const precoUnitario = Math.round((precoVenda / quantidade) * 10000) / 10000 // 4 casas
 
-  // 9. Calcular margem real (% do preço de venda que é lucro líquido)
-  // Margem real = (precoVenda - custoTotal) / precoVenda * 100
+  const cevValor = Math.round(precoVenda * (cevPerc / 100) * 100) / 100
+
+  // 10. Margem real e Contribuição Marginal
   const margemReal = precoVenda > 0
     ? Math.round(((precoVenda - custoTotalArredondado) / precoVenda) * 10000) / 100
     : 0
 
-  // 10. Breakdown percentual de custos
+  // CM$ = Preço − custos variáveis (Material Direto variável + CEV$). Aproxima o
+  // conceito Calcgraf: contribuição = preço menos o que varia com a venda.
+  const custosVariaveis = materialDireto + cevValor
+  const contribuicaoMarginalValor = Math.round((precoVenda - custosVariaveis) * 100) / 100
+  const contribuicaoMarginalPerc = precoVenda > 0
+    ? Math.round((contribuicaoMarginalValor / precoVenda) * 10000) / 100
+    : 0
+
+  // 11. Breakdown percentual de custos
   const breakdown = {
     papelPercent: custoTotalArredondado > 0 ? Math.round((resultadoPapel.custo / custoTotalArredondado) * 10000) / 100 : 0,
     tintaPercent: custoTotalArredondado > 0 ? Math.round((resultadoTinta.custoTotal / custoTotalArredondado) * 10000) / 100 : 0,
@@ -823,5 +890,14 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
     precoUnitario,
     margemReal,
     breakdown,
+    // paridade Calcgraf
+    materialDireto: Math.round(materialDireto * 100) / 100,
+    custoTransformacao: Math.round(custoTransformacao * 100) / 100,
+    servicoExterno: Math.round(servicoExterno * 100) / 100,
+    custoProducao: Math.round(custoProducao * 100) / 100,
+    cevPerc,
+    cevValor,
+    contribuicaoMarginalValor,
+    contribuicaoMarginalPerc,
   }
 }

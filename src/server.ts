@@ -191,6 +191,8 @@ import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-client
 import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
 import { adminPcpRoutes } from './modules/pcp/admin-pcp.routes'
 import { analiseProducaoRoutes } from './modules/pcp/analise-producao/analise-producao.routes'
+import { mapaCustoRoutes } from './modules/pcp/mapa-custo/mapa-custo.routes'
+import { analiseGerencialRoutes } from './modules/pcp/analise-gerencial/analise-gerencial.routes'
 import { firebaseAuthAdapter } from './middleware/firebase-auth-adapter'
 import { ordemProducaoRoutes } from './modules/ordem-producao/ordem-producao.routes'
 import { variacoesEntregaRoutes } from './modules/ordem-producao/variacoes-entrega.routes'
@@ -497,6 +499,8 @@ async function bootstrap() {
   await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
   await app.register(analiseProducaoRoutes, { prefix: '/api/pcp' })
+  await app.register(mapaCustoRoutes, { prefix: '/api/pcp' })
+  await app.register(analiseGerencialRoutes, { prefix: '/api/pcp' })
 
   // Admin — Operações destrutivas (limpar dados)
   await app.register(adminPcpRoutes, { prefix: '/api/admin' })

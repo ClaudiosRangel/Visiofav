@@ -1,0 +1,6 @@
+{
+  "specType": "feature",
+  "workflowType": "design-first",
+  "featureName": "mapa-custos-rkw",
+  "designArtifacts": ["high-level", "low-level"]
+}

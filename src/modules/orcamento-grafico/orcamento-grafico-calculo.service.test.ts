@@ -309,13 +309,12 @@ describe('calcularAcabamentos', () => {
 // 2.7 — formarPrecoVenda
 // ============================================================================
 describe('formarPrecoVenda', () => {
-  it('calcula preço de venda com markup e despesas', () => {
-    // custoTotal = 1000
-    // divisor = 1 - (15+5+5)/100 = 1 - 0.25 = 0.75
-    // precoBase = 1000 / 0.75 = 1333.33
-    // precoVenda = 1333.33 * 1.30 = 1733.33
+  it('calcula preço pelo divisor único (markup + CEV no divisor, igual ao Calcgraf)', () => {
+    // Paridade Calcgraf: markup entra NO divisor junto ao CEV (não por fora).
+    // custoTotal = 1000; fator = (15+5+5+30)/100 = 0.55
+    // precoVenda = 1000 / (1 - 0.55) = 1000 / 0.45 = 2222.22
     const preco = formarPrecoVenda(1000, { impostos: 15, comissao: 5, despAdm: 5, markup: 30 })
-    expect(preco).toBeCloseTo(1733.33, 1)
+    expect(preco).toBeCloseTo(2222.22, 1)
   })
 
   it('retorna custo quando tudo é zero', () => {
