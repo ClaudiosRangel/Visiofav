@@ -528,6 +528,195 @@ async function importarTiposEmbalagem(empresaId: string) {
   console.log('  Nenhum `Produto`/OP/programação foi tocado (fase segura).')
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE CADASTROS — Clientes (só com CNPJ/CPF), Vendedores, Fornecedores
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// De-para por documento (cpfCnpj/cnpj) — chave única (empresaId, documento) nos
+// models Cliente/Fornecedor. SÓ INSERT de documento inexistente; NUNCA
+// sobrescreve o existente. Suporta --dry-run (default em produção): só relata,
+// não escreve. Clientes SEM documento são ignorados nesta fase (decisão do
+// usuário: importar só os 1.024 com CNPJ/CPF agora).
+
+interface NomeRow {
+  Codigo: number
+  NomePrincipal: string | null
+  RazaoSocial: string | null
+  TipoPessoa: string | null // 'J' | 'F'
+  CNPJCPF: string | null
+  IE: string | null
+  Email: string | null
+  Fone: string | null
+  Celular: string | null
+  Ativo: string | null
+  // Endereço (export com OUTER APPLY em Enderecos)
+  Logradouro?: string | null
+  Numero?: string | null
+  Complemento?: string | null
+  Bairro?: string | null
+  Cidade?: string | null
+  UF?: string | null
+  CEP?: string | null
+}
+
+// Monta os campos de endereço a partir da linha do Calcgraf (null quando vazio).
+function enderecoDe(r: NomeRow) {
+  const s = (v: string | null | undefined, max: number) => {
+    const t = (v || '').trim()
+    return t ? t.slice(0, max) : null
+  }
+  return {
+    logradouro: s(r.Logradouro, 200),
+    numero: s(r.Numero, 20),
+    complemento: s(r.Complemento, 100),
+    bairro: s(r.Bairro, 100),
+    cidade: s(r.Cidade, 100),
+    uf: s(r.UF, 2),
+    cep: s(r.CEP, 10),
+  }
+}
+
+// Dado o registro existente e o endereço novo, retorna só os campos de endereço
+// que estão VAZIOS no existente e têm valor no novo (enriquecimento sem
+// sobrescrever). Retorna {} se não há nada a preencher.
+function camposEnderecoVazios(
+  existente: Record<string, unknown>,
+  novo: ReturnType<typeof enderecoDe>,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const k of ['logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'cep'] as const) {
+    const atual = existente[k]
+    const nv = novo[k]
+    if ((atual === null || atual === undefined || atual === '') && nv) out[k] = nv
+  }
+  return out
+}
+
+function soDigitos(v: string | null | undefined): string {
+  return (v || '').replace(/\D/g, '')
+}
+
+function temDryRun(): boolean {
+  return process.argv.includes('--dry-run')
+}
+
+// Retry com reconexão — o pooler do Neon fecha conexões em loops longos
+// ("Server has closed the connection"). Reexecuta a operação até 4x,
+// reconectando o Prisma entre tentativas. Idempotente: a operação é find+create.
+async function comRetry<T>(fn: () => Promise<T>, tentativas = 4): Promise<T> {
+  let ultimoErro: unknown
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      ultimoErro = e
+      const msg = (e as Error).message || ''
+      const reconectavel = /closed the connection|Can't reach|Connection|ECONNRESET|terminating/i.test(msg)
+      if (!reconectavel) throw e
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)))
+      try { await prisma.$disconnect() } catch { /* ignore */ }
+      try { await prisma.$connect() } catch { /* ignore */ }
+    }
+  }
+  throw ultimoErro
+}
+
+async function importarClientes(empresaId: string, dryRun: boolean) {
+  const rows = lerJson<NomeRow>('Clientes').filter((r) => soDigitos(r.CNPJCPF).length >= 11)
+  const p = prisma as never as {
+    cliente: { findFirst: (a: unknown) => Promise<Record<string, unknown> | null>; create: (a: unknown) => Promise<unknown>; update: (a: unknown) => Promise<unknown> }
+  }
+  let criados = 0, enriquecidos = 0, intactos = 0, invalidos = 0
+  const vistos = new Set<string>()
+  for (const r of rows) {
+    const doc = soDigitos(r.CNPJCPF)
+    if (doc.length !== 11 && doc.length !== 14) { invalidos++; continue }
+    if (vistos.has(doc)) continue // dedup no próprio export
+    vistos.add(doc)
+    const end = enderecoDe(r)
+    const ja = await comRetry(() => p.cliente.findFirst({ where: { empresaId, cpfCnpj: r.CNPJCPF } as never })) as Record<string, unknown> | null
+    if (ja) {
+      // ENRIQUECER: só preenche campos de endereço vazios (nunca sobrescreve)
+      const faltantes = camposEnderecoVazios(ja, end)
+      if (Object.keys(faltantes).length > 0) {
+        if (!dryRun) await comRetry(() => p.cliente.update({ where: { id: ja.id as string }, data: faltantes as never }))
+        enriquecidos++
+      } else intactos++
+      continue
+    }
+    if (!dryRun) {
+      await comRetry(() => p.cliente.create({
+        data: {
+          empresaId,
+          razaoSocial: (r.RazaoSocial || r.NomePrincipal || 'SEM NOME').trim().slice(0, 200),
+          nomeFantasia: (r.NomePrincipal || '').trim().slice(0, 200) || null,
+          cpfCnpj: r.CNPJCPF,
+          inscEstadual: (r.IE || '').trim().slice(0, 20) || null,
+          telefone: (r.Fone || r.Celular || '').trim().slice(0, 20) || null,
+          email: (r.Email || '').trim().slice(0, 200) || null,
+          status: (r.Ativo || '').toUpperCase() === 'ATIVO',
+          ...end,
+        } as never,
+      }))
+    }
+    criados++
+  }
+  console.log(`${dryRun ? '[DRY-RUN] ' : ''}CLIENTES: ${criados} ${dryRun ? 'seriam criados' : 'criados'}, ${enriquecidos} enriquecidos (endereço), ${intactos} intactos, ${invalidos} doc inválido (de ${rows.length} com doc).`)
+}
+
+async function importarFornecedores(empresaId: string, dryRun: boolean) {
+  const rows = lerJson<NomeRow>('Fornecedores').filter((r) => soDigitos(r.CNPJCPF).length >= 11)
+  const p = prisma as never as {
+    fornecedor: { findFirst: (a: unknown) => Promise<Record<string, unknown> | null>; create: (a: unknown) => Promise<unknown>; update: (a: unknown) => Promise<unknown> }
+  }
+  let criados = 0, enriquecidos = 0, intactos = 0
+  const vistos = new Set<string>()
+  for (const r of rows) {
+    const doc = soDigitos(r.CNPJCPF)
+    if (doc.length !== 11 && doc.length !== 14) continue
+    if (vistos.has(doc)) continue
+    vistos.add(doc)
+    const end = enderecoDe(r)
+    const ja = await comRetry(() => p.fornecedor.findFirst({ where: { empresaId, cnpj: r.CNPJCPF } as never })) as Record<string, unknown> | null
+    if (ja) {
+      const faltantes = camposEnderecoVazios(ja, end)
+      if (Object.keys(faltantes).length > 0) {
+        if (!dryRun) await comRetry(() => p.fornecedor.update({ where: { id: ja.id as string }, data: faltantes as never }))
+        enriquecidos++
+      } else intactos++
+      continue
+    }
+    if (!dryRun) {
+      await comRetry(() => p.fornecedor.create({
+        data: {
+          empresaId,
+          razaoSocial: (r.RazaoSocial || r.NomePrincipal || 'SEM NOME').trim().slice(0, 200),
+          nomeFantasia: (r.NomePrincipal || '').trim().slice(0, 200) || null,
+          cnpj: r.CNPJCPF,
+          inscEstadual: (r.IE || '').trim().slice(0, 20) || null,
+          telefone: (r.Fone || '').trim().slice(0, 20) || null,
+          email: (r.Email || '').trim().slice(0, 200) || null,
+          tipoPessoa: (r.TipoPessoa || '').toUpperCase() === 'F' ? 'FISICA' : 'JURIDICA',
+          status: (r.Ativo || '').toUpperCase() === 'ATIVO',
+          ...end,
+        } as never,
+      }))
+    }
+    criados++
+  }
+  console.log(`${dryRun ? '[DRY-RUN] ' : ''}FORNECEDORES: ${criados} ${dryRun ? 'seriam criados' : 'criados'}, ${enriquecidos} enriquecidos (endereço), ${intactos} intactos (de ${rows.length} com doc).`)
+}
+
+async function importarCadastros(empresaId: string) {
+  const dryRun = temDryRun()
+  if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
+  await importarClientes(empresaId, dryRun)
+  await importarFornecedores(empresaId, dryRun)
+  // Vendedores: viram usuários/representantes — mapeamento à parte (Portal Rep),
+  // não gravado como Cliente/Fornecedor. Fica para a fase de vendedores dedicada.
+  console.log('Fase CADASTROS concluída.')
+}
+
 async function main() {
   const empresaId = await garantirEmpresa()
   const fase = arg('fase') ?? 'precos'
@@ -540,6 +729,9 @@ async function main() {
   }
   if (fase === 'tipos-embalagem' || fase === 'tudo') {
     await importarTiposEmbalagem(empresaId)
+  }
+  if (fase === 'cadastros' || fase === 'tudo') {
+    await importarCadastros(empresaId)
   }
   console.log('Importação concluída.')
 }

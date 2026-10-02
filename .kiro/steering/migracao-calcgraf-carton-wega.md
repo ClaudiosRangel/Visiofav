@@ -8,6 +8,113 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 
 - Levantamento completo do Calcgraf: #[[file:docs/calcgraf-gprint-levantamento.md]]
 - Plano de ação (blocos/prioridade/calibração): #[[file:docs/calcgraf-plano-de-acao.md]]
+- Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
+
+## ESCOPO ATUAL (decisão do usuário — migração TOTAL faseada)
+
+Objetivo: operar SOMENTE no Vizor (cálculo gráfico, OP, pedidos, PCP, estoque,
+NF-e). Decisões firmadas:
+1. SEM histórico agora (não migrar pedidos/OPs/NF-e antigos; Calcgraf = consulta).
+2. Produtos: 330 no Vizor, 239 em OP (87 em programação ATIVA), e os CÓDIGOS do
+   Vizor JÁ SÃO os do Calcgraf (vieram do PDF). Logo, importar produto do
+   Calcgraf pelo mesmo código COLIDE — NÃO prefixar/duplicar. Regra: de-para por
+   código; existente = só enriquecer campo vazio (nunca sobrescrever/DELETE/
+   mexer em OP ativa); inexistente/ativo = INSERT. BOM e Roteiro = 0 hoje.
+3. FOCO IMEDIATO: cálculo de ORÇAMENTO bater 100% com o Calcgraf. Tudo em
+   paralelo (segue importando PDF de OP; produção não para). Só após bater 100%
+   → próxima etapa (gerar OP pelo Vizor, deixar de depender do PDF). Cirúrgico.
+4. NF-e é posterior; mas analisar os PDFs do cliente (OP/NF-e/pré-cálculo) para
+   o Vizor ter os dados corretos ao gerá-los. Mapeamento do PDF de OP já feito
+   em docs/estudo-migracao-total-calcgraf.md §5.3.
+
+Para o orçamento bater, FALTA: cadastrar `TabelaMargem`; o CADASTRO DE
+ACABAMENTOS (ver abaixo); e CALIBRAR por golden cases.
+
+## ESTADO DA MIGRAÇÃO (atualizar sempre)
+
+- ✅ FEITO em PRODUÇÃO (Neon, empresa Wega `75848e24-742e-461d-b913-1642c5b83ae9`):
+  - Preços de material (1.767 PrecoMateriaPrima), Mapa de Custos RKW 2023-08,
+    12 TipoEmbalagem (CG-EMB-*). Fases precos/mapa/tipos-embalagem.
+  - CLIENTES: 1.016 (1.015 importados só com CNPJ/CPF + 1 existente), 881 com
+    endereço completo. FORNECEDORES: 232, 231 com endereço. Fase `cadastros`
+    (de-para por doc; SÓ INSERT; enriquecimento de endereço só em campo vazio).
+    Importador tem `comRetry` (pooler Neon derruba conexão em loop longo) e
+    `--dry-run`. Export via `scripts/exportar-calcgraf-cadastros.mjs` (sqlcmd
+    `-u` UTF-16 → UTF-8 p/ acentos; alias de tabela NÃO pode ser `end` — reservado).
+  - DECIDIDO: 473 clientes SEM CNPJ ficaram de fora (trazer depois se pedir);
+    Vendedores (39) não entraram como Cliente/Fornecedor — viram usuários/Portal
+    Rep (fase à parte).
+
+- ✅ CALIBRAÇÃO NÍVEL A FEITA (fórmula de preço CONGELADA): a fórmula do Vizor
+  (`formarPrecoVenda`, gross-up divisor único) reproduz o preço real do Calcgraf.
+  Confirmado com 4 cálculos reais do backup (15168/15182/14879/14878), 10 pontos
+  de tiragem, ≤0,5%. Teste: `src/modules/orcamento-grafico/calibracao/
+  golden-precos.test.ts` (14/14) + fixture anonimizada versionável
+  `golden-precos.fixture.ts`. Docs: `docs/calcgraf-golden-cases-precalculo.md` +
+  `docs/calcgraf-calibracao-harness.md`.
+  - FÓRMULA FECHADA: custoBase(tir)=ΣCustoFixo+ΣCustoUnit×tir (agrupamentos
+    POSITIVOS de `CalculoResAgrupamento`); preço=custoBase/(1−margem%−CEV%).
+    CEV constante por cálculo. Tabelas-fonte no backup mapeadas (CalculoHeader/
+    Planos/Tintas/AtvImpressao/AtvAcabamento/MatAcabamento/Tiragens/Taxas/
+    ResAgrupamento). Exportador: `scripts/exportar-calcgraf-golden.mjs` →
+    cartoon/export/golden-orcamento.json (ignorado pelo git).
+- ✅ CodAgrupamento DECODIFICADO (tabela `Agrupamentos`): 1=Custo de
+  Transformação (máquinas), 2=Materiais Diretos (papel+tinta+mat.acab),
+  3=Serviços Externos. Bate com o rodapé do pré-cálculo e com a saída do motor
+  (materialDireto/custoTransformacao/servicoExterno). Validado 15182 ponta a
+  ponta: CT 1504,81 + MD 5029,24 → preço 17.141,20 vs real 17.140,96 (0,001%).
+- ✅ CALIBRAÇÃO NÍVEL B — PAPEL (≈70% do MD) CONGELADO: `calcularPapel` do Vizor
+  reproduz EXATO o peso/subtotal do Calcgraf (3 casos reais dos prints, desvio
+  0,0001%). Fixture `golden-componentes.fixture.ts` + teste
+  `golden-componentes.test.ts`. Suíte calibração: **20/20** (14 Nível A + 6 B).
+  Fórmula papel: peso=folhas×larg_m×alt_m×gramatura/1000; custo=peso×precoKg.
+- ✅ DECOMPOSIÇÃO CT+MD+SE validada: a fixture `golden-precos.fixture.ts` agora
+  tem os componentes reais (CT=agrup1, MD=agrup2, SE=agrup3) dos 4 cálculos; o
+  teste confirma que CT+MD+SE reconstitui o custo-base agregado. Suíte
+  calibração: **24/24** (14 Nível A + 6 papel + 4 decomposição).
+
+### ESTADO EXATO DA CALIBRAÇÃO (retomar aqui numa nova sessão)
+Arquivos: `src/modules/orcamento-grafico/calibracao/` (golden-precos.fixture.ts,
+golden-precos.test.ts, golden-componentes.fixture.ts, golden-componentes.test.ts).
+Exportador: `scripts/exportar-calcgraf-golden.mjs` → cartoon/export/golden-orcamento.json.
+Docs: `docs/calcgraf-golden-cases-precalculo.md`, `docs/calcgraf-calibracao-harness.md`.
+JÁ CONGELADO (bate exato): fórmula de preço (gross-up), PAPEL (peso/custo),
+decomposição CT/MD/SE, custo-base→preço.
+
+FALTA no Nível B (ordem sugerida):
+  1. TINTA isolada: `CalculoTintas` tem `codTinta` + `areaTinta` (cobertura %;
+     ex. 15182: tinta 4=70%, 5=20%, 6=10%). O consumo kg = f(area impressa × %
+     × rendimento). Rendimento vem do cadastro de tinta (Itc/tabela). Buscar o
+     rendimento e validar vs motor `calcularTinta` (rendimentoM2Kg). BAIXO peso
+     (~4% do custo) — o MD agregado JÁ bate; isto é refino.
+  2. MÁQUINA/C.Transf: tempos em `CalculoAtvImpressao`/`CalculoAtvAcabamento`
+     (confirmar unidade de tempo). Calcgraf dá tempo pronto; Vizor recalcula por
+     velocidade/setup — calibrar por centro. É o componente que mais pode divergir
+     ao gerar orçamento NOVO (quando não se tem o tempo pronto do Calcgraf).
+  3. MAT.ACABAMENTO por unidade (COLAGEM MANUAL 0,3/un) — motor já tem custoMaterialUn.
+  4. Harness: `scripts/calibrar-orcamento.ts` que roda N cálculos do banco,
+     alimenta o motor com o `aproveitamento` real de CalculoPlanos (NÃO
+     reinventar imposição Delphi) e compara CT/MD agregados ≤0,5%.
+  5. CEV: mapear composição completa (CEV implícito 15168=19,32% > taxas visíveis
+     14,25%; falta ~5% — provável IPI/ICMS por produto). Para o Nível A usamos o
+     CEV efetivo real; para gerar orçamento novo precisa reconstituir o CEV.
+
+NOTA DE CONTEXTO: nada commitado ainda. Toda a calibração (fixtures/testes/docs/
+exportadores) + importador de cadastros + fases precos/mapa/tipos-embalagem +
+Mapa RKW + Análise Gerencial estão LOCAIS. Commitar quando o usuário pedir
+(back: schema+migrate-prod juntos; back e front repos separados).
+
+- ⚠️ PENDÊNCIA FIRME (abordagem A — "preciso disso 100% correto, não pode se
+  perder"): CRIAR SPEC `orcamento-grafico-acabamentos` — CADASTRO DE ACABAMENTOS
+  do orçamento. Hoje o wizard usa LISTA FIXA de 5 acabamentos (hardcoded em
+  VisioFab.Wms.Front/.../orcamento-grafico/novo/page.tsx). O Calcgraf tem 60
+  acabamentos ATIVOS (`Atividades`, exportado em cartoon/export/Atividades.json):
+  23 batem com CentroProducao existente, 37 são opções de serviço/manual (alças,
+  ilhós, relevo, 7 tipos de verniz, variações de sacola/envelope). Escopo da
+  spec: model novo (migrate-prod.ts junto) + importar as 60 Atividades + trocar
+  o wizard para ler do cadastro em vez da lista fixa + backend. Suportes(78)/
+  FormatosPapel(42) exportados (SuportesFull.json/FormatosPapelFull.json) entram
+  junto como cadastro de papel/formato. FAZER LOGO APÓS a calibração do orçamento.
 
 ## Contexto em 1 parágrafo
 
