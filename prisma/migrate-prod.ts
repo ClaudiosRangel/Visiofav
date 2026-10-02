@@ -4669,6 +4669,35 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_resultado_centro_mapa_custo_id" ON "resultado_centro"("mapa_custo_id")`)
 
   console.log('✅ Mapa de Custos RKW: mapa_custo, mapa_centro, bem_depreciar, funcionario_custo, despesa_custo, chave_rateio, destino_rateio, resultado_centro criados')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Orçamento Gráfico — Finalização (paridade Calcgraf): parâmetros de Custo de
+  // Transformação na máquina, cadastro de Suporte (coefTinta/SPANKS), e vínculo
+  // de suporte/gramatura/densidade no preço de matéria-prima.
+  // Ver .kiro/specs/orcamento-grafico-finalizacao e docs/calcgraf-*.md.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "acerto_por_cor_min" DECIMAL(8,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "tempo_setup_min" DECIMAL(8,2)`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "suporte_grafico" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "codigo" VARCHAR(30) NOT NULL,
+    "descricao" VARCHAR(200) NOT NULL,
+    "tipoSuporte" VARCHAR(30) NOT NULL,
+    "coef_tinta" DECIMAL(6,3) NOT NULL DEFAULT 1.5,
+    "gramaturas" TEXT,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "suporte_grafico_empresa_id_codigo_key" ON "suporte_grafico"("empresa_id", "codigo")`)
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "suporte_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "gramatura" DECIMAL(6,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "densidade_tinta" DECIMAL(6,3)`)
+
+  console.log('✅ Orçamento Gráfico Finalização: centro_producao (acerto/setup), suporte_grafico, preco_materia_prima (suporte/gramatura/densidade)')
 }
 
 main()

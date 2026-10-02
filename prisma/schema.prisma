@@ -3009,6 +3009,11 @@ model CentroProducao {
   formatoFolhaLargura Int?     @map("formato_folha_largura") // mm
   formatoFolhaAltura  Int?     @map("formato_folha_altura") // mm
   pincaMm             Decimal? @map("pinca_mm") @db.Decimal(6, 2) // mm
+  // Orçamento Gráfico — Custo de Transformação (paridade Calcgraf):
+  // impressão offset = cores × acertoPorCorMin + tempoSetupMin (ver
+  // docs/calcgraf-custo-transformacao.md). Opcionais: ausentes → setup legado.
+  acertoPorCorMin     Decimal? @map("acerto_por_cor_min") @db.Decimal(8, 2) // min de acerto por cor (impressão)
+  tempoSetupMin       Decimal? @map("tempo_setup_min") @db.Decimal(8, 2) // acerto fixo/1º acerto (min)
   posicao         Int            @default(0)
   status          Boolean        @default(true)
   // Quando false, o centro não é listado no painel de Programação (nem
@@ -3637,6 +3642,25 @@ model AtributoGrafico {
 // ORÇAMENTO GRÁFICO
 // ============================================================================
 
+// Suporte Gráfico — cadastro de papel/suporte com o coeficiente de tinta
+// (fator "Stock" da fórmula SPANKS). Usado pelo motor de orçamento para calcular
+// o consumo de tinta. Ver docs/calcgraf-consumo-tinta.md.
+model SuporteGrafico {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  codigo       String   @db.VarChar(30)
+  descricao    String   @db.VarChar(200)
+  tipoSuporte  String   @db.VarChar(30) // CARTAO, KRAFT, OFFSET, COUCHE, MICRO, JORNAL...
+  coefTinta    Decimal  @default(1.5) @map("coef_tinta") @db.Decimal(6, 3) // fator Stock SPANKS
+  gramaturas   String?  @db.Text // lista livre de gramaturas disponíveis (ex.: "191,230,280")
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("suporte_grafico")
+}
+
 // Tipo de Embalagem ("Especialista" de cálculo)
 model TipoEmbalagem {
   id                    String   @id @default(uuid())
@@ -3677,6 +3701,12 @@ model PrecoMateriaPrima {
   fornecedorId  String?  @map("fornecedor_id")
   dataVigencia  DateTime @default(now()) @map("data_vigencia")
   status        Boolean  @default(true)
+  // Orçamento Gráfico (paridade Calcgraf):
+  // PAPEL → vínculo opcional a um SuporteGrafico (coefTinta) + gramatura;
+  // TINTA → densidade SPANKS (default 1,0 preto / 1,3 process). Opcionais.
+  suporteId      String?  @map("suporte_id")
+  gramatura      Decimal? @db.Decimal(6, 2)
+  densidadeTinta Decimal? @map("densidade_tinta") @db.Decimal(6, 3)
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 

@@ -1,5 +1,8 @@
 // Motor de cálculo de orçamento gráfico — serviço puro (sem dependências de banco)
 
+import { calcularConsumoTinta } from './consumo-tinta'
+import { calcularCustoTransformacao, type AtividadeCT } from './custo-transformacao'
+
 // ============================================================================
 // INTERFACES
 // ============================================================================
@@ -24,6 +27,12 @@ export interface ParamsOrcamento {
     formatoAltura: number
     pinca: number
     setupMinutos: number
+    // ── Paridade Calcgraf (aditivo) ──
+    /** Minutos de acerto por cor (impressão offset). Se presente, o CT da
+     * impressão usa o modelo calibrado: fixo = cores × acertoPorCorMin + setup. */
+    acertoPorCorMin?: number
+    /** Nº de cores da impressão (para o acerto por cor). Default = cores.length. */
+    numCoresImpressao?: number
   }
   cores: Array<{
     nome: string
@@ -31,7 +40,14 @@ export interface ParamsOrcamento {
     coberturaPercent: number
     precoKg: number
     rendimentoM2Kg: number
+    /** Densidade da tinta (SPANKS). Opcional; default 1,0 (preto) / 1,3 (process). */
+    densidade?: number
   }>
+  /** Coeficiente de tinta do suporte (fator Stock SPANKS). Se presente, a tinta
+   * usa o modelo calibrado SPANKS em vez de rendimentoM2Kg. */
+  coefTintaSuporte?: number
+  /** Partida de consumo de tinta (kg) por cor — modelo SPANKS. Default 0,2. */
+  partidaConsumoTintaKg?: number
   acabamentos: Array<{
     tipo: string
     custoHora: number
@@ -116,6 +132,11 @@ export interface ResultadoOrcamento {
   cevValor: number
   contribuicaoMarginalValor: number
   contribuicaoMarginalPerc: number
+  /** Origem do modelo de cálculo por componente (paridade Calcgraf vs legado). */
+  modeloCalculo?: {
+    tinta: 'CALIBRADO' | 'LEGADO'
+    maquina: 'CALIBRADO' | 'LEGADO'
+  }
 }
 
 // Interfaces auxiliares para funções individuais
@@ -785,29 +806,90 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
 
   const { folhasBrutas } = resultadoPapel
 
-  // 4. Calcular tinta
-  const resultadoTinta = calcularTinta({
-    folhasBrutas,
-    larguraMm: maquinaImpressao.formatoLargura,
-    alturaMm: maquinaImpressao.formatoAltura,
-    cores,
-  })
+  // 4. Calcular tinta — CALIBRADO (SPANKS) se coefTintaSuporte presente, senão LEGADO
+  const larguraM = maquinaImpressao.formatoLargura / 1000
+  const alturaM = maquinaImpressao.formatoAltura / 1000
+  const areaImpressaM2 = folhasBrutas * larguraM * alturaM
+  let resultadoTinta: ResultadoTinta
+  let modeloTinta: 'CALIBRADO' | 'LEGADO'
+  if (params.coefTintaSuporte && params.coefTintaSuporte > 0 && cores.length > 0) {
+    // Modelo SPANKS: uma passagem por cor; cobertura e densidade por cor.
+    const partida = params.partidaConsumoTintaKg ?? 0.2
+    const detalhePorCor: Array<{ cor: string; consumoKg: number; custo: number }> = []
+    let custoTotalTinta = 0
+    for (const cor of cores) {
+      const r = calcularConsumoTinta({
+        coefSuporte: params.coefTintaSuporte,
+        fatorProcesso: 0.5, // offset
+        areaM2: areaImpressaM2,
+        lados: 1,
+        cobertura: cor.coberturaPercent / 100,
+        densidade: cor.densidade ?? (cor.tipo === 'CMYK' ? 1.3 : 1.0),
+        cores: 1, // partida por cor (1 cor por iteração)
+        ocorrencias: 1,
+        precoKg: cor.precoKg,
+        partidaConsumoKg: partida,
+      })
+      detalhePorCor.push({ cor: cor.nome, consumoKg: r.consumoTotalKg, custo: r.custo })
+      custoTotalTinta += r.custo
+    }
+    resultadoTinta = { custoTotal: Math.round(custoTotalTinta * 100) / 100, detalhePorCor }
+    modeloTinta = 'CALIBRADO'
+  } else {
+    resultadoTinta = calcularTinta({
+      folhasBrutas,
+      larguraMm: maquinaImpressao.formatoLargura,
+      alturaMm: maquinaImpressao.formatoAltura,
+      cores,
+    })
+    modeloTinta = 'LEGADO'
+  }
 
   // 5. Calcular máquinas (impressão como etapa principal)
-  const etapasMaquina = [
-    {
+  // CALIBRADO (acerto por cor) se acertoPorCorMin presente, senão LEGADO.
+  let resultadoMaquinas: ResultadoMaquinas
+  let modeloMaquina: 'CALIBRADO' | 'LEGADO'
+  if (maquinaImpressao.acertoPorCorMin && maquinaImpressao.acertoPorCorMin > 0) {
+    const numCores = maquinaImpressao.numCoresImpressao ?? cores.length
+    const atividadeImpressao: AtividadeCT = {
       nome: 'Impressão',
-      velocidade: maquinaImpressao.velocidade,
+      impressao: true,
       custoHora: maquinaImpressao.custoHora,
-      setupMinutos: maquinaImpressao.setupMinutos,
-      usaFolhas: true,
-    },
-  ]
-  const resultadoMaquinas = calcularMaquinas({
-    folhasBrutas,
-    quantidade,
-    etapas: etapasMaquina,
-  })
+      producaoHora: maquinaImpressao.velocidade,
+      unidadesProcessadas: folhasBrutas,
+      cores: numCores,
+      acertoPorCorMin: maquinaImpressao.acertoPorCorMin,
+      tempoPrimeiroAcertoMin: maquinaImpressao.setupMinutos || 0,
+    }
+    const ct = calcularCustoTransformacao([atividadeImpressao], quantidade)
+    const det = ct.detalhe[0]
+    resultadoMaquinas = {
+      custoTotal: ct.custoTotal,
+      detalhePorEtapa: [{
+        etapa: 'Impressão',
+        setupMin: det ? det.tempoFixoMin : 0,
+        operacaoMin: det ? Math.round(det.tempoVarHoras * 60 * 100) / 100 : 0,
+        custo: ct.custoTotal,
+      }],
+    }
+    modeloMaquina = 'CALIBRADO'
+  } else {
+    const etapasMaquina = [
+      {
+        nome: 'Impressão',
+        velocidade: maquinaImpressao.velocidade,
+        custoHora: maquinaImpressao.custoHora,
+        setupMinutos: maquinaImpressao.setupMinutos,
+        usaFolhas: true,
+      },
+    ]
+    resultadoMaquinas = calcularMaquinas({
+      folhasBrutas,
+      quantidade,
+      etapas: etapasMaquina,
+    })
+    modeloMaquina = 'LEGADO'
+  }
 
   // 6. Calcular acabamentos
   const resultadoAcabamentos = calcularAcabamentos({
@@ -899,5 +981,6 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
     cevValor,
     contribuicaoMarginalValor,
     contribuicaoMarginalPerc,
+    modeloCalculo: { tinta: modeloTinta, maquina: modeloMaquina },
   }
 }

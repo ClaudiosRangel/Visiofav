@@ -14,6 +14,8 @@
 import { PrismaClient } from '@prisma/client'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 const EXPORT_DIR = join('cartoon', 'export')
@@ -717,6 +719,144 @@ async function importarCadastros(empresaId: string) {
   console.log('Fase CADASTROS concluída.')
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE VENDEDORES — Vendedores.json → Vendedor (+ RepresentanteCredencial)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// De-para: por CPF quando válido (11/14 dígitos); senão por NOME normalizado.
+// SÓ INSERT de novo; existente = enriquece só campos vazios (nunca sobrescreve).
+// `comissao` default 0 (o JSON não traz). `status` = Ativo==='ATIVO'.
+// CPF ausente → placeholder sintético `SEM-DOC-<Codigo>` (único, cabe em 14).
+// E-mail válido → cria RepresentanteCredencial (Portal Rep) com senha aleatória
+// temporária; pula se já existe. Suporta --dry-run; idempotente.
+
+interface VendedorRow {
+  Codigo: number
+  NomePrincipal: string | null
+  RazaoSocial: string | null
+  CNPJCPF: string | null
+  Email: string | null
+  Fone: string | null
+  Celular: string | null
+  Ativo: string | null
+}
+
+function normalizarNome(v: string | null | undefined): string {
+  return (v || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // tira acentos
+    .toUpperCase().trim().replace(/\s+/g, ' ')
+}
+
+function emailValido(v: string | null | undefined): string | null {
+  const e = (v || '').trim().toLowerCase()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null
+}
+
+async function importarVendedores(empresaId: string) {
+  const dryRun = temDryRun()
+  if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
+  const rows = lerJson<VendedorRow>('Vendedores')
+
+  const p = prisma as never as {
+    vendedor: {
+      findFirst: (a: unknown) => Promise<Record<string, unknown> | null>
+      create: (a: unknown) => Promise<{ id: string }>
+      update: (a: unknown) => Promise<unknown>
+    }
+    representanteCredencial: {
+      findFirst: (a: unknown) => Promise<Record<string, unknown> | null>
+      create: (a: unknown) => Promise<unknown>
+    }
+  }
+
+  let criados = 0, enriquecidos = 0, intactos = 0, credenciais = 0, credenciaisPuladas = 0
+  const vistosDoc = new Set<string>()
+  const vistosNome = new Set<string>()
+
+  for (const r of rows) {
+    const nome = (r.RazaoSocial || r.NomePrincipal || '').trim().slice(0, 150)
+    if (!nome) continue
+    const nomeNorm = normalizarNome(nome)
+    const docDigitos = soDigitos(r.CNPJCPF)
+    const temDoc = docDigitos.length === 11 || docDigitos.length === 14
+    const cpf = temDoc ? r.CNPJCPF!.trim().slice(0, 14) : `SEM-DOC-${r.Codigo}`.slice(0, 14)
+
+    // dedup dentro do próprio arquivo
+    if (temDoc) { if (vistosDoc.has(docDigitos)) continue; vistosDoc.add(docDigitos) }
+    else { if (vistosNome.has(nomeNorm)) continue; vistosNome.add(nomeNorm) }
+
+    // de-para: por cpf (se válido) OU por nome normalizado
+    let existente: Record<string, unknown> | null
+    if (temDoc) {
+      existente = await comRetry(() => p.vendedor.findFirst({ where: { empresaId, cpf } as never }))
+    } else {
+      const todos = await comRetry(() => p.vendedor.findFirst({ where: { empresaId, nome } as never }))
+      existente = todos
+    }
+
+    const email = emailValido(r.Email)
+    const telefone = (r.Fone || r.Celular || '').trim().slice(0, 20) || null
+
+    let vendedorId: string
+    if (existente) {
+      vendedorId = existente.id as string
+      // enriquece só o que estiver vazio (nunca sobrescreve)
+      const faltantes: Record<string, unknown> = {}
+      if (!existente.telefone && telefone) faltantes.telefone = telefone
+      if (Object.keys(faltantes).length > 0) {
+        if (!dryRun) await comRetry(() => p.vendedor.update({ where: { id: vendedorId }, data: faltantes as never }))
+        enriquecidos++
+      } else intactos++
+    } else {
+      if (!dryRun) {
+        const criado = await comRetry(() => p.vendedor.create({
+          data: {
+            empresaId,
+            nome,
+            cpf,
+            comissao: 0,
+            status: (r.Ativo || '').toUpperCase() === 'ATIVO',
+          } as never,
+        }))
+        vendedorId = criado.id
+      } else {
+        vendedorId = `(dry-run-${r.Codigo})`
+      }
+      criados++
+    }
+
+    // Credencial de Portal Rep para e-mails válidos
+    if (email && vendedorId && !vendedorId.startsWith('(dry-run')) {
+      const jaCred = await comRetry(() => p.representanteCredencial.findFirst({
+        where: { empresaId, OR: [{ email }, { vendedorId }] } as never,
+      }))
+      if (jaCred) {
+        credenciaisPuladas++
+      } else {
+        if (!dryRun) {
+          const senhaAleatoria = randomUUID().slice(0, 12)
+          await comRetry(() => p.representanteCredencial.create({
+            data: {
+              empresaId,
+              vendedorId,
+              email,
+              senhaHash: bcrypt.hashSync(senhaAleatoria, 10),
+              senhaTemporaria: true,
+              status: 'ATIVO',
+            } as never,
+          }))
+        }
+        credenciais++
+      }
+    } else if (email && dryRun) {
+      credenciais++
+    }
+  }
+
+  console.log(`${dryRun ? '[DRY-RUN] ' : ''}VENDEDORES: ${criados} ${dryRun ? 'seriam criados' : 'criados'}, ${enriquecidos} enriquecidos, ${intactos} intactos (de ${rows.length}).`)
+  console.log(`${dryRun ? '[DRY-RUN] ' : ''}  Credenciais Portal Rep: ${credenciais} ${dryRun ? 'seriam criadas' : 'criadas'}, ${credenciaisPuladas} já existiam.`)
+}
+
 async function main() {
   const empresaId = await garantirEmpresa()
   const fase = arg('fase') ?? 'precos'
@@ -732,6 +872,9 @@ async function main() {
   }
   if (fase === 'cadastros' || fase === 'tudo') {
     await importarCadastros(empresaId)
+  }
+  if (fase === 'vendedores' || fase === 'tudo') {
+    await importarVendedores(empresaId)
   }
   console.log('Importação concluída.')
 }

@@ -29,6 +29,10 @@ const centroProducaoBodySchema = z.object({
   formatoFolhaLargura: z.number().int().min(0).optional().nullable(),
   formatoFolhaAltura: z.number().int().min(0).optional().nullable(),
   pincaMm: z.number().min(0).optional().nullable(),
+  // Orçamento Gráfico — Custo de Transformação (paridade Calcgraf):
+  // impressão offset = cores × acertoPorCorMin + tempoSetupMin. Opcionais.
+  acertoPorCorMin: z.number().min(0).optional().nullable(),
+  tempoSetupMin: z.number().min(0).optional().nullable(),
   // Quando false, o centro não aparece no painel de Programação. Default true
   // para preservar o comportamento atual de centros já cadastrados.
   disponivelProgramacao: z.boolean().optional(),
@@ -198,6 +202,8 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         formatoFolhaLargura: body.formatoFolhaLargura ?? undefined,
         formatoFolhaAltura: body.formatoFolhaAltura ?? undefined,
         pincaMm: body.pincaMm ?? undefined,
+        acertoPorCorMin: body.acertoPorCorMin ?? undefined,
+        tempoSetupMin: body.tempoSetupMin ?? undefined,
         disponivelProgramacao: body.disponivelProgramacao ?? true,
         posicao,
       },
@@ -261,6 +267,8 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         formatoFolhaLargura: body.formatoFolhaLargura ?? null,
         formatoFolhaAltura: body.formatoFolhaAltura ?? null,
         pincaMm: body.pincaMm ?? null,
+        acertoPorCorMin: body.acertoPorCorMin ?? null,
+        tempoSetupMin: body.tempoSetupMin ?? null,
         disponivelProgramacao: body.disponivelProgramacao ?? centro.disponivelProgramacao,
       },
     })

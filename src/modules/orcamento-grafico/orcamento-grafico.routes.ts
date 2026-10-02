@@ -17,6 +17,41 @@ function parametrosDoTipo(tipo: { parametros: unknown }): Array<{ nome: string; 
   }))
 }
 
+/**
+ * Resolve o coefTinta do suporte vinculado ao papel (via PrecoMateriaPrima.
+ * suporteId → SuporteGrafico.coefTinta). Retorna undefined se não houver vínculo
+ * (motor cai no modelo legado de tinta). Filtra por empresaId (multi-tenant).
+ */
+async function resolverCoefTintaSuporte(
+  empresaId: string,
+  papelId: string | undefined,
+): Promise<number | undefined> {
+  if (!papelId) return undefined
+  const papel = await prisma.precoMateriaPrima.findFirst({
+    where: { id: papelId, empresaId },
+    select: { suporteId: true },
+  })
+  const suporteId = (papel as { suporteId?: string | null } | null)?.suporteId
+  if (!suporteId) return undefined
+  const suporte = await prisma.suporteGrafico.findFirst({
+    where: { id: suporteId, empresaId },
+    select: { coefTinta: true, status: true },
+  })
+  if (!suporte || !suporte.status) return undefined
+  const coef = Number(suporte.coefTinta)
+  return coef > 0 ? coef : undefined
+}
+
+/** Lê o parâmetro de partida de consumo de tinta (kg) da empresa (default 0,2). */
+async function resolverPartidaConsumoTinta(empresaId: string): Promise<number> {
+  const p = await prisma.parametro.findFirst({
+    where: { empresaId, chave: 'orcamento.partidaConsumoTintaKg' },
+    select: { valor: true },
+  })
+  const v = p ? Number(p.valor) : NaN
+  return Number.isFinite(v) && v > 0 ? v : 0.2
+}
+
 export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
@@ -188,6 +223,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     fornecedorId: true,
     dataVigencia: true,
     status: true,
+    // Paridade Calcgraf: vínculo do papel ao suporte (coefTinta) + gramatura;
+    // densidade da tinta (SPANKS). Ver spec orcamento-grafico-finalizacao.
+    suporteId: true,
+    gramatura: true,
+    densidadeTinta: true,
     criadoEm: true,
     atualizadoEm: true,
   } as const
@@ -244,6 +284,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       produtoId: z.string().uuid().optional().nullable(),
       fornecedorId: z.string().uuid().optional().nullable(),
       dataVigencia: z.coerce.date().optional(),
+      suporteId: z.string().uuid().optional().nullable(),
+      gramatura: z.number().min(0).optional().nullable(),
+      densidadeTinta: z.number().min(0).optional().nullable(),
     }).parse(request.body)
 
     const preco = await prisma.precoMateriaPrima.create({
@@ -269,6 +312,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       fornecedorId: z.string().uuid().optional().nullable(),
       dataVigencia: z.coerce.date().optional(),
       status: z.boolean().optional(),
+      suporteId: z.string().uuid().optional().nullable(),
+      gramatura: z.number().min(0).optional().nullable(),
+      densidadeTinta: z.number().min(0).optional().nullable(),
     }).parse(request.body)
 
     const existe = await prisma.precoMateriaPrima.findFirst({ where: { id, empresaId: user.empresaId } })
@@ -297,6 +343,107 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: false },
     })
+    return reply.status(204).send()
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SUPORTE GRÁFICO (cadastro de papel/suporte com coeficiente de tinta SPANKS)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const suporteGraficoSelect = {
+    id: true,
+    empresaId: true,
+    codigo: true,
+    descricao: true,
+    tipoSuporte: true,
+    coefTinta: true,
+    gramaturas: true,
+    status: true,
+    criadoEm: true,
+    atualizadoEm: true,
+  } as const
+
+  app.get('/suportes', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const query = z.object({
+      busca: z.string().optional(),
+      status: z.enum(['true', 'false']).optional(),
+      page: z.coerce.number().int().positive().optional().default(1),
+      limit: z.coerce.number().int().positive().max(100).optional().default(50),
+    }).parse(request.query)
+
+    const where: any = { empresaId: user.empresaId }
+    if (query.status !== undefined) where.status = query.status === 'true'
+    else where.status = true
+    if (query.busca) {
+      where.OR = [
+        { codigo: { contains: query.busca, mode: 'insensitive' } },
+        { descricao: { contains: query.busca, mode: 'insensitive' } },
+      ]
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.suporteGrafico.findMany({
+        where,
+        select: suporteGraficoSelect,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: { codigo: 'asc' },
+      }),
+      prisma.suporteGrafico.count({ where }),
+    ])
+    return { data, total, page: query.page, limit: query.limit }
+  })
+
+  app.post('/suportes', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({
+      codigo: z.string().min(1).max(30),
+      descricao: z.string().min(1).max(200),
+      tipoSuporte: z.string().min(1).max(30),
+      coefTinta: z.number().min(0).max(100).default(1.5),
+      gramaturas: z.string().optional().nullable(),
+    }).parse(request.body)
+
+    const existe = await prisma.suporteGrafico.findFirst({ where: { empresaId: user.empresaId, codigo: body.codigo } })
+    if (existe) return reply.status(409).send({ message: `Código '${body.codigo}' já existe` })
+
+    const suporte = await prisma.suporteGrafico.create({
+      data: { ...body, empresaId: user.empresaId },
+      select: suporteGraficoSelect,
+    })
+    return reply.status(201).send(suporte)
+  })
+
+  app.put('/suportes/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({
+      codigo: z.string().min(1).max(30),
+      descricao: z.string().min(1).max(200),
+      tipoSuporte: z.string().min(1).max(30),
+      coefTinta: z.number().min(0).max(100),
+      gramaturas: z.string().optional().nullable(),
+      status: z.boolean().optional(),
+    }).parse(request.body)
+
+    const existe = await prisma.suporteGrafico.findFirst({ where: { id, empresaId: user.empresaId } })
+    if (!existe) return reply.status(404).send({ message: 'Suporte não encontrado' })
+    if (body.codigo !== existe.codigo) {
+      const conflito = await prisma.suporteGrafico.findFirst({ where: { empresaId: user.empresaId, codigo: body.codigo } })
+      if (conflito && conflito.id !== id) return reply.status(409).send({ message: `Código '${body.codigo}' já existe` })
+    }
+
+    const atualizado = await prisma.suporteGrafico.update({ where: { id }, data: body, select: suporteGraficoSelect })
+    return atualizado
+  })
+
+  app.delete('/suportes/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const existe = await prisma.suporteGrafico.findFirst({ where: { id, empresaId: user.empresaId } })
+    if (!existe) return reply.status(404).send({ message: 'Suporte não encontrado' })
+    await prisma.suporteGrafico.update({ where: { id }, data: { status: false } })
     return reply.status(204).send()
   })
 
@@ -635,6 +782,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       colagemPercent: 2,
     }
 
+    // Paridade Calcgraf: parâmetros calibrados (setup/acerto por cor da máquina;
+    // coefTinta do suporte do papel; partida de consumo de tinta). Quando
+    // presentes, o motor usa os modelos SPANKS/acerto-por-cor; senão, legado.
+    const acertoPorCorMin = maquina.acertoPorCorMin != null ? Number(maquina.acertoPorCorMin) : undefined
+    const tempoSetupMin = maquina.tempoSetupMin != null ? Number(maquina.tempoSetupMin) : undefined
+    const coefTintaSuporte = await resolverCoefTintaSuporte(user.empresaId, body.papelId)
+    const partidaConsumoTintaKg = await resolverPartidaConsumoTinta(user.empresaId)
+
     const resultado = calcularOrcamentoGrafico({
       tipoEmbalagem: {
         parametros: parametrosDoTipo(tipo),
@@ -652,13 +807,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         formatoLargura: maquina.formatoFolhaLargura || 660,
         formatoAltura: maquina.formatoFolhaAltura || 960,
         pinca: Number(maquina.pincaMm) || 10,
-        setupMinutos: 30,
+        // setup: usa o cadastrado (tempoSetupMin) quando houver; senão 30 (legado)
+        setupMinutos: tempoSetupMin ?? 30,
+        acertoPorCorMin,
+        numCoresImpressao: body.cores.length,
       },
       cores: body.cores,
       acabamentos: body.acabamentos,
       quantidade: body.quantidade,
       perdas,
       margem,
+      coefTintaSuporte,
+      partidaConsumoTintaKg,
       // paridade Calcgraf (repassados quando informados)
       servicosExternos: body.servicosExternos,
       itensDiversos: body.itensDiversos,
@@ -1962,6 +2122,12 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       colagemPercent: 2,
     }
 
+    // Paridade Calcgraf (mesmo caminho que /calcular)
+    const acertoPorCorMin = maquina.acertoPorCorMin != null ? Number(maquina.acertoPorCorMin) : undefined
+    const tempoSetupMin = maquina.tempoSetupMin != null ? Number(maquina.tempoSetupMin) : undefined
+    const coefTintaSuporte = await resolverCoefTintaSuporte(user.empresaId, body.papelId)
+    const partidaConsumoTintaKg = await resolverPartidaConsumoTinta(user.empresaId)
+
     // Calcular para cada quantidade
     const simulacoes = body.quantidades.map(quantidade => {
       const resultado = calcular({
@@ -1981,13 +2147,17 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           formatoLargura: maquina.formatoFolhaLargura || 660,
           formatoAltura: maquina.formatoFolhaAltura || 960,
           pinca: Number(maquina.pincaMm) || 10,
-          setupMinutos: 30,
+          setupMinutos: tempoSetupMin ?? 30,
+          acertoPorCorMin,
+          numCoresImpressao: body.cores.length,
         },
         cores: body.cores,
         acabamentos: body.acabamentos as Array<{ tipo: string; custoHora: number; velocidade: number; setupMinutos: number; custoMaterialM2?: number; custoMaterialUn?: number }>,
         quantidade,
         perdas,
         margem,
+        coefTintaSuporte,
+        partidaConsumoTintaKg,
       })
 
       return {
