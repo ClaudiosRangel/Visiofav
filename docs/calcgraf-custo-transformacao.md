@@ -145,3 +145,17 @@ bate 0,001% — por isso é refino, não bloqueia o orçamento.
    `rendimentoM2Kg`; validar contra a memória (Escala ⇒ ~477 a 100%).
 3. Harness em massa opcional: estender a validação do CustoFixo (52/53) para o
    CustoUnitário usando as folhas calculadas pelo motor (aproveitamento real).
+
+## 9. INTEGRADO AO MOTOR (02/10/2026)
+
+O modelo de acerto-por-cor está **plugado no motor** (`calcularOrcamentoGrafico`):
+quando a máquina de impressão (`CentroProducao`) tem `acertoPorCorMin` cadastrado,
+o Custo de Transformação da impressão usa `cores × acertoPorCorMin + tempoSetupMin`
+(+ produção = folhas/velocidade × custoHora); senão, cai no modelo legado (setup
+fixo). Cadastro: tela **PCP → Cadastros → Centros** (campos "Acerto por cor (min)"
+e "Setup fixo / 1º acerto (min)"). As rotas `/calcular` e `/simular-tiragens`
+foram unificadas e leem esses campos. Flag `modeloCalculo.maquina` no resultado
+indica CALIBRADO vs LEGADO. Spec: `.kiro/specs/orcamento-grafico-finalizacao`.
+PENDENTE de refino: hoje modela a impressão como 1 etapa; acabamentos no CT ainda
+usam o caminho legado (`calcularAcabamentos`) — ampliar para o modelo calibrado
+por centro quando o usuário pedir.

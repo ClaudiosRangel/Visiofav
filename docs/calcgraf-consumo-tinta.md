@@ -73,3 +73,16 @@ custo total — faixa de refino, não mais de incógnita estrutural. O motor do
 Vizor (`calcularTinta`) usa `rendimentoM2Kg`; o SPANKS é a forma de DERIVAR esse
 rendimento efetivo a partir de suporte/cobertura/densidade quando não há um valor
 cadastrado por tinta.
+
+## 6. INTEGRADO AO MOTOR (02/10/2026)
+
+O modelo SPANKS deixou de ser módulo isolado e está **plugado no motor**
+(`calcularOrcamentoGrafico`): quando o papel do orçamento tem um `SuporteGrafico`
+vinculado (com `coefTinta`), o cálculo de tinta usa SPANKS; senão, cai no modelo
+legado (`rendimentoM2Kg`). Densidade: default **1,0** (valor que calibrou no
+15185), override opcional por cor via `PrecoMateriaPrima.densidadeTinta`.
+Partida: parâmetro `orcamento.partidaConsumoTintaKg` (default 0,2) por empresa.
+Cadastro: tela **Orçamento Gráfico → Cadastros → Suportes** (coefTinta por tipo:
+Cartão 1,5 · Kraft 2,2 · Offset 1,6 · Jornal 1,8). Spec:
+`.kiro/specs/orcamento-grafico-finalizacao`. Flag `modeloCalculo.tinta` no
+resultado indica CALIBRADO vs LEGADO. Suíte orcamento-grafico: 81/81.

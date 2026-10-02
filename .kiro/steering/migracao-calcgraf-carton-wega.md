@@ -10,6 +10,26 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Plano de ação (blocos/prioridade/calibração): #[[file:docs/calcgraf-plano-de-acao.md]]
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 
+## ✅ FINALIZAÇÃO DO ORÇAMENTO — INTEGRADO AO MOTOR + COMMITADO (02/10/2026)
+
+Spec `.kiro/specs/orcamento-grafico-finalizacao` (COMMITADA/pushed; back+front
+deployados). A calibração (CT acerto-por-cor + Tinta SPANKS) saiu de módulos
+isolados e está **plugada no motor** `calcularOrcamentoGrafico`, com fallback ao
+legado (não-regressão; suíte 81/81). Entregue:
+- Schema: `CentroProducao` (acertoPorCorMin, tempoSetupMin), model `SuporteGrafico`
+  (coefTinta/SPANKS), `PrecoMateriaPrima` (suporteId, gramatura, densidadeTinta).
+  migrate-prod idempotente (roda no deploy — Postgres local não foi usado).
+- Cadastros (front): Orçamento Gráfico → Suportes; campos de acerto/setup em
+  PCP → Centros; vínculo papel→suporte + densidade em Preços Materiais.
+- Importador: fase `vendedores` (`--fase vendedores`): Vendedor +
+  RepresentanteCredencial p/ e-mail válido; de-para por cpf/nome; idempotente;
+  `--dry-run`. **AINDA NÃO EXECUTADO** (precisa de ambiente — rodar `--dry-run`
+  antes do `--apply`).
+- Encaixe gráfico (SVG) no StepRevisao (motor expõe `encaixe.layout`).
+Docs: `docs/calcgraf-consumo-tinta.md` §6, `docs/calcgraf-custo-transformacao.md` §9.
+PENDÊNCIAS: (a) rodar import de vendedores; (b) refino densidade/constante da
+tinta e CT de acabamentos (só impressão foi calibrada no CT) — exige +pré-cálculos.
+
 ## ESCOPO ATUAL (decisão do usuário — migração TOTAL faseada)
 
 Objetivo: operar SOMENTE no Vizor (cálculo gráfico, OP, pedidos, PCP, estoque,

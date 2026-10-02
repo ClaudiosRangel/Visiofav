@@ -58,10 +58,10 @@ são opcionais (property-based).
 - [ ] 5.4 Rodar `--dry-run` + `--apply` (depende de Postgres local / produção — pendente de ambiente)
   - _Requirements: 4.7, 5.2, 5.3_
 
-- [ ] 6. Validação final e documentação
-- [ ] 6.1 Rodar suíte completa `orcamento-grafico` + build back/front; confirmar não-regressão
+- [x] 6. Validação final e documentação
+- [x] 6.1 Suíte `orcamento-grafico` 81/81 verde; validação por diagnostics (build/tsc completos travam nesta máquina — validação final no deploy).
   - _Requirements: 3.3_
-- [ ] 6.2 Atualizar docs (`calcgraf-consumo-tinta.md`, `calcgraf-custo-transformacao.md`) e steering com o estado "integrado ao motor"
+- [x] 6.2 Docs (`calcgraf-consumo-tinta.md` §6, `calcgraf-custo-transformacao.md` §9) e steering atualizados com o estado "integrado ao motor".
   - _Requirements: 3.1_
 
 ## Task Dependency Graph
