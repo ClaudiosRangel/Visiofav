@@ -116,3 +116,83 @@ calibrar CUSTO, podemos ALIMENTAR o motor do Vizor com o aproveitamento real do
 Calcgraf (em vez de recalcular o encaixe) — isola o teste no que importa (preço/
 custo) e evita perseguir a imposição Delphi. O encaixe próprio do Vizor é
 validado à parte, com casos simples. Isso torna a calibração VIÁVEL e cirúrgica.
+
+## 🔶 NÍVEL B — passo 2: MÁQUINA / Custo de Transformação (EM ANDAMENTO)
+
+Investigação da sessão de 02/10/2026. Objetivo: validar que `calcularMaquinas`
+do Vizor reproduz o Custo de Transformação (CodAgrupamento=1) do Calcgraf.
+Decisão de método: a TINTA (passo 1) foi PULADA — ~4% do custo, exige o
+rendimento base (m²/kg) que não está em nenhum export e cuja fórmula
+(area×cobertura×CoefTinta→kg) está no Delphi fechado; o MD agregado já bate
+0,001%, então é baixo retorno/alto risco (mesma decisão da tinta registrada no
+steering). Fomos direto ao CT, que é o componente que mais diverge ao gerar
+orçamento NOVO.
+
+### Tabelas-fonte do CT MAPEADAS (banco CalcgrafCartonWega, SQL local)
+
+- **`CalculoAtividades`** (ligada por `Codigo` = NumCalculo) — é a tabela do CT
+  (NÃO `CalculoAtvImpressao`/`CalculoAtvAcabamento`, que têm parametrização mas
+  não os tempos). Colunas-chave por atividade:
+  - `codAtividade` (FK → `Atividades.Codigo`: nome + TipoAtividade Impressão/Acabamento)
+  - `codCentroCusto` (FK → centro; vira custo-hora via Itc, ver abaixo)
+  - `entradas` (nº de passagens/entradas do material)
+  - `producaoHora` (velocidade em unid/hora) — equivale ao `etapa.velocidade` do Vizor
+  - `quantAcertos`, `tempoPorAcerto`, `tempoPrimeiroAcerto` (setup, em MINUTOS)
+  - `tiragem`
+  - versões `man*` (override manual; 0 = usa o automático)
+- **Custo-hora por centro**: `Itc` (Origem='CENTRO DE CUSTO', Unidade='H',
+  `CodOrigem` = codCentroCusto) → `Codigo` do Itc → `TabelasCustoDetalhe`
+  (`CodItc`, `Coluna=1`, campo **`ValorDireto`** = R$/hora). ATENÇÃO: há 2
+  TabelasCusto (join traz 2 linhas por Itc; usar CodTabelaCusto=1).
+- `CalculoResAgrupamento` (Codigo + CodAgrupamento) = ALVO agregado:
+  CustoFixo + CustoUnitario. NÃO há detalhamento por atividade (o Delphi calcula
+  em runtime) — só o agregado por agrupamento.
+
+### Golden case 15182 (dados reais confirmados)
+5 atividades: Offset Plana (CC4, 64,59/h), Cortadeira Grande (CC5, 113,21/h),
+Guilhotina envol (CC16, 77,69/h), Fita dupla face (CC25, 12,00/h), Laminação
+maior (CC19, 60,00/h). Alvo CT (resAgr agrup 1): CustoFixo=478,3025 +
+CustoUnit=0,2566279 → CT total (tir 4000) = **1504,81**.
+
+### Resultado da fórmula do motor Vizor (candidata)
+`tempoAcertoH = (quantAcertos×tempoPorAcerto + tempoPrimeiroAcerto)/60`;
+`custoFixoAtv = tempoAcertoH × custoHora`;
+`horasPorUnidade = entradas/producaoHora`; `custoUnitAtv = horasPorUnidade × custoHora`.
+
+- **CT total: 1469,87 calc vs 1504,81 real = desvio 2,32%** (estrutura certa, perto)
+- CustoFixo: 125,19 calc vs 478,30 real (73,8% abaixo) ← PRINCIPAL DIVERGÊNCIA
+- CustoUnit: 0,33617 calc vs 0,25663 real (31% acima)
+
+### Diagnóstico (onde está a diferença — resolver na próxima rodada)
+1. **Setup/acerto está muito subestimado**: os 4 acabamentos vieram com
+   `tempoPorAcerto=0`/`quantAcertos=1` → fixo 0, mas o Calcgraf cobra ~478 de
+   fixo. Hipóteses: (a) existe um tempo-de-acerto PADRÃO por centro (em
+   `CentrosProducao`/`Atividades`/tabela de parâmetros) que o Delphi aplica
+   quando a atividade não tem acerto próprio; (b) parte do que chamo "variável"
+   o Calcgraf trata como fixo (ex. 1ª puxada/entrada = setup).
+2. **`entradas` da impressão**: Offset tem entradas=2 — confirmar se é
+   nº de puxadas/lados (frente+verso) ou passadas de cor; afeta o custoUnit.
+3. **Arredondamento Delphi** (minutos inteiros? ceil de puxadas?).
+
+### Dados-fonte para a próxima rodada (não reinvestigar)
+- SQL CT do 15182: `SELECT codAtividade,codCentroCusto,entradas,producaoHora,
+  quantAcertos,tempoPorAcerto,tempoPrimeiroAcerto,tiragem FROM CalculoAtividades
+  WHERE Codigo=15182`.
+- Custo-hora: `TabelasCustoDetalhe` via `Itc` (Origem='CENTRO DE CUSTO').
+- Procurar tempo-de-acerto padrão: investigar `CentrosProducao`,
+  `Atividades`, `CentrosProducaoxTiragensProdHora` e tabelas `Def*`/`Par*` de
+  parâmetro de acerto por centro (ainda NÃO localizado).
+- Validar a hipótese em ≥2 cálculos (15168 também, p/ não overfitar no 15182).
+
+### Status — ✅ RESOLVIDO (02/10/2026)
+A divergência era a **Tabela de Custos errada** (usava a Tabela 1 antiga; os
+cálculos de 2026 usam a **Tabela 2**). Com o custo-hora correto + o modelo de
+setup decifrado (impressão = cores×acertoPorCor; acabamento =
+quantAcertos×tempoPorAcerto), o **CustoFixo bate ≤1% em 52/53 cálculos** e o
+CustoUnitário em 0,05%. Congelado em teste:
+`src/modules/orcamento-grafico/custo-transformacao.ts` +
+`calibracao/golden-custo-transformacao.{fixture,test}.ts` (6/6; suíte 71/71).
+Documento definitivo: `docs/calcgraf-custo-transformacao.md`.
+
+Tinta: fórmula de custo confirmada, mas BLOQUEADA pelo rendimento (m²/kg) que
+não existe no backup — ver `docs/calcgraf-custo-transformacao.md` §7.

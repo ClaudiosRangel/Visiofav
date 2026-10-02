@@ -82,15 +82,44 @@ JÁ CONGELADO (bate exato): fórmula de preço (gross-up), PAPEL (peso/custo),
 decomposição CT/MD/SE, custo-base→preço.
 
 FALTA no Nível B (ordem sugerida):
-  1. TINTA isolada: `CalculoTintas` tem `codTinta` + `areaTinta` (cobertura %;
-     ex. 15182: tinta 4=70%, 5=20%, 6=10%). O consumo kg = f(area impressa × %
-     × rendimento). Rendimento vem do cadastro de tinta (Itc/tabela). Buscar o
-     rendimento e validar vs motor `calcularTinta` (rendimentoM2Kg). BAIXO peso
-     (~4% do custo) — o MD agregado JÁ bate; isto é refino.
-  2. MÁQUINA/C.Transf: tempos em `CalculoAtvImpressao`/`CalculoAtvAcabamento`
-     (confirmar unidade de tempo). Calcgraf dá tempo pronto; Vizor recalcula por
-     velocidade/setup — calibrar por centro. É o componente que mais pode divergir
-     ao gerar orçamento NOVO (quando não se tem o tempo pronto do Calcgraf).
+  1. TINTA isolada: ✅ DECIFRADA (02/10/2026). Doc: `docs/calcgraf-consumo-tinta.md`.
+     Implementação `src/modules/orcamento-grafico/consumo-tinta.ts` + teste
+     `calibracao/golden-consumo-tinta.{fixture,test}.ts`. DESTRAVE: o Calcgraf usa
+     a fórmula clássica **SPANKS** da indústria, e o `CoefTinta` por suporte
+     (`Suportes.CoefTinta`/`DefTipoSuportesxCoefTinta`) É o fator "Stock" do SPANKS
+     (KRAFT 2,2=rough cartridge, JORNAL 1,8=newsprint — batem exato). Descoberto
+     via web_search.
+     • VAR (kg) = `CoefSuporte × 0,5(offset) × áreaM² × lados × cobertura ×
+       densidade / 353`.
+     • FIXO (kg) = `partida(0,2kg) × cores × ocorrências` (parâmetro Calcgraf
+       "Partida de consumo de tinta"=200g). FIXO bate EXATO (1,60 kg no 15185).
+     • custo = (FIXO+VAR) × preçoKg. Validado 15185: 626,51 vs 618,48 real = 1,3%
+       (resíduo = arredondamento de folhas; VAR bate 0,0% com const 358/cob 78,9%).
+     • A refinar: densidade por tipo de tinta (hoje 1,0; process=1,3) e a constante
+       exata (353 vs 358) — precisa de +pré-cálculos (só temos o 5355/15185).
+  2. MÁQUINA/C.Transf: ✅ DECIFRADO E VALIDADO (02/10/2026). Doc definitivo:
+     `docs/calcgraf-custo-transformacao.md`. Implementação:
+     `src/modules/orcamento-grafico/custo-transformacao.ts` + testes
+     `calibracao/golden-custo-transformacao.{fixture,test}.ts` (6/6; suíte
+     orcamento-grafico 71/71). DESCOBERTAS-CHAVE:
+     • ERRO DE BASE corrigido: há 2 `TabelasCusto` (validade por período); os
+       cálculos de 2026 usam a **Tabela 2** (recente), não a 1. Custo-hora =
+       `Itc`(Origem='CENTRO DE CUSTO')→`TabelasCustoDetalhe`(CodTabelaCusto=2,
+       Coluna=1,`ValorDireto`). Ex.: Heidelberg CD 245,45→**440**; Roland
+       64,59→**100**. Usar Tab1 deixava o CT ~2,3% fora.
+     • Fórmula: `custo = (tempoFixoH + tempoVarH) × custoHora` (EXATO na memória).
+     • Tempo FIXO (acerto): ACABAMENTO = `quantAcertos×tempoPorAcerto+t1`;
+       IMPRESSÃO offset = `cores × acertoPorCorMin + t1` (acerto/cor por máquina:
+       CC2=25, CC45/4=90, CC1=20, CC46=36 min). Tabela-fonte = `CalculoAtividades`
+       (NÃO AtvImpressao). Validado: **CustoFixo bate ≤1% em 52/53** cálculos
+       (o 1 fora = override manual de quantAcertos, 15196).
+     • Tempo VAR (produção) = `unidadesProcessadas/producaoHora`; CustoUnit =
+       Σ(VAR×ch)/tiragem. Validado no 15185: 0,69532 vs 0,69500 (0,05%).
+     • Fonte da fórmula = memória do pré-cálculo 5355/15185 (ATENÇÃO: o PDF da
+       memória pode estar dessincronizado da tiragem no banco; o resAgr do banco
+       é a fonte confiável para o agregado — CustoFixo não depende de tiragem).
+     • PENDÊNCIA p/ gerar orçamento NOVO: "acerto por cor (min)" é parâmetro da
+       máquina no Delphi (não exportado) — virar campo de cadastro no Vizor.
   3. MAT.ACABAMENTO por unidade (COLAGEM MANUAL 0,3/un) — motor já tem custoMaterialUn.
   4. Harness: `scripts/calibrar-orcamento.ts` que roda N cálculos do banco,
      alimenta o motor com o `aproveitamento` real de CalculoPlanos (NÃO
