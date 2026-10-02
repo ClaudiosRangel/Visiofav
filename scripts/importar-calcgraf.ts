@@ -785,13 +785,18 @@ async function importarVendedores(empresaId: string) {
     if (temDoc) { if (vistosDoc.has(docDigitos)) continue; vistosDoc.add(docDigitos) }
     else { if (vistosNome.has(nomeNorm)) continue; vistosNome.add(nomeNorm) }
 
-    // de-para: por cpf (se válido) OU por nome normalizado
+    // de-para: por CPF (se válido) OU, sem doc, PRIMEIRO pelo cpf placeholder
+    // determinístico (SEM-DOC-<Codigo> — garante idempotência perfeita na 2ª
+    // execução, evitando violar a unique [empresaId, cpf]) e, como fallback,
+    // pelo nome (não duplicar vendedor já cadastrado manualmente com o mesmo nome).
     let existente: Record<string, unknown> | null
     if (temDoc) {
       existente = await comRetry(() => p.vendedor.findFirst({ where: { empresaId, cpf } as never }))
     } else {
-      const todos = await comRetry(() => p.vendedor.findFirst({ where: { empresaId, nome } as never }))
-      existente = todos
+      existente = await comRetry(() => p.vendedor.findFirst({ where: { empresaId, cpf } as never }))
+      if (!existente) {
+        existente = await comRetry(() => p.vendedor.findFirst({ where: { empresaId, nome } as never }))
+      }
     }
 
     const email = emailValido(r.Email)

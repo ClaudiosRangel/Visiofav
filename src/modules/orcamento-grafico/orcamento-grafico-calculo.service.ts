@@ -824,7 +824,9 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
         areaM2: areaImpressaM2,
         lados: 1,
         cobertura: cor.coberturaPercent / 100,
-        densidade: cor.densidade ?? (cor.tipo === 'CMYK' ? 1.3 : 1.0),
+        // Densidade: default 1,0 (valor que calibrou no 15185 — ver
+        // docs/calcgraf-consumo-tinta.md). Override opcional por cor/tinta.
+        densidade: cor.densidade ?? 1.0,
         cores: 1, // partida por cor (1 cor por iteração)
         ocorrencias: 1,
         precoKg: cor.precoKg,
