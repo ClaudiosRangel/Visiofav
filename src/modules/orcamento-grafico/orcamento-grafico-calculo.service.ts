@@ -94,12 +94,7 @@ export interface ParamsOrcamento {
 
 export interface ResultadoOrcamento {
   planificacao: { larguraMm: number; alturaMm: number }
-  encaixe: {
-    aproveitamento: number
-    folhasNecessarias: number
-    percentAproveitamentoFolha: number
-    orientacao: 'NORMAL' | 'ROTACIONADA'
-  }
+  encaixe: ResultadoEncaixe
   papel: { pesoKg: number; custo: number }
   tinta: {
     custoTotal: number
@@ -145,6 +140,16 @@ export interface ResultadoEncaixe {
   folhasNecessarias: number
   percentAproveitamentoFolha: number
   orientacao: 'NORMAL' | 'ROTACIONADA'
+  // Layout do encaixe (para desenho/visualização). Dimensões em mm.
+  layout?: {
+    folhaLarguraMm: number
+    folhaAlturaMm: number
+    pincaMm: number
+    colunas: number
+    linhas: number
+    pecaLarguraMm: number // já com sangria, na orientação escolhida
+    pecaAlturaMm: number
+  }
 }
 
 export interface ResultadoPapel {
@@ -455,6 +460,13 @@ export function calcularEncaixe(params: ParamsEncaixe): ResultadoEncaixe {
     aproveitamento = 1
   }
 
+  // Dimensões da peça (com sangria) e grade na orientação escolhida.
+  const rotacionada = orientacao === 'ROTACIONADA'
+  const pecaLarguraLayout = rotacionada ? pecaAltura : pecaLargura
+  const pecaAlturaLayout = rotacionada ? pecaLargura : pecaAltura
+  const colunas = rotacionada ? colsRotacionada : colsNormal
+  const linhas = rotacionada ? rowsRotacionada : rowsNormal
+
   // % de aproveitamento da folha (área das peças / área total da folha)
   const areaPecas = aproveitamento * pecaLargura * pecaAltura
   const areaFolha = folha.larguraMm * folha.alturaMm
@@ -465,6 +477,15 @@ export function calcularEncaixe(params: ParamsEncaixe): ResultadoEncaixe {
     folhasNecessarias: 0, // será calculado em calcularPapel com base na quantidade
     percentAproveitamentoFolha: Math.round(percentAproveitamentoFolha * 100) / 100,
     orientacao,
+    layout: {
+      folhaLarguraMm: folha.larguraMm,
+      folhaAlturaMm: folha.alturaMm,
+      pincaMm,
+      colunas: Math.max(0, colunas),
+      linhas: Math.max(0, linhas),
+      pecaLarguraMm: Math.round(pecaLarguraLayout * 100) / 100,
+      pecaAlturaMm: Math.round(pecaAlturaLayout * 100) / 100,
+    },
   }
 }
 
