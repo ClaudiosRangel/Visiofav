@@ -10,6 +10,21 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Plano de ação (blocos/prioridade/calibração): #[[file:docs/calcgraf-plano-de-acao.md]]
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 
+## ⚠️ ENCODING dos dados exportados do SQL Server (acentos → `�`) — LIÇÃO (03/10/2026)
+
+O `scripts/_tmp-exportar-calcgraf.mjs` (sqlcmd + FOR JSON PATH) gerou os JSONs de
+`cartoon/export/` com acentos CORROMPIDOS (ex.: `Itc.json` tinha "Couch�", "Al�a",
+"Met�lica" — U+FFFD, byte original PERDIDO). Isso contaminou 42 `PrecoMateriaPrima`
+em produção (nomes exibidos no cadastro de papel com `�`). CORRIGIDO em produção
+cruzando com um re-export CORRETO: `sqlcmd -u` (UTF-16 LE) lido em Node como
+`utf16le` → UTF-8 traz os acentos certos. Match 1:1 por "máscara" (cada char não-ASCII
+do nome correto vira `�` e casa com o valor corrompido no banco) — 42/42 inequívocos,
+0 ambíguos. **Regra daqui pra frente**: ao RE-EXPORTAR qualquer coisa do SQL Server
+para importar no Vizor, usar `sqlcmd -u` + conversão `utf16le`→utf8 (NÃO o modo FOR
+JSON padrão, que estraga acento). O `exportar-calcgraf-cadastros.mjs` já faz isso
+(doc no steering: "sqlcmd `-u` UTF-16 → UTF-8 p/ acentos"); o exportador de JSON
+precisa do mesmo cuidado se for rodado de novo.
+
 ## ✅ FINALIZAÇÃO DO ORÇAMENTO — INTEGRADO AO MOTOR + COMMITADO (02/10/2026)
 
 Spec `.kiro/specs/orcamento-grafico-finalizacao` (COMMITADA/pushed; back+front

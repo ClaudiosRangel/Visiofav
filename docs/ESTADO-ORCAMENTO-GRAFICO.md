@@ -67,12 +67,53 @@ Calcgraf e foram puxados:
 - Os JSONs de export ficam em `cartoon/` (gitignored — dados sensíveis); a lógica
   de enriquecimento está em `scripts/importar-calcgraf.ts` (commitável).
 
+### ✅ 8.4 — Bug da busca de PAPEL na tela corrigido + sessão dos ACABAMENTOS esclarecida (03/10/2026)
+Pontos levantados pelo usuário ao tentar criar o 15.235 na tela:
+- **Papel não achava "Duplex/Triplex 280" (só mostrava "Accurate Freeze")**: BUG REAL
+  no front. `StepPapel.tsx` carregava só os primeiros 50 papéis (de ~1.700) UMA vez e
+  filtrava client-side — os alfabeticamente posteriores (Klabin Triplex 280 etc.) nunca
+  apareciam. CORRIGIDO: busca server-side com `useDebouncedValue` (padrão do StepCliente),
+  manda o termo digitado como `busca` ao backend `/precos-mp` (que já suportava
+  `busca`+`limit`). Confirmado em produção: "Triplex 280" → 4 resultados incl.
+  "Klabin Advanced Triplex 280" (preço 8,3, = o "DUPLEX 280" do golden). NOTA: no
+  Calcgraf o nome é TRIPLEX, não DUPLEX — operador busca por "Triplex 280".
+- **Acabamentos "Nenhum cadastrado" (passo 6)**: NÃO é bug de backend. Confirmado em
+  produção que `GET /acabamentos` retorna 67 quando a Wega está selecionada no token
+  (`POST /empresas/:id/selecionar` com body `{}` → token novo com empresaId Wega). O
+  vazio na tela era SESSÃO (SUPER_ADMIN + sessionStorage por aba): a aba precisa ter a
+  Wega efetivamente selecionada. Backend expõe `naturezaCusto` corretamente no select.
+- Arquivo tocado: `VisioFab.Wms.Front/src/app/(interna)/orcamento-grafico/novo/StepPapel.tsx`.
+  COMMITADO/pushed: front `ac78fde..e3f225d` (1ª tentativa) e `e3f225d..7f7f805` (fix definitivo).
+- **CAUSA RAIZ DEFINITIVA (2ª rodada)**: a 1ª correção manteve o Mantine `Autocomplete`,
+  que SEMPRE refiltra as `data` client-side pelo `value` digitado — mostrava sempre os
+  mesmos "Accurate Freeze" (primeiros em memória). TROCADO por `Select searchable` com
+  `filter={({ options }) => options}` (desliga o filtro client-side) + `searchValue`/
+  `onSearchChange` ligados ao termo que vai ao backend. Agora o dropdown mostra EXATAMENTE
+  o que o backend retornou. `value` = `papelId` (id, não descrição). Preserva seleção ao
+  voltar o passo (injeta a option selecionada se não estiver na lista atual).
+- Onde fica o CADASTRO de papel (resposta ao usuário): Orçamento Gráfico → Cadastros →
+  Preços de Materiais (`cadastros/precos-materiais`, tabela `preco_materia_prima` tipo
+  PAPEL) — essa tela já busca server-side corretamente.
+
+### ✅ 8.5 — Encoding corrompido dos nomes de material corrigido em PRODUÇÃO (03/10/2026)
+Usuário reportou nomes com `�` no cadastro ("Al�a Gorgur�o", "Couch� 115"). Causa: o
+export JSON do SQL Server (`_tmp-exportar-calcgraf.mjs`) estragou acentos → 42
+`PrecoMateriaPrima` gravados corrompidos. CORRIGIDO direto no banco de produção
+cruzando com re-export CORRETO (`sqlcmd -u` UTF-16→UTF-8). 42/42 corrigidos
+(Couchê, Alça, Gorgurão, Metálica, Ilhós, Botão, Pressão, Papelão, Paraná, Água,
+Holográfico, Poliéster…), 0 ambíguos, 0 sem match. Verificado: 0 corrompidos restantes.
+Scripts temporários (`_tmp-*`) removidos. Lição documentada no steering
+`migracao-calcgraf-carton-wega.md`. (Confirmado também que NÃO existe "Duplex" no
+cadastro — só "Triplex"; o papel do golden 15.235 é Triplex 280.)
+
 PENDENTE (próxima sessão):
 - **2.4** PBT opcional (custo fixo não escala / composição exata).
 - **Validação final com o usuário**: criar o orçamento do 15.235 no Vizor
-  produção (tipo cartucho + papel + cores + os acabamentos do cadastro, informando
-  consumos/tempos) e abrir o Relatório (Calcgraf) para conferir lado a lado.
+  produção (tipo cartucho + papel "Triplex 280" + cores + os acabamentos do cadastro,
+  informando consumos/tempos) e abrir o Relatório (Calcgraf) para conferir lado a lado.
   Calibrar na tela os custos/tempos dos 67 acabamentos (semeados com default).
+  Confirmar com o usuário que, após logout/login + reselecionar Wega + hard refresh,
+  os acabamentos aparecem no passo 6.
 
 ### Extensão do motor nesta rodada (importante)
 `ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`
