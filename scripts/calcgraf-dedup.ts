@@ -79,3 +79,111 @@ export function naturezaDefaultAcabamento(nome: string): string {
   if (/faca|matriz/.test(n)) return 'CUSTO_FIXO'
   return 'HORA_MAQUINA'
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE SUPORTES — mapeamento PURO linha-origem (Calcgraf `Suportes`) → SuporteGrafico
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Função PURA/isolada (sem I/O, sem Prisma) para permitir teste de propriedade
+// sem banco (Property 1 e Property 3 da spec orcamento-grafico-suporte-fechamento).
+// A fase `suportes` do importador (`importar-calcgraf.ts`) consome esta função
+// para montar o objeto gravado em `SuporteGrafico` (de-para por código).
+
+/** Objeto de domínio derivado de uma linha `Suportes` do Calcgraf, pronto
+ * para gravar em `SuporteGrafico` (sem `empresaId`, que o importador injeta). */
+export interface SuporteMapeado {
+  codigo: string // `CG-SUP-<Codigo>`
+  descricao: string
+  coefTinta: number
+  gramaturas: string | null // lista livre, ex.: "191,230,280"
+  tipoSuporte: string // CARTAO | KRAFT | OFFSET | COUCHE | PAPELAO
+}
+
+/** Linha de origem da tabela `Suportes` do Calcgraf (campos usados). */
+export interface SuporteOrigemRow {
+  Codigo?: number | string | null
+  Descricao?: string | null
+  CoefTinta?: number | string | null
+  Gramaturas?: number | string | null
+  Formatos?: number | string | null
+}
+
+/** Resultado discriminado do mapeamento: `ok` com o suporte, ou motivo da exclusão. */
+export type ResultadoMapeamentoSuporte =
+  | { ok: true; suporte: SuporteMapeado }
+  | { ok: false; motivo: string }
+
+/** CoefTinta default quando ausente/inválido na origem (fator Stock SPANKS). */
+export const COEF_TINTA_DEFAULT = 1.5
+
+/**
+ * Deriva o `tipoSuporte` por heurística a partir da descrição do suporte.
+ * Ordem das regras importa: couro/papelão → PAPELAO antes de couchê, etc.
+ *   kraft                       → KRAFT
+ *   couch / couchê / couche     → COUCHE
+ *   off-set / offset            → OFFSET
+ *   papelão / papelao / couro   → PAPELAO
+ *   (demais)                    → CARTAO
+ */
+export function derivarTipoSuporte(descricao: string | null | undefined): string {
+  const n = (descricao || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // tira acentos (couchê→couche)
+    .toLowerCase()
+  if (/kraft/.test(n)) return 'KRAFT'
+  if (/couch/.test(n)) return 'COUCHE'
+  if (/off-?set/.test(n)) return 'OFFSET'
+  if (/papelao|couro/.test(n)) return 'PAPELAO'
+  return 'CARTAO'
+}
+
+/**
+ * Converte uma gramatura/lista livre da origem numa string normalizada
+ * ("191,230,280") ou `null` quando ausente/vazia. Preserva o conteúdo
+ * (lista livre) apenas aparando espaços e vírgulas de borda.
+ */
+function normalizarGramaturas(v: number | string | null | undefined): string | null {
+  if (v === null || v === undefined) return null
+  const s = String(v).trim().replace(/^[,;\s]+|[,;\s]+$/g, '')
+  return s.length ? s : null
+}
+
+/**
+ * Mapeia (PURO) uma linha da tabela `Suportes` do Calcgraf para o objeto de
+ * `SuporteGrafico`. Retorna um resultado discriminado:
+ *  - `{ ok: true, suporte }` quando a linha tem Codigo e Descricao válidos;
+ *  - `{ ok: false, motivo }` quando falta Codigo ou Descricao (o chamador
+ *    deve ignorar o registro e logar o motivo — Req 1.6).
+ *
+ * Regras (Req 1.2):
+ *  - `codigo`      = `CG-SUP-<Codigo>`
+ *  - `descricao`   = Descricao (trim)
+ *  - `coefTinta`   = Number(CoefTinta), default 1,5 se ausente/inválido/≤0
+ *  - `gramaturas`  = lista livre em string (pode ser null)
+ *  - `tipoSuporte` = heurística por descrição (ver `derivarTipoSuporte`)
+ */
+export function mapearSuporte(linhaOrigem: SuporteOrigemRow): ResultadoMapeamentoSuporte {
+  const codigoRaw = linhaOrigem?.Codigo
+  // Codigo pode vir number ou string; 0/null/'' são inválidos.
+  const codigoStr =
+    codigoRaw === null || codigoRaw === undefined ? '' : String(codigoRaw).trim()
+  if (!codigoStr) {
+    return { ok: false, motivo: 'registro sem Codigo' }
+  }
+
+  const descricao = (linhaOrigem?.Descricao ?? '').toString().trim()
+  if (!descricao) {
+    return { ok: false, motivo: `registro ${codigoStr} sem Descricao` }
+  }
+
+  const coefNum = Number(linhaOrigem?.CoefTinta)
+  const coefTinta = Number.isFinite(coefNum) && coefNum > 0 ? coefNum : COEF_TINTA_DEFAULT
+
+  const suporte: SuporteMapeado = {
+    codigo: `CG-SUP-${codigoStr}`,
+    descricao,
+    coefTinta,
+    gramaturas: normalizarGramaturas(linhaOrigem?.Gramaturas),
+    tipoSuporte: derivarTipoSuporte(descricao),
+  }
+  return { ok: true, suporte }
+}

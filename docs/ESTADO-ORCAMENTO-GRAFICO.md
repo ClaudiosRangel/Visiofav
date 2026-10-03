@@ -115,6 +115,34 @@ PENDENTE (próxima sessão):
   Confirmar com o usuário que, após logout/login + reselecionar Wega + hard refresh,
   os acabamentos aparecem no passo 6.
 
+### ✅ 9 — Spec orcamento-grafico-suporte-fechamento (paridade Suporte/Fechamento) — IMPLEMENTADA (local, 03/10/2026)
+Após análise das telas reais do Calcgraf (orçamento + pré-cálculo 15.235 + Fechamento),
+foi criada e implementada a spec `.kiro/specs/orcamento-grafico-suporte-fechamento`
+(requirements+design+tasks). CAUSA RAIZ resolvida: o Calcgraf separa SUPORTE (tabela
+`Suportes`, 78 regs, com CoefTinta — Duplex EXISTE aqui, cód 1051) de PREÇO do papel
+(Itc/PrecoMateriaPrima). O Vizor fundia os dois no passo Papel; por isso "Duplex" não
+aparecia e o CoefTinta do suporte não era aplicado. SEM mudança de schema (os 4 models
+já existiam). Implementado (NÃO commitado — aguardando pedido do usuário):
+- **Importador** (`scripts/importar-calcgraf.ts` + `calcgraf-dedup.ts`): função pura
+  `mapearSuporte` (CG-SUP-<Codigo>, coefTinta, gramaturas, tipoSuporte derivado) +
+  fase `suportes` (de-para idempotente, --dry-run, ignora inválidos) + `semearTabelaMargem`
+  (CEV 17,75% = impostos 14,75 [ICMS 3+juros 2,5+PisCofins 9,25] + comissao 3; markup 30;
+  preserva tabela ajustada à mão). Lê `Suportes.json` (PRIMÁRIO — tem CoefTinta real; o
+  Full não tem). Roteado em `--fase suportes` | `--fase seed-margem`.
+- **Backend** (`orcamento-grafico.routes.ts`): GET /precos-mp aceita filtro `suporteId`;
+  bloqueios em /calcular e POST / (`validarPreCondicoesCalculo`): suporte sem preço PAPEL
+  vinculado → 400; sem ParametroPerda → 400 (defesa em profundidade; motor puro intacto).
+- **Frontend** (`novo/StepPapel.tsx`, `page.tsx`, `StepRevisao.tsx`): StepPapel em 2 níveis
+  (Suporte → Preço vinculado por suporteId); suporteId/suporteNome no WizardFormData;
+  bloqueio de avanço (canAdvance exige suporteId+papelId); suporteId enviado em salvar/
+  calcular/simular. Alerta quando suporte sem preço.
+- **Validação**: get_diagnostics limpo nos 6 arquivos; suíte orcamento-grafico **108/108**
+  (não-regressão OK). Tarefas 1–5 (implementação) FEITAS; testes PBT (1.3-1.5, 2.2-2.3,
+  3.2, 4.3, 6.x), golden 15.235 (8.1) e execução em produção (10.1, manual) são OPCIONAIS
+  e ficaram pendentes. Req 6 (comissões por agente/juros) fora do MVP.
+- PENDENTE: rodar fase `suportes`+seed em produção (task 10.1, exige confirmação +
+  DATABASE_URL Neon) e validar o 15.235 na tela com Suporte "Duplex 280".
+
 ### Extensão do motor nesta rodada (importante)
 `ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`
 DIRETOS (opcionais) — reproduzem os hh:mm do pré-cálculo exatamente; sem eles,

@@ -23,7 +23,17 @@ import {
   derivarCpfVendedor,
   camposEnderecoVazios as camposEnderecoVaziosPuro,
   naturezaDefaultAcabamento,
+  mapearSuporte,
+  type SuporteOrigemRow,
+  type SuporteMapeado,
+  type ResultadoMapeamentoSuporte,
 } from './calcgraf-dedup'
+
+// Reexport da função pura de mapeamento de suporte (fase `suportes`, task 1.2).
+// Mantida em calcgraf-dedup.ts (módulo puro) para teste de propriedade sem
+// Prisma; reexportada aqui para uso pelo loop de banco da fase.
+export { mapearSuporte }
+export type { SuporteOrigemRow, SuporteMapeado, ResultadoMapeamentoSuporte }
 
 const prisma = new PrismaClient()
 const EXPORT_DIR = join('cartoon', 'export')
@@ -841,12 +851,209 @@ async function importarVendedores(empresaId: string) {
   console.log(`${dryRun ? '[DRY-RUN] ' : ''}  Credenciais Portal Rep: ${credenciais} ${dryRun ? 'seriam criadas' : 'criadas'}, ${credenciaisPuladas} já existiam.`)
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE SUPORTES — Suportes do Calcgraf → SuporteGrafico (paridade Calcgraf)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Lê cartoon/export/SuportesFull.json (fallback Suportes.json) e grava no
+// cadastro `SuporteGrafico` do Orçamento Gráfico. O mapeamento linha-origem →
+// objeto é feito pela função PURA `mapearSuporte` (./calcgraf-dedup, testada por
+// PBT): código `CG-SUP-<Codigo>`, descrição, coefTinta (fator Stock SPANKS),
+// gramaturas (lista livre) e tipoSuporte derivado da descrição.
+//
+// De-para por `codigo` (@@unique [empresaId, codigo]): existente → atualiza
+// (descricao, coefTinta, gramaturas, tipoSuporte); inexistente → cria com o
+// empresaId resolvido. Idempotente. Linhas sem código/descrição são ignoradas,
+// com o motivo logado, sem interromper (Req 1.6). `--dry-run` só relata.
+//
+// NOTA: o `SuportesFull.json` NÃO traz `CoefTinta` (nesse caso `mapearSuporte`
+// cai no default 1,5); o `Suportes.json` traz o CoefTinta real (ex.: Couchê 1,0,
+// Papelão/Kraft 2,2). A ordem de leitura segue a tarefa (Full primário,
+// Suportes fallback) — se o Full existir, o coef vem do default, ajustável na
+// tela de Suportes depois.
+
+function lerSuportesOrigem(): SuporteOrigemRow[] {
+  // Suportes.json é PRIMÁRIO: é o único que traz o campo `CoefTinta` real
+  // (ex.: Couchê 1,0; Papelão/Kraft 2,2; Duplex 1,5), essencial para o cálculo
+  // de tinta (SPANKS) bater com o Calcgraf. O SuportesFull.json NÃO tem
+  // CoefTinta (cairia no default 1,5), por isso é só fallback.
+  try {
+    return lerJson<SuporteOrigemRow>('Suportes')
+  } catch {
+    console.warn('  ! Suportes.json ausente — usando fallback SuportesFull.json (sem CoefTinta real).')
+    return lerJson<SuporteOrigemRow>('SuportesFull')
+  }
+}
+
+async function importarSuportes(empresaId: string) {
+  const dryRun = temDryRun()
+  if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
+  const rows = lerSuportesOrigem()
+
+  const p = prisma as never as {
+    suporteGrafico: {
+      findFirst: (a: unknown) => Promise<Record<string, unknown> | null>
+      create: (a: unknown) => Promise<unknown>
+      update: (a: unknown) => Promise<unknown>
+    }
+  }
+
+  let criados = 0, atualizados = 0, ignorados = 0
+  const vistos = new Set<string>()
+  for (const row of rows) {
+    const r = mapearSuporte(row)
+    if (!r.ok) {
+      ignorados++
+      console.warn(`  ! suporte ignorado: ${r.motivo}`)
+      continue
+    }
+    const s = r.suporte
+    // dedup dentro do próprio arquivo (não processar o mesmo código 2x)
+    if (vistos.has(s.codigo)) continue
+    vistos.add(s.codigo)
+
+    const existente = await comRetry(() =>
+      p.suporteGrafico.findFirst({ where: { empresaId, codigo: s.codigo } as never }),
+    )
+    if (existente) {
+      if (!dryRun) {
+        await comRetry(() =>
+          p.suporteGrafico.update({
+            where: { id: existente.id as string },
+            data: {
+              descricao: s.descricao,
+              coefTinta: s.coefTinta,
+              gramaturas: s.gramaturas,
+              tipoSuporte: s.tipoSuporte,
+            } as never,
+          }),
+        )
+      }
+      atualizados++
+    } else {
+      if (!dryRun) {
+        await comRetry(() =>
+          p.suporteGrafico.create({
+            data: {
+              empresaId,
+              codigo: s.codigo,
+              descricao: s.descricao,
+              coefTinta: s.coefTinta,
+              gramaturas: s.gramaturas,
+              tipoSuporte: s.tipoSuporte,
+            } as never,
+          }),
+        )
+      }
+      criados++
+    }
+  }
+
+  console.log(
+    `${dryRun ? '[DRY-RUN] ' : ''}SUPORTES: ${criados} ${dryRun ? 'seriam criados' : 'criados'}, ${atualizados} ${dryRun ? 'seriam atualizados' : 'atualizados'}, ${ignorados} ignorados (de ${rows.length} linhas de origem).`,
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEED DA TABELA DE MARGEM (paridade Calcgraf — golden 15.235)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Semeia UMA TabelaMargem para a Carton Wega reproduzindo a composição de CEV
+// do caso golden 15.235 do Calcgraf (ver docs/calcgraf-golden-15235-acabamentos.md).
+//
+// COMPOSIÇÃO DO CEV (17,75% total):
+//   ICMS ............ 3,00%
+//   Juros ........... 2,50%
+//   PIS/COFINS ...... 9,25%
+//   Comissão ........ 3,00%
+//   ──────────────────────
+//   CEV total ...... 17,75%
+//
+// MAPEAMENTO nos campos de TabelaMargem — o motor `formarPrecoVenda` faz o
+// gross-up com um divisor único somando impostos + comissao + despAdm + markup.
+// Logo, basta que a soma (impostos + comissao + despAdm) reproduza o CEV de
+// 17,75%. Mapeamos:
+//   impostos = ICMS 3,00 + juros 2,50 + PIS/COFINS 9,25 = 14,75
+//   comissao = 3,00  (Vendedor 1 — único agente ativo no caso 15.235)
+//   despAdm  = 0,00
+//   ──────────────────────────────────────────────────────────────
+//   CEV (impostos + comissao + despAdm) = 17,75  ✓
+// markup = 30,00 — coerente com a margem de 30,01% do golden (margem bate ≤0,5%).
+// descontoMax default 10 (não participa do gross-up).
+//
+// PRESERVAÇÃO (Req 4.5): se JÁ existe QUALQUER TabelaMargem para o tenant
+// (count > 0), NÃO semeia — no-op (preserva eventual ajuste manual). Idempotente
+// por @@unique([empresaId, nome]). Respeita --dry-run; usa comRetry().
+
+const TABELA_MARGEM_SEED = {
+  nome: 'Padrão Carton Wega (Calcgraf)',
+  markup: 30, // margem de 30,01% do golden
+  impostos: 14.75, // ICMS 3,00 + juros 2,50 + PIS/COFINS 9,25
+  comissao: 3, // Vendedor 1
+  despAdm: 0,
+  descontoMax: 10,
+} as const
+
+async function semearTabelaMargem(empresaId: string) {
+  const dryRun = temDryRun()
+  if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
+
+  const p = prisma as never as {
+    tabelaMargem: {
+      count: (a: unknown) => Promise<number>
+      create: (a: unknown) => Promise<unknown>
+    }
+  }
+
+  // Preservação (Req 4.5): se já existe QUALQUER TabelaMargem no tenant, não
+  // semear — preserva o ajuste manual. Também garante idempotência (Req 4.4):
+  // a 2ª execução vê a tabela criada na 1ª e vira no-op.
+  const existentes = await comRetry(() => p.tabelaMargem.count({ where: { empresaId } as never }))
+  if (existentes > 0) {
+    console.log(
+      `TABELA DE MARGEM: tenant já possui ${existentes} tabela(s) — seed preservou o ajuste manual (no-op).`,
+    )
+    return
+  }
+
+  const cev =
+    TABELA_MARGEM_SEED.impostos + TABELA_MARGEM_SEED.comissao + TABELA_MARGEM_SEED.despAdm
+
+  if (!dryRun) {
+    await comRetry(() =>
+      p.tabelaMargem.create({
+        data: {
+          empresaId,
+          nome: TABELA_MARGEM_SEED.nome,
+          markup: TABELA_MARGEM_SEED.markup,
+          impostos: TABELA_MARGEM_SEED.impostos,
+          comissao: TABELA_MARGEM_SEED.comissao,
+          despAdm: TABELA_MARGEM_SEED.despAdm,
+          descontoMax: TABELA_MARGEM_SEED.descontoMax,
+          status: true,
+        } as never,
+      }),
+    )
+  }
+
+  console.log(
+    `${dryRun ? '[DRY-RUN] ' : ''}TABELA DE MARGEM: ${dryRun ? 'seria criada' : 'criada'} "${TABELA_MARGEM_SEED.nome}" ` +
+      `(markup ${TABELA_MARGEM_SEED.markup}%, impostos ${TABELA_MARGEM_SEED.impostos}% + comissão ${TABELA_MARGEM_SEED.comissao}% + despAdm ${TABELA_MARGEM_SEED.despAdm}% = CEV ${cev}%).`,
+  )
+}
+
 async function main() {
   const empresaId = await garantirEmpresa()
   const fase = arg('fase') ?? 'precos'
   console.log(`Fase: ${fase}`)
   if (fase === 'precos' || fase === 'tudo') {
     await importarPrecos(empresaId)
+  }
+  if (fase === 'suportes' || fase === 'tudo') {
+    await importarSuportes(empresaId)
+  }
+  if (fase === 'suportes' || fase === 'seed-margem' || fase === 'tudo') {
+    await semearTabelaMargem(empresaId)
   }
   if (fase === 'mapa' || fase === 'tudo') {
     await importarMapa(empresaId)

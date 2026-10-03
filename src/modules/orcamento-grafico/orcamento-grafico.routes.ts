@@ -42,6 +42,50 @@ async function resolverCoefTintaSuporte(
   return coef > 0 ? coef : undefined
 }
 
+/**
+ * Valida as pré-condições de cálculo de orçamento ANTES de calcular (defesa em
+ * profundidade — o bloqueio principal vive no wizard do frontend). Filtra sempre
+ * por empresaId (multi-tenant). Retorna uma mensagem de bloqueio quando alguma
+ * pré-condição falha, ou undefined quando o cálculo pode prosseguir.
+ *
+ * Req 2.4: quando o papel selecionado aponta para um Suporte
+ * (PrecoMateriaPrima.suporteId → SuporteGrafico), esse Suporte precisa ter ao
+ * menos um PrecoMateriaPrima de tipo PAPEL (ativo) vinculado. Se o papel não tem
+ * suporteId, NÃO bloqueia (comportamento atual preservado).
+ *
+ * Req 5.4: precisa existir ao menos um ParametroPerda cadastrado para a empresa.
+ */
+async function validarPreCondicoesCalculo(
+  empresaId: string,
+  papelId: string | undefined | null,
+): Promise<string | undefined> {
+  // Req 2.4 — Suporte sem preço PAPEL vinculado.
+  if (papelId) {
+    const papel = await prisma.precoMateriaPrima.findFirst({
+      where: { id: papelId, empresaId },
+      select: { suporteId: true },
+    })
+    const suporteId = (papel as { suporteId?: string | null } | null)?.suporteId
+    if (suporteId) {
+      const precoPapelDoSuporte = await prisma.precoMateriaPrima.findFirst({
+        where: { empresaId, suporteId, tipo: 'PAPEL', status: true },
+        select: { id: true },
+      })
+      if (!precoPapelDoSuporte) {
+        return 'Suporte sem preço de material vinculado — vincule um preço ao suporte antes de calcular'
+      }
+    }
+  }
+
+  // Req 5.4 — Nenhum ParametroPerda cadastrado para a empresa.
+  const totalPerdas = await prisma.parametroPerda.count({ where: { empresaId } })
+  if (totalPerdas === 0) {
+    return 'Nenhum Parâmetro de Perda cadastrado — cadastre a perda do processo antes de calcular'
+  }
+
+  return undefined
+}
+
 /** Lê o parâmetro de partida de consumo de tinta (kg) da empresa (default 0,2). */
 async function resolverPartidaConsumoTinta(empresaId: string): Promise<number> {
   const p = await prisma.parametro.findFirst({
@@ -339,6 +383,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const query = z.object({
       tipo: z.string().optional(),
       busca: z.string().optional(),
+      suporteId: z.string().uuid().optional(),
       status: z.enum(['true', 'false']).optional(),
       page: z.coerce.number().int().positive().optional().default(1),
       limit: z.coerce.number().int().positive().max(100).optional().default(50),
@@ -346,6 +391,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const where: any = { empresaId: user.empresaId }
     if (query.tipo) where.tipo = query.tipo
+    if (query.suporteId) where.suporteId = query.suporteId
     if (query.status !== undefined) {
       where.status = query.status === 'true'
     } else {
@@ -976,6 +1022,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const precoKgPapel = body.precoKgPapel || body.precoKg
     if (!precoKgPapel) return reply.status(400).send({ message: 'Preço do papel (precoKgPapel ou precoKg) é obrigatório' })
 
+    // Pré-condições de cálculo (Req 2.4 e 5.4) — defesa em profundidade na borda.
+    const bloqueio = await validarPreCondicoesCalculo(user.empresaId, body.papelId)
+    if (bloqueio) return reply.status(400).send({ message: bloqueio })
+
     // Buscar tipo de embalagem
     const tipo = await prisma.tipoEmbalagem.findFirst({ where: { id: body.tipoEmbalagemId, empresaId: user.empresaId } })
     if (!tipo) return reply.status(404).send({ message: 'Tipo de embalagem não encontrado' })
@@ -1166,6 +1216,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       where: { id: body.tipoEmbalagemId, empresaId: user.empresaId },
     })
     if (!tipo) return reply.status(404).send({ message: 'Tipo de embalagem não encontrado' })
+
+    // Pré-condições de cálculo (Req 2.4 e 5.4) — defesa em profundidade na borda.
+    const bloqueioCalculo = await validarPreCondicoesCalculo(user.empresaId, body.papelId)
+    if (bloqueioCalculo) return reply.status(400).send({ message: bloqueioCalculo })
 
     // Se resultadoCalculo não foi fornecido, calcular agora
     let resultadoCalculo = body.resultadoCalculo
