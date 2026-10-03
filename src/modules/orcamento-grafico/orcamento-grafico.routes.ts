@@ -254,7 +254,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }),
       prisma.tipoEmbalagem.count({ where }),
     ])
-    return { data, total, page: query.page, limit: query.limit }
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   /**
@@ -411,7 +411,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }),
       prisma.precoMateriaPrima.count({ where }),
     ])
-    return { data, total, page: query.page, limit: query.limit }
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   /**
@@ -536,7 +536,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }),
       prisma.suporteGrafico.count({ where }),
     ])
-    return { data, total, page: query.page, limit: query.limit }
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   app.post('/suportes', async (request, reply) => {
@@ -666,7 +666,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }),
       prisma.acabamentoGrafico.count({ where }),
     ])
-    return { data, total, page: query.page, limit: query.limit }
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   app.post('/acabamentos', async (request, reply) => {
@@ -736,12 +736,22 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
    */
   app.get('/parametros-perda', async (request) => {
     const user = request.user as { id: string; empresaId: string }
-    const data = await prisma.parametroPerda.findMany({
-      where: { empresaId: user.empresaId },
-      select: parametroPerdaSelect,
-      orderBy: { criadoEm: 'asc' },
-    })
-    return { data }
+    const query = z.object({
+      page: z.coerce.number().int().positive().optional().default(1),
+      limit: z.coerce.number().int().positive().max(100).optional().default(50),
+    }).parse(request.query)
+    const where = { empresaId: user.empresaId }
+    const [data, total] = await Promise.all([
+      prisma.parametroPerda.findMany({
+        where,
+        select: parametroPerdaSelect,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: { criadoEm: 'asc' },
+      }),
+      prisma.parametroPerda.count({ where }),
+    ])
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   /**
@@ -888,7 +898,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }),
       prisma.tabelaMargem.count({ where }),
     ])
-    return { data, total, page: query.page, limit: query.limit }
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   /**
@@ -1383,7 +1393,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const query = z.object({
       page: z.coerce.number().int().positive().optional().default(1),
-      limit: z.coerce.number().int().positive().max(100).optional().default(20),
+      limit: z.coerce.number().int().positive().max(100).optional().default(50),
       status: z.enum(['RASCUNHO', 'ENVIADO', 'APROVADO', 'RECUSADO', 'VENCIDO']).optional(),
       clienteId: z.string().uuid().optional(),
       clienteNome: z.string().optional(),
@@ -1437,7 +1447,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       prisma.orcamentoGrafico.count({ where }),
     ])
 
-    return { data, total, page: query.page, limit: query.limit }
+    return { data, total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
