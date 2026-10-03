@@ -150,6 +150,27 @@ já existiam). Implementado (NÃO commitado — aguardando pedido do usuário):
   na tela (Suporte "Duplex" → preço Triplex/Duplex 280 R$ 8,30 → cores → acabamentos →
   qtd 20.000) conferindo MD 6.598,70 / C.Prod 10.413,50 / preço 30,01% 19.960,00.
 
+### ✅ 10 — Vínculo preço→suporte + paginação 50 + fix acabamentos no wizard (03/10/2026)
+- **Vínculo preço→suporte**: fase `vincular-suportes` no importador (de-para
+  `Itc.CodOrigem`→`Suportes.Codigo`); rodada em produção, **1.710 papéis
+  vinculados** ao SuporteGrafico. Destravou o passo Papel (Suporte→Preço).
+  Commit back `89c9c0c55`.
+- **Paginação 50/página em TODO o módulo**: backend retorna `totalPages` em
+  todas as 6 listagens (`/precos-mp`, `/suportes`, `/acabamentos`,
+  `/tipos-embalagem`, `/tabelas-margem`, `/`), limit default 50, e
+  `/parametros-perda` passou a ser paginado. Frontend: `Pagination` do Mantine
+  (50/pág) em orçamentos + 6 telas de cadastro. Commits back `9a7d50209`,
+  front `feb52ab`.
+- **FIX acabamentos "Nenhum cadastrado"**: CAUSA RAIZ encontrada — o
+  `StepAcabamentos.tsx` pedia `/acabamentos?limit=200`, mas o Zod do backend
+  limita `limit` a `max(100)` → 400 silencioso (`.catch` zerava a lista). Os 67
+  acabamentos ESTAVAM lá; era o limit 200 que estourava. Corrigido para 100
+  (cobre os 67 numa página). Commit front `f8ccaa0`. **Lição**: nunca pedir
+  `limit > 100` nas rotas do módulo (o Zod rejeita).
+- Documento de levantamento do fluxo multi-item do Calcgraf criado:
+  `docs/calcgraf-fluxo-manutencao-orcamento.md` (backlog: multi-item,
+  restrições por acabamento, catálogo de facas GCad, UI de itens diversos).
+
 ### Extensão do motor nesta rodada (importante)
 `ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`
 DIRETOS (opcionais) — reproduzem os hh:mm do pré-cálculo exatamente; sem eles,
