@@ -27,7 +27,7 @@ são opcionais (property-based).
   - _Requirements: 1.3, 1.4, 3.1, 3.5_
 - [x] 2.4 Teste de integração do motor (`integracao-motor-calibrado.test.ts`, 4 casos) validando roteamento CALIBRADO/LEGADO + equivalência com os módulos puros; suíte `orcamento-grafico` 81/81 verde.
   - _Requirements: 3.3_
-- [ ]* 2.5 Property-based (fast-check) para Property 1 (equivalência legado quando campos nulos)
+- [x]* 2.5 Property-based (fast-check) para Property 1 (equivalência legado quando campos nulos) — `calibracao/pbt-equivalencia-legado.test.ts` (sempre LEGADO + campos neutros ≡ ausentes), 600 runs.
   - _Requirements: 3.3_
 
 - [x] 3. Onda 2b — Rotas backend (cadastros + unificação)
@@ -53,9 +53,9 @@ são opcionais (property-based).
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 - [x] 5.2 Criar `RepresentanteCredencial` para e-mails válidos (senhaTemporaria, bcrypt aleatório), respeitando uniques; pular existentes
   - _Requirements: 4.8_
-- [ ]* 5.3 Property-based (fast-check) para Property 4 e 5 (idempotência e não-sobrescrita)
+- [x]* 5.3 Property-based (fast-check) para Property 4 e 5 (idempotência e não-sobrescrita) — funções puras extraídas para `scripts/calcgraf-dedup.ts` + `scripts/calcgraf-dedup.test.ts` (8 propriedades, 500 runs cada). Script `importar-calcgraf.ts` passou a importar o módulo puro (sem duplicação).
   - _Requirements: 4.3, 4.6_
-- [ ] 5.4 Rodar `--dry-run` + `--apply` (depende de Postgres local / produção — pendente de ambiente)
+- [~] 5.4 Dry-run SEM banco validado com dados reais (`Vendedores.json`): 39 linhas, 7 c/ doc, 32 placeholder `SEM-DOC`, 11 c/ e-mail, 39 chaves distintas (zero colisão → idempotência OK). `--dry-run`+`--apply` CONTRA O BANCO seguem pendentes (Postgres local parado; produção exige confirmação).
   - _Requirements: 4.7, 5.2, 5.3_
 
 - [x] 6. Validação final e documentação

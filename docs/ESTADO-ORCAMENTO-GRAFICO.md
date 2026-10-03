@@ -63,14 +63,25 @@ corrente desta rodada — back `main` (schema+migrate+rotas+spec+docs) e front
 
 ## 3. PENDÊNCIAS conhecidas (ordem de prioridade)
 
-1. **Importar vendedores** — fase pronta, NÃO executada (precisa ambiente).
-   Rodar `npx tsx scripts/importar-calcgraf.ts --fase vendedores --dry-run`,
-   conferir contadores, depois sem `--dry-run`. 39 registros; muitos sem CPF
-   (placeholder `SEM-DOC-<Codigo>`); e-mail válido → RepresentanteCredencial.
-2. **PBT opcionais** (tasks 2.5 e 5.3 da spec finalizacao + 2.2 e 3.3 da
-   planificacao-visual) — fast-check/testes de UI opcionais.
+1. **Importar vendedores (apply)** — a fase está pronta e a LÓGICA foi validada
+   com os dados reais via dry-run SEM banco: 39 registros (7 c/ doc, 32
+   placeholder `SEM-DOC-<Codigo>`, 11 c/ e-mail → RepresentanteCredencial, 39
+   chaves cpf distintas = idempotência OK). FALTA apenas rodar contra o banco:
+   `npx tsx scripts/importar-calcgraf.ts --fase vendedores --dry-run` e depois
+   sem `--dry-run` (Postgres local parado agora; produção exige confirmação).
+2. **PBT opcionais** — 2.5 e 5.3 da finalizacao FEITAS (ver abaixo). Restam só
+   2.2 e 3.3 da planificacao-visual (testes de UI puramente visuais).
 3. **Refino tinta/CT** — densidade/constante da tinta e CT dos acabamentos (hoje
    só impressão calibrada no CT; acabamentos seguem legado) — exige +pré-cálculos.
+
+### PBTs adicionadas (02/10/2026)
+- `src/modules/orcamento-grafico/calibracao/pbt-equivalencia-legado.test.ts`
+  (Property 1): sem campos calibrados → sempre LEGADO; campos neutros (0) ≡
+  ausentes (mesmo resultado). 600 runs.
+- `scripts/calcgraf-dedup.ts` (funções puras extraídas do importador) +
+  `scripts/calcgraf-dedup.test.ts` (Properties 4 e 5): de-para determinístico,
+  normalização idempotente, não-sobrescrita de endereço. 8 propriedades.
+- Suíte orcamento-grafico + PBTs: **91/91 verde** (eram 81 + 10 novas).
 
 ## 4. Armadilhas/decisões a lembrar
 

@@ -16,6 +16,13 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
+import {
+  soDigitos,
+  normalizarNome,
+  emailValido,
+  derivarCpfVendedor,
+  camposEnderecoVazios as camposEnderecoVaziosPuro,
+} from './calcgraf-dedup'
 
 const prisma = new PrismaClient()
 const EXPORT_DIR = join('cartoon', 'export')
@@ -581,22 +588,9 @@ function enderecoDe(r: NomeRow) {
 // Dado o registro existente e o endereço novo, retorna só os campos de endereço
 // que estão VAZIOS no existente e têm valor no novo (enriquecimento sem
 // sobrescrever). Retorna {} se não há nada a preencher.
-function camposEnderecoVazios(
-  existente: Record<string, unknown>,
-  novo: ReturnType<typeof enderecoDe>,
-): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const k of ['logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'cep'] as const) {
-    const atual = existente[k]
-    const nv = novo[k]
-    if ((atual === null || atual === undefined || atual === '') && nv) out[k] = nv
-  }
-  return out
-}
-
-function soDigitos(v: string | null | undefined): string {
-  return (v || '').replace(/\D/g, '')
-}
+// `camposEnderecoVazios`, `soDigitos`, `normalizarNome`, `emailValido` e
+// `derivarCpfVendedor` vêm do módulo puro ./calcgraf-dedup (testado por PBT).
+const camposEnderecoVazios = camposEnderecoVaziosPuro
 
 function temDryRun(): boolean {
   return process.argv.includes('--dry-run')
@@ -741,17 +735,6 @@ interface VendedorRow {
   Ativo: string | null
 }
 
-function normalizarNome(v: string | null | undefined): string {
-  return (v || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // tira acentos
-    .toUpperCase().trim().replace(/\s+/g, ' ')
-}
-
-function emailValido(v: string | null | undefined): string | null {
-  const e = (v || '').trim().toLowerCase()
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null
-}
-
 async function importarVendedores(empresaId: string) {
   const dryRun = temDryRun()
   if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
@@ -779,7 +762,7 @@ async function importarVendedores(empresaId: string) {
     const nomeNorm = normalizarNome(nome)
     const docDigitos = soDigitos(r.CNPJCPF)
     const temDoc = docDigitos.length === 11 || docDigitos.length === 14
-    const cpf = temDoc ? r.CNPJCPF!.trim().slice(0, 14) : `SEM-DOC-${r.Codigo}`.slice(0, 14)
+    const cpf = derivarCpfVendedor(r.CNPJCPF, r.Codigo)
 
     // dedup dentro do próprio arquivo
     if (temDoc) { if (vistosDoc.has(docDigitos)) continue; vistosDoc.add(docDigitos) }
