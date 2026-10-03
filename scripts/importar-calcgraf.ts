@@ -894,6 +894,34 @@ function normNomeCentro(s: string): string {
   return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+/**
+ * "Token principal" do nome de um acabamento: o trecho antes do primeiro
+ * parêntese/barra e sem sufixos de variação (números finais, "localizado").
+ * Ex.: "Bobst E\CV\Relevo" → "bobste"; "HotStamping 2" → "hotstamping";
+ * "Verniz Local" → "vernizlocal". Usado como fallback do custo-hora quando o
+ * nome composto não casa exatamente com um descritivo de centro de custo.
+ */
+function tokenPrincipal(s: string): string {
+  let t = (s || '').split(/[\\(/]/)[0] // antes de ( \ /
+  t = t.replace(/\s+\d+\s*$/, '') // remove sufixo numérico (" 2", " 3")
+  return normNomeCentro(t)
+}
+
+/**
+ * Resolve o custo-hora de um acabamento: match EXATO por nome normalizado;
+ * senão, fallback por token principal (um descritivo de centro cujo token
+ * principal seja igual). Retorna undefined se nada casar.
+ */
+function resolverCustoHora(
+  nome: string,
+  custoPorNome: Map<string, number>,
+  custoPorToken: Map<string, number>,
+): number | undefined {
+  const exato = custoPorNome.get(normNomeCentro(nome))
+  if (exato != null) return exato
+  return custoPorToken.get(tokenPrincipal(nome))
+}
+
 async function importarAcabamentos(empresaId: string) {
   const dryRun = temDryRun()
   if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
@@ -910,9 +938,16 @@ async function importarAcabamentos(empresaId: string) {
     const pr = lerJson<CalcAtivParams>('CalculoAtividadesParams')
     paramsPorAtiv = new Map(pr.map((x) => [Number(x.codAtividade), x]))
   } catch { console.warn('  ! CalculoAtividadesParams.json ausente — tempos/produção ficam no default.') }
+  let custoPorToken = new Map<string, number>()
   try {
     const ch = lerJson<CentroCustoHora>('CentroCustoHora')
     custoPorNome = new Map(ch.map((x) => [normNomeCentro(x.descritivo), Number(x.custoHora)]))
+    // Índice por token principal (fallback). Em colisão, mantém o 1º (centros
+    // "base" como "Bobst E (Corte e Vi" vêm antes das variações no export).
+    for (const x of ch) {
+      const tk = tokenPrincipal(x.descritivo)
+      if (tk && !custoPorToken.has(tk)) custoPorToken.set(tk, Number(x.custoHora))
+    }
   } catch { console.warn('  ! CentroCustoHora.json ausente — custo-hora fica no default.') }
 
   const p = prisma as never as {
@@ -938,7 +973,7 @@ async function importarAcabamentos(empresaId: string) {
 
     // Parâmetros REAIS (só fazem sentido para HORA_MAQUINA — máquinas/centros).
     const prm = paramsPorAtiv.get(r.Codigo)
-    const custoHora = custoPorNome.get(normNomeCentro(nome))
+    const custoHora = resolverCustoHora(nome, custoPorNome, custoPorToken)
     const ehMaquina = naturezaCusto === 'HORA_MAQUINA'
     const producaoHora = ehMaquina && prm && prm.producaoHora > 1 ? prm.producaoHora : null
     const quantAcertos = ehMaquina && prm ? prm.quantAcertos : null
