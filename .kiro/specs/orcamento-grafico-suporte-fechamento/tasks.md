@@ -44,21 +44,21 @@ steering).
     - Gravar sempre com `empresaId` da Carton Wega resolvido por `garantirEmpresa()`
     - _Requirements: 1.1, 1.3, 1.4, 1.5, 1.6, 1.7_
 
-  - [ ]* 1.3 Property test — mapeamento de campos do importador de suportes
+  - [x]* 1.3 Property test — mapeamento de campos do importador de suportes
     - **Property 1: Mapeamento de campos do importador de suportes**
     - Para qualquer linha de origem válida, a conversão preserva código
       (`CG-SUP-<Codigo>`), descrição, `coefTinta` e gramaturas sem perda/alteração
     - fast-check, ≥ 100 iterações, tag "Feature: orcamento-grafico-suporte-fechamento, Property 1"
     - **Validates: Requirements 1.2**
 
-  - [ ]* 1.4 Property test — invalidação de suportes sem código/descrição
+  - [x]* 1.4 Property test — invalidação de suportes sem código/descrição
     - **Property 3: Suportes inválidos são ignorados sem interromper**
     - Para qualquer mistura de linhas válidas e inválidas, ignora exatamente as
       inválidas (com motivo) e importa todas as válidas
     - fast-check, ≥ 100 iterações, tag "Feature: orcamento-grafico-suporte-fechamento, Property 3"
     - **Validates: Requirements 1.6**
 
-  - [ ]* 1.5 Property test — idempotência e de-para do importador de suportes
+  - [x]* 1.5 Property test — idempotência e de-para do importador de suportes
     - **Property 2: Idempotência e de-para do importador de suportes**
     - Simular um "store" de códigos em memória (sem banco real); aplicar 1x e 2x
       produz o mesmo estado final; nº de `SuporteGrafico` = nº de códigos distintos
@@ -79,14 +79,14 @@ steering).
       usar `comRetry()`
     - _Requirements: 4.2, 4.4, 4.5_
 
-  - [ ]* 2.2 Property test — idempotência e preservação do seed da Tabela de Margem
+  - [x]* 2.2 Property test — idempotência e preservação do seed da Tabela de Margem
     - **Property 8: Idempotência e preservação do seed da Tabela de Margem**
     - Se já existe ≥1 tabela → no-op; se não existe → cria exatamente uma; reexecutar
       não duplica (mesmo estado final independente do nº de execuções)
     - fast-check, ≥ 100 iterações, tag "Feature: orcamento-grafico-suporte-fechamento, Property 8"
     - **Validates: Requirements 4.4, 4.5**
 
-  - [ ]* 2.3 Teste de exemplo — composição do CEV 17,75% no seed
+  - [x]* 2.3 Teste de exemplo — composição do CEV 17,75% no seed
     - Verificar que a `TabelaMargem` semeada reproduz CEV 17,75% (ICMS 3 + juros 2,5
       + PIS/COFINS 9,25 + comissão 3) no gross-up
     - _Requirements: 4.2_
@@ -99,7 +99,7 @@ steering).
       manter filtro por `empresaId` (isolamento multi-tenant)
     - _Requirements: 2.3_
 
-  - [ ]* 3.2 Property test — filtro de preços por suporte
+  - [x]* 3.2 Property test — filtro de preços por suporte
     - **Property 5: Filtro de preços por suporte**
     - Para qualquer conjunto de `PrecoMateriaPrima` e qualquer `suporteId`, a consulta
       filtrada retorna só registros com aquele `suporteId` (e, com `tipo=PAPEL`, só
@@ -125,7 +125,7 @@ steering).
       direto): o bloqueio vive na rota/borda, não no núcleo de cálculo
     - _Requirements: 5.4_
 
-  - [ ]* 4.3 Property test — bloqueio por pré-condição ausente
+  - [x]* 4.3 Property test — bloqueio por pré-condição ausente
     - **Property 6: Bloqueio por pré-condição ausente**
     - (a) suporte sem preço PAPEL → rejeita; (b) sem `ParametroPerda` aplicável →
       rejeita; ambas satisfeitas → prossegue — testar sobre as funções de validação,
@@ -164,7 +164,7 @@ steering).
     - _Requirements: 2.5, 2.6_
 
 - [ ] 6. BACKEND — Testes de propriedade do núcleo (seleção de tinta, perdas, isolamento)
-  - [ ]* 6.1 Property test — seleção do modelo de tinta (SPANKS vs legado)
+  - [x]* 6.1 Property test — seleção do modelo de tinta (SPANKS vs legado)
     - **Property 4: Seleção do modelo de tinta (SPANKS vs legado)**
     - `coefTintaSuporte > 0` → modelo SPANKS (`modeloCalculo.tinta === 'CALIBRADO'`);
       ausente/≤0 → modelo legado `rendimentoM2Kg` com resultado idêntico ao
@@ -173,7 +173,7 @@ steering).
     - fast-check, ≥ 100 iterações, tag "Feature: orcamento-grafico-suporte-fechamento, Property 4"
     - **Validates: Requirements 2.2, 3.1, 3.2**
 
-  - [ ]* 6.2 Property test — aplicação monotônica das perdas
+  - [x]* 6.2 Property test — aplicação monotônica das perdas
     - **Property 7: Aplicação monotônica das perdas**
     - Aumentar perda fixa (folhas) ou variável (%) nunca diminui as folhas brutas;
       folhas brutas = `ceil((folhasNecessárias + perdaFixa) × (1 + perdaVariável/100))`
@@ -181,7 +181,7 @@ steering).
     - fast-check, ≥ 100 iterações, tag "Feature: orcamento-grafico-suporte-fechamento, Property 7"
     - **Validates: Requirements 5.3**
 
-  - [ ]* 6.3 Property test — isolamento multi-tenant dos cadastros
+  - [x]* 6.3 Property test — isolamento multi-tenant dos cadastros
     - **Property 9: Isolamento multi-tenant dos cadastros**
     - Para empresas A e B com `SuporteGrafico`/`TabelaMargem`/`ParametroPerda`,
       consultas/gravações filtradas por `empresaId` de A só retornam/afetam A —
@@ -194,15 +194,15 @@ steering).
     `get_diagnostics` nos arquivos tocados. Ensure all tests pass, ask the user if
     questions arise.
 
-- [ ] 8. BACKEND — Golden 15.235 (estender `calibracao/`)
-  - [ ] 8.1 Estender os testes golden com o caso Suporte "Duplex 280"
+- [x] 8. BACKEND — Golden 15.235 (estender `calibracao/`)
+  - [x] 8.1 Estender os testes golden com o caso Suporte "Duplex 280"
     - Em `src/modules/orcamento-grafico/calibracao/`, reusar/estender os golden
       existentes para o caso 15.235 com Suporte "Duplex 280" a R$ 8,30/kg:
       Material Direto 6.598,70; Custo de Produção 10.413,50; preço à margem de
       30,01% = 19.960,00 para 20.000 un — todos com desvio ≤ 0,5%
     - _Requirements: 3.3, 3.4, 4.3_
 
-  - [ ]* 8.2 Garantir não-regressão da suíte `orcamento-grafico`
+  - [x]* 8.2 Garantir não-regressão da suíte `orcamento-grafico`
     - Rodar a suíte completa `orcamento-grafico` e confirmar que permanece verde
       após as mudanças desta spec
     - _Requirements: 7.1_
