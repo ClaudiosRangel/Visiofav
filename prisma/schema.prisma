@@ -3674,6 +3674,10 @@ model TipoEmbalagem {
   parametros            Json // [{nome, label, unidade, obrigatorio, default}]
   // Processos obrigatórios (ex: ["IMPRESSAO", "CORTE_VINCO", "COLAGEM"])
   processosObrigatorios String[] @map("processos_obrigatorios")
+  // Planificação visual (esquemática) — gabarito do contorno da caixa aberta
+  // desenhado no encaixe. CARTUCHO | CAIXA_FUNDO_AUTO | CARTELA | RETANGULO | null.
+  // Ver .kiro/specs/orcamento-grafico-planificacao-visual.
+  gabaritoPlanificacao  String?  @map("gabarito_planificacao") @db.VarChar(30)
   // Defaults (mm)
   abaColagemMm          Decimal  @default(15) @map("aba_colagem_mm") @db.Decimal(6, 2)
   sangriaMm             Decimal  @default(3) @map("sangria_mm") @db.Decimal(6, 2)

@@ -4698,6 +4698,10 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "densidade_tinta" DECIMAL(6,3)`)
 
   console.log('✅ Orçamento Gráfico Finalização: centro_producao (acerto/setup), suporte_grafico, preco_materia_prima (suporte/gramatura/densidade)')
+
+  // Orçamento Gráfico — Planificação Visual: gabarito do contorno da caixa.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tipo_embalagem" ADD COLUMN IF NOT EXISTS "gabarito_planificacao" VARCHAR(30)`)
+  console.log('✅ Orçamento Gráfico Planificação Visual: tipo_embalagem.gabarito_planificacao')
 }
 
 main()

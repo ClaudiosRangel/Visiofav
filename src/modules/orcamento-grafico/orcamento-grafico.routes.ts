@@ -71,6 +71,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     abaColagemMm: true,
     sangriaMm: true,
     pincaMm: true,
+    gabaritoPlanificacao: true,
     imagemUrl: true,
     status: true,
     criadoEm: true,
@@ -133,6 +134,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       abaColagemMm: z.number().min(0).default(15),
       sangriaMm: z.number().min(0).default(3),
       pincaMm: z.number().min(0).default(10),
+      gabaritoPlanificacao: z.string().max(30).optional().nullable(),
       imagemUrl: z.string().optional(),
     }).parse(request.body)
 
@@ -165,6 +167,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       abaColagemMm: z.number().min(0),
       sangriaMm: z.number().min(0),
       pincaMm: z.number().min(0),
+      gabaritoPlanificacao: z.string().max(30).optional().nullable(),
       imagemUrl: z.string().optional().nullable(),
       status: z.boolean().optional(),
     }).parse(request.body)
