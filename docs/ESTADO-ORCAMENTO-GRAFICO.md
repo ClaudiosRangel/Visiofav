@@ -39,13 +39,40 @@ FEITO TAMBÉM (backend completo — rodada 2):
   de-para determinístico). Função pura em `calcgraf-dedup.ts`. Suíte 122 verde
   (corrigido: "coladeira" não vira MATERIAL_KG).
 
-FALTA (próxima sessão — ver tasks.md da spec):
-- **7.1** tela `cadastros/acabamentos/page.tsx` (CRUD) + item no ModuleSidebar.
-- **7.2** `novo/StepAcabamentos.tsx` lê do cadastro `/acabamentos` (remover lista fixa de 5).
-- **7.3** botão "Relatório / PDF" no StepRevisao + detalhe + visualização das seções.
-- **2.4** PBT opcional. **8.x** validação final (front), docs, COMMIT (back:
-  schema+migrate+motor+rotas+PDF+importador+testes juntos; front separado),
-  deploy, importar acabamentos em produção + validar relatório do 15.235.
+FEITO — Frontend (rodada 3) + COMMIT/PUSH:
+- **7.1** tela `cadastros/acabamentos/page.tsx` (CRUD) + item "Acabamentos" no ModuleSidebar.
+- **7.2** `StepAcabamentos.tsx` lê do cadastro `/acabamentos` (acabamentosRicos no
+  WizardFormData; StepRevisao + salvar enviam ao backend; POST / resolve e persiste
+  no resultadoCalculo).
+- **7.3** botão "Relatório (Calcgraf)" no detalhe do orçamento → abre o PDF.
+- COMMITADO: back `8edc07fdb..413f3b47e`, front `f9d029e..ac78fde` (deploy automático).
+
+### ✅ 8.3 — Acabamentos importados em PRODUÇÃO com CUSTOS/TEMPOS REAIS (03/10/2026)
+Deploy aplicado (tabela `acabamento_grafico` criada). Importados **67 acabamentos**
+na empresa Wega `75848e24-...` (idempotente). CORRIGIDO o ponto levantado pelo
+usuário: os custos/tempos NÃO precisam de default heurístico — EXISTEM no banco
+Calcgraf e foram puxados:
+- **Tempos de acerto + produção/hora**: tabela `CalculoAtividades` do SQL Server
+  local (84k linhas, 53 atividades) → moda por atividade → `cartoon/export/
+  CalculoAtividadesParams.json`.
+- **Custo-hora por centro**: `Itc` (Origem='CENTRO DE CUSTO') + `TabelasCustoDetalhe`
+  (Tabela de Custos **2**, coluna 1) → `cartoon/export/CentroCustoHora.json`.
+- O importador (fase `acabamentos`) cruza por `codAtividade` e por nome e grava
+  `producaoHora/quantAcertos/tempoPorAcertoMin/tempoPrimeiroAcertoMin/custoHora/
+  unidadeBase`. Resultado em produção: 34 com tempos/produção reais, 26 com
+  custo-hora real. Validado: Cortadeira 113,21/15min · Bobst E 300/150min ·
+  Guilhotina 77,69 · AFT70 320/90min · Destacar 50 — TODOS batem o golden 15.235.
+- Não sobrescreve calibração manual (só preenche campos nulos no update).
+- Materiais (kg/un) e alguns centros sem match de nome ficam para ajuste na tela.
+- Os JSONs de export ficam em `cartoon/` (gitignored — dados sensíveis); a lógica
+  de enriquecimento está em `scripts/importar-calcgraf.ts` (commitável).
+
+PENDENTE (próxima sessão):
+- **2.4** PBT opcional (custo fixo não escala / composição exata).
+- **Validação final com o usuário**: criar o orçamento do 15.235 no Vizor
+  produção (tipo cartucho + papel + cores + os acabamentos do cadastro, informando
+  consumos/tempos) e abrir o Relatório (Calcgraf) para conferir lado a lado.
+  Calibrar na tela os custos/tempos dos 67 acabamentos (semeados com default).
 
 ### Extensão do motor nesta rodada (importante)
 `ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`

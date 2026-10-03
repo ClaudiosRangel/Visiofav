@@ -886,12 +886,34 @@ interface AtividadeRow {
   PlanoProduto: string // PLANO | PRODUTO
 }
 
+interface CalcAtivParams { codAtividade: string; producaoHora: number; quantAcertos: number; tempoPorAcerto: number; tempoPrimeiroAcerto: number }
+interface CentroCustoHora { descritivo: string; custoHora: number }
+
+/** Normaliza nome de centro/atividade para o de-para de custo-hora por nome. */
+function normNomeCentro(s: string): string {
+  return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
 async function importarAcabamentos(empresaId: string) {
   const dryRun = temDryRun()
   if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
   const rows = lerJson<AtividadeRow>('Atividades').filter(
     (r) => (r.Ativo || '').toUpperCase() === 'ATIVO' || (r.Ativo || '').toUpperCase() === 'FIXO',
   )
+
+  // Parâmetros REAIS do Calcgraf (moda por atividade) + custo-hora por centro.
+  // Exportados de CalculoAtividades e Itc/TabelasCustoDetalhe (ver
+  // scripts/_tmp-export-calcativ.mjs). Se ausentes, cai no default heurístico.
+  let paramsPorAtiv = new Map<number, CalcAtivParams>()
+  let custoPorNome = new Map<string, number>()
+  try {
+    const pr = lerJson<CalcAtivParams>('CalculoAtividadesParams')
+    paramsPorAtiv = new Map(pr.map((x) => [Number(x.codAtividade), x]))
+  } catch { console.warn('  ! CalculoAtividadesParams.json ausente — tempos/produção ficam no default.') }
+  try {
+    const ch = lerJson<CentroCustoHora>('CentroCustoHora')
+    custoPorNome = new Map(ch.map((x) => [normNomeCentro(x.descritivo), Number(x.custoHora)]))
+  } catch { console.warn('  ! CentroCustoHora.json ausente — custo-hora fica no default.') }
 
   const p = prisma as never as {
     acabamentoGrafico: {
@@ -901,7 +923,7 @@ async function importarAcabamentos(empresaId: string) {
     }
   }
 
-  let criados = 0, atualizados = 0
+  let criados = 0, atualizados = 0, comParams = 0, comCusto = 0
   const vistos = new Set<string>()
   for (const r of rows) {
     const nome = (r.Nome || '').trim().replace(/\s+/g, ' ').slice(0, 200)
@@ -914,27 +936,53 @@ async function importarAcabamentos(empresaId: string) {
     const planoProduto = (r.PlanoProduto || '').toUpperCase() === 'PRODUTO' ? 'PRODUTO' : 'PLANO'
     const naturezaCusto = tipoAtividade === 'IMPRESSAO' ? 'HORA_MAQUINA' : naturezaDefaultAcabamento(nome)
 
+    // Parâmetros REAIS (só fazem sentido para HORA_MAQUINA — máquinas/centros).
+    const prm = paramsPorAtiv.get(r.Codigo)
+    const custoHora = custoPorNome.get(normNomeCentro(nome))
+    const ehMaquina = naturezaCusto === 'HORA_MAQUINA'
+    const producaoHora = ehMaquina && prm && prm.producaoHora > 1 ? prm.producaoHora : null
+    const quantAcertos = ehMaquina && prm ? prm.quantAcertos : null
+    const tempoPorAcertoMin = ehMaquina && prm ? prm.tempoPorAcerto : null
+    const tempoPrimeiroAcertoMin = ehMaquina && prm ? prm.tempoPrimeiroAcerto : null
+    const custoHoraVal = ehMaquina && custoHora && custoHora > 0 ? custoHora : null
+    // Plano por PRODUTO processa a tiragem; senão, folhas impressas.
+    const unidadeBase = ehMaquina ? (planoProduto === 'PRODUTO' ? 'PRODUTO' : 'FOLHA') : null
+    if (prm && ehMaquina) comParams++
+    if (custoHoraVal) comCusto++
+
     const existente = await comRetry(() => p.acabamentoGrafico.findFirst({ where: { empresaId, codigo } as never }))
     if (existente) {
-      // Atualiza SÓ metadados (não sobrescreve centro/custos ajustados à mão).
+      // Atualiza metadados SEMPRE; custos/tempos SÓ quando o registro ainda
+      // está "cru" (sem valor), para não sobrescrever calibração manual.
+      const dataUpd: Record<string, unknown> = { nome, tipoAtividade, planoProduto, status: true }
+      const vazio = (k: string) => existente[k] == null
+      if (ehMaquina) {
+        if (vazio('custo_hora') && custoHoraVal != null) dataUpd.custoHora = custoHoraVal
+        if (vazio('producao_hora') && producaoHora != null) dataUpd.producaoHora = producaoHora
+        if (vazio('quant_acertos') && quantAcertos != null) dataUpd.quantAcertos = quantAcertos
+        if (vazio('tempo_por_acerto_min') && tempoPorAcertoMin != null) dataUpd.tempoPorAcertoMin = tempoPorAcertoMin
+        if (vazio('tempo_primeiro_acerto_min') && tempoPrimeiroAcertoMin != null) dataUpd.tempoPrimeiroAcertoMin = tempoPrimeiroAcertoMin
+        if (vazio('unidade_base') && unidadeBase != null) dataUpd.unidadeBase = unidadeBase
+      }
       if (!dryRun) {
-        await comRetry(() => p.acabamentoGrafico.update({
-          where: { id: existente.id as string },
-          data: { nome, tipoAtividade, planoProduto, status: true } as never,
-        }))
+        await comRetry(() => p.acabamentoGrafico.update({ where: { id: existente.id as string }, data: dataUpd as never }))
       }
       atualizados++
     } else {
       if (!dryRun) {
         await comRetry(() => p.acabamentoGrafico.create({
-          data: { empresaId, codigo, nome, tipoAtividade, planoProduto, naturezaCusto, status: true } as never,
+          data: {
+            empresaId, codigo, nome, tipoAtividade, planoProduto, naturezaCusto, status: true,
+            custoHora: custoHoraVal, producaoHora, quantAcertos, tempoPorAcertoMin, tempoPrimeiroAcertoMin, unidadeBase,
+          } as never,
         }))
       }
       criados++
     }
   }
   console.log(`${dryRun ? '[DRY-RUN] ' : ''}ACABAMENTOS: ${criados} ${dryRun ? 'seriam criados' : 'criados'}, ${atualizados} atualizados (de ${rows.length} ativos/fixos).`)
-  console.log('  ⚠ naturezaCusto/custos são DEFAULT heurístico — calibrar na tela de Acabamentos.')
+  console.log(`  ${comParams} com tempos/produção reais (CalculoAtividades); ${comCusto} com custo-hora real (Tabela de Custos 2).`)
+  console.log('  naturezaCusto é default heurístico (ajustável na tela). Materiais (kg/un) continuam sem preço — informar na tela/orçamento.')
 }
 
 // Só executa a importação quando rodado como script (não quando IMPORTADO por
