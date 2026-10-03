@@ -87,7 +87,17 @@ function origemParaTipo(origem: string): string {
   }
 }
 
-interface ItcRow { Codigo: number; Origem: string; Descritivo: string; Unidade: string; Ativo: string }
+interface ItcRow {
+  Codigo: number
+  Origem: string
+  Descritivo: string
+  Unidade: string
+  Ativo: string
+  // Para Origem=SUPORTE: CodOrigem = código do suporte na tabela `Suportes`
+  // (de-para preço→suporte). Gramatura do papel quando aplicável.
+  CodOrigem?: number
+  Gramatura?: number
+}
 interface TcdRow { CodTabelaCusto: number; CodItc: number; Coluna: number; ValorTotal: number }
 
 /**
@@ -1042,6 +1052,80 @@ async function semearTabelaMargem(empresaId: string) {
   )
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE VINCULAR-SUPORTES — liga PrecoMateriaPrima (PAPEL) → SuporteGrafico
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// No Calcgraf, cada papel (Itc com Origem=SUPORTE) tem `CodOrigem` = código do
+// suporte na tabela `Suportes`. Os suportes foram importados como
+// `CG-SUP-<Codigo>` e os preços como PrecoMateriaPrima com descricao =
+// Itc.Descritivo (trim/slice 200). Esta fase resolve o de-para e grava
+// `suporteId` (e `gramatura` quando ausente) em cada PrecoMateriaPrima de PAPEL.
+//
+// Idempotente, por empresa, SÓ preenche quando `suporteId` está NULL (não
+// sobrescreve vínculo manual). `--dry-run` só relata.
+async function vincularPrecosSuportes(empresaId: string) {
+  const dryRun = temDryRun()
+  if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
+
+  const itcs = lerJson<ItcRow>('Itc')
+  // Mapa descricao(normalizada) → CodOrigem(suporte) + Gramatura, só p/ SUPORTE.
+  const porDescricao = new Map<string, { codSuporte: number; gramatura?: number }>()
+  for (const itc of itcs) {
+    if ((itc.Origem || '').toUpperCase().trim() !== 'SUPORTE') continue
+    if (itc.CodOrigem == null) continue
+    const desc = (itc.Descritivo || '').trim().slice(0, 200)
+    if (!desc) continue
+    if (!porDescricao.has(desc)) {
+      porDescricao.set(desc, {
+        codSuporte: Number(itc.CodOrigem),
+        gramatura: itc.Gramatura != null ? Number(itc.Gramatura) : undefined,
+      })
+    }
+  }
+
+  // id dos SuporteGrafico por código (CG-SUP-<codSuporte>).
+  const suportes = await comRetry(() =>
+    (prisma as never as { suporteGrafico: { findMany: (a: unknown) => Promise<Array<{ id: string; codigo: string }>> } })
+      .suporteGrafico.findMany({ where: { empresaId } as never, select: { id: true, codigo: true } as never }),
+  )
+  const suporteIdPorCodigo = new Map(suportes.map((s) => [s.codigo, s.id]))
+
+  // Papéis sem suporte ainda vinculado.
+  const papeis = await comRetry(() =>
+    (prisma as never as { precoMateriaPrima: { findMany: (a: unknown) => Promise<Array<{ id: string; descricao: string; suporteId: string | null; gramatura: unknown }>> } })
+      .precoMateriaPrima.findMany({
+        where: { empresaId, tipo: 'PAPEL' } as never,
+        select: { id: true, descricao: true, suporteId: true, gramatura: true } as never,
+      }),
+  )
+
+  let vinculados = 0, semMatch = 0, jaTinha = 0
+  for (const p of papeis) {
+    if (p.suporteId) { jaTinha++; continue }
+    const info = porDescricao.get((p.descricao || '').trim().slice(0, 200))
+    if (!info) { semMatch++; continue }
+    const suporteId = suporteIdPorCodigo.get(`CG-SUP-${info.codSuporte}`)
+    if (!suporteId) { semMatch++; continue }
+    if (!dryRun) {
+      const data: Record<string, unknown> = { suporteId }
+      // preenche gramatura só quando ausente no preço
+      if ((p.gramatura == null || Number(p.gramatura) === 0) && info.gramatura && info.gramatura > 0) {
+        data.gramatura = info.gramatura
+      }
+      await comRetry(() =>
+        (prisma as never as { precoMateriaPrima: { update: (a: unknown) => Promise<unknown> } })
+          .precoMateriaPrima.update({ where: { id: p.id }, data: data as never }),
+      )
+    }
+    vinculados++
+  }
+
+  console.log(
+    `${dryRun ? '[DRY-RUN] ' : ''}VÍNCULO PREÇO→SUPORTE: ${vinculados} ${dryRun ? 'seriam vinculados' : 'vinculados'}, ${jaTinha} já tinham suporte, ${semMatch} sem match (de ${papeis.length} papéis).`,
+  )
+}
+
 async function main() {
   const empresaId = await garantirEmpresa()
   const fase = arg('fase') ?? 'precos'
@@ -1051,6 +1135,9 @@ async function main() {
   }
   if (fase === 'suportes' || fase === 'tudo') {
     await importarSuportes(empresaId)
+  }
+  if (fase === 'vincular-suportes' || fase === 'suportes' || fase === 'tudo') {
+    await vincularPrecosSuportes(empresaId)
   }
   if (fase === 'suportes' || fase === 'seed-margem' || fase === 'tudo') {
     await semearTabelaMargem(empresaId)

@@ -212,8 +212,8 @@ steering).
     golden 15.235 e não-regressão) e `get_diagnostics`. Ensure all tests pass, ask
     the user if questions arise.
 
-- [ ]* 10. EXECUÇÃO/VALIDAÇÃO EM PRODUÇÃO (manual — exige confirmação do usuário)
-  - [ ]* 10.1 Rodar a fase `suportes` + seed de margem na Wega e validar
+- [x]* 10. EXECUÇÃO/VALIDAÇÃO EM PRODUÇÃO (manual — exige confirmação do usuário)
+  - [x]* 10.1 Rodar a fase `suportes` + seed de margem na Wega e validar
     - **Tarefa MANUAL de alto risco — requer confirmação explícita do usuário e a
       `DATABASE_URL` de produção (Neon), guardada FORA do git (via env, nunca
       hardcode/commit).**

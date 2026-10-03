@@ -140,8 +140,15 @@ já existiam). Implementado (NÃO commitado — aguardando pedido do usuário):
   (não-regressão OK). Tarefas 1–5 (implementação) FEITAS; testes PBT (1.3-1.5, 2.2-2.3,
   3.2, 4.3, 6.x), golden 15.235 (8.1) e execução em produção (10.1, manual) são OPCIONAIS
   e ficaram pendentes. Req 6 (comissões por agente/juros) fora do MVP.
-- PENDENTE: rodar fase `suportes`+seed em produção (task 10.1, exige confirmação +
-  DATABASE_URL Neon) e validar o 15.235 na tela com Suporte "Duplex 280".
+- ✅ COMMITADO: back `e7b9d4d24..693a8d9ee`, front `7f7f805..950bfb6` (deploy automático).
+- ✅ EXECUTADO EM PRODUÇÃO (task 10.1, 03/10/2026): `--fase suportes --empresa 75848e24-...`
+  criou **78 SuporteGrafico** (CoefTinta reais: Duplex 1,5 / Couchê 1,0 / Kraft Senges 2,2 /
+  Triplex 1,5) + **TabelaMargem "Padrão Carton Wega (Calcgraf)"** (markup 30 + CEV 17,75% =
+  impostos 14,75 + comissão 3). Idempotência confirmada (2ª exec: 0 criados/78 atualizados;
+  margem no-op/preservada). Encoding de 3 suportes corrigido no banco (Couchê, Papelão Couro/
+  Paraná). "Duplex" (CG-SUP-1051) agora aparece na tela. PENDENTE: usuário validar o 15.235
+  na tela (Suporte "Duplex" → preço Triplex/Duplex 280 R$ 8,30 → cores → acabamentos →
+  qtd 20.000) conferindo MD 6.598,70 / C.Prod 10.413,50 / preço 30,01% 19.960,00.
 
 ### Extensão do motor nesta rodada (importante)
 `ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`
