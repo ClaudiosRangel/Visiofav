@@ -783,18 +783,13 @@ async function importarVendedores(empresaId: string) {
     }
 
     const email = emailValido(r.Email)
-    const telefone = (r.Fone || r.Celular || '').trim().slice(0, 20) || null
 
     let vendedorId: string
     if (existente) {
+      // O model Vendedor só tem nome/cpf/comissao/status — não há campo de
+      // contato para enriquecer. Já existe → mantém intacto (não sobrescreve).
       vendedorId = existente.id as string
-      // enriquece só o que estiver vazio (nunca sobrescreve)
-      const faltantes: Record<string, unknown> = {}
-      if (!existente.telefone && telefone) faltantes.telefone = telefone
-      if (Object.keys(faltantes).length > 0) {
-        if (!dryRun) await comRetry(() => p.vendedor.update({ where: { id: vendedorId }, data: faltantes as never }))
-        enriquecidos++
-      } else intactos++
+      intactos++
     } else {
       if (!dryRun) {
         const criado = await comRetry(() => p.vendedor.create({

@@ -63,16 +63,21 @@ corrente desta rodada — back `main` (schema+migrate+rotas+spec+docs) e front
 
 ## 3. PENDÊNCIAS conhecidas (ordem de prioridade)
 
-1. **Importar vendedores (apply)** — a fase está pronta e a LÓGICA foi validada
-   com os dados reais via dry-run SEM banco: 39 registros (7 c/ doc, 32
-   placeholder `SEM-DOC-<Codigo>`, 11 c/ e-mail → RepresentanteCredencial, 39
-   chaves cpf distintas = idempotência OK). FALTA apenas rodar contra o banco:
-   `npx tsx scripts/importar-calcgraf.ts --fase vendedores --dry-run` e depois
-   sem `--dry-run` (Postgres local parado agora; produção exige confirmação).
-2. **PBT opcionais** — 2.5 e 5.3 da finalizacao FEITAS (ver abaixo). Restam só
+1. **PBT opcionais** — 2.5 e 5.3 da finalizacao FEITAS (ver abaixo). Restam só
    2.2 e 3.3 da planificacao-visual (testes de UI puramente visuais).
-3. **Refino tinta/CT** — densidade/constante da tinta e CT dos acabamentos (hoje
+2. **Refino tinta/CT** — densidade/constante da tinta e CT dos acabamentos (hoje
    só impressão calibrada no CT; acabamentos seguem legado) — exige +pré-cálculos.
+3. **Validar orçamento em produção** — próximo passo combinado com o usuário:
+   pegar um orçamento real do Calcgraf como base e gerar idêntico no Vizor em
+   produção (empresa Wega `75848e24-...`), comparando componente a componente.
+
+### ✅ Vendedores importados em PRODUÇÃO (02/10/2026)
+`scripts/importar-calcgraf.ts --fase vendedores --empresa 75848e24-...`:
+39 vendedores + 11 RepresentanteCredencial criados; 2ª execução idempotente
+(0 criados, 39 intactos). Estado: 40 vendedores (39 import + 1 pré-existente),
+32 placeholder `SEM-DOC`, 12 credenciais. Bug corrigido: enriquecimento tentava
+gravar `telefone` (campo que o model Vendedor não tem) — removido (vendedor
+existente agora só conta como `intacto`).
 
 ### PBTs adicionadas (02/10/2026)
 - `src/modules/orcamento-grafico/calibracao/pbt-equivalencia-legado.test.ts`

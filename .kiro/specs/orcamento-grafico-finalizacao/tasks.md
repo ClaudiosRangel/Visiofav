@@ -55,7 +55,7 @@ são opcionais (property-based).
   - _Requirements: 4.8_
 - [x]* 5.3 Property-based (fast-check) para Property 4 e 5 (idempotência e não-sobrescrita) — funções puras extraídas para `scripts/calcgraf-dedup.ts` + `scripts/calcgraf-dedup.test.ts` (8 propriedades, 500 runs cada). Script `importar-calcgraf.ts` passou a importar o módulo puro (sem duplicação).
   - _Requirements: 4.3, 4.6_
-- [~] 5.4 Dry-run SEM banco validado com dados reais (`Vendedores.json`): 39 linhas, 7 c/ doc, 32 placeholder `SEM-DOC`, 11 c/ e-mail, 39 chaves distintas (zero colisão → idempotência OK). `--dry-run`+`--apply` CONTRA O BANCO seguem pendentes (Postgres local parado; produção exige confirmação).
+- [x] 5.4 EXECUTADO EM PRODUÇÃO (Neon, empresa Wega `75848e24-...`): dry-run (39 criados/11 credenciais) → apply (39 vendedores + 11 RepresentanteCredencial criados) → 2ª execução idempotente (0 criados, 39 intactos, 11 credenciais já existiam). Estado final: 40 vendedores (39 import + 1 pré-existente, sem duplicar), 32 placeholder SEM-DOC, 12 credenciais. Corrigido bug: enriquecimento tentava gravar `telefone` (campo inexistente no model Vendedor) — removido.
   - _Requirements: 4.7, 5.2, 5.3_
 
 - [x] 6. Validação final e documentação
