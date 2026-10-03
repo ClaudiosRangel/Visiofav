@@ -3028,9 +3028,50 @@ model CentroProducao {
   etapasOp        EtapaOrdemProducao[]
   apontamentos    ApontamentoProducao[]
   sessoesTerminal SessaoTerminal[]
+  acabamentosGraficos AcabamentoGrafico[]
 
   @@unique([empresaId, codigo])
   @@map("centro_producao")
+}
+
+/// Cadastro de Acabamentos do Orçamento Gráfico (paridade Calcgraf). Substitui
+/// a lista fixa de 5 acabamentos hardcoded no wizard. Multi-tenant (filtrar
+/// sempre por empresaId). Enums gravados como VARCHAR no banco (sem CREATE TYPE
+/// — mantém migrate-prod idempotente, padrão do projeto).
+model AcabamentoGrafico {
+  id        String @id @default(uuid())
+  empresaId String @map("empresa_id")
+  codigo    String @db.VarChar(40) // ex.: CG-ACAB-8
+  nome      String @db.VarChar(200)
+  /// IMPRESSAO | ACABAMENTO
+  tipoAtividade String @default("ACABAMENTO") @map("tipo_atividade") @db.VarChar(20)
+  /// PLANO | PRODUTO
+  planoProduto String @default("PLANO") @map("plano_produto") @db.VarChar(10)
+  /// HORA_MAQUINA | MATERIAL_KG | MATERIAL_UN | CUSTO_FIXO
+  naturezaCusto String @default("HORA_MAQUINA") @map("natureza_custo") @db.VarChar(20)
+
+  // Vínculo p/ hora-máquina (CT). Opcional (materiais/fixos não têm centro).
+  centroProducaoId String? @map("centro_producao_id")
+
+  // Parâmetros de custo (todos opcionais — calibrados na tela):
+  precoUnitario          Decimal? @map("preco_unitario") @db.Decimal(14, 4) // kg/un
+  custoHora              Decimal? @map("custo_hora") @db.Decimal(14, 4)
+  producaoHora           Decimal? @map("producao_hora") @db.Decimal(14, 2)
+  quantAcertos           Int?     @map("quant_acertos")
+  tempoPorAcertoMin      Decimal? @map("tempo_por_acerto_min") @db.Decimal(10, 2)
+  tempoPrimeiroAcertoMin Decimal? @map("tempo_primeiro_acerto_min") @db.Decimal(10, 2)
+  /// FOLHA (processa folhasBrutas) | PRODUTO (processa a tiragem).
+  unidadeBase String? @map("unidade_base") @db.VarChar(10)
+
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  centroProducao CentroProducao? @relation(fields: [centroProducaoId], references: [id])
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId, status])
+  @@map("acabamento_grafico")
 }
 
 /// Cadastro de Tipo de Processo produtivo (ex: Cortadeira, Impressão,

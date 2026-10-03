@@ -4702,6 +4702,37 @@ async function seedMateriaisFromOPs() {
   // Orçamento Gráfico — Planificação Visual: gabarito do contorno da caixa.
   await prisma.$executeRawUnsafe(`ALTER TABLE "tipo_embalagem" ADD COLUMN IF NOT EXISTS "gabarito_planificacao" VARCHAR(30)`)
   console.log('✅ Orçamento Gráfico Planificação Visual: tipo_embalagem.gabarito_planificacao')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Orçamento Gráfico — Acabamentos (paridade relatório Calcgraf): cadastro
+  // multi-tenant de acabamentos (substitui a lista fixa de 5 do wizard).
+  // Enums gravados como VARCHAR (sem CREATE TYPE — idempotente, padrão do
+  // projeto). Ver .kiro/specs/orcamento-grafico-acabamentos.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "acabamento_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo" VARCHAR(40) NOT NULL,
+    "nome" VARCHAR(200) NOT NULL,
+    "tipo_atividade" VARCHAR(20) NOT NULL DEFAULT 'ACABAMENTO',
+    "plano_produto" VARCHAR(10) NOT NULL DEFAULT 'PLANO',
+    "natureza_custo" VARCHAR(20) NOT NULL DEFAULT 'HORA_MAQUINA',
+    "centro_producao_id" TEXT,
+    "preco_unitario" DECIMAL(14,4),
+    "custo_hora" DECIMAL(14,4),
+    "producao_hora" DECIMAL(14,2),
+    "quant_acertos" INTEGER,
+    "tempo_por_acerto_min" DECIMAL(10,2),
+    "tempo_primeiro_acerto_min" DECIMAL(10,2),
+    "unidade_base" VARCHAR(10),
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "acabamento_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "acabamento_grafico_empresa_id_codigo_key" ON "acabamento_grafico"("empresa_id","codigo")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acabamento_grafico_empresa_status" ON "acabamento_grafico"("empresa_id","status")`)
+  console.log('✅ Orçamento Gráfico Acabamentos: acabamento_grafico criado (unique empresa+codigo, index empresa+status)')
 }
 
 main()

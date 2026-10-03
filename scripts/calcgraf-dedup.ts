@@ -60,3 +60,22 @@ export function camposEnderecoVazios(
   }
   return out
 }
+
+/**
+ * Natureza de custo default de um acabamento, por nome (fase `acabamentos` do
+ * importador). PURA/determinística. Valores de custo/tempo são calibrados na
+ * tela depois (o Calcgraf não exporta tempos por atividade).
+ *   caixa                   → MATERIAL_UN
+ *   verniz | cola | laminaç → MATERIAL_KG
+ *   faca | matriz           → CUSTO_FIXO
+ *   demais                  → HORA_MAQUINA
+ */
+export function naturezaDefaultAcabamento(nome: string): string {
+  const n = (nome || '').toLowerCase()
+  if (/caixa/.test(n)) return 'MATERIAL_UN'
+  // "cola" como material (cola branca) — mas NÃO "coladeira" (máquina de colar).
+  if (/coladeira|colad/.test(n)) return 'HORA_MAQUINA'
+  if (/verniz|cola|lamina/.test(n)) return 'MATERIAL_KG'
+  if (/faca|matriz/.test(n)) return 'CUSTO_FIXO'
+  return 'HORA_MAQUINA'
+}

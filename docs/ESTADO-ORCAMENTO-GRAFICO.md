@@ -1,8 +1,60 @@
 # ESTADO CONSOLIDADO — Orçamento Gráfico (Carton Wega)
 
 > Documento-mestre de continuidade. Atualizar ao fim de cada rodada. Serve para
-> QUALQUER sessão retomar sem perder contexto. Última atualização: 02/10/2026
-> (planificação visual concluída).
+> QUALQUER sessão retomar sem perder contexto. Última atualização: 03/10/2026
+> (módulo de ACABAMENTOS — motor + golden 15.235 batendo, em andamento).
+
+## 0. EM ANDAMENTO — Módulo de Acabamentos (spec orcamento-grafico-acabamentos)
+
+Objetivo: Vizor emitir relatório IGUAL ao Calcgraf e bater valores. Golden alvo:
+`docs/calcgraf-golden-15235-acabamentos.md` (pré-cálculo 15.235).
+
+FEITO (NÃO commitado ainda — tudo local):
+- **Motor** (`orcamento-grafico-calculo.service.ts`): tipos ricos de acabamento
+  (`ItemAcabamentoRico`: HORA_MAQUINA | MATERIAL_KG | MATERIAL_UN | CUSTO_FIXO),
+  bloco MAT.ACABAMENTO somado ao MD, cadeia de centros no CT. Estendido com
+  `tempoFixoHoras`/`tempoVarHoras` DIRETOS no HORA_MAQUINA (paridade hh:mm do
+  pré-cálculo — modo direto; sem eles, modo derivado via calcularCustoTransformacao).
+  Aditivo: sem itens ricos, resultado idêntico ao congelado (testado).
+- **Golden 15.235** passa ≤0,5%: `calibracao/golden-acabamentos-15235.{fixture,test}.ts`.
+  MD 6598,79 / CT 3813,40 / CProd 10412,19 / Total 10425,73; margens 14.440/16.760/
+  19.957; cada centro e material exatos. TINTA do caso modelada como itens diretos
+  (itensDiversos) — consumo fino de tinta já calibrado no 15185. Suíte 108/108.
+- **Schema**: model `AcabamentoGrafico` (VARCHAR p/ enums) + migrate-prod idempotente
+  + relation em CentroProducao + `prisma generate` OK.
+- **Rotas**: CRUD `GET/POST/PUT/DELETE /orcamento-grafico/acabamentos` (multi-tenant).
+
+FEITO TAMBÉM (backend completo — rodada 2):
+- **4.2** `/calcular` e `/simular-tiragens` aceitam `acabamentosRicos[]` e resolvem o
+  cadastro por `acabamentoId` (`montarAcabamentosRicos` em orcamento-grafico.routes.ts;
+  overrides do orçamento têm precedência sobre o cadastro).
+- **4.3** `GET /:id/relatorio` → `orcamento-grafico-relatorio.service.ts`
+  (`montarRelatorio`: seções cabeçalho/suporte/matriz/tinta/matAcabamento/impressão/
+  acabamento/custoProducao/cev/margens).
+- **5.1** `GET /:id/relatorio.pdf` → `orcamento-grafico-relatorio-pdf.service.ts`
+  (pdfkit, layout do pré-cálculo).
+- **6.1** fase `acabamentos` em `importar-calcgraf.ts` (lê Atividades.json ATIVO/FIXO,
+  de-para CG-ACAB-<Codigo>, idempotente, --dry-run; guarda no main() p/ import seguro).
+- **6.2** `scripts/calcgraf-acabamentos.test.ts` (naturezaDefaultAcabamento +
+  de-para determinístico). Função pura em `calcgraf-dedup.ts`. Suíte 122 verde
+  (corrigido: "coladeira" não vira MATERIAL_KG).
+
+FALTA (próxima sessão — ver tasks.md da spec):
+- **7.1** tela `cadastros/acabamentos/page.tsx` (CRUD) + item no ModuleSidebar.
+- **7.2** `novo/StepAcabamentos.tsx` lê do cadastro `/acabamentos` (remover lista fixa de 5).
+- **7.3** botão "Relatório / PDF" no StepRevisao + detalhe + visualização das seções.
+- **2.4** PBT opcional. **8.x** validação final (front), docs, COMMIT (back:
+  schema+migrate+motor+rotas+PDF+importador+testes juntos; front separado),
+  deploy, importar acabamentos em produção + validar relatório do 15.235.
+
+### Extensão do motor nesta rodada (importante)
+`ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`
+DIRETOS (opcionais) — reproduzem os hh:mm do pré-cálculo exatamente; sem eles,
+cálculo derivado (producaoHora/acertos) continua. `producaoHora`/`unidadeBase`
+viraram opcionais. Aditivo, não-regressão mantida.
+
+---
+
 
 ## 1. Visão geral do que foi construído (em ordem)
 

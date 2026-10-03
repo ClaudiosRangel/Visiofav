@@ -7,6 +7,64 @@ import { calcularCustoTransformacao, type AtividadeCT } from './custo-transforma
 // INTERFACES
 // ============================================================================
 
+// ── Acabamentos: tipos do contrato (paridade Calcgraf — spec acabamentos) ──
+//
+// O campo `ParamsOrcamento.acabamentos` aceita DOIS formatos no mesmo array:
+//   (a) LEGADO — item sem `naturezaCusto` (caminho de cálculo atual).
+//   (b) RICO   — item com discriminante `naturezaCusto`, com campos próprios
+//                por natureza (hora-máquina/material kg/material un/custo fixo).
+//
+// NOTA (TASK 1.1): este arquivo define apenas o CONTRATO/tipos. A LÓGICA de
+// cálculo dos itens ricos é das tasks 1.2/1.3 — por ora, itens ricos são
+// IGNORADOS no cálculo (apenas os itens legados seguem o fluxo atual).
+
+/** Natureza de custo de um item de acabamento rico. */
+export type AcabNaturezaCusto = 'HORA_MAQUINA' | 'MATERIAL_KG' | 'MATERIAL_UN' | 'CUSTO_FIXO'
+
+/** Item de acabamento LEGADO (compatibilidade — caminho de cálculo atual). */
+export interface ItemAcabamentoLegado {
+  tipo: string
+  custoHora: number
+  velocidade: number
+  setupMinutos: number
+  custoMaterialM2?: number
+  custoMaterialUn?: number
+}
+
+/** Item de acabamento RICO — discriminado por `naturezaCusto`. */
+export type ItemAcabamentoRico =
+  | {
+      naturezaCusto: 'HORA_MAQUINA'
+      nome: string
+      custoHora: number
+      producaoHora?: number
+      unidadeBase?: 'FOLHA' | 'PRODUTO'
+      quantAcertos?: number
+      tempoPorAcertoMin?: number
+      tempoPrimeiroAcertoMin?: number
+      ocorrencias?: number
+      /**
+       * Tempos DIRETOS em horas (paridade exata com o pré-cálculo Calcgraf, que
+       * exibe acerto/produção em hh:mm). Quando presentes, o custo do centro é
+       * `(tempoFixoHoras + tempoVarHoras) × custoHora`, ignorando
+       * producaoHora/acertos (que são a forma derivada). Aditivo — sem eles,
+       * o cálculo derivado atual continua valendo.
+       */
+      tempoFixoHoras?: number
+      tempoVarHoras?: number
+    }
+  | { naturezaCusto: 'MATERIAL_KG'; nome: string; variavelKg: number; precoKg: number }
+  | { naturezaCusto: 'MATERIAL_UN'; nome: string; variavelUn: number; precoUn: number }
+  | { naturezaCusto: 'CUSTO_FIXO'; nome: string; valorFixo: number }
+
+/** Um item de acabamento pode ser legado OU rico (union no mesmo array). */
+export type ItemAcabamento = ItemAcabamentoLegado | ItemAcabamentoRico
+
+/** Type guard: `true` quando o item é rico (tem o discriminante). */
+export function isAcabamentoRico(acab: ItemAcabamento): acab is ItemAcabamentoRico {
+  return 'naturezaCusto' in acab
+}
+
 export interface ParamsOrcamento {
   tipoEmbalagem: {
     formulaLargura: string
@@ -48,14 +106,11 @@ export interface ParamsOrcamento {
   coefTintaSuporte?: number
   /** Partida de consumo de tinta (kg) por cor — modelo SPANKS. Default 0,2. */
   partidaConsumoTintaKg?: number
-  acabamentos: Array<{
-    tipo: string
-    custoHora: number
-    velocidade: number
-    setupMinutos: number
-    custoMaterialM2?: number
-    custoMaterialUn?: number
-  }>
+  /**
+   * Acabamentos do orçamento. Aceita itens LEGADOS (sem `naturezaCusto`) e
+   * itens RICOS (com `naturezaCusto`) no mesmo array. Ver `ItemAcabamento`.
+   */
+  acabamentos: Array<ItemAcabamento>
   quantidade: number
   perdas: {
     impressaoPercent: number
@@ -131,6 +186,30 @@ export interface ResultadoOrcamento {
   modeloCalculo?: {
     tinta: 'CALIBRADO' | 'LEGADO'
     maquina: 'CALIBRADO' | 'LEGADO'
+  }
+  // ── Acabamentos ricos (paridade Calcgraf) — preenchidos nas tasks 1.2/1.3 ──
+  /**
+   * Bloco MAT.ACABAMENTO — materiais de acabamento (kg/un/fixo) que entram no
+   * Material Direto. Preenchido em 1.2 (ausente enquanto não houver itens ricos).
+   */
+  matAcabamento?: {
+    custoTotal: number
+    itens: Array<{
+      nome: string
+      natureza: string
+      fixo: number
+      variavel: number
+      unitario: number
+      subtotal: number
+    }>
+  }
+  /**
+   * Cadeia de centros de acabamento (hora-máquina) que entra no Custo de
+   * Transformação. Preenchido em 1.3 (ausente enquanto não houver itens ricos).
+   */
+  acabamentosCentros?: {
+    custoTotal: number
+    detalhePorEtapa: Array<{ etapa: string; setupMin: number; operacaoMin: number; custo: number }>
   }
 }
 
@@ -915,13 +994,152 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
   }
 
   // 6. Calcular acabamentos
+  // TASK 1.1 (contrato): o array `acabamentos` pode conter itens LEGADOS e
+  // RICOS. Nesta task apenas os LEGADOS seguem o cálculo atual (comportamento
+  // idêntico). Os itens ricos (com `naturezaCusto`) são tratados em 1.2/1.3.
+  const acabamentosLegados: ItemAcabamentoLegado[] = acabamentos.filter(
+    (a): a is ItemAcabamentoLegado => !isAcabamentoRico(a),
+  )
   const resultadoAcabamentos = calcularAcabamentos({
     folhasBrutas,
     quantidade,
-    acabamentos,
+    acabamentos: acabamentosLegados,
     larguraMm: maquinaImpressao.formatoLargura,
     alturaMm: maquinaImpressao.formatoAltura,
   })
+
+  // 6.1 — Bloco MAT.ACABAMENTO (TASK 1.2): materiais de acabamento RICOS que
+  // entram no MATERIAL DIRETO. Três naturezas (ver golden 15.235):
+  //   • MATERIAL_KG: subtotal = variavelKg × precoKg  (ex.: Cola, Verniz)
+  //   • MATERIAL_UN: subtotal = variavelUn × precoUn  (ex.: Caixa Padrão)
+  //   • CUSTO_FIXO : subtotal = valorFixo (NÃO escala com tiragem; ex.: FACA NOVA)
+  // Os itens HORA_MAQUINA NÃO entram aqui (são da cadeia de centros no CT —
+  // task 1.3); por ora são ignorados neste bloco.
+  const acabamentosRicos: ItemAcabamentoRico[] = acabamentos.filter(isAcabamentoRico)
+  const arred2 = (x: number) => Math.round(x * 100) / 100
+  const matAcabamentoItens: Array<{
+    nome: string
+    natureza: string
+    fixo: number
+    variavel: number
+    unitario: number
+    subtotal: number
+  }> = []
+  for (const acab of acabamentosRicos) {
+    if (acab.naturezaCusto === 'MATERIAL_KG') {
+      const subtotal = arred2(acab.variavelKg * acab.precoKg)
+      matAcabamentoItens.push({
+        nome: acab.nome,
+        natureza: 'MATERIAL_KG',
+        fixo: 0,
+        variavel: acab.variavelKg,
+        unitario: acab.precoKg,
+        subtotal,
+      })
+    } else if (acab.naturezaCusto === 'MATERIAL_UN') {
+      const subtotal = arred2(acab.variavelUn * acab.precoUn)
+      matAcabamentoItens.push({
+        nome: acab.nome,
+        natureza: 'MATERIAL_UN',
+        fixo: 0,
+        variavel: acab.variavelUn,
+        unitario: acab.precoUn,
+        subtotal,
+      })
+    } else if (acab.naturezaCusto === 'CUSTO_FIXO') {
+      const subtotal = arred2(acab.valorFixo)
+      matAcabamentoItens.push({
+        nome: acab.nome,
+        natureza: 'CUSTO_FIXO',
+        fixo: subtotal,
+        variavel: 0,
+        unitario: 0,
+        subtotal,
+      })
+    }
+    // HORA_MAQUINA: ignorado aqui (task 1.3, Custo de Transformação).
+  }
+  const matAcabamentoCustoTotal = arred2(matAcabamentoItens.reduce((s, i) => s + i.subtotal, 0))
+  // Só expõe o bloco quando houver itens de material (preserva resultado atual
+  // de orçamentos sem acabamentos ricos — matAcabamento fica `undefined`).
+  const matAcabamento =
+    matAcabamentoItens.length > 0
+      ? { custoTotal: matAcabamentoCustoTotal, itens: matAcabamentoItens }
+      : undefined
+
+  // 6.2 — CADEIA DE CENTROS DE ACABAMENTO (TASK 1.3): acabamentos RICOS do tipo
+  // HORA_MAQUINA que entram no CUSTO DE TRANSFORMAÇÃO (CT), ao lado da impressão.
+  // Cada centro vira uma `AtividadeCT` (impressao:false) e a cadeia é calculada
+  // com o MESMO módulo calibrado da impressão (`calcularCustoTransformacao`),
+  // garantindo uma única fonte de verdade para o CT.
+  //
+  //   • unidadesProcessadas = unidadeBase==='FOLHA' ? folhasBrutas : quantidade
+  //   • setup/produção seguem a fórmula do Calcgraf (quantAcertos × tempoPorAcerto
+  //     + tempoPrimeiroAcerto; produção = unidades / producaoHora).
+  //
+  // Quando NÃO há acabamentos HORA_MAQUINA ricos, `acabamentosCentros` fica
+  // `undefined` e o `custoTransformacao` permanece idêntico ao de hoje
+  // (não-regressão — ver aditividade da task 1.4).
+  const centrosHoraMaquina = acabamentosRicos.filter(
+    (a): a is Extract<ItemAcabamentoRico, { naturezaCusto: 'HORA_MAQUINA' }> =>
+      a.naturezaCusto === 'HORA_MAQUINA',
+  )
+
+  let acabamentosCentros:
+    | {
+        custoTotal: number
+        detalhePorEtapa: Array<{ etapa: string; setupMin: number; operacaoMin: number; custo: number }>
+      }
+    | undefined
+  if (centrosHoraMaquina.length > 0) {
+    const detalhePorEtapa: Array<{ etapa: string; setupMin: number; operacaoMin: number; custo: number }> = []
+    let somaCusto = 0
+    for (const a of centrosHoraMaquina) {
+      // MODO DIRETO (paridade exata Calcgraf): tempos fixo/var em horas vindos
+      // do pré-cálculo (hh:mm). custo = (tempoFixoH + tempoVarH) × custoHora.
+      if (a.tempoFixoHoras != null || a.tempoVarHoras != null) {
+        const tf = a.tempoFixoHoras ?? 0
+        const tv = a.tempoVarHoras ?? 0
+        const custo = Math.round((tf + tv) * a.custoHora * 100) / 100
+        detalhePorEtapa.push({
+          etapa: a.nome,
+          setupMin: Math.round(tf * 60 * 100) / 100,
+          operacaoMin: Math.round(tv * 60 * 100) / 100,
+          custo,
+        })
+        somaCusto += custo
+      } else {
+        // MODO DERIVADO: reusa o módulo calibrado (produção = unidades/producaoHora;
+        // acerto = quantAcertos × tempoPorAcerto + tempoPrimeiroAcerto).
+        const ct = calcularCustoTransformacao(
+          [
+            {
+              nome: a.nome,
+              impressao: false,
+              custoHora: a.custoHora,
+              producaoHora: a.producaoHora ?? 0,
+              unidadesProcessadas: a.unidadeBase === 'FOLHA' ? folhasBrutas : quantidade,
+              quantAcertos: a.quantAcertos,
+              tempoPorAcertoMin: a.tempoPorAcertoMin,
+              tempoPrimeiroAcertoMin: a.tempoPrimeiroAcertoMin,
+              ocorrencias: a.ocorrencias,
+            },
+          ],
+          quantidade,
+        )
+        const d = ct.detalhe[0]
+        detalhePorEtapa.push({
+          etapa: a.nome,
+          setupMin: d ? d.tempoFixoMin : 0,
+          operacaoMin: d ? Math.round(d.tempoVarHoras * 60 * 100) / 100 : 0,
+          custo: ct.custoTotal,
+        })
+        somaCusto += ct.custoTotal
+      }
+    }
+    acabamentosCentros = { custoTotal: Math.round(somaCusto * 100) / 100, detalhePorEtapa }
+  }
+  const acabamentosCentrosCustoTotal = acabamentosCentros?.custoTotal ?? 0
 
   // 7. Decomposição de custo estilo Calcgraf (ver docs/calcgraf-formulas-decompostas.md)
   const somaExtras = (arr?: Array<{ valor: number }>) => (arr ?? []).reduce((s, i) => s + (i.valor || 0), 0)
@@ -929,13 +1147,24 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
   const totalItensFornecidos = somaExtras(params.itensFornecidos)
   const totalServicoExterno = somaExtras(params.servicosExternos)
 
-  // Material Direto = papel + tinta + itens diversos − itens fornecidos (cliente)
+  // Material Direto = papel + tinta + MAT.ACABAMENTO + itens diversos − itens
+  // fornecidos (cliente). O bloco MAT.ACABAMENTO (task 1.2) é SOMADO ao MD de
+  // forma explícita; quando não há acabamentos ricos de material,
+  // matAcabamentoCustoTotal = 0 e o MD fica idêntico ao de hoje (não-regressão).
   const materialDireto = Math.max(
     0,
-    resultadoPapel.custo + resultadoTinta.custoTotal + totalItensDiversos - totalItensFornecidos,
+    resultadoPapel.custo +
+      resultadoTinta.custoTotal +
+      matAcabamentoCustoTotal +
+      totalItensDiversos -
+      totalItensFornecidos,
   )
-  // Custo de Transformação = máquinas (impressão) + acabamentos (horas × custo-hora)
-  const custoTransformacao = resultadoMaquinas.custoTotal + resultadoAcabamentos.custoTotal
+  // Custo de Transformação = impressão (máquinas) + acabamentos LEGADOS +
+  // cadeia de centros de acabamento RICOS (task 1.3). O acabamento legado
+  // continua somado (não quebra orçamentos atuais); a cadeia rica é aditiva e
+  // vale 0 quando não há itens HORA_MAQUINA ricos (não-regressão).
+  const custoTransformacao =
+    resultadoMaquinas.custoTotal + resultadoAcabamentos.custoTotal + acabamentosCentrosCustoTotal
   const servicoExterno = totalServicoExterno
 
   // Custo de Produção = MD + CT + SE
@@ -1005,5 +1234,10 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
     contribuicaoMarginalValor,
     contribuicaoMarginalPerc,
     modeloCalculo: { tinta: modeloTinta, maquina: modeloMaquina },
+    // Bloco MAT.ACABAMENTO (task 1.2) — presente só quando há materiais ricos.
+    matAcabamento,
+    // Cadeia de centros de acabamento no CT (task 1.3) — presente só quando há
+    // acabamentos HORA_MAQUINA ricos; senão `undefined` (não-regressão).
+    acabamentosCentros,
   }
 }

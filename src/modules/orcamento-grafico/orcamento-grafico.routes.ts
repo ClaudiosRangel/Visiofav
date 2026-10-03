@@ -52,6 +52,101 @@ async function resolverPartidaConsumoTinta(empresaId: string): Promise<number> {
   return Number.isFinite(v) && v > 0 ? v : 0.2
 }
 
+/**
+ * Item de acabamento rico no REQUEST. Pode:
+ *  - referenciar um AcabamentoGrafico do cadastro (`acabamentoId`) — o backend
+ *    resolve natureza/custos/centro; e/ou
+ *  - trazer overrides do próprio orçamento (consumo de material, tempos).
+ * Campos de override têm precedência sobre o cadastro.
+ */
+const acabamentoRicoRequestSchema = z.object({
+  acabamentoId: z.string().uuid().optional(),
+  // overrides opcionais (quando não vêm, usa o cadastro)
+  nome: z.string().optional(),
+  naturezaCusto: z.enum(['HORA_MAQUINA', 'MATERIAL_KG', 'MATERIAL_UN', 'CUSTO_FIXO']).optional(),
+  // material
+  variavelKg: z.number().min(0).optional(),
+  precoKg: z.number().min(0).optional(),
+  variavelUn: z.number().min(0).optional(),
+  precoUn: z.number().min(0).optional(),
+  valorFixo: z.number().min(0).optional(),
+  // hora-máquina
+  custoHora: z.number().min(0).optional(),
+  producaoHora: z.number().min(0).optional(),
+  unidadeBase: z.enum(['FOLHA', 'PRODUTO']).optional(),
+  quantAcertos: z.number().min(0).optional(),
+  tempoPorAcertoMin: z.number().min(0).optional(),
+  tempoPrimeiroAcertoMin: z.number().min(0).optional(),
+  tempoFixoHoras: z.number().min(0).optional(),
+  tempoVarHoras: z.number().min(0).optional(),
+})
+
+type AcabamentoRicoRequest = z.infer<typeof acabamentoRicoRequestSchema>
+
+/**
+ * Resolve os itens de acabamento rico do request para o formato que o motor
+ * (`ItemAcabamentoRico`) espera, buscando o cadastro `AcabamentoGrafico` por id
+ * (quando informado) e aplicando overrides do orçamento por cima. Multi-tenant.
+ */
+async function montarAcabamentosRicos(
+  empresaId: string,
+  itens: AcabamentoRicoRequest[] | undefined,
+): Promise<any[]> {
+  if (!itens || itens.length === 0) return []
+
+  const ids = itens.map((i) => i.acabamentoId).filter((x): x is string => !!x)
+  const cadastros = ids.length
+    ? await prisma.acabamentoGrafico.findMany({ where: { empresaId, id: { in: ids } } })
+    : []
+  const porId = new Map(cadastros.map((c) => [c.id, c]))
+
+  const num = (v: unknown): number | undefined => (v == null ? undefined : Number(v))
+
+  const resolvidos: any[] = []
+  for (const it of itens) {
+    const cad = it.acabamentoId ? porId.get(it.acabamentoId) : undefined
+    const natureza = it.naturezaCusto ?? (cad?.naturezaCusto as string | undefined) ?? 'HORA_MAQUINA'
+    const nome = it.nome ?? cad?.nome ?? 'Acabamento'
+
+    if (natureza === 'MATERIAL_KG') {
+      resolvidos.push({
+        naturezaCusto: 'MATERIAL_KG',
+        nome,
+        variavelKg: it.variavelKg ?? 0,
+        precoKg: it.precoKg ?? num(cad?.precoUnitario) ?? 0,
+      })
+    } else if (natureza === 'MATERIAL_UN') {
+      resolvidos.push({
+        naturezaCusto: 'MATERIAL_UN',
+        nome,
+        variavelUn: it.variavelUn ?? 0,
+        precoUn: it.precoUn ?? num(cad?.precoUnitario) ?? 0,
+      })
+    } else if (natureza === 'CUSTO_FIXO') {
+      resolvidos.push({
+        naturezaCusto: 'CUSTO_FIXO',
+        nome,
+        valorFixo: it.valorFixo ?? num(cad?.precoUnitario) ?? 0,
+      })
+    } else {
+      // HORA_MAQUINA — custo/produção/tempos do override OU do cadastro.
+      resolvidos.push({
+        naturezaCusto: 'HORA_MAQUINA',
+        nome,
+        custoHora: it.custoHora ?? num(cad?.custoHora) ?? 0,
+        producaoHora: it.producaoHora ?? num(cad?.producaoHora),
+        unidadeBase: it.unidadeBase ?? (cad?.unidadeBase as 'FOLHA' | 'PRODUTO' | undefined),
+        quantAcertos: it.quantAcertos ?? num(cad?.quantAcertos),
+        tempoPorAcertoMin: it.tempoPorAcertoMin ?? num(cad?.tempoPorAcertoMin),
+        tempoPrimeiroAcertoMin: it.tempoPrimeiroAcertoMin ?? num(cad?.tempoPrimeiroAcertoMin),
+        tempoFixoHoras: it.tempoFixoHoras,
+        tempoVarHoras: it.tempoVarHoras,
+      })
+    }
+  }
+  return resolvidos
+}
+
 export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
@@ -451,6 +546,131 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ACABAMENTO GRÁFICO (cadastro de acabamentos — paridade relatório Calcgraf)
+  // Substitui a lista fixa de 5 acabamentos hardcoded do wizard. Multi-tenant.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const acabamentoGraficoSelect = {
+    id: true,
+    empresaId: true,
+    codigo: true,
+    nome: true,
+    tipoAtividade: true,
+    planoProduto: true,
+    naturezaCusto: true,
+    centroProducaoId: true,
+    precoUnitario: true,
+    custoHora: true,
+    producaoHora: true,
+    quantAcertos: true,
+    tempoPorAcertoMin: true,
+    tempoPrimeiroAcertoMin: true,
+    unidadeBase: true,
+    status: true,
+    criadoEm: true,
+    atualizadoEm: true,
+  } as const
+
+  const acabamentoBodySchema = z.object({
+    codigo: z.string().min(1).max(40),
+    nome: z.string().min(1).max(200),
+    tipoAtividade: z.enum(['IMPRESSAO', 'ACABAMENTO']).default('ACABAMENTO'),
+    planoProduto: z.enum(['PLANO', 'PRODUTO']).default('PLANO'),
+    naturezaCusto: z.enum(['HORA_MAQUINA', 'MATERIAL_KG', 'MATERIAL_UN', 'CUSTO_FIXO']).default('HORA_MAQUINA'),
+    centroProducaoId: z.string().uuid().optional().nullable(),
+    precoUnitario: z.number().min(0).optional().nullable(),
+    custoHora: z.number().min(0).optional().nullable(),
+    producaoHora: z.number().min(0).optional().nullable(),
+    quantAcertos: z.number().int().min(0).optional().nullable(),
+    tempoPorAcertoMin: z.number().min(0).optional().nullable(),
+    tempoPrimeiroAcertoMin: z.number().min(0).optional().nullable(),
+    unidadeBase: z.enum(['FOLHA', 'PRODUTO']).optional().nullable(),
+  })
+
+  app.get('/acabamentos', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const query = z.object({
+      busca: z.string().optional(),
+      status: z.enum(['true', 'false']).optional(),
+      tipoAtividade: z.enum(['IMPRESSAO', 'ACABAMENTO']).optional(),
+      naturezaCusto: z.enum(['HORA_MAQUINA', 'MATERIAL_KG', 'MATERIAL_UN', 'CUSTO_FIXO']).optional(),
+      page: z.coerce.number().int().positive().optional().default(1),
+      limit: z.coerce.number().int().positive().max(100).optional().default(50),
+    }).parse(request.query)
+
+    const where: any = { empresaId: user.empresaId }
+    if (query.status !== undefined) where.status = query.status === 'true'
+    else where.status = true
+    if (query.tipoAtividade) where.tipoAtividade = query.tipoAtividade
+    if (query.naturezaCusto) where.naturezaCusto = query.naturezaCusto
+    if (query.busca) {
+      where.OR = [
+        { codigo: { contains: query.busca, mode: 'insensitive' } },
+        { nome: { contains: query.busca, mode: 'insensitive' } },
+      ]
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.acabamentoGrafico.findMany({
+        where,
+        select: acabamentoGraficoSelect,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: { nome: 'asc' },
+      }),
+      prisma.acabamentoGrafico.count({ where }),
+    ])
+    return { data, total, page: query.page, limit: query.limit }
+  })
+
+  app.post('/acabamentos', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = acabamentoBodySchema.parse(request.body)
+
+    const existe = await prisma.acabamentoGrafico.findFirst({
+      where: { empresaId: user.empresaId, codigo: body.codigo },
+    })
+    if (existe) return reply.status(409).send({ message: `Código '${body.codigo}' já existe` })
+
+    const acabamento = await prisma.acabamentoGrafico.create({
+      data: { ...body, empresaId: user.empresaId },
+      select: acabamentoGraficoSelect,
+    })
+    return reply.status(201).send(acabamento)
+  })
+
+  app.put('/acabamentos/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = acabamentoBodySchema.extend({ status: z.boolean().optional() }).parse(request.body)
+
+    const existe = await prisma.acabamentoGrafico.findFirst({ where: { id, empresaId: user.empresaId } })
+    if (!existe) return reply.status(404).send({ message: 'Acabamento não encontrado' })
+    if (body.codigo !== existe.codigo) {
+      const conflito = await prisma.acabamentoGrafico.findFirst({
+        where: { empresaId: user.empresaId, codigo: body.codigo },
+      })
+      if (conflito && conflito.id !== id) return reply.status(409).send({ message: `Código '${body.codigo}' já existe` })
+    }
+
+    const atualizado = await prisma.acabamentoGrafico.update({
+      where: { id },
+      data: body,
+      select: acabamentoGraficoSelect,
+    })
+    return atualizado
+  })
+
+  app.delete('/acabamentos/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const existe = await prisma.acabamentoGrafico.findFirst({ where: { id, empresaId: user.empresaId } })
+    if (!existe) return reply.status(404).send({ message: 'Acabamento não encontrado' })
+    await prisma.acabamentoGrafico.update({ where: { id }, data: { status: false } })
+    return reply.status(204).send()
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PARÂMETRO PERDA
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -737,6 +957,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         custoMaterialM2: z.number().min(0).optional(),
         custoMaterialUn: z.number().min(0).optional(),
       })).default([]),
+      // Acabamentos RICOS (paridade Calcgraf). Cada item pode referenciar um
+      // AcabamentoGrafico do cadastro (acabamentoId) — o backend resolve os
+      // parâmetros de custo/centro — e/ou trazer overrides do próprio orçamento
+      // (quantidades consumidas, tempos). Ver montarAcabamentosRicos().
+      acabamentosRicos: z.array(acabamentoRicoRequestSchema).optional(),
       quantidade: z.number().int().positive(),
       tabelaMargemId: z.string().uuid().optional(),
       // ── Paridade Calcgraf (opcionais/aditivos) ─────────────────────────
@@ -816,7 +1041,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         numCoresImpressao: body.cores.length,
       },
       cores: body.cores,
-      acabamentos: body.acabamentos,
+      // Combina acabamentos LEGADOS com os RICOS (resolvidos do cadastro).
+      acabamentos: [
+        ...body.acabamentos,
+        ...(await montarAcabamentosRicos(user.empresaId, body.acabamentosRicos)),
+      ],
       quantidade: body.quantidade,
       perdas,
       margem,
@@ -914,6 +1143,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         custoMaterialM2: z.number().min(0).optional(),
         custoMaterialUn: z.number().min(0).optional(),
       })).optional().nullable(),
+      acabamentosRicos: z.array(acabamentoRicoRequestSchema).optional(),
       quantidade: z.number().int().positive(),
       // Parâmetros de cálculo (opcionais — só necessários se não vier resultadoCalculo)
       precoKgPapel: z.number().positive().optional(),
@@ -1012,7 +1242,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           setupMinutos: 30,
         },
         cores: (body.cores || []) as Array<{ nome: string; tipo: 'CMYK' | 'PANTONE'; coberturaPercent: number; precoKg: number; rendimentoM2Kg: number }>,
-        acabamentos: (body.acabamentos || []) as Array<{ tipo: string; custoHora: number; velocidade: number; setupMinutos: number; custoMaterialM2?: number; custoMaterialUn?: number }>,
+        acabamentos: [
+          ...((body.acabamentos || []) as Array<{ tipo: string; custoHora: number; velocidade: number; setupMinutos: number; custoMaterialM2?: number; custoMaterialUn?: number }>),
+          ...(await montarAcabamentosRicos(user.empresaId, body.acabamentosRicos)),
+        ],
         quantidade: body.quantidade,
         perdas,
         margem,
@@ -1188,6 +1421,100 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
 
     return { ...orcamento, produtoNome }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RELATÓRIO (GET /:id/relatorio) — estrutura de seções estilo Calcgraf
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /api/orcamento-grafico/:id/relatorio
+   * Monta a estrutura do relatório (cabeçalho, suporte, matriz, tinta,
+   * mat.acabamento, impressão, acabamento, custo de produção, CEV, margens) a
+   * partir do `resultadoCalculo` salvo no orçamento. Paridade com o pré-cálculo
+   * do Calcgraf.
+   */
+  app.get('/:id/relatorio', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { montarRelatorio } = await import('./orcamento-grafico-relatorio.service')
+
+    const orcamento = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: {
+        numero: true, versao: true, clienteNome: true, quantidade: true,
+        resultadoCalculo: true, medidas: true, observacoes: true,
+        tipoEmbalagem: { select: { codigo: true, descricao: true } },
+      },
+    })
+    if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+
+    const resultado = orcamento.resultadoCalculo as any
+    if (!resultado || typeof resultado !== 'object') {
+      return reply.status(400).send({ message: 'Orçamento sem resultado de cálculo. Recalcule antes de gerar o relatório.' })
+    }
+
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId }, select: { razaoSocial: true },
+    })
+
+    const relatorio = montarRelatorio({
+      resultado,
+      quantidade: orcamento.quantidade || resultado.quantidade || 0,
+      cabecalho: {
+        empresa: empresa?.razaoSocial,
+        numero: orcamento.versao ? `${orcamento.numero}/${orcamento.versao}` : String(orcamento.numero),
+        cliente: orcamento.clienteNome || undefined,
+        produto: orcamento.tipoEmbalagem?.descricao,
+        descricao: (orcamento.observacoes as string | null) || undefined,
+      },
+    })
+    return relatorio
+  })
+
+  /**
+   * GET /api/orcamento-grafico/:id/relatorio.pdf
+   * Mesmo relatório, renderizado em PDF (layout do pré-cálculo Calcgraf).
+   * Aceita token via query (?token=) para abrir em nova aba.
+   */
+  app.get('/:id/relatorio.pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { montarRelatorio } = await import('./orcamento-grafico-relatorio.service')
+    const { gerarRelatorioPdf } = await import('./orcamento-grafico-relatorio-pdf.service')
+
+    const orcamento = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: {
+        numero: true, versao: true, clienteNome: true, quantidade: true,
+        resultadoCalculo: true, observacoes: true,
+        tipoEmbalagem: { select: { descricao: true } },
+      },
+    })
+    if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+    const resultado = orcamento.resultadoCalculo as any
+    if (!resultado || typeof resultado !== 'object') {
+      return reply.status(400).send({ message: 'Orçamento sem resultado de cálculo. Recalcule antes de gerar o relatório.' })
+    }
+
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: user.empresaId }, select: { razaoSocial: true },
+    })
+    const relatorio = montarRelatorio({
+      resultado,
+      quantidade: orcamento.quantidade || resultado.quantidade || 0,
+      cabecalho: {
+        empresa: empresa?.razaoSocial,
+        numero: orcamento.versao ? `${orcamento.numero}/${orcamento.versao}` : String(orcamento.numero),
+        cliente: orcamento.clienteNome || undefined,
+        produto: orcamento.tipoEmbalagem?.descricao,
+        descricao: (orcamento.observacoes as string | null) || undefined,
+      },
+    })
+    const pdf = await gerarRelatorioPdf(relatorio)
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `inline; filename="relatorio-${orcamento.numero}.pdf"`)
+    return reply.send(pdf)
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2096,6 +2423,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         custoMaterialM2: z.number().min(0).optional(),
         custoMaterialUn: z.number().min(0).optional(),
       })).default([]),
+      acabamentosRicos: z.array(acabamentoRicoRequestSchema).optional(),
       quantidades: z.array(z.number().int().positive()).min(1).max(20),
       tabelaMargemId: z.string().uuid().optional(),
     }).parse(request.body)
@@ -2130,6 +2458,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const tempoSetupMin = maquina.tempoSetupMin != null ? Number(maquina.tempoSetupMin) : undefined
     const coefTintaSuporte = await resolverCoefTintaSuporte(user.empresaId, body.papelId)
     const partidaConsumoTintaKg = await resolverPartidaConsumoTinta(user.empresaId)
+    // Resolve os acabamentos ricos UMA vez (iguais para todas as tiragens).
+    const acabamentosRicosResolvidos = await montarAcabamentosRicos(user.empresaId, body.acabamentosRicos)
+    const acabamentosCombinados = [...body.acabamentos, ...acabamentosRicosResolvidos]
 
     // Calcular para cada quantidade
     const simulacoes = body.quantidades.map(quantidade => {
@@ -2155,7 +2486,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           numCoresImpressao: body.cores.length,
         },
         cores: body.cores,
-        acabamentos: body.acabamentos as Array<{ tipo: string; custoHora: number; velocidade: number; setupMinutos: number; custoMaterialM2?: number; custoMaterialUn?: number }>,
+        acabamentos: acabamentosCombinados,
         quantidade,
         perdas,
         margem,

@@ -22,6 +22,7 @@ import {
   emailValido,
   derivarCpfVendedor,
   camposEnderecoVazios as camposEnderecoVaziosPuro,
+  naturezaDefaultAcabamento,
 } from './calcgraf-dedup'
 
 const prisma = new PrismaClient()
@@ -859,9 +860,88 @@ async function main() {
   if (fase === 'vendedores' || fase === 'tudo') {
     await importarVendedores(empresaId)
   }
+  if (fase === 'acabamentos' || fase === 'tudo') {
+    await importarAcabamentos(empresaId)
+  }
   console.log('Importação concluída.')
 }
 
-main()
-  .catch((e) => { console.error('❌ Importação falhou:', e.message); process.exit(1) })
-  .finally(() => prisma.$disconnect())
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE ACABAMENTOS — Atividades.json → AcabamentoGrafico (paridade Calcgraf)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Importa as atividades ATIVO/FIXO do Calcgraf para o cadastro de acabamentos
+// do Orçamento Gráfico. De-para por código `CG-ACAB-<Codigo>` (idempotente):
+// existente → atualiza só metadados (nome/tipo/plano/status), NUNCA sobrescreve
+// vínculo de centro ou custos ajustados à mão. `--dry-run` só relata.
+//
+// A `naturezaCusto` é um DEFAULT heurístico por nome/tipo — valores exatos de
+// custo/tempo são CALIBRADOS na tela depois (o Calcgraf não exporta tempos).
+
+interface AtividadeRow {
+  Codigo: number
+  Ativo: string // ATIVO | FIXO | CANCELADO
+  Nome: string
+  TipoAtividade: string // Impressão | Acabamento
+  PlanoProduto: string // PLANO | PRODUTO
+}
+
+async function importarAcabamentos(empresaId: string) {
+  const dryRun = temDryRun()
+  if (dryRun) console.log('*** MODO DRY-RUN — nenhuma escrita será feita ***')
+  const rows = lerJson<AtividadeRow>('Atividades').filter(
+    (r) => (r.Ativo || '').toUpperCase() === 'ATIVO' || (r.Ativo || '').toUpperCase() === 'FIXO',
+  )
+
+  const p = prisma as never as {
+    acabamentoGrafico: {
+      findFirst: (a: unknown) => Promise<Record<string, unknown> | null>
+      create: (a: unknown) => Promise<unknown>
+      update: (a: unknown) => Promise<unknown>
+    }
+  }
+
+  let criados = 0, atualizados = 0
+  const vistos = new Set<string>()
+  for (const r of rows) {
+    const nome = (r.Nome || '').trim().replace(/\s+/g, ' ').slice(0, 200)
+    if (!nome) continue
+    const codigo = `CG-ACAB-${r.Codigo}`.slice(0, 40)
+    if (vistos.has(codigo)) continue
+    vistos.add(codigo)
+
+    const tipoAtividade = (r.TipoAtividade || '').toLowerCase().includes('impress') ? 'IMPRESSAO' : 'ACABAMENTO'
+    const planoProduto = (r.PlanoProduto || '').toUpperCase() === 'PRODUTO' ? 'PRODUTO' : 'PLANO'
+    const naturezaCusto = tipoAtividade === 'IMPRESSAO' ? 'HORA_MAQUINA' : naturezaDefaultAcabamento(nome)
+
+    const existente = await comRetry(() => p.acabamentoGrafico.findFirst({ where: { empresaId, codigo } as never }))
+    if (existente) {
+      // Atualiza SÓ metadados (não sobrescreve centro/custos ajustados à mão).
+      if (!dryRun) {
+        await comRetry(() => p.acabamentoGrafico.update({
+          where: { id: existente.id as string },
+          data: { nome, tipoAtividade, planoProduto, status: true } as never,
+        }))
+      }
+      atualizados++
+    } else {
+      if (!dryRun) {
+        await comRetry(() => p.acabamentoGrafico.create({
+          data: { empresaId, codigo, nome, tipoAtividade, planoProduto, naturezaCusto, status: true } as never,
+        }))
+      }
+      criados++
+    }
+  }
+  console.log(`${dryRun ? '[DRY-RUN] ' : ''}ACABAMENTOS: ${criados} ${dryRun ? 'seriam criados' : 'criados'}, ${atualizados} atualizados (de ${rows.length} ativos/fixos).`)
+  console.log('  ⚠ naturezaCusto/custos são DEFAULT heurístico — calibrar na tela de Acabamentos.')
+}
+
+// Só executa a importação quando rodado como script (não quando IMPORTADO por
+// um teste — ex.: calcgraf-acabamentos.test.ts importa `naturezaDefaultAcabamento`).
+const execDireto = process.argv[1] && /importar-calcgraf\.(ts|js|mjs)$/.test(process.argv[1])
+if (execDireto) {
+  main()
+    .catch((e) => { console.error('❌ Importação falhou:', e.message); process.exit(1) })
+    .finally(() => prisma.$disconnect())
+}
