@@ -1052,6 +1052,40 @@ async function semearTabelaMargem(empresaId: string) {
   )
 }
 
+// Seed de um ParametroPerda PADRÃO (geral, sem processo/centro) para a empresa.
+// Sem ao menos um ParametroPerda, o cálculo do orçamento é BLOQUEADO (Req 5.4
+// da spec orcamento-grafico-suporte-fechamento). Perda fixa 50 folhas de acerto
+// + 5% variável = valores de referência (ajustáveis na tela). Preserva ajuste
+// manual: se já existe QUALQUER ParametroPerda no tenant, é no-op.
+async function semearParametroPerda(empresaId: string) {
+  const dryRun = temDryRun()
+  const p = prisma as never as {
+    parametroPerda: {
+      count: (a: unknown) => Promise<number>
+      create: (a: unknown) => Promise<unknown>
+    }
+  }
+  const existentes = await comRetry(() => p.parametroPerda.count({ where: { empresaId } as never }))
+  if (existentes > 0) {
+    console.log(`PARÂMETRO DE PERDA: tenant já possui ${existentes} — no-op (preserva ajuste manual).`)
+    return
+  }
+  if (!dryRun) {
+    await comRetry(() =>
+      p.parametroPerda.create({
+        data: {
+          empresaId,
+          tipoProcessoId: null,
+          centroProducaoId: null,
+          perdaFixaFolhas: 50,
+          perdaVariavel: 5,
+        } as never,
+      }),
+    )
+  }
+  console.log(`${dryRun ? '[DRY-RUN] ' : ''}PARÂMETRO DE PERDA: ${dryRun ? 'seria criado' : 'criado'} padrão geral (50 folhas fixas + 5% variável).`)
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FASE VINCULAR-SUPORTES — liga PrecoMateriaPrima (PAPEL) → SuporteGrafico
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1141,6 +1175,7 @@ async function main() {
   }
   if (fase === 'suportes' || fase === 'seed-margem' || fase === 'tudo') {
     await semearTabelaMargem(empresaId)
+    await semearParametroPerda(empresaId)
   }
   if (fase === 'mapa' || fase === 'tudo') {
     await importarMapa(empresaId)
