@@ -108,21 +108,23 @@ const acabamentoRicoRequestSchema = z.object({
   // overrides opcionais (quando não vêm, usa o cadastro)
   nome: z.string().optional(),
   naturezaCusto: z.enum(['HORA_MAQUINA', 'MATERIAL_KG', 'MATERIAL_UN', 'CUSTO_FIXO']).optional(),
-  // material
-  variavelKg: z.number().min(0).optional(),
-  precoKg: z.number().min(0).optional(),
-  variavelUn: z.number().min(0).optional(),
-  precoUn: z.number().min(0).optional(),
-  valorFixo: z.number().min(0).optional(),
+  // material — `z.coerce` aceita number OU string numérica (os cadastros vêm do
+  // Prisma como Decimal serializado em string, ex.: "320"). Blindagem definitiva
+  // contra "Expected number, received string".
+  variavelKg: z.coerce.number().min(0).optional(),
+  precoKg: z.coerce.number().min(0).optional(),
+  variavelUn: z.coerce.number().min(0).optional(),
+  precoUn: z.coerce.number().min(0).optional(),
+  valorFixo: z.coerce.number().min(0).optional(),
   // hora-máquina
-  custoHora: z.number().min(0).optional(),
-  producaoHora: z.number().min(0).optional(),
+  custoHora: z.coerce.number().min(0).optional(),
+  producaoHora: z.coerce.number().min(0).optional(),
   unidadeBase: z.enum(['FOLHA', 'PRODUTO']).optional(),
-  quantAcertos: z.number().min(0).optional(),
-  tempoPorAcertoMin: z.number().min(0).optional(),
-  tempoPrimeiroAcertoMin: z.number().min(0).optional(),
-  tempoFixoHoras: z.number().min(0).optional(),
-  tempoVarHoras: z.number().min(0).optional(),
+  quantAcertos: z.coerce.number().min(0).optional(),
+  tempoPorAcertoMin: z.coerce.number().min(0).optional(),
+  tempoPrimeiroAcertoMin: z.coerce.number().min(0).optional(),
+  tempoFixoHoras: z.coerce.number().min(0).optional(),
+  tempoVarHoras: z.coerce.number().min(0).optional(),
 })
 
 type AcabamentoRicoRequest = z.infer<typeof acabamentoRicoRequestSchema>
