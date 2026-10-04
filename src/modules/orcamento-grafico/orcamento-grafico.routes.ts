@@ -387,6 +387,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       busca: z.string().optional(),
       suporteId: z.string().uuid().optional(),
       status: z.enum(['true', 'false']).optional(),
+      // comPreco=true → só retorna itens com preço > 0 (usado na seleção de
+      // papel do orçamento; papéis com preço 0 não servem para orçar).
+      comPreco: z.enum(['true', 'false']).optional(),
       page: z.coerce.number().int().positive().optional().default(1),
       limit: z.coerce.number().int().positive().max(100).optional().default(50),
     }).parse(request.query)
@@ -394,6 +397,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const where: any = { empresaId: user.empresaId }
     if (query.tipo) where.tipo = query.tipo
     if (query.suporteId) where.suporteId = query.suporteId
+    if (query.comPreco === 'true') where.precoUnitario = { gt: 0 }
     if (query.status !== undefined) {
       where.status = query.status === 'true'
     } else {
