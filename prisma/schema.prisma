@@ -3408,6 +3408,40 @@ model ApontamentoEtapa {
   @@map("apontamento_etapa")
 }
 
+// Requisição de Corte de Cartão (formulário FO-002/PCP). Criada a partir da
+// aba Cortadeira do painel de Programação. Ver spec pcp-planos-frente-costa-rc.
+// Vínculo com a OP é OPCIONAL (RC avulsa é válida). Numeração NN/AAAA
+// sequencial por empresa/ano. Isolamento multi-tenant por empresaId.
+model RequisicaoCorte {
+  id                  String    @id @default(uuid())
+  empresaId           String    @map("empresa_id")
+  numero              String    @db.VarChar(20) // "49/2026" (NN/AAAA por empresa/ano)
+  ordemProducaoId     String?   @map("ordem_producao_id")
+  dataSolicitacao     DateTime  @map("data_solicitacao")
+  dataCorte           DateTime? @map("data_corte")
+  requisitante        String    @db.VarChar(120)
+  fabricanteCartao    String    @map("fabricante_cartao") @db.VarChar(120)
+  fornecedor          String?   @db.VarChar(120)
+  larguraBobinaCm     Decimal?  @map("largura_bobina_cm") @db.Decimal(10, 2)
+  gramaturaG          Decimal?  @map("gramatura_g") @db.Decimal(10, 2)
+  tamanhoCorteCm      Decimal?  @map("tamanho_corte_cm") @db.Decimal(10, 2)
+  formatoCorte        String?   @map("formato_corte") @db.VarChar(60)
+  qtdFolhasCortadeira Int?      @map("qtd_folhas_cortadeira")
+  textoGuilhotina     String?   @map("texto_guilhotina") @db.VarChar(120)
+  qtdFolhasGuilhotina Int?      @map("qtd_folhas_guilhotina")
+  nomeProduto         String    @map("nome_produto") @db.VarChar(200)
+  nomeServico         String    @map("nome_servico") @db.VarChar(200)
+  pesoKg              Decimal?  @map("peso_kg") @db.Decimal(12, 2)
+  instrucoesRefile    String?   @map("instrucoes_refile") @db.Text
+  status              String    @default("ABERTA") @db.VarChar(20) // ABERTA, CORTADA, CANCELADA
+  criadoPorId         String?   @map("criado_por_id")
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+  atualizadoEm        DateTime  @updatedAt @map("atualizado_em")
+
+  @@index([empresaId])
+  @@map("requisicao_corte")
+}
+
 // Pendência de falta de material identificada durante a execução de uma
 // etapa (Checkout de Apontamento). Visível para PCP e almoxarifado até ser
 // resolvida. Ver design.md do spec checkout-apontamento.

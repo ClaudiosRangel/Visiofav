@@ -189,6 +189,7 @@ import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
 import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
+import { requisicaoCorteRoutes } from './modules/pcp/requisicao-corte.routes'
 import { adminPcpRoutes } from './modules/pcp/admin-pcp.routes'
 import { analiseProducaoRoutes } from './modules/pcp/analise-producao/analise-producao.routes'
 import { mapaCustoRoutes } from './modules/pcp/mapa-custo/mapa-custo.routes'
@@ -498,6 +499,7 @@ async function bootstrap() {
   await app.register(timelineProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
+  await app.register(requisicaoCorteRoutes, { prefix: '/api/pcp' })
   await app.register(analiseProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(mapaCustoRoutes, { prefix: '/api/pcp' })
   await app.register(analiseGerencialRoutes, { prefix: '/api/pcp' })

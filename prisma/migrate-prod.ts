@@ -4733,6 +4733,42 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "acabamento_grafico_empresa_id_codigo_key" ON "acabamento_grafico"("empresa_id","codigo")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acabamento_grafico_empresa_status" ON "acabamento_grafico"("empresa_id","status")`)
   console.log('✅ Orçamento Gráfico Acabamentos: acabamento_grafico criado (unique empresa+codigo, index empresa+status)')
+
+  // =========================================================================
+  // PCP — Requisição de Corte de Cartão (RC) — spec pcp-planos-frente-costa-rc
+  // Fase A. Tabela independente; não toca OP/etapas. Isolamento por empresa_id.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "requisicao_corte" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "numero" VARCHAR(20) NOT NULL,
+      "ordem_producao_id" TEXT,
+      "data_solicitacao" TIMESTAMP(3) NOT NULL,
+      "data_corte" TIMESTAMP(3),
+      "requisitante" VARCHAR(120) NOT NULL,
+      "fabricante_cartao" VARCHAR(120) NOT NULL,
+      "fornecedor" VARCHAR(120),
+      "largura_bobina_cm" DECIMAL(10,2),
+      "gramatura_g" DECIMAL(10,2),
+      "tamanho_corte_cm" DECIMAL(10,2),
+      "formato_corte" VARCHAR(60),
+      "qtd_folhas_cortadeira" INTEGER,
+      "texto_guilhotina" VARCHAR(120),
+      "qtd_folhas_guilhotina" INTEGER,
+      "nome_produto" VARCHAR(200) NOT NULL,
+      "nome_servico" VARCHAR(200) NOT NULL,
+      "peso_kg" DECIMAL(12,2),
+      "instrucoes_refile" TEXT,
+      "status" VARCHAR(20) NOT NULL DEFAULT 'ABERTA',
+      "criado_por_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "requisicao_corte_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "requisicao_corte_empresa_id_idx" ON "requisicao_corte"("empresa_id")`)
+  console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id)')
 }
 
 main()
