@@ -164,6 +164,63 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // PATCH /api/pcp/programacao/reordenar-fila-cortadeira — Reordena a fila
+  // COMBINADA de um centro CORTADEIRA, onde etapas de OP e Requisições de
+  // Corte (RC) convivem no MESMO espaço de posição. Recebe a lista ordenada
+  // de itens heterogêneos e grava `posicaoFila` sequencial (1..N) em cada um
+  // no seu respectivo model. Spec pcp-planos-frente-costa-rc (Fase A).
+  // =========================================================================
+  app.patch('/programacao/reordenar-fila-cortadeira', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const body = z.object({
+      centroProducaoId: z.string().uuid(),
+      itens: z.array(z.object({
+        tipo: z.enum(['etapa', 'rc']),
+        id: z.string().uuid(),
+      })).min(1),
+    }).parse(request.body)
+
+    // Permissão: mesma regra de reordenar fila.
+    if (user.perfil !== 'SUPER_ADMIN' && user.perfil !== 'ADMIN') {
+      const permissoes = await getPermissoes(user.empresaId, user.id)
+      if (!permissoes.podeReordenarFila) {
+        return reply.status(403).send({ message: 'Sem permissão para reordenar a fila' })
+      }
+    }
+
+    const etapaIds = body.itens.filter(i => i.tipo === 'etapa').map(i => i.id)
+    const rcIds = body.itens.filter(i => i.tipo === 'rc').map(i => i.id)
+
+    // Validar propriedade: etapas no centro informado + empresa; RCs da empresa.
+    const etapas = etapaIds.length > 0 ? await prisma.etapaOrdemProducao.findMany({
+      where: { id: { in: etapaIds }, centroProducaoId: body.centroProducaoId, ordemProducao: { empresaId: user.empresaId } },
+      select: { id: true },
+    }) : []
+    const rcs = rcIds.length > 0 ? await prisma.requisicaoCorte.findMany({
+      where: { id: { in: rcIds }, empresaId: user.empresaId },
+      select: { id: true },
+    }) : []
+    const etapasValidas = new Set(etapas.map(e => e.id))
+    const rcsValidas = new Set(rcs.map(r => r.id))
+
+    // Grava posicaoFila sequencial (1..N) seguindo a ordem combinada recebida.
+    const updates: any[] = []
+    let pos = 1
+    for (const item of body.itens) {
+      if (item.tipo === 'etapa') {
+        if (!etapasValidas.has(item.id)) continue
+        updates.push(prisma.etapaOrdemProducao.update({ where: { id: item.id }, data: { posicaoFila: pos++, ordemManual: true } }))
+      } else {
+        if (!rcsValidas.has(item.id)) continue
+        updates.push(prisma.requisicaoCorte.update({ where: { id: item.id }, data: { posicaoFila: pos++ } }))
+      }
+    }
+    await prisma.$transaction(updates)
+
+    return { success: true, reordenados: updates.length }
+  })
+
+  // =========================================================================
   // PATCH /api/pcp/etapas/:id/iniciar — Operador inicia a etapa
   // =========================================================================
   app.patch('/etapas/:id/iniciar', async (request, reply) => {
@@ -2397,12 +2454,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // processo CORTADEIRA (o operador escolhe em qual máquina cortar). Spec
     // pcp-planos-frente-costa-rc (Fase A). Isolamento por empresaId.
     const rcsAbertas = await prisma.requisicaoCorte.findMany({
-      where: { empresaId: user.empresaId, status: 'ABERTA' },
+      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { criadoEm: 'asc' }],
     })
     const rcsPainel = rcsAbertas.map((rc) => ({
       id: rc.id,
       numero: rc.numero,
+      status: rc.status,
       posicaoFila: rc.posicaoFila,
       requisitante: rc.requisitante,
       fabricanteCartao: rc.fabricanteCartao,

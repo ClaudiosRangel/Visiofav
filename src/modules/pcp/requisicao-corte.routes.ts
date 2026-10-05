@@ -90,9 +90,9 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 
     const numero = await proximoNumeroRc(user.empresaId)
 
-    // Posição no fim da fila de RCs ABERTAS da empresa (entra por último).
+    // Posição no fim da fila de RCs na fila da empresa (entra por último).
     const maxPos = await prisma.requisicaoCorte.aggregate({
-      where: { empresaId: user.empresaId, status: 'ABERTA' },
+      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
       _max: { posicaoFila: true },
     })
 
@@ -193,6 +193,26 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
   })
 
   // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/:id/iniciar — Marca como EM_CORTE (continua na fila)
+  // ---------------------------------------------------------------------------
+  app.patch('/requisicoes-corte/:id/iniciar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const existe = await prisma.requisicaoCorte.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
+
+    const rc = await prisma.requisicaoCorte.update({
+      where: { id },
+      data: { status: 'EM_CORTE' },
+    })
+    return rc
+  })
+
+  // ---------------------------------------------------------------------------
   // PATCH /requisicoes-corte/:id/concluir — Marca como CORTADA (sai da fila)
   // ---------------------------------------------------------------------------
   app.patch('/requisicoes-corte/:id/concluir', async (request, reply) => {
@@ -226,7 +246,7 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
     if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
 
     const maxPos = await prisma.requisicaoCorte.aggregate({
-      where: { empresaId: user.empresaId, status: 'ABERTA' },
+      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
       _max: { posicaoFila: true },
     })
 
