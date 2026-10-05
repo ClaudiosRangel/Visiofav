@@ -90,17 +90,31 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 
     const numero = await proximoNumeroRc(user.empresaId)
 
-    // Posição no fim da fila de RCs na fila da empresa (entra por último).
-    const maxPos = await prisma.requisicaoCorte.aggregate({
-      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
-      _max: { posicaoFila: true },
-    })
+    // Posição no FIM da fila combinada da Cortadeira — considera o maior
+    // posicaoFila tanto das RCs quanto das ETAPAS de centros CORTADEIRA (a
+    // fila é compartilhada no painel). Assim a nova RC sempre entra por
+    // último, abaixo de todas as OSs e RCs já na fila.
+    const [maxPosRc, maxPosEtapa] = await Promise.all([
+      prisma.requisicaoCorte.aggregate({
+        where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
+        _max: { posicaoFila: true },
+      }),
+      prisma.etapaOrdemProducao.aggregate({
+        where: {
+          status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+          ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+          centroProducao: { tipoProcesso: { codigo: 'CORTADEIRA' } },
+        },
+        _max: { posicaoFila: true },
+      }),
+    ])
+    const proximaPos = Math.max(maxPosRc._max.posicaoFila || 0, maxPosEtapa._max.posicaoFila || 0) + 1
 
     const rc = await prisma.requisicaoCorte.create({
       data: {
         empresaId: user.empresaId,
         numero,
-        posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
+        posicaoFila: proximaPos,
         ordemProducaoId: body.ordemProducaoId ?? undefined,
         dataSolicitacao: body.dataSolicitacao ? new Date(body.dataSolicitacao) : new Date(),
         dataCorte: body.dataCorte ? new Date(body.dataCorte) : undefined,
