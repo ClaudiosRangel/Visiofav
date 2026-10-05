@@ -166,6 +166,11 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         centroProducaoId: z.string().uuid().nullable(),
         nomeEditado: z.string().optional(),
         tipoProcessoId: z.string().uuid().optional(),
+        // Flag EXPLÍCITO de que o usuário DESMARCOU esta etapa no preview
+        // (não quer criá-la). Só quando true a etapa é pulada. Sem o flag,
+        // a etapa é SEMPRE criada (com ou sem centro) — evita o descarte
+        // silencioso que deixava OS multi-plano com 0 etapas.
+        desmarcada: z.boolean().optional(),
       })).optional(),
       // Se quer salvar De/Para para futuras importaÃ§Ãµes
       salvarDePara: z.boolean().optional().default(false),
@@ -459,8 +464,14 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       const vinculoCentro = body.centrosVinculados?.find(v => v.indice === i)
       const centroId = vinculoCentro?.centroProducaoId ?? null
 
-      // Se o item foi desmarcado (centroId null e nomeEditado vazio), pular esta etapa
-      if (!centroId && vinculoCentro && !vinculoCentro.nomeEditado) {
+      // REGRA À PROVA DE FALHAS: só pula a etapa se o usuário a DESMARCOU
+      // EXPLICITAMENTE no preview (flag `desmarcada`). Em qualquer outro caso
+      // a etapa É CRIADA — com centro se resolver, SEM centro caso contrário
+      // (o usuário atribui a máquina depois no painel). Antes, uma etapa cujo
+      // centro não pôde ser resolvido (nomeEditado vazio) era descartada em
+      // silêncio, deixando OS inteiras com 0 etapas (bug da OS 3.133 e risco
+      // em qualquer importação sem de-para). Nunca mais descartar sem o flag.
+      if (vinculoCentro?.desmarcada === true) {
         continue
       }
 
