@@ -103,6 +103,11 @@ export interface EtapaOp {
   // Quando a OS é multi-plano, indica a qual plano (nome) esta etapa pertence.
   // null para OS de plano único (fluxo legado). Spec pcp-planos-frente-costa-rc.
   planoNome?: string | null
+  // Nomes dos planos/componentes que esta etapa atende, extraídos do sufixo
+  // "(TAMPA,CAIXA,BOLSA)" do nome da operação. Uma operação física (ex.:
+  // Cortadeira) processa vários planos numa passagem. [] quando não é
+  // multi-plano. Spec pcp-planos-frente-costa-rc (modelo Opção 1).
+  planosNomes?: string[]
   // Só para etapas de COLAGEM: o texto exato do tipo de colagem extraído do
   // PDF (o trecho após a "/" na linha da coladeira, ex.: "Colagem Lateral",
   // "Fundo Automático"). null para etapas que não são de colagem.
@@ -176,28 +181,31 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
   // Planos (multi-componente). Aditivo: só populado quando há 2+ planos.
   const planos = extrairPlanos(texto)
 
-  // Quando a OS é multi-plano E a seção "Acabamentos Fixo Variável" NÃO
-  // produziu etapas (algumas OS, como a OP 3.133, trazem o roteiro só na
-  // coluna Acabamento da tabela de planos), ACHATAMOS as etapas dos planos
-  // em `etapas`, cada uma marcada com planoNome. Isso faz o preview, as
-  // sugestões de centro e a criação de etapas funcionarem para essas OS.
-  //
-  // IMPORTANTE (não-regressão): só substituímos quando `extrairEtapas` veio
-  // VAZIO. Se a seção "Acabamentos" existe e já extraiu etapas (com tempos,
-  // melhores), mantemos essas — apenas usamos os planos para o badge/vínculo.
-  // Caso contrário, OS como 2857/2870/2935 (que têm planos E seção
-  // Acabamentos) perderiam as etapas boas. Validado por testar-todos-pdfs-op.
+  // Modelo Opção 1 (confirmado com o cliente): a etapa física é ÚNICA e
+  // processa vários planos numa passagem (ex.: a Cortadeira corta TAMPA+
+  // CAIXA+BOLSA de uma vez). Na seção de acabamentos do GPrint, cada operação
+  // traz o SUFIXO "(PLANO1,PLANO2,...)" com os planos que atende. Extraímos
+  // esses nomes para `etapa.planosNomes` (exibidos como badges no painel).
+  // NÃO desmembramos a etapa — ela continua uma só (reflete a fábrica).
+  if (planos.length >= 2 && etapas.length > 0) {
+    const nomesPlanosValidos = new Set(planos.map((p) => p.nome.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()))
+    for (const e of etapas) {
+      const nomes = extrairPlanosDoSufixo(e.descricao, nomesPlanosValidos)
+      if (nomes.length > 0) e.planosNomes = nomes
+    }
+  }
+
+  // Fallback (OS tipo A, raro): multi-plano SEM seção de acabamentos — usa as
+  // etapas derivadas da tabela de planos, cada uma marcada com planoNome.
   if (planos.length >= 2 && etapas.length === 0) {
     const etapasDePlanos: EtapaOp[] = []
     let seq = 1
     for (const p of planos) {
       for (const e of p.etapas) {
-        etapasDePlanos.push({ ...e, sequencia: seq++, planoNome: p.nome })
+        etapasDePlanos.push({ ...e, sequencia: seq++, planoNome: p.nome, planosNomes: [p.nome] })
       }
     }
-    if (etapasDePlanos.length > 0) {
-      etapas = etapasDePlanos
-    }
+    if (etapasDePlanos.length > 0) etapas = etapasDePlanos
   }
 
   if (etapas.length > 0) camposEncontrados += 2
@@ -728,6 +736,28 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
   }
 
   return etapas
+}
+
+/**
+ * Extrai os nomes de planos do sufixo "(PLANO1,PLANO2,...)" de uma descrição
+ * de etapa. Ex.: "Cortadeira (Grande) (BOLSA,CAIXA,TAMPA)" → ["BOLSA","CAIXA",
+ * "TAMPA"]. Só considera grupos entre parênteses cujos itens (separados por
+ * vírgula) sejam TODOS nomes de planos conhecidos — assim "(Grande)" ou
+ * "(Corte e Vinc)" não são confundidos com planos. Retorna [] se não achar.
+ */
+function extrairPlanosDoSufixo(descricao: string, nomesValidos: Set<string>): string[] {
+  const grupos = [...descricao.matchAll(/\(([^()]+)\)/g)]
+  for (let i = grupos.length - 1; i >= 0; i--) {
+    const itens = grupos[i][1].split(',').map((s) => s.trim()).filter(Boolean)
+    if (itens.length === 0) continue
+    const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+    const todosSaoPlanos = itens.every((it) => nomesValidos.has(norm(it)))
+    if (todosSaoPlanos) {
+      // Mantém a ordem/caixa original dos itens do PDF.
+      return itens
+    }
+  }
+  return []
 }
 
 // ============================================================================

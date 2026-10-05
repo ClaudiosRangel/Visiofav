@@ -552,10 +552,11 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           status: 'PENDENTE',
           // Tipo de colagem extraído do PDF (só preenchido em etapas COLAGEM)
           tipoColagem: etapa.tipoColagem ?? undefined,
-          // Vínculo ao plano (OS multi-componente). planoNome vem do parser;
-          // null/sem-plano para OS de plano único (legado). (as any pois o
-          // campo é novo no schema — ver spec pcp-planos-frente-costa-rc.)
+          // Vínculo ao plano (OS multi-componente). planoNome vem do parser
+          // (caso tipo A, raro); planosNomes é a lista de planos que a etapa
+          // atende (modelo Opção 1, caso comum — exibida como badges).
           planoId: (etapa.planoNome && planoIdPorNome.get(etapa.planoNome)) || undefined,
+          planosNomes: etapa.planosNomes && etapa.planosNomes.length > 0 ? etapa.planosNomes.join(',') : undefined,
         } as any,
       })
       etapasCriadas.push(etapaCriada)

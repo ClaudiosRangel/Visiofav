@@ -4798,6 +4798,7 @@ async function seedMateriaisFromOPs() {
   `)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "plano_ordem_producao_ordem_producao_id_idx" ON "plano_ordem_producao"("ordem_producao_id")`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "plano_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "planos_nomes" VARCHAR(200)`)
   // FKs (Postgres não tem ADD CONSTRAINT IF NOT EXISTS — envolver em try/catch)
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD CONSTRAINT "plano_ordem_producao_ordem_producao_id_fkey" FOREIGN KEY ("ordem_producao_id") REFERENCES "ordem_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)

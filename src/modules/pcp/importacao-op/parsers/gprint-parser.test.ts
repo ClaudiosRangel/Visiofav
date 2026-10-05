@@ -250,6 +250,41 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
     const dados = parseGprintPdf(textoMultiPlano())
     expect(dados.planos.every((p) => p.frenteCosta === false)).toBe(true)
   })
+
+  it('extrai planosNomes do sufixo (X,Y,Z) das etapas (modelo Opção 1 — OP 3.133 real)', () => {
+    // Reproduz a seção de acabamentos AGREGADA real: cada operação lista os
+    // planos que atende entre parênteses. A etapa é ÚNICA (não desmembra).
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.133 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   SOL & NEVE',
+      'Produto:   Cartucho Composto',
+      'Descrição:   Caixa de Sorvete 7 Litros',
+      'Quantidade:   5.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'TAMPA   780 x 480   2x2   1.375   4x0 +V   Heidelberg CD 5cores   4   Cortadeira (Grande), Guilhotina maior, Verniz',
+      'CAIXA   831 x 585   1x2   2.750   4x0   Heidelberg CD 5cores   4   Cortadeira (Grande), SG (Laminadora), Fechadora de Caixa',
+      'BOLSA   648 x 830   2x1   2.750   0x0   Cortadeira (Grande), Seladora Bolsa',
+      'Acabamentos   Fixo   Variável',
+      'Cortadeira (Grande) (BOLSA,CAIXA,TAMPA)  00:15  05:23',
+      'Guilhotina maior (TAMPA)  00:00  00:41',
+      'Seladora Bolsa (BOLSA)  00:00  01:00',
+      'SG (Laminadora) (CAIXA,TAMPA)  00:00  02:00',
+      'Materiais   Qtde.',
+      'NZ Fibra Longa 200   103,88   KG',
+    ].join('\n')
+
+    const dados = parseGprintPdf(texto)
+    const cort = dados.etapas.find((e) => /Cortadeira/.test(e.descricao))!
+    const guilh = dados.etapas.find((e) => /Guilhotina/.test(e.descricao))!
+    const selad = dados.etapas.find((e) => /Seladora/.test(e.descricao))!
+
+    expect(cort.planosNomes).toEqual(['BOLSA', 'CAIXA', 'TAMPA'])
+    expect(guilh.planosNomes).toEqual(['TAMPA'])
+    expect(selad.planosNomes).toEqual(['BOLSA'])
+    // Nº de etapas = nº de operações (NÃO desmembra por plano)
+    expect(dados.etapas.filter((e) => /Cortadeira/.test(e.descricao))).toHaveLength(1)
+  })
 })
 
 describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {

@@ -3361,6 +3361,11 @@ model EtapaOrdemProducao {
   // ao excluir o plano protege a etapa (e seus apontamentos) de ser removida.
   planoId                String?             @map("plano_id")
   plano                  PlanoOrdemProducao? @relation(fields: [planoId], references: [id], onDelete: SetNull)
+  // Nomes dos planos que esta etapa (operação física única) atende, separados
+  // por vírgula (ex.: "TAMPA,CAIXA,BOLSA"). Modelo Opção 1: a Cortadeira corta
+  // vários planos numa passagem. Exibido como badges no painel. null = etapa
+  // sem planos (legado/plano único). Spec pcp-planos-frente-costa-rc.
+  planosNomes            String?             @map("planos_nomes") @db.VarChar(200)
 
   apontamentosEtapa ApontamentoEtapa[]
 

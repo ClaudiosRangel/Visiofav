@@ -2175,6 +2175,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             isAvulsa: e.ordemProducao.origemImportacao === 'AVULSA',
             // Plano/componente (TAMPA/CAIXA ou FRENTE/COSTA). null = sem plano.
             plano: e.plano ? { id: e.plano.id, nome: e.plano.nome, tipo: e.plano.tipo } : null,
+            // Planos que a etapa (operação física) atende — modelo Opção 1
+            // (ex.: Cortadeira processa TAMPA+CAIXA+BOLSA). Lista de nomes.
+            planosNomes: (e as any).planosNomes ? String((e as any).planosNomes).split(',').map((s: string) => s.trim()).filter(Boolean) : [],
             quantidade: Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
             unidade: e.ordemProducao.unidadeMedida,
             quantidadeProduzida: Number(e.quantidadeProduzida),
