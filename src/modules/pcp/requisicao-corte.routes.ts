@@ -90,10 +90,17 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 
     const numero = await proximoNumeroRc(user.empresaId)
 
+    // Posição no fim da fila de RCs ABERTAS da empresa (entra por último).
+    const maxPos = await prisma.requisicaoCorte.aggregate({
+      where: { empresaId: user.empresaId, status: 'ABERTA' },
+      _max: { posicaoFila: true },
+    })
+
     const rc = await prisma.requisicaoCorte.create({
       data: {
         empresaId: user.empresaId,
         numero,
+        posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
         ordemProducaoId: body.ordemProducaoId ?? undefined,
         dataSolicitacao: body.dataSolicitacao ? new Date(body.dataSolicitacao) : new Date(),
         dataCorte: body.dataCorte ? new Date(body.dataCorte) : undefined,
@@ -183,6 +190,74 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 
     await prisma.requisicaoCorte.delete({ where: { id } })
     return reply.status(204).send()
+  })
+
+  // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/:id/concluir — Marca como CORTADA (sai da fila)
+  // ---------------------------------------------------------------------------
+  app.patch('/requisicoes-corte/:id/concluir', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const existe = await prisma.requisicaoCorte.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
+
+    const rc = await prisma.requisicaoCorte.update({
+      where: { id },
+      data: { status: 'CORTADA', dataCorte: new Date(), posicaoFila: null },
+    })
+    return rc
+  })
+
+  // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/:id/reabrir — Volta para ABERTA (reentra na fila)
+  // ---------------------------------------------------------------------------
+  app.patch('/requisicoes-corte/:id/reabrir', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const existe = await prisma.requisicaoCorte.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
+
+    const maxPos = await prisma.requisicaoCorte.aggregate({
+      where: { empresaId: user.empresaId, status: 'ABERTA' },
+      _max: { posicaoFila: true },
+    })
+
+    const rc = await prisma.requisicaoCorte.update({
+      where: { id },
+      data: { status: 'ABERTA', posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
+    })
+    return rc
+  })
+
+  // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/reordenar — Renumera posicaoFila (1..N) na ordem
+  // recebida. Mesma mecânica de PATCH /etapas/reordenar.
+  // ---------------------------------------------------------------------------
+  app.patch('/requisicoes-corte/reordenar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z.object({ ids: z.array(z.string().uuid()) }).parse(request.body)
+
+    // Garante que todas as RCs pertencem à empresa antes de reordenar.
+    const rcs = await prisma.requisicaoCorte.findMany({
+      where: { id: { in: body.ids }, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    const validos = new Set(rcs.map((r) => r.id))
+
+    let pos = 1
+    for (const id of body.ids) {
+      if (!validos.has(id)) continue
+      await prisma.requisicaoCorte.update({ where: { id }, data: { posicaoFila: pos++ } })
+    }
+    return reply.send({ message: 'Fila de RCs reordenada', total: pos - 1 })
   })
 
   // ---------------------------------------------------------------------------

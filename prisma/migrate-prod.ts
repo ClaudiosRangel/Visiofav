@@ -4768,7 +4768,9 @@ async function seedMateriaisFromOPs() {
     )
   `)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "requisicao_corte_empresa_id_idx" ON "requisicao_corte"("empresa_id")`)
-  console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id)')
+  // Posição na fila da Cortadeira (RC ordenável como OP avulsa de corte)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "posicao_fila" INTEGER`)
+  console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id, posicao_fila)')
 }
 
 main()

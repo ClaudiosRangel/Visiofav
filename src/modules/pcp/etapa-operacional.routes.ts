@@ -2392,6 +2392,35 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       // Deduplica por OP (pode ter múltiplas etapas da mesma OP)
       .filter((item, index, self) => self.findIndex(i => i.opNumero === item.opNumero) === index)
 
+    // Requisições de Corte (RC) ABERTAS — comportam-se como "OP avulsa de
+    // corte" na fila da Cortadeira. Anexadas a TODOS os centros do tipo de
+    // processo CORTADEIRA (o operador escolhe em qual máquina cortar). Spec
+    // pcp-planos-frente-costa-rc (Fase A). Isolamento por empresaId.
+    const rcsAbertas = await prisma.requisicaoCorte.findMany({
+      where: { empresaId: user.empresaId, status: 'ABERTA' },
+      orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { criadoEm: 'asc' }],
+    })
+    const rcsPainel = rcsAbertas.map((rc) => ({
+      id: rc.id,
+      numero: rc.numero,
+      posicaoFila: rc.posicaoFila,
+      requisitante: rc.requisitante,
+      fabricanteCartao: rc.fabricanteCartao,
+      nomeProduto: rc.nomeProduto,
+      nomeServico: rc.nomeServico,
+      formatoCorte: rc.formatoCorte,
+      gramaturaG: rc.gramaturaG != null ? Number(rc.gramaturaG) : null,
+      larguraBobinaCm: rc.larguraBobinaCm != null ? Number(rc.larguraBobinaCm) : null,
+      tamanhoCorteCm: rc.tamanhoCorteCm != null ? Number(rc.tamanhoCorteCm) : null,
+      qtdFolhasCortadeira: rc.qtdFolhasCortadeira,
+      pesoKg: rc.pesoKg != null ? Number(rc.pesoKg) : null,
+      dataSolicitacao: rc.dataSolicitacao,
+    }))
+    for (const centroPainel of painelPorCentro) {
+      ;(centroPainel as any).requisicoesCorte =
+        centroPainel.centro.tipoProcesso?.codigo === 'CORTADEIRA' ? rcsPainel : []
+    }
+
     return { centros: painelPorCentro, aguardandoCartao }
   })
 }

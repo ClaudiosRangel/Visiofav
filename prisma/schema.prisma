@@ -3434,6 +3434,10 @@ model RequisicaoCorte {
   pesoKg              Decimal?  @map("peso_kg") @db.Decimal(12, 2)
   instrucoesRefile    String?   @map("instrucoes_refile") @db.Text
   status              String    @default("ABERTA") @db.VarChar(20) // ABERTA, CORTADA, CANCELADA
+  // Posição na fila da Cortadeira no painel de Programação. A RC se comporta
+  // como uma "OP avulsa de corte": aparece na fila do(s) centro(s) CORTADEIRA,
+  // ordenável junto com as etapas, e sai da fila quando status != ABERTA.
+  posicaoFila         Int?      @map("posicao_fila")
   criadoPorId         String?   @map("criado_por_id")
   criadoEm            DateTime  @default(now()) @map("criado_em")
   atualizadoEm        DateTime  @updatedAt @map("atualizado_em")
