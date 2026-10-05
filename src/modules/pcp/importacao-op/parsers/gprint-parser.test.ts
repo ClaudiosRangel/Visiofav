@@ -251,9 +251,10 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
     expect(dados.planos.every((p) => p.frenteCosta === false)).toBe(true)
   })
 
-  it('extrai planosNomes do sufixo (X,Y,Z) das etapas (modelo Opção 1 — OP 3.133 real)', () => {
-    // Reproduz a seção de acabamentos AGREGADA real: cada operação lista os
-    // planos que atende entre parênteses. A etapa é ÚNICA (não desmembra).
+  it('DESMEMBRA cada operação em uma etapa POR PLANO (modelo Opção 2 — OP 3.133 real)', () => {
+    // Seção de acabamentos agregada: cada operação lista os planos que atende.
+    // Modelo Opção 2: desmembra em UMA ETAPA POR PLANO (controle individual
+    // de iniciar/concluir por plano).
     const texto = [
       'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.133 R',
       'GPrint - Sistema Calcgraf',
@@ -275,15 +276,23 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
     ].join('\n')
 
     const dados = parseGprintPdf(texto)
-    const cort = dados.etapas.find((e) => /Cortadeira/.test(e.descricao))!
-    const guilh = dados.etapas.find((e) => /Guilhotina/.test(e.descricao))!
-    const selad = dados.etapas.find((e) => /Seladora/.test(e.descricao))!
 
-    expect(cort.planosNomes).toEqual(['BOLSA', 'CAIXA', 'TAMPA'])
-    expect(guilh.planosNomes).toEqual(['TAMPA'])
-    expect(selad.planosNomes).toEqual(['BOLSA'])
-    // Nº de etapas = nº de operações (NÃO desmembra por plano)
-    expect(dados.etapas.filter((e) => /Cortadeira/.test(e.descricao))).toHaveLength(1)
+    // Cortadeira (BOLSA,CAIXA,TAMPA) → 3 etapas (uma por plano)
+    const corts = dados.etapas.filter((e) => /Cortadeira/.test(e.descricao))
+    expect(corts).toHaveLength(3)
+    expect(corts.map((e) => e.planoNome).sort()).toEqual(['BOLSA', 'CAIXA', 'TAMPA'])
+    // Nome base preservado + sufixo do plano
+    expect(corts.find((e) => e.planoNome === 'BOLSA')!.descricao).toBe('Cortadeira (Grande) — BOLSA')
+
+    // SG (CAIXA,TAMPA) → 2 etapas
+    const sgs = dados.etapas.filter((e) => /SG/.test(e.descricao))
+    expect(sgs).toHaveLength(2)
+    expect(sgs.map((e) => e.planoNome).sort()).toEqual(['CAIXA', 'TAMPA'])
+
+    // Guilhotina (só TAMPA) → 1 etapa; Seladora (só BOLSA) → 1 etapa
+    expect(dados.etapas.filter((e) => /Guilhotina/.test(e.descricao))).toHaveLength(1)
+    expect(dados.etapas.find((e) => /Guilhotina/.test(e.descricao))!.planoNome).toBe('TAMPA')
+    expect(dados.etapas.find((e) => /Seladora/.test(e.descricao))!.planoNome).toBe('BOLSA')
   })
 })
 

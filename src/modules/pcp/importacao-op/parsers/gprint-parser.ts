@@ -181,18 +181,39 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
   // Planos (multi-componente). Aditivo: só populado quando há 2+ planos.
   const planos = extrairPlanos(texto)
 
-  // Modelo Opção 1 (confirmado com o cliente): a etapa física é ÚNICA e
-  // processa vários planos numa passagem (ex.: a Cortadeira corta TAMPA+
-  // CAIXA+BOLSA de uma vez). Na seção de acabamentos do GPrint, cada operação
-  // traz o SUFIXO "(PLANO1,PLANO2,...)" com os planos que atende. Extraímos
-  // esses nomes para `etapa.planosNomes` (exibidos como badges no painel).
-  // NÃO desmembramos a etapa — ela continua uma só (reflete a fábrica).
+  // Modelo Opção 2 (confirmado com o cliente): cada plano é controlado
+  // SEPARADAMENTE (iniciar/apontar/concluir por plano). A operação do GPrint
+  // traz o SUFIXO "(PLANO1,PLANO2,...)" com os planos que atende; nós
+  // DESMEMBRAMOS a operação em UMA ETAPA POR PLANO (ex.: "Cortadeira
+  // (BOLSA,CAIXA,TAMPA)" → 3 etapas: Cortadeira [BOLSA], [CAIXA], [TAMPA]).
+  // A OP só conclui quando TODAS as etapas de TODOS os planos fecharem.
   if (planos.length >= 2 && etapas.length > 0) {
     const nomesPlanosValidos = new Set(planos.map((p) => p.nome.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()))
+    const expandidas: EtapaOp[] = []
+    let seq = 1
     for (const e of etapas) {
       const nomes = extrairPlanosDoSufixo(e.descricao, nomesPlanosValidos)
-      if (nomes.length > 0) e.planosNomes = nomes
+      // Nome base da operação SEM o sufixo de planos (ex.: "Cortadeira (Grande)").
+      const nomeBase = removerSufixoPlanos(e.descricao, nomesPlanosValidos)
+      if (nomes.length >= 2) {
+        // Desmembra: uma etapa por plano, vinculada ao plano (planoNome).
+        for (const nomePlano of nomes) {
+          expandidas.push({
+            ...e,
+            sequencia: seq++,
+            descricao: `${nomeBase} — ${nomePlano}`,
+            planoNome: nomePlano,
+            planosNomes: [nomePlano],
+          })
+        }
+      } else if (nomes.length === 1) {
+        expandidas.push({ ...e, sequencia: seq++, descricao: `${nomeBase} — ${nomes[0]}`, planoNome: nomes[0], planosNomes: nomes })
+      } else {
+        // Sem sufixo de plano reconhecível — mantém a etapa como está.
+        expandidas.push({ ...e, sequencia: seq++ })
+      }
     }
+    etapas = expandidas
   }
 
   // Fallback (OS tipo A, raro): multi-plano SEM seção de acabamentos — usa as
@@ -758,6 +779,24 @@ function extrairPlanosDoSufixo(descricao: string, nomesValidos: Set<string>): st
     }
   }
   return []
+}
+
+/**
+ * Remove o sufixo "(PLANO1,PLANO2,...)" do nome da operação, preservando o
+ * resto (ex.: "Cortadeira (Grande) (BOLSA,CAIXA,TAMPA)" → "Cortadeira
+ * (Grande)"). Remove apenas o grupo entre parênteses cujos itens são TODOS
+ * planos conhecidos. Se não houver, devolve a descrição original (trim).
+ */
+function removerSufixoPlanos(descricao: string, nomesValidos: Set<string>): string {
+  const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+  const resultado = descricao.replace(/\s*\(([^()]+)\)/g, (match, conteudo) => {
+    const itens = String(conteudo).split(',').map((s) => s.trim()).filter(Boolean)
+    if (itens.length > 0 && itens.every((it) => nomesValidos.has(norm(it)))) {
+      return '' // é grupo de planos → remove
+    }
+    return match // mantém (ex.: "(Grande)")
+  })
+  return resultado.replace(/\s{2,}/g, ' ').trim()
 }
 
 // ============================================================================
