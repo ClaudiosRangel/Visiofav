@@ -502,8 +502,17 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         const nomeCentro = nomeParaCentro
         let codigoCentro = nomeCentro.substring(0, 20).toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '')
 
-        // Verificar se já existe um centro com esse código para evitar duplicidade
-        const centroExistente = await prisma.centroProducao.findFirst({
+        // REUSO POR NOME (crítico p/ planos desmembrados): etapas da mesma
+        // máquina com planos diferentes (ex.: "SG (Laminadora)" para CAIXA e
+        // TAMPA) DEVEM cair no MESMO centro. Buscamos primeiro por DESCRIÇÃO
+        // (nome da máquina, case-insensitive), depois por código. Sem isso,
+        // cada etapa desmembrada criava um centro novo (bug: várias "SG"/
+        // "Cortadeira" separadas no painel).
+        const centroPorNome = await prisma.centroProducao.findFirst({
+          where: { empresaId: user.empresaId, descricao: { equals: nomeCentro, mode: 'insensitive' } },
+          select: { id: true },
+        })
+        const centroExistente = centroPorNome || await prisma.centroProducao.findFirst({
           where: { empresaId: user.empresaId, codigo: codigoCentro },
           select: { id: true },
         })
