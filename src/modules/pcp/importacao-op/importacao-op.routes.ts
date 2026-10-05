@@ -484,9 +484,16 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         }
       }
 
-      // Se não vinculou a centro existente mas tem nomeEditado, criar novo centro
-      if (!centroIdValidado && vinculoCentro?.nomeEditado) {
-        const nomeCentro = vinculoCentro.nomeEditado
+      // Se não vinculou a centro existente, criar/resolver um centro a partir
+      // do nome. Fonte do nome, em ordem: nomeEditado (preview) → nome da
+      // máquina do PDF (etapa.maquina) → descrição da etapa. Isso garante que
+      // TODA etapa tenha um centro — sem centro ela ficaria invisível no
+      // painel de Programação (bug da OS 3.133: etapas existiam mas não
+      // apareciam porque o painel agrupa por centro). À prova de falhas:
+      // independe do frontend mandar o nome.
+      const nomeParaCentro = vinculoCentro?.nomeEditado || etapa.maquina || etapa.descricao
+      if (!centroIdValidado && nomeParaCentro) {
+        const nomeCentro = nomeParaCentro
         let codigoCentro = nomeCentro.substring(0, 20).toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '')
 
         // Verificar se já existe um centro com esse código para evitar duplicidade
@@ -515,14 +522,25 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
             codigoFinal = `${codigoCentro.substring(0, 17)}_${tentativa}`
           }
 
-          // tipoProcessoId é obrigatório no CentroProducao. Se o usuário não
-          // selecionou um no wizard, cai no fallback 'ACABAMENTO' (mesmo
-          // critério usado na migração de dados legados) — evita falhar a
-          // criação da OP por um campo de classificação não preenchido.
+          // tipoProcessoId é obrigatório no CentroProducao. Ordem de
+          // resolução: (1) o que o usuário selecionou no wizard; (2) inferido
+          // do TIPO da etapa do PDF (CORTADEIRA/COLAGEM/VERNIZ/IMPRESSAO →
+          // Tipo de Processo de mesmo código, se existir); (3) fallback
+          // 'ACABAMENTO'. Assim a etapa cai no grupo CERTO do painel mesmo
+          // sem o usuário classificar manualmente.
           let tipoProcessoIdValidado: string | null = null
-          if (vinculoCentro.tipoProcessoId) {
+          if (vinculoCentro?.tipoProcessoId) {
             const tp = await prisma.tipoProcesso.findFirst({ where: { id: vinculoCentro.tipoProcessoId, empresaId: user.empresaId } })
             if (tp) tipoProcessoIdValidado = tp.id
+          }
+          if (!tipoProcessoIdValidado) {
+            // Inferir pelo tipo da etapa extraída do PDF.
+            const codigoPorTipo: Record<string, string> = {
+              CORTADEIRA: 'CORTADEIRA', IMPRESSAO: 'IMPRESSAO', COLAGEM: 'COLAGEM', VERNIZ: 'VERNIZ',
+            }
+            const codigoInferido = codigoPorTipo[etapa.tipo || ''] || 'ACABAMENTO'
+            const tpInf = await prisma.tipoProcesso.findFirst({ where: { empresaId: user.empresaId, codigo: codigoInferido } })
+            tipoProcessoIdValidado = tpInf?.id ?? null
           }
           if (!tipoProcessoIdValidado) {
             const fallback = await prisma.tipoProcesso.findFirst({ where: { empresaId: user.empresaId, codigo: 'ACABAMENTO' } })
