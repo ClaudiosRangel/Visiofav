@@ -3423,6 +3423,10 @@ model RequisicaoCorte {
   id                  String    @id @default(uuid())
   empresaId           String    @map("empresa_id")
   numero              String    @db.VarChar(20) // "49/2026" (NN/AAAA por empresa/ano)
+  // Centro/grupo onde a RC foi criada. A RC aparece SÓ na fila desse centro
+  // (não em todos os CORTADEIRA). NULL = RC antiga (compat.: aparece em todos
+  // os CORTADEIRA como antes). Spec pcp-planos-frente-costa-rc.
+  centroProducaoId    String?   @map("centro_producao_id")
   ordemProducaoId     String?   @map("ordem_producao_id")
   dataSolicitacao     DateTime  @map("data_solicitacao")
   dataCorte           DateTime? @map("data_corte")

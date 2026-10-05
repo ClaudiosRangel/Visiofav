@@ -406,6 +406,52 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       itensMateriaisCriados.push(item)
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // PLANOS (multi-componente) + FRENTE/COSTA — criar ANTES das etapas, para
+    // que cada etapa já nasça vinculada ao plano certo (via etapa.planoNome).
+    // Só quando o PDF tem 2+ planos; OS de plano único não cria plano (planoId
+    // das etapas fica NULL = legado). Spec pcp-planos-frente-costa-rc.
+    // ─────────────────────────────────────────────────────────────────────
+    const planoIdPorNome = new Map<string, string>()
+    if (dados.planos && dados.planos.length >= 2) {
+      let seqPlano = 1
+      for (const planoOp of dados.planos) {
+        if (planoOp.frenteCosta) {
+          const frente = await prisma.planoOrdemProducao.create({
+            data: {
+              ordemProducaoId: op.id, empresaId: user.empresaId,
+              nome: `${planoOp.nome} (FRENTE)`, tipo: 'FACE',
+              formato: planoOp.formato ?? undefined, cores: planoOp.coresFrente ?? planoOp.cores ?? undefined,
+              tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
+              sequencia: seqPlano++,
+            },
+          })
+          await prisma.planoOrdemProducao.create({
+            data: {
+              ordemProducaoId: op.id, empresaId: user.empresaId,
+              nome: `${planoOp.nome} (COSTA)`, tipo: 'FACE',
+              formato: planoOp.formato ?? undefined, cores: planoOp.coresCosta ?? undefined,
+              tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
+              faceDeId: frente.id, sequencia: seqPlano++,
+            },
+          })
+          // Etapas desse plano (acabamento comum) vinculam à FRENTE.
+          planoIdPorNome.set(planoOp.nome, frente.id)
+        } else {
+          const plano = await prisma.planoOrdemProducao.create({
+            data: {
+              ordemProducaoId: op.id, empresaId: user.empresaId,
+              nome: planoOp.nome, tipo: 'COMPONENTE',
+              formato: planoOp.formato ?? undefined, cores: planoOp.cores ?? undefined,
+              tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
+              sequencia: seqPlano++,
+            },
+          })
+          planoIdPorNome.set(planoOp.nome, plano.id)
+        }
+      }
+    }
+
     // Criar etapas do roteiro
     const etapasCriadas = []
     for (let i = 0; i < dados.etapas.length; i++) {
@@ -506,71 +552,13 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           status: 'PENDENTE',
           // Tipo de colagem extraído do PDF (só preenchido em etapas COLAGEM)
           tipoColagem: etapa.tipoColagem ?? undefined,
-        },
+          // Vínculo ao plano (OS multi-componente). planoNome vem do parser;
+          // null/sem-plano para OS de plano único (legado). (as any pois o
+          // campo é novo no schema — ver spec pcp-planos-frente-costa-rc.)
+          planoId: (etapa.planoNome && planoIdPorNome.get(etapa.planoNome)) || undefined,
+        } as any,
       })
       etapasCriadas.push(etapaCriada)
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // PLANOS (multi-componente) + FRENTE/COSTA — spec pcp-planos-frente-costa-rc.
-    // Só cria planos quando o PDF tem 2+ planos reconhecíveis. Para OS de
-    // plano único, dados.planos == [] e nada é criado (planoId das etapas fica
-    // NULL — comportamento legado). As etapas já foram criadas acima pelo
-    // fluxo normal (intocado); aqui apenas criamos os PlanoOrdemProducao e
-    // vinculamos cada etapa ao plano correto por correspondência de descrição.
-    // ─────────────────────────────────────────────────────────────────────
-    if (dados.planos && dados.planos.length >= 2) {
-      const normal = (s: string) => (s || '').toUpperCase().replace(/\s+/g, ' ').trim()
-      let seqPlano = 1
-      for (const planoOp of dados.planos) {
-        if (planoOp.frenteCosta) {
-          // Cria 2 planos FACE (FRENTE/COSTA). A COSTA referencia a FRENTE.
-          const frente = await prisma.planoOrdemProducao.create({
-            data: {
-              ordemProducaoId: op.id, empresaId: user.empresaId,
-              nome: `${planoOp.nome} (FRENTE)`, tipo: 'FACE',
-              formato: planoOp.formato ?? undefined, cores: planoOp.coresFrente ?? planoOp.cores ?? undefined,
-              tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
-              sequencia: seqPlano++,
-            },
-          })
-          await prisma.planoOrdemProducao.create({
-            data: {
-              ordemProducaoId: op.id, empresaId: user.empresaId,
-              nome: `${planoOp.nome} (COSTA)`, tipo: 'FACE',
-              formato: planoOp.formato ?? undefined, cores: planoOp.coresCosta ?? undefined,
-              tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
-              faceDeId: frente.id, sequencia: seqPlano++,
-            },
-          })
-          // Vincula as etapas do plano à FRENTE (acabamento comum fica na
-          // frente — default acordado; refinável na task 13 se necessário).
-          const descsPlano = new Set(planoOp.etapas.map((e) => normal(e.descricao)))
-          for (const ec of etapasCriadas) {
-            if (!ec.planoId && descsPlano.has(normal(ec.descricao))) {
-              await prisma.etapaOrdemProducao.update({ where: { id: ec.id }, data: { planoId: frente.id } })
-              ;(ec as any).planoId = frente.id
-            }
-          }
-        } else {
-          const plano = await prisma.planoOrdemProducao.create({
-            data: {
-              ordemProducaoId: op.id, empresaId: user.empresaId,
-              nome: planoOp.nome, tipo: 'COMPONENTE',
-              formato: planoOp.formato ?? undefined, cores: planoOp.cores ?? undefined,
-              tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
-              sequencia: seqPlano++,
-            },
-          })
-          const descsPlano = new Set(planoOp.etapas.map((e) => normal(e.descricao)))
-          for (const ec of etapasCriadas) {
-            if (!ec.planoId && descsPlano.has(normal(ec.descricao))) {
-              await prisma.etapaOrdemProducao.update({ where: { id: ec.id }, data: { planoId: plano.id } })
-              ;(ec as any).planoId = plano.id
-            }
-          }
-        }
-      }
     }
 
     // Novas etapas entram no final da fila de cada centro (não interfere na

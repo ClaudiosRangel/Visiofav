@@ -100,6 +100,9 @@ export interface EtapaOp {
   tempoFixoMin: number
   tempoVariavelMin: number
   detalhes: string | null
+  // Quando a OS é multi-plano, indica a qual plano (nome) esta etapa pertence.
+  // null para OS de plano único (fluxo legado). Spec pcp-planos-frente-costa-rc.
+  planoNome?: string | null
   // Só para etapas de COLAGEM: o texto exato do tipo de colagem extraído do
   // PDF (o trecho após a "/" na linha da coladeira, ex.: "Colagem Lateral",
   // "Fundo Automático"). null para etapas que não são de colagem.
@@ -168,11 +171,36 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
   const materiais = extrairMateriais(texto, avisos)
   if (materiais.length > 0) camposEncontrados += 2
 
-  const etapas = extrairEtapas(texto, avisos)
-  if (etapas.length > 0) camposEncontrados += 2
+  let etapas = extrairEtapas(texto, avisos)
 
   // Planos (multi-componente). Aditivo: só populado quando há 2+ planos.
   const planos = extrairPlanos(texto)
+
+  // Quando a OS é multi-plano E a seção "Acabamentos Fixo Variável" NÃO
+  // produziu etapas (algumas OS, como a OP 3.133, trazem o roteiro só na
+  // coluna Acabamento da tabela de planos), ACHATAMOS as etapas dos planos
+  // em `etapas`, cada uma marcada com planoNome. Isso faz o preview, as
+  // sugestões de centro e a criação de etapas funcionarem para essas OS.
+  //
+  // IMPORTANTE (não-regressão): só substituímos quando `extrairEtapas` veio
+  // VAZIO. Se a seção "Acabamentos" existe e já extraiu etapas (com tempos,
+  // melhores), mantemos essas — apenas usamos os planos para o badge/vínculo.
+  // Caso contrário, OS como 2857/2870/2935 (que têm planos E seção
+  // Acabamentos) perderiam as etapas boas. Validado por testar-todos-pdfs-op.
+  if (planos.length >= 2 && etapas.length === 0) {
+    const etapasDePlanos: EtapaOp[] = []
+    let seq = 1
+    for (const p of planos) {
+      for (const e of p.etapas) {
+        etapasDePlanos.push({ ...e, sequencia: seq++, planoNome: p.nome })
+      }
+    }
+    if (etapasDePlanos.length > 0) {
+      etapas = etapasDePlanos
+    }
+  }
+
+  if (etapas.length > 0) camposEncontrados += 2
 
   const cortadeira = extrairCortadeira(texto)
   const montagem = extrairMontagem(texto)

@@ -90,23 +90,34 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 
     const numero = await proximoNumeroRc(user.empresaId)
 
-    // Posição no FIM da fila combinada da Cortadeira — considera o maior
-    // posicaoFila tanto das RCs quanto das ETAPAS de centros CORTADEIRA (a
-    // fila é compartilhada no painel). Assim a nova RC sempre entra por
-    // último, abaixo de todas as OSs e RCs já na fila.
+    // Valida o centro informado (grupo onde a RC foi criada) pertence à empresa.
+    let centroIdValidado: string | null = null
+    if (body.centroProducaoId) {
+      const centro = await prisma.centroProducao.findFirst({
+        where: { id: body.centroProducaoId, empresaId: user.empresaId },
+        select: { id: true },
+      })
+      if (centro) centroIdValidado = centro.id
+    }
+
+    // Posição no FIM da fila do CENTRO da RC — considera o maior posicaoFila
+    // tanto das RCs quanto das ETAPAS daquele centro (a fila é compartilhada
+    // no painel). Assim a nova RC entra por último, abaixo de tudo no grupo.
     const [maxPosRc, maxPosEtapa] = await Promise.all([
       prisma.requisicaoCorte.aggregate({
-        where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
+        where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] }, centroProducaoId: centroIdValidado ?? undefined },
         _max: { posicaoFila: true },
       }),
-      prisma.etapaOrdemProducao.aggregate({
-        where: {
-          status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
-          ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
-          centroProducao: { tipoProcesso: { codigo: 'CORTADEIRA' } },
-        },
-        _max: { posicaoFila: true },
-      }),
+      centroIdValidado
+        ? prisma.etapaOrdemProducao.aggregate({
+            where: {
+              status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+              centroProducaoId: centroIdValidado,
+              ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+            },
+            _max: { posicaoFila: true },
+          })
+        : Promise.resolve({ _max: { posicaoFila: 0 } } as any),
     ])
     const proximaPos = Math.max(maxPosRc._max.posicaoFila || 0, maxPosEtapa._max.posicaoFila || 0) + 1
 
@@ -115,6 +126,7 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
         empresaId: user.empresaId,
         numero,
         posicaoFila: proximaPos,
+        centroProducaoId: centroIdValidado ?? undefined,
         ordemProducaoId: body.ordemProducaoId ?? undefined,
         dataSolicitacao: body.dataSolicitacao ? new Date(body.dataSolicitacao) : new Date(),
         dataCorte: body.dataCorte ? new Date(body.dataCorte) : undefined,
@@ -340,6 +352,7 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 // Schema de validação (compartilhado entre POST e PUT)
 // =============================================================================
 const bodySchema = z.object({
+  centroProducaoId: z.string().uuid().optional().nullable(),
   ordemProducaoId: z.string().uuid().optional().nullable(),
   dataSolicitacao: z.string().optional(),
   dataCorte: z.string().optional().nullable(),

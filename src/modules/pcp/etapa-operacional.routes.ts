@@ -2466,6 +2466,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       id: rc.id,
       numero: rc.numero,
       status: rc.status,
+      centroProducaoId: rc.centroProducaoId,
       posicaoFila: rc.posicaoFila,
       requisitante: rc.requisitante,
       fabricanteCartao: rc.fabricanteCartao,
@@ -2479,9 +2480,16 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       pesoKg: rc.pesoKg != null ? Number(rc.pesoKg) : null,
       dataSolicitacao: rc.dataSolicitacao,
     }))
+    // Cada RC aparece SÓ no centro onde foi criada (centroProducaoId). RCs
+    // antigas sem centro (legado) continuam em todos os CORTADEIRA. Assim uma
+    // RC criada no grupo "Guilhotina menor" aparece só nele, não nos demais.
     for (const centroPainel of painelPorCentro) {
-      ;(centroPainel as any).requisicoesCorte =
-        centroPainel.centro.tipoProcesso?.codigo === 'CORTADEIRA' ? rcsPainel : []
+      const ehCortadeira = centroPainel.centro.tipoProcesso?.codigo === 'CORTADEIRA'
+      ;(centroPainel as any).requisicoesCorte = rcsPainel.filter((rc) =>
+        rc.centroProducaoId
+          ? rc.centroProducaoId === centroPainel.centro.id
+          : ehCortadeira, // legado: sem centro → todos os CORTADEIRA
+      )
     }
 
     return { centros: painelPorCentro, aguardandoCartao }
