@@ -195,6 +195,10 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
       const nomes = extrairPlanosDoSufixo(e.descricao, nomesPlanosValidos)
       // Nome base da operação SEM o sufixo de planos (ex.: "Cortadeira (Grande)").
       const nomeBase = removerSufixoPlanos(e.descricao, nomesPlanosValidos)
+      // `maquina` é a fonte do NOME DO CENTRO na confirmação — tem que ser o
+      // nome-base LIMPO (sem o sufixo de planos), senão o centro é criado como
+      // "Destacar (BOLSA,CAIXA,TAMPA)" em vez de "Destacar".
+      const maquinaBase = extrairNomeMaquina(nomeBase)
       if (nomes.length >= 2) {
         // Desmembra: uma etapa por plano, vinculada ao plano (planoNome).
         for (const nomePlano of nomes) {
@@ -202,12 +206,13 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
             ...e,
             sequencia: seq++,
             descricao: `${nomeBase} — ${nomePlano}`,
+            maquina: maquinaBase,
             planoNome: nomePlano,
             planosNomes: [nomePlano],
           })
         }
       } else if (nomes.length === 1) {
-        expandidas.push({ ...e, sequencia: seq++, descricao: `${nomeBase} — ${nomes[0]}`, planoNome: nomes[0], planosNomes: nomes })
+        expandidas.push({ ...e, sequencia: seq++, descricao: `${nomeBase} — ${nomes[0]}`, maquina: maquinaBase, planoNome: nomes[0], planosNomes: nomes })
       } else {
         // Sem sufixo de plano reconhecível — mantém a etapa como está.
         expandidas.push({ ...e, sequencia: seq++ })
