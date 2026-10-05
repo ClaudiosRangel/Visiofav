@@ -421,6 +421,13 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     if (dados.planos && dados.planos.length >= 2) {
       let seqPlano = 1
       for (const planoOp of dados.planos) {
+        // Dados de material comuns ao plano (cartão/gramatura/peso/aproveit.).
+        const mat = {
+          material: planoOp.material ?? undefined,
+          gramatura: planoOp.gramatura ?? undefined,
+          pesoKg: planoOp.pesoKg ?? undefined,
+          aproveitamento: planoOp.aproveitamento ?? undefined,
+        }
         if (planoOp.frenteCosta) {
           const frente = await prisma.planoOrdemProducao.create({
             data: {
@@ -428,8 +435,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
               nome: `${planoOp.nome} (FRENTE)`, tipo: 'FACE',
               formato: planoOp.formato ?? undefined, cores: planoOp.coresFrente ?? planoOp.cores ?? undefined,
               tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
-              sequencia: seqPlano++,
-            },
+              sequencia: seqPlano++, ...mat,
+            } as any,
           })
           await prisma.planoOrdemProducao.create({
             data: {
@@ -437,10 +444,9 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
               nome: `${planoOp.nome} (COSTA)`, tipo: 'FACE',
               formato: planoOp.formato ?? undefined, cores: planoOp.coresCosta ?? undefined,
               tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
-              faceDeId: frente.id, sequencia: seqPlano++,
-            },
+              faceDeId: frente.id, sequencia: seqPlano++, ...mat,
+            } as any,
           })
-          // Etapas desse plano (acabamento comum) vinculam à FRENTE.
           planoIdPorNome.set(planoOp.nome, frente.id)
         } else {
           const plano = await prisma.planoOrdemProducao.create({
@@ -449,8 +455,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
               nome: planoOp.nome, tipo: 'COMPONENTE',
               formato: planoOp.formato ?? undefined, cores: planoOp.cores ?? undefined,
               tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
-              sequencia: seqPlano++,
-            },
+              sequencia: seqPlano++, ...mat,
+            } as any,
           })
           planoIdPorNome.set(planoOp.nome, plano.id)
         }

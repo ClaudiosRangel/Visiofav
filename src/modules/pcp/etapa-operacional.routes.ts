@@ -1889,7 +1889,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true, tipoProcesso: { select: { codigo: true, posicao: true } } } },
         // Plano/componente da etapa (TAMPA/CAIXA/BOLSA ou FRENTE/COSTA).
         // null = etapa legada "sem plano". Incluído no select p/ evitar N+1.
-        plano: { select: { id: true, nome: true, tipo: true } },
+        // Inclui material/tiragem/gramatura/peso do plano (subitens do painel).
+        plano: { select: { id: true, nome: true, tipo: true, tiragem: true, material: true, gramatura: true, pesoKg: true, formato: true, montagem: true } },
       },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
@@ -2174,7 +2175,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             isManual: e.descricao.includes('[MANUAL]') || e.descricao.startsWith('Lançamento manual'),
             isAvulsa: e.ordemProducao.origemImportacao === 'AVULSA',
             // Plano/componente (TAMPA/CAIXA ou FRENTE/COSTA). null = sem plano.
-            plano: e.plano ? { id: e.plano.id, nome: e.plano.nome, tipo: e.plano.tipo } : null,
+            // Carrega os dados do plano (tiragem/material/gramatura/peso) que
+            // o frontend usa nos subitens — cada plano mostra o SEU cartão.
+            plano: e.plano ? {
+              id: e.plano.id, nome: e.plano.nome, tipo: e.plano.tipo,
+              tiragem: e.plano.tiragem != null ? Number(e.plano.tiragem) : null,
+              material: e.plano.material ?? null,
+              gramatura: e.plano.gramatura != null ? Number(e.plano.gramatura) : null,
+              pesoKg: e.plano.pesoKg != null ? Number(e.plano.pesoKg) : null,
+              formato: e.plano.formato ?? null,
+              montagem: e.plano.montagem ?? null,
+            } : null,
             // Planos que a etapa (operação física) atende — modelo Opção 1
             // (ex.: Cortadeira processa TAMPA+CAIXA+BOLSA). Lista de nomes.
             planosNomes: (e as any).planosNomes ? String((e as any).planosNomes).split(',').map((s: string) => s.trim()).filter(Boolean) : [],

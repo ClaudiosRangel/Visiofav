@@ -47,6 +47,14 @@ export interface PlanoOp {
   frenteCosta: boolean
   coresFrente: string | null // "7x0"
   coresCosta: string | null  // "5x0"
+  // Material PRINCIPAL do plano (da tabela "Plano/Material/Formato/Quant(Kg)").
+  // É o cartão real (ex.: "NZ Fibra Longa 200"), NÃO o Micro Pardo do plano
+  // "(M)" de acoplagem. Preenchido ao casar o nome do plano com a tabela de
+  // materiais do PDF. Spec pcp-planos-frente-costa-rc.
+  material: string | null
+  gramatura: number | null // extraída do nome do material (ex.: 200)
+  pesoKg: number | null    // Quant(Kg) do plano
+  aproveitamento: number | null // coluna "Aprov" (peças por folha) — p/ tiragem
 }
 
 export interface CabecalhoOp {
@@ -826,6 +834,11 @@ function removerSufixoPlanos(descricao: string, nomesValidos: Set<string>): stri
  * acabamento é só "Bimac (Acoplagem)" (não gera plano separado).
  */
 function extrairPlanos(texto: string): PlanoOp[] {
+  // Materiais por plano (tabela "Plano/Material/Formato/Quant(Kg)/..."): mapa
+  // nome-do-plano → { material, gramatura, pesoKg, aproveitamento }. Usado
+  // para cada plano mostrar o SEU cartão (não o Micro Pardo do (M)).
+  const materiaisPorPlano = extrairMateriaisPorPlano(texto)
+
   // Isola a seção da tabela de processo: do cabeçalho que contém
   // "Mont." "Tiragem" "Cores" ... "Acabamento" até a próxima seção conhecida.
   const secao = texto.match(/Formato\s+Mont\.?\s+Tiragem\s+Cores[\s\S]*?Acabamento([\s\S]*?)(?=Obs\.?:|Materiais|Emitido\s*por|Reemitido|CARTON WEGA|$)/i)
@@ -907,6 +920,10 @@ function extrairPlanos(texto: string): PlanoOp[] {
     const acabamentoTexto = extrairAcabamentoDoResto(resto)
     const etapasPlano = derivarEtapasDeAcabamento(acabamentoTexto)
 
+    // Material do plano (casado pelo nome, ignorando o sufixo "(M)").
+    const chaveMat = g.nome.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+    const mat = materiaisPorPlano.get(chaveMat) || null
+
     planos.push({
       nome: g.nome,
       formato: g.formato,
@@ -918,11 +935,51 @@ function extrairPlanos(texto: string): PlanoOp[] {
       frenteCosta,
       coresFrente,
       coresCosta,
+      material: mat?.material ?? null,
+      gramatura: mat?.gramatura ?? null,
+      pesoKg: mat?.pesoKg ?? null,
+      aproveitamento: mat?.aproveitamento ?? null,
     })
     seq++
   }
 
   return planos
+}
+
+/**
+ * Extrai a tabela de materiais por plano do GPrint:
+ *   "Plano  Material  Formato  Quant(Kg)  TR  Form. Corte  Form  Aprov"
+ *   "TAMPA  NZ Fibra Longa 200  787 x 480  103,88  N  780 x 480  1/1  4"
+ * Retorna mapa nome-do-plano (sem "(M)") → dados do material PRINCIPAL. Como
+ * o plano "(M)" (Micro) vem DEPOIS do principal na tabela, e usamos a chave
+ * sem "(M)", o principal é inserido primeiro e NÃO é sobrescrito pelo (M)
+ * (guardamos só a 1ª ocorrência de cada chave = o cartão real).
+ */
+function extrairMateriaisPorPlano(texto: string): Map<string, { material: string; gramatura: number | null; pesoKg: number | null; aproveitamento: number | null }> {
+  const mapa = new Map<string, { material: string; gramatura: number | null; pesoKg: number | null; aproveitamento: number | null }>()
+  const secao = texto.match(/Plano\s+Material\s+Formato\s+Quant\(Kg\)[\s\S]*?Aprov([\s\S]*?)(?=Plano\s+Formato\s+Mont|Impress[ãa]o|Obs\.?:|$)/i)
+  if (!secao) return mapa
+
+  const linhas = secao[1].split('\n').map((l) => l.trim()).filter(Boolean)
+  // Linha: NOME  MATERIAL...  FFF x FFF  PESO  TR  Form.Corte  Form  Aprov
+  // Ex.: "TAMPA  NZ Fibra Longa 200  787 x 480  103,88  N  780 x 480  1/1  4"
+  const re = /^([A-ZÀ-Ú][A-ZÀ-Ú0-9\s()\/]+?)\s{2,}(.+?)\s{2,}\d{2,4}\s*x\s*\d{2,4}\s+([\d.,]+)\s+[NS]\s+.*?(\d+)\s*$/i
+  for (const linha of linhas) {
+    const m = linha.match(re)
+    if (!m) continue
+    const nome = m[1].trim()
+    const chave = nome.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+    if (mapa.has(chave)) continue // mantém o 1º (material principal, não o (M))
+    const material = m[2].trim()
+    const gramMatch = material.match(/(\d{2,4})\s*$/)
+    mapa.set(chave, {
+      material,
+      gramatura: gramMatch ? parseInt(gramMatch[1]) : null,
+      pesoKg: parseNumero(m[3]),
+      aproveitamento: m[4] ? parseInt(m[4]) : null,
+    })
+  }
+  return mapa
 }
 
 /**
