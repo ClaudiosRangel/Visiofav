@@ -847,3 +847,75 @@ que a integração falhe silenciosamente, deixando a OP com todas etapas
    refatorar a integração PCP→WMS, migrar a lógica inline para o service e
    atualizar a chamada, em vez de manter as duas versões divergentes (elas
    já divergem em pelo menos um detalhe: `serie: 'PRD'` vs `serie: 'INT'`).
+
+---
+
+## 10. Planos de Produção, Frente/Costa e Requisição de Corte (RC)
+
+Spec: `.kiro/specs/pcp-planos-frente-costa-rc/`. Três ajustes pedidos pela
+Carton Wega para o painel refletir a estrutura real da OS gráfica do GPrint.
+
+### 10.1 Planos de Produção (`PlanoOrdemProducao`)
+
+Uma OS pode ter vários **planos/componentes** (ex.: TAMPA, CAIXA, BOLSA),
+cada um com formato/cores/tiragem e **roteiro de acabamento próprios**. Model
+`PlanoOrdemProducao` (tabela `plano_ordem_producao`): `nome`, `tipo`
+(`COMPONENTE | FACE`), `formato`, `cores`, `tiragem`, `montagem`, `faceDeId`
+(auto-FK p/ frente/costa), `sequencia`. FK para `OrdemProducao` (Cascade).
+
+`EtapaOrdemProducao` ganhou `planoId` (**nullable**, `onDelete: SetNull`).
+**REGRA DE COMPATIBILIDADE CRÍTICA**: `planoId = NULL` significa "plano único
+/ sem plano" e é o comportamento legado — toda etapa antiga continua
+funcionando igual. NUNCA exigir plano em query/lógica. OPs antigas só ganham
+planos se forem **reimportadas** (não há migração automática).
+
+### 10.2 Frente/Costa (planos tipo FACE)
+
+Impressão em retiração (tira-retira): a mesma folha passa 2× na máquina.
+Detectado no parser quando a coluna Cores é `NxM` com N>0 e M>0 (ex.: `7x5`),
+tipicamente com tiragem `qtd x 2`. Gera **2 planos FACE** (FRENTE/COSTA) na
+MESMA OP (número único — NÃO duplica a OP), a COSTA com `faceDeId` → FRENTE.
+A tiragem base é `qtd` (o `x 2` indica as 2 passagens, não dobra a quantidade).
+
+### 10.3 Parser (`gprint-parser.ts`)
+
+`extrairPlanos(texto)` (função pura, aditiva) lê a tabela de processo
+(`Plano/Formato/Mont./Tiragem/Cores/.../Acabamento`) e retorna `PlanoOp[]`.
+**Só retorna planos quando há 2+** — para OS de plano único devolve `[]` e o
+fluxo atual (`etapas[]` achatado) é usado (NÃO-REGRESSÃO garantida; validado
+por `scripts/testar-todos-pdfs-op.ts` antes/depois + testes em
+`gprint-parser.test.ts`). As etapas de cada plano vêm da coluna Acabamento
+(split por vírgula respeitando parênteses). ATENÇÃO: a regex de cores/montagem
+usa lookbehind/lookahead `(?<![\d.])...(?![\d.])` para não confundir a tiragem
+`8.250 x 2` com cores `0x2`.
+
+### 10.4 Confirmação da importação (`importacao-op.routes.ts`)
+
+Após criar as etapas pelo fluxo normal (intocado), se `dados.planos.length
+>= 2`, cria os `PlanoOrdemProducao` e vincula cada etapa ao plano por
+**correspondência de descrição normalizada**. Planos FACE: acabamento comum
+fica na FRENTE (default). Na reimportação (substituição total), os planos são
+apagados (`planoOrdemProducao.deleteMany`) e recriados do novo PDF — todas as
+travas de confirmação (CONCLUIDA/CANCELADA bloqueado, apontamento descartado
+com aviso) permanecem inalteradas.
+
+### 10.5 Painel (`etapa-operacional.routes.ts` + `programacao/page.tsx`)
+
+O painel inclui `plano: { id, nome, tipo }` em cada etapa (via `select`, sem
+N+1). O frontend exibe um badge: `cyan` para COMPONENTE, `violet` para FACE
+(ex.: "OP 3.133 · TAMPA"). Etapa sem plano = render legado inalterado. A
+conclusão da OP (`todasEtapas.every(CONCLUIDA)`) já abrange todos os planos.
+
+### 10.6 Requisição de Corte — RC (`RequisicaoCorte`)
+
+Formulário FO-002/PCP, criado a partir dos cards CORTADEIRA do painel. É uma
+**"OP avulsa de corte"**: aparece como linha na MESMA fila ordenável das OSs
+(id dnd `rc:<id>`), arrastável para qualquer posição. Status: `ABERTA →
+EM_CORTE → CORTADA` (CORTADA sai da fila). `posicaoFila` COMPARTILHADA com as
+etapas no centro — reordenação combinada via
+`PATCH /pcp/programacao/reordenar-fila-cortadeira` (recebe lista heterogênea
+`{tipo:'etapa'|'rc', id}` e grava posicaoFila 1..N nos dois models). Rotas em
+`requisicao-corte.routes.ts` (CRUD + iniciar/concluir/reabrir/reordenar + PDF
+da 1ª via em `requisicao-corte-pdf.service.ts`, pdfkit). Numeração `NN/AAAA`
+por empresa/ano. Isolamento por `empresaId` explícito. Ações na linha:
+iniciar, reimprimir, concluir, excluir.

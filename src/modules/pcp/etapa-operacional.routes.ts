@@ -1887,6 +1887,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           },
         },
         centroProducao: { select: { id: true, codigo: true, descricao: true, tipoProcessoId: true, tipoProcesso: { select: { codigo: true, posicao: true } } } },
+        // Plano/componente da etapa (TAMPA/CAIXA/BOLSA ou FRENTE/COSTA).
+        // null = etapa legada "sem plano". Incluído no select p/ evitar N+1.
+        plano: { select: { id: true, nome: true, tipo: true } },
       },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
@@ -2170,6 +2173,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             isDesmembramento: Number(e.quantidadePrevista) > 0,
             isManual: e.descricao.includes('[MANUAL]') || e.descricao.startsWith('Lançamento manual'),
             isAvulsa: e.ordemProducao.origemImportacao === 'AVULSA',
+            // Plano/componente (TAMPA/CAIXA ou FRENTE/COSTA). null = sem plano.
+            plano: e.plano ? { id: e.plano.id, nome: e.plano.nome, tipo: e.plano.tipo } : null,
             quantidade: Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
             unidade: e.ordemProducao.unidadeMedida,
             quantidadeProduzida: Number(e.quantidadeProduzida),

@@ -3252,6 +3252,7 @@ model OrdemProducao {
   programacoesEntrega ProgramacaoEntrega[]
   reservas            ReservaProducao[]
   sugestoesCompra     SugestaoCompra[]
+  planos              PlanoOrdemProducao[]
 
   @@unique([empresaId, numero])
   @@map("ordem_producao")
@@ -3355,6 +3356,12 @@ model EtapaOrdemProducao {
   enviadoDeposito        Deposito?        @relation(fields: [enviadoDepositoId], references: [id])
   enviadoQuantidade      Decimal?         @map("enviado_quantidade") @db.Decimal(12, 4)
 
+  // Plano/componente ao qual esta etapa pertence (ex.: TAMPA/CAIXA/BOLSA ou
+  // FRENTE/COSTA). NULLABLE: NULL = "plano único/sem plano" (legado). SetNull
+  // ao excluir o plano protege a etapa (e seus apontamentos) de ser removida.
+  planoId                String?             @map("plano_id")
+  plano                  PlanoOrdemProducao? @relation(fields: [planoId], references: [id], onDelete: SetNull)
+
   apontamentosEtapa ApontamentoEtapa[]
 
   @@map("etapa_ordem_producao")
@@ -3444,6 +3451,37 @@ model RequisicaoCorte {
 
   @@index([empresaId])
   @@map("requisicao_corte")
+}
+
+// Plano/componente de uma OS gráfica (ex.: TAMPA, CAIXA, BOLSA). Uma OS pode
+// ter vários planos, cada um com seu próprio formato/cores/tiragem e roteiro
+// de acabamento. Também modela impressão em retiração (FRENTE/COSTA) via
+// tipo FACE. Spec pcp-planos-frente-costa-rc (Fase B/C).
+//
+// COMPATIBILIDADE: etapas antigas ficam com planoId = NULL ("plano único"),
+// comportamento legado inalterado. NUNCA exigir plano.
+model PlanoOrdemProducao {
+  id              String        @id @default(uuid())
+  ordemProducaoId String        @map("ordem_producao_id")
+  ordemProducao   OrdemProducao @relation(fields: [ordemProducaoId], references: [id], onDelete: Cascade)
+  empresaId       String        @map("empresa_id")
+  nome            String        @db.VarChar(60) // "TAMPA", "CAIXA", "FRENTE", "COSTA"
+  tipo            String        @default("COMPONENTE") @db.VarChar(20) // COMPONENTE | FACE
+  formato         String?       @db.VarChar(40) // "780 x 480"
+  cores           String?       @db.VarChar(30) // "4x0 +V", "7x0"
+  tiragem         Decimal?      @db.Decimal(12, 4)
+  montagem        String?       @db.VarChar(30) // "2x2"
+  // Para planos FACE: a COSTA aponta para a FRENTE (mesma chapa, 2ª passagem).
+  faceDeId        String?               @map("face_de_id")
+  faceDe          PlanoOrdemProducao?   @relation("FaceParDeDe", fields: [faceDeId], references: [id])
+  faces           PlanoOrdemProducao[]  @relation("FaceParDeDe")
+  sequencia       Int           @default(1)
+  criadoEm        DateTime      @default(now()) @map("criado_em")
+
+  etapas          EtapaOrdemProducao[]
+
+  @@index([ordemProducaoId])
+  @@map("plano_ordem_producao")
 }
 
 // Pendência de falta de material identificada durante a execução de uma

@@ -21,6 +21,11 @@ export interface DadosOpGprint {
   cabecalho: CabecalhoOp
   materiais: MaterialOp[]
   etapas: EtapaOp[]
+  // Planos da OS (ex.: TAMPA, CAIXA, BOLSA). Preenchido SÓ quando o PDF tem
+  // 2+ planos na tabela de processo (OS multi-componente). Para OS de plano
+  // único fica vazio e o fluxo atual (etapas[] achatado) é usado — garante
+  // não-regressão. Spec pcp-planos-frente-costa-rc (Fase B/C).
+  planos: PlanoOp[]
   cortadeira: CortadeiraOp | null
   montagem: MontagemOp | null
   tiragem: number | null
@@ -28,6 +33,20 @@ export interface DadosOpGprint {
   embalagem: EmbalagemOp | null
   confianca: number // 0-100%
   avisos: string[]
+}
+
+export interface PlanoOp {
+  nome: string            // "TAMPA", "CAIXA", "BOLSA"
+  formato: string | null  // "780 x 480"
+  cores: string | null    // "4x0 +V"
+  tiragem: number | null
+  montagem: string | null // "2x2"
+  acabamentoTexto: string | null // texto bruto da coluna Acabamento
+  etapas: EtapaOp[]       // etapas derivadas do acabamentoTexto
+  // Frente/costa (Fase C): true quando Cores é NxM com N>0 e M>0 (retiração).
+  frenteCosta: boolean
+  coresFrente: string | null // "7x0"
+  coresCosta: string | null  // "5x0"
 }
 
 export interface CabecalhoOp {
@@ -152,6 +171,9 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
   const etapas = extrairEtapas(texto, avisos)
   if (etapas.length > 0) camposEncontrados += 2
 
+  // Planos (multi-componente). Aditivo: só populado quando há 2+ planos.
+  const planos = extrairPlanos(texto)
+
   const cortadeira = extrairCortadeira(texto)
   const montagem = extrairMontagem(texto)
   const tiragem = extrairTiragem(texto)
@@ -167,6 +189,7 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
     cabecalho,
     materiais,
     etapas,
+    planos,
     cortadeira,
     montagem,
     tiragem,
@@ -676,6 +699,187 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
     avisos.push('Nenhuma etapa de produção encontrada no PDF')
   }
 
+  return etapas
+}
+
+// ============================================================================
+// EXTRAÇÃO DE PLANOS (multi-componente: TAMPA, CAIXA, BOLSA...)
+// ============================================================================
+
+/**
+ * Extrai os planos da tabela de processo do GPrint. Layout típico (uma linha
+ * por plano), colunas separadas por 2+ espaços no texto reconstruído:
+ *
+ *   Plano   Formato   Mont.  Tiragem   Cores   Máq.Impr.   Chapa  Acabamento
+ *   TAMPA   780 x 480  2x2   1.375     4x0 +V  Heidelberg  4      Cortadeira, Guilhotina, ...
+ *   CAIXA   831 x 585  1x2   2.750     4x0     Heidelberg  4      Cortadeira, SG, ...
+ *   BOLSA   648 x 830  2x1   2.750     0x0                        Cortadeira, Plastificadora, ...
+ *
+ * Retorna [] (lista vazia) quando há 0 ou 1 plano reconhecível — nesse caso o
+ * fluxo atual (etapas[] achatado) é usado, garantindo NÃO-REGRESSÃO para OS de
+ * plano único. Só retorna planos quando identifica 2+.
+ *
+ * O (M) nas linhas "TAMPA (M)" / "CAIXA (M)" é o plano de MICRO (acoplagem) e
+ * costuma ter cores 0x0 — é agregado ao plano-pai pela raiz do nome quando o
+ * acabamento é só "Bimac (Acoplagem)" (não gera plano separado).
+ */
+function extrairPlanos(texto: string): PlanoOp[] {
+  // Isola a seção da tabela de processo: do cabeçalho que contém
+  // "Mont." "Tiragem" "Cores" ... "Acabamento" até a próxima seção conhecida.
+  const secao = texto.match(/Formato\s+Mont\.?\s+Tiragem\s+Cores[\s\S]*?Acabamento([\s\S]*?)(?=Obs\.?:|Materiais|Emitido\s*por|Reemitido|CARTON WEGA|$)/i)
+  if (!secao) return []
+
+  const bruto = secao[1]
+  const linhas = bruto.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+
+  // Agrupa linhas por plano: uma nova linha de plano começa quando casa o
+  // padrão "NOME  <formato NNNxNNN>". Linhas que não casam são continuação do
+  // acabamento do plano corrente (o GPrint quebra a coluna Acabamento em
+  // várias linhas visuais).
+  type Acc = { nome: string; formato: string | null; resto: string }
+  const grupos: Acc[] = []
+  // Nome do plano: letras/espaços/parênteses (ex.: "TAMPA", "CAIXA (M)", "BOLSA")
+  const reInicioPlano = /^([A-ZÀ-Ú][A-ZÀ-Ú0-9\s()\/]+?)\s{2,}(\d{2,4})\s*x\s*(\d{2,4})\b(.*)$/i
+
+  for (const linha of linhas) {
+    const m = linha.match(reInicioPlano)
+    if (m) {
+      grupos.push({
+        nome: m[1].trim(),
+        formato: `${m[2]} x ${m[3]}`,
+        resto: (m[4] || '').trim(),
+      })
+    } else if (grupos.length > 0) {
+      // continuação do acabamento do plano corrente
+      grupos[grupos.length - 1].resto += ' ' + linha
+    }
+  }
+
+  if (grupos.length < 2) return []
+
+  const planos: PlanoOp[] = []
+  let seq = 1
+  for (const g of grupos) {
+    const resto = g.resto
+
+    // Montagem: primeiro NxN (ex.: 2x2, 1x2) na linha, sem casar dígito que
+    // seja parte de número maior (ex.: tiragem "8.250 x 2").
+    const mMont = resto.match(/(?<![\d.])(\d)\s*x\s*(\d)(?![\d.])/)
+    const montagem = mMont ? `${mMont[1]}x${mMont[2]}` : null
+
+    // Tiragem: número >= 100, possivelmente "N x 2" (duas passagens / retiração)
+    const mTir = resto.match(/\b([\d.]{2,})\s*(?:x\s*2)?\b/)
+    let tiragem: number | null = null
+    for (const mm of resto.matchAll(/([\d.]{2,})(?:\s*x\s*2)?/g)) {
+      const val = parseNumero(mm[1])
+      if (val >= 100 && !/^\d+x\d+$/.test(mm[1])) { tiragem = val; break }
+    }
+
+    // Cores: NxM (com opcional +V). Pega o 1º NxM que não seja a montagem.
+    // IMPORTANTE: o dígito à esquerda NÃO pode ser precedido por outro dígito
+    // ou ponto — senão "8.250 x 2" (tiragem com 2 passagens) casaria como
+    // "0x2" e seria confundido com cores. Usamos lookbehind negativo.
+    let cores: string | null = null
+    let frenteCosta = false
+    let coresFrente: string | null = null
+    let coresCosta: string | null = null
+    const coresMatches = [...resto.matchAll(/(?<![\d.])(\d)\s*x\s*(\d)(?![\d.])\s*(\+V[^\s]*)?/g)]
+    // A 1ª ocorrência costuma ser a montagem; a 2ª as cores. Se só houver uma,
+    // e ela não for claramente a montagem, usa-a.
+    const corCand = coresMatches.length >= 2 ? coresMatches[1] : coresMatches[0]
+    if (corCand) {
+      const n = parseInt(corCand[1])
+      const mcor = parseInt(corCand[2])
+      const v = corCand[3] ? ' ' + corCand[3].trim() : ''
+      cores = `${n}x${mcor}${v}`
+      if (n > 0 && mcor > 0) {
+        frenteCosta = true
+        coresFrente = `${n}x0`
+        coresCosta = `${mcor}x0`
+      }
+    }
+
+    // Acabamento: tudo após a última ocorrência de Máq.Impr./Chapa é difícil
+    // de isolar por regex de coluna; heurística = pegar o trecho textual com
+    // nomes de operação (após remover formato/mont/tiragem/cores/chapa/máquina).
+    const acabamentoTexto = extrairAcabamentoDoResto(resto)
+    const etapasPlano = derivarEtapasDeAcabamento(acabamentoTexto)
+
+    planos.push({
+      nome: g.nome,
+      formato: g.formato,
+      cores,
+      tiragem,
+      montagem,
+      acabamentoTexto,
+      etapas: etapasPlano,
+      frenteCosta,
+      coresFrente,
+      coresCosta,
+    })
+    seq++
+  }
+
+  return planos
+}
+
+/**
+ * Isola o texto da coluna Acabamento a partir do "resto" da linha do plano.
+ * O resto contém: montagem, tiragem, cores, (máquina), (chapa) e o acabamento.
+ * Heurística: o acabamento é a sequência de nomes de operação; localizamos o
+ * primeiro nome de operação conhecido e pegamos dali até o fim.
+ */
+function extrairAcabamentoDoResto(resto: string): string | null {
+  const reOperacao = /(Cortadeira|Guilhotina|Verniz|Lamina[çc][ãa]o|SG\b|Dayuan|Bobst|Destacar|Destacador|Plastificadora|Seladora|Fechadora|Bimac|Acoplag|Mazola|Corte\s*e\s*Vinc|Relevo|Clich[eê])/i
+  const m = resto.match(reOperacao)
+  if (!m || m.index === undefined) return null
+  return resto.slice(m.index).replace(/\s{2,}/g, ' ').trim() || null
+}
+
+/**
+ * Deriva etapas (EtapaOp) a partir do texto da coluna Acabamento de um plano.
+ * Ex.: "Cortadeira (Grande), Guilhotina maior, Verniz, SG (Laminadora),
+ * Dayuan (Corte e Vinc), Destacar" → 6 etapas. Split por vírgula respeitando
+ * parênteses. Classifica o tipo pela mesma heurística de extrairEtapas.
+ */
+function derivarEtapasDeAcabamento(acabamento: string | null): EtapaOp[] {
+  if (!acabamento) return []
+  // Split por vírgula que NÃO esteja dentro de parênteses.
+  const tokens: string[] = []
+  let depth = 0
+  let atual = ''
+  for (const ch of acabamento) {
+    if (ch === '(') depth++
+    if (ch === ')') depth = Math.max(0, depth - 1)
+    if (ch === ',' && depth === 0) {
+      if (atual.trim()) tokens.push(atual.trim())
+      atual = ''
+    } else {
+      atual += ch
+    }
+  }
+  if (atual.trim()) tokens.push(atual.trim())
+
+  const etapas: EtapaOp[] = []
+  let seq = 1
+  for (const tRaw of tokens) {
+    const nome = tRaw.trim()
+    if (nome.length < 3) continue
+    let tipo: EtapaOp['tipo'] = 'ACABAMENTO'
+    if (/cortadeira|corte/i.test(nome)) tipo = 'CORTADEIRA'
+    else if (/colagem|cola|coladeira/i.test(nome)) tipo = 'COLAGEM'
+    else if (/verniz/i.test(nome)) tipo = 'VERNIZ'
+    etapas.push({
+      sequencia: seq++,
+      descricao: nome,
+      tipo,
+      maquina: extrairNomeMaquina(nome),
+      tempoFixoMin: 0,
+      tempoVariavelMin: 0,
+      detalhes: null,
+      tipoColagem: tipo === 'COLAGEM' ? nome : null,
+    })
+  }
   return etapas
 }
 

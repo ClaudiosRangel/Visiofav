@@ -4771,6 +4771,42 @@ async function seedMateriaisFromOPs() {
   // Posição na fila da Cortadeira (RC ordenável como OP avulsa de corte)
   await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "posicao_fila" INTEGER`)
   console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id, posicao_fila)')
+
+  // =========================================================================
+  // PCP — Planos de Produção — spec pcp-planos-frente-costa-rc (Fase B/C)
+  // Tabela plano_ordem_producao + coluna plano_id (nullable) em
+  // etapa_ordem_producao. Compatibilidade: plano_id NULL = legado intacto.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "plano_ordem_producao" (
+      "id" TEXT NOT NULL,
+      "ordem_producao_id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(60) NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL DEFAULT 'COMPONENTE',
+      "formato" VARCHAR(40),
+      "cores" VARCHAR(30),
+      "tiragem" DECIMAL(12,4),
+      "montagem" VARCHAR(30),
+      "face_de_id" TEXT,
+      "sequencia" INTEGER NOT NULL DEFAULT 1,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "plano_ordem_producao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "plano_ordem_producao_ordem_producao_id_idx" ON "plano_ordem_producao"("ordem_producao_id")`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "plano_id" TEXT`)
+  // FKs (Postgres não tem ADD CONSTRAINT IF NOT EXISTS — envolver em try/catch)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD CONSTRAINT "plano_ordem_producao_ordem_producao_id_fkey" FOREIGN KEY ("ordem_producao_id") REFERENCES "ordem_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK plano→op skip:', e.message?.substring(0, 80)) }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD CONSTRAINT "plano_ordem_producao_face_de_id_fkey" FOREIGN KEY ("face_de_id") REFERENCES "plano_ordem_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK plano→face skip:', e.message?.substring(0, 80)) }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD CONSTRAINT "etapa_ordem_producao_plano_id_fkey" FOREIGN KEY ("plano_id") REFERENCES "plano_ordem_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK etapa→plano skip:', e.message?.substring(0, 80)) }
+  console.log('✅ PCP Planos: plano_ordem_producao criada + etapa.plano_id (nullable, SetNull)')
 }
 
 main()

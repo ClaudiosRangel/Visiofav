@@ -197,3 +197,106 @@ describe('parseGprintPdf — descrição do produto (multi-linha)', () => {
     expect(dados.cabecalho.descricao).toBe('CAIXA KIT ESF. C1 VASCO')
   })
 })
+
+describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
+  // Texto sintético reproduzindo a tabela de processo de uma OS multi-plano
+  // (OP 3.133 real: "Caixa de Sorvete 7 Litros" com TAMPA, CAIXA, BOLSA).
+  function textoMultiPlano(): string {
+    return [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.133 R',
+      'GPrint - Sistema Calcgraf   28/09/2026   15:37   1ª via',
+      'Cliente:   SOL & NEVE   Cód. Cliente:   13',
+      'Produto:   Cartucho Composto',
+      'Descrição:   Caixa de Sorvete 7 Litros',
+      'Quantidade:   5.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'TAMPA   780 x 480   2x2   1.375   4x0 +V   Heidelberg CD 5cores   4   Cortadeira (Grande), Guilhotina maior, Verniz, SG (Laminadora), Dayuan (Corte e Vinc), Destacar',
+      'CAIXA   831 x 585   1x2   2.750   4x0   Heidelberg CD 5cores   4   Cortadeira (Grande), SG (Laminadora), Dayuan (Corte e Vinc), Destacar, Fechadora de Caixa',
+      'BOLSA   648 x 830   2x1   2.750   0x0   Cortadeira (Grande), Plastificadora maior, Dayuan (Corte e Vinc), Destacar, Seladora Bolsa',
+      'Materiais   Qtde.',
+      'NZ Fibra Longa 200   103,88   KG',
+    ].join('\n')
+  }
+
+  it('extrai os 3 planos (TAMPA, CAIXA, BOLSA) com formato/cores/tiragem', () => {
+    const dados = parseGprintPdf(textoMultiPlano())
+    expect(dados.planos).toHaveLength(3)
+    const nomes = dados.planos.map((p) => p.nome)
+    expect(nomes).toEqual(['TAMPA', 'CAIXA', 'BOLSA'])
+
+    const tampa = dados.planos[0]
+    expect(tampa.formato).toBe('780 x 480')
+    expect(tampa.montagem).toBe('2x2')
+    expect(tampa.tiragem).toBe(1375)
+    expect(tampa.cores).toContain('4x0')
+  })
+
+  it('associa as etapas de acabamento ao plano correto', () => {
+    const dados = parseGprintPdf(textoMultiPlano())
+    const tampa = dados.planos.find((p) => p.nome === 'TAMPA')!
+    const caixa = dados.planos.find((p) => p.nome === 'CAIXA')!
+    const bolsa = dados.planos.find((p) => p.nome === 'BOLSA')!
+
+    const descr = (p: any) => p.etapas.map((e: any) => e.descricao)
+    expect(descr(tampa)).toContain('Cortadeira (Grande)')
+    expect(descr(tampa)).toContain('Guilhotina maior')
+    expect(descr(caixa)).toContain('Fechadora de Caixa')
+    expect(descr(bolsa)).toContain('Seladora Bolsa')
+    // BOLSA não tem Guilhotina nem Fechadora de Caixa
+    expect(descr(bolsa)).not.toContain('Fechadora de Caixa')
+  })
+
+  it('não é frente/costa quando cores são Nx0', () => {
+    const dados = parseGprintPdf(textoMultiPlano())
+    expect(dados.planos.every((p) => p.frenteCosta === false)).toBe(true)
+  })
+})
+
+describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {
+  it('OS de plano único retorna planos[] vazio (usa fluxo de etapas achatado)', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 2.997 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   COMPACTOR',
+      'Produto:   Cartuchos',
+      'Descrição:   CAIXA KIT ESF. C1 VASCO',
+      'Quantidade:   16.000',
+      'Impressão   Fixo   Variável',
+      'Offset Plana Heidelberg CD 6cores   03:30   10:29',
+      'Acabamentos   Fixo   Variável',
+      'Cortadeira (Grande)  00:15  05:23',
+      'Destacar  00:00  00:16',
+      'Materiais   Qtde.',
+      'Stora Enzo Bobina 290  337,34  KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    expect(dados.planos).toHaveLength(0)
+    // etapas achatadas continuam existindo (não-regressão)
+    expect(dados.etapas.length).toBeGreaterThan(0)
+  })
+})
+
+describe('parseGprintPdf — frente/costa (Fase C)', () => {
+  it('detecta retiração quando Cores é NxM com N>0 e M>0 (7x5)', () => {
+    // Precisa de 2+ planos para extrairPlanos retornar algo; o 2º é só para
+    // satisfazer o mínimo. O 1º plano (CARTUCHO) é 7x5 → frente/costa.
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 9.001 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   TESTE   Cód. Cliente:   1',
+      'Produto:   Cartucho',
+      'Descrição:   CARTUCHO DIA',
+      'Quantidade:   8.250',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'FRENTE   475 x 660   1x4   8.250 x 2   7x5   Heidelberg CD 7cores   4   Cortadeira (Grande), Verniz, Destacar',
+      'VERSO   475 x 660   1x4   8.250   0x0   Cortadeira (Grande)',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    const fc = dados.planos.find((p) => p.frenteCosta)
+    expect(fc).toBeDefined()
+    expect(fc!.coresFrente).toBe('7x0')
+    expect(fc!.coresCosta).toBe('5x0')
+    // tiragem base = 8250 (o "x 2" indica 2 passagens, não dobra a quantidade)
+    expect(fc!.tiragem).toBe(8250)
+  })
+})

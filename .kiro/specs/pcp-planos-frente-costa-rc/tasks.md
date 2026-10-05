@@ -50,7 +50,7 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
 
 ## Fase B — Planos de Produção
 
-- [ ] 6. Schema + migração dos planos
+- [x] 6. Schema + migração dos planos
   - Adicionar model `PlanoOrdemProducao` + relação em `OrdemProducao` +
     campo `planoId` (nullable, `onDelete: SetNull`) em `EtapaOrdemProducao`.
   - `migrate-prod.ts`: `CREATE TABLE IF NOT EXISTS "plano_ordem_producao"`,
@@ -59,7 +59,7 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
     confirmar que etapas existentes ficam com `plano_id` NULL.
   - _Requisitos: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 7. Parser — extrair `planos[]` do PDF
+- [x] 7. Parser — extrair `planos[]` do PDF
   - Snapshot de regressão ANTES: `npx tsx scripts/testar-todos-pdfs-op.ts`
     (guardar saída).
   - Adicionar `extrairPlanos(texto)` ao `gprint-parser.ts` (casa tabela de
@@ -71,12 +71,12 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
     regredir.
   - _Requisitos: 2.1, 2.2, 2.3, 2.5_
 
-- [ ] 8. Testes do parser
+- [x] 8. Testes do parser
   - `gprint-parser.test.ts`: casos multi-plano (3 planos TAMPA/CAIXA/BOLSA),
     plano único (não-regressão) e detecção `7x5` (frente/costa flag).
   - _Requisitos: 2.1, 2.3, 2.4, 2.6_
 
-- [ ] 9. Confirmação da importação — criar planos e vincular etapas
+- [x] 9. Confirmação da importação — criar planos e vincular etapas
   - Em `importacao-op.routes.ts`: quando `dados.planos.length >= 2`, criar
     um `PlanoOrdemProducao` por plano e vincular cada etapa recriada via
     `planoId`. Quando `< 2`, caminho atual intacto (planoId NULL).
@@ -86,7 +86,7 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
   - `get_diagnostics` sem erros.
   - _Requisitos: 2.1, 2.2, 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 10. Painel — expor e exibir o plano
+- [x] 10. Painel — expor e exibir o plano
   - Backend `GET /pcp/programacao/painel`: incluir
     `plano: { select: { id, nome, tipo } }` nas etapas (sem N+1), filtrando
     por `empresaId` da OP.
@@ -106,14 +106,14 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
 
 ## Fase C — Frente e Costa
 
-- [ ] 12. Parser — detectar frente/costa
+- [x] 12. Parser — detectar frente/costa
   - No `extrairPlanos`, marcar `frenteCosta` quando Cores for `NxM` (N>0,
     M>0); derivar `coresFrente`/`coresCosta`; ler tiragem `qtd x 2` como base
     `qtd`.
   - Teste unitário do caso `7x5` + `8.250 x 2`.
   - _Requisitos: 3.1, 3.2_
 
-- [ ] 13. Confirmação — gerar planos FACE
+- [x] 13. Confirmação — gerar planos FACE
   - Quando um plano vier `frenteCosta`, criar 2 `PlanoOrdemProducao` tipo
     `FACE` (FRENTE/COSTA), COSTA com `faceDeId` → FRENTE, mesma tiragem base.
   - Distribuir etapas conforme regra confirmada (default: impressão por face,
@@ -121,7 +121,7 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
   - Garantir que a OP continua com `numero` único.
   - _Requisitos: 3.1, 3.2, 3.3, 3.5_
 
-- [ ] 14. Painel — exibir faces
+- [x] 14. Painel — exibir faces
   - Verificar que FRENTE/COSTA aparecem como linhas próprias (reusa o badge
     de plano da task 10; sem código extra além de dados corretos).
   - _Requisitos: 3.4_
@@ -130,7 +130,7 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
 
 ## Encerramento
 
-- [ ] 15. Verificação final e documentação
+- [x] 15. Verificação final e documentação
   - Build back (`npm run build`) e front (`npm run build`) passam.
   - Atualizar o steering `pcp-modulo.md` com a seção de Planos/Frente-Costa/RC
     (novos models, rotas, comportamento de `planoId` NULL).
