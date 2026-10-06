@@ -82,14 +82,41 @@
    "Cortadeira (Grande)" devem cair no MESMO centro. Verificar em qual
    `centro_producao_id` cada etapa da OP-3133 ficou e por quê. CARTÃO e
    TIRAGEM por plano JÁ estão corretos (pontos 1 e 2 do Caio resolvidos).
-2. **Refinamento pai/filho (não feito):** o pai NÃO é recolhível ainda; o
-   drag do pai NÃO leva os filhos juntos (cada filho arrasta individual).
-   Usuário quer: expandido podendo recolher + arrastar pai leva filhos.
-3. **4 operações sem plano por quebra de linha no PDF** (Dayuan, Fechadora
-   de Caixa, Verniz, Bimac): o sufixo `(...)` quebrou em outra linha visual
-   do texto reconstruído e o parser não amarrou o plano. Entram como etapa
-   única sem badge. Refinar o parser p/ "costurar" linhas quebradas se o
-   usuário pedir.
+2. **Refinamento pai/filho — FEITO (frontend):**
+   - Pai RECOLHÍVEL: clique na linha-pai alterna recolher/expandir os filhos
+     (estado `planosRecolhidos` Set `${centroId}:${opId}`, chevron
+     right/down). Quando recolhido, `agruparFilaPorOp(itens, centroId)` oculta
+     os filhos daquele pai.
+     clique no grip NÃO recolhe (stopPropagation) — grip é só para arrastar.
+   - Pai ARRASTÁVEL levando os filhos: a linha-pai virou `SortableParentRow`
+     (grip próprio, `dndId = pai:<opId>`), incluída no `SortableContext`
+     (`idsSortable = agruparFilaPorOp(...).map(dndId||id)`). Nos dois handlers
+     (`handleDragEnd` e `handleDragEndCortadeira`), quando `active.id` começa
+     com `pai:`, o helper `reordenarComBlocoPai(fila, opId, overId)` move o
+     BLOCO inteiro de etapas daquela OP para a posição de destino, preservando
+     a ordem relativa dos filhos. Persiste via `/pcp/etapas/reordenar` (ou
+     `/reordenar-fila-cortadeira`). RCs não têm opId → não entram no bloco.
+   - get_diagnostics limpo; `npm run build` do front PASSOU; commitado e no
+     ar: frontend commit `fd7030e` (push `dd24644..fd7030e main -> main`).
+3. **Operações sem plano (parcialmente resolvido no parser):** na OP-3133,
+   4 operações ficavam sem plano. Causa real investigada (script temp, já
+   removido) e corrigida em `gprint-parser.ts`:
+   - **Verniz** e **Fechadora de Caixa**: o sufixo `(PLANO)` estava no
+     DETALHE (texto após a "/"), não no nome. Agora o fluxo principal, quando
+     não acha o plano no nome, procura no detalhe via `extrairPlanosSufixoFinal`
+     — que SÓ casa quando o grupo `(PLANO,...)` é o FINAL do detalhe (regex
+     `/\(([^()]+)\)\s*$/`). Resolveu os dois. ✓
+   - Restrição ao sufixo FINAL foi deliberada para NÃO desmembrar o **Dayuan**
+     por engano: a linha de continuação dele traz "...Acoplado Repetição
+     (BOLSA,CAIXA,TAMPA)  2477B - Tampa..." no MEIO do detalhe — não é o plano
+     real da operação. Dayuan segue como etapa única sem plano (correto).
+   - **Bimac**: o sufixo `(CAIXA (M),TAMPA (M))` quebrou entre 2 linhas visuais
+     com parêntese ABERTO sem fechar na mesma linha → fragmento não casável.
+     Deixado como etapa única sem plano (caso de borda genuíno; baixíssimo
+     risco mexer para pior). Documentado.
+   - Teste de regressão adicionado em `gprint-parser.test.ts` (16/16). Script
+     `scripts/testar-todos-pdfs-op.ts`: 14/14 PDFs sem regressão (contagem de
+     etapas idêntica nos PDFs de plano único). Backend commitado.
 
 ## Procedimentos usados nesta sessão (replicar)
 

@@ -200,7 +200,21 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
     const expandidas: EtapaOp[] = []
     let seq = 1
     for (const e of etapas) {
-      const nomes = extrairPlanosDoSufixo(e.descricao, nomesPlanosValidos)
+      // O sufixo "(PLANO1,PLANO2,...)" pode estar no NOME da operação
+      // (ex.: "Cortadeira (Grande) (BOLSA,CAIXA,TAMPA)") OU no DETALHE depois
+      // da "/" (ex.: "Verniz / Heidelberg CD 5cores (TAMPA)" e "Fechadora de
+      // Caixa / Diana (Coladeira) (CAIXA)"). Procuramos nos dois: primeiro no
+      // nome; se não achar, no detalhe. Validado com a OP-3133 real.
+      let nomes = extrairPlanosDoSufixo(e.descricao, nomesPlanosValidos)
+      if (nomes.length === 0 && e.detalhes) {
+        // Só aceita o sufixo do DETALHE quando ele é um grupo "(PLANO,...)" no
+        // FINAL do texto do detalhe (ex.: "Heidelberg CD 5cores (TAMPA)" e
+        // "Diana (Coladeira) (CAIXA)"). Isso evita pegar um "(BOLSA,CAIXA,
+        // TAMPA)" que apareça NO MEIO de um detalhe longo (ex.: a linha de
+        // continuação do Dayuan "...Acoplado Repetição (BOLSA,CAIXA,TAMPA)
+        // 2477B - Tampa / 2478B - Bolsa", que não é o plano real da operação).
+        nomes = extrairPlanosSufixoFinal(e.detalhes, nomesPlanosValidos)
+      }
       // Nome base da operação SEM o sufixo de planos (ex.: "Cortadeira (Grande)").
       const nomeBase = removerSufixoPlanos(e.descricao, nomesPlanosValidos)
       // `maquina` é a fonte do NOME DO CENTRO na confirmação — tem que ser o
@@ -779,6 +793,19 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
  * vírgula) sejam TODOS nomes de planos conhecidos — assim "(Grande)" ou
  * "(Corte e Vinc)" não são confundidos com planos. Retorna [] se não achar.
  */
+function extrairPlanosSufixoFinal(detalhe: string, nomesValidos: Set<string>): string[] {
+  // Exige que o detalhe TERMINE com o grupo "(PLANO1,PLANO2,...)" (admite
+  // espaços no fim). Assim só casa quando o sufixo de plano é de fato o
+  // final da descrição, não um grupo no meio de um texto longo.
+  const m = detalhe.trim().match(/\(([^()]+)\)\s*$/)
+  if (!m) return []
+  const itens = m[1].split(',').map((s) => s.trim()).filter(Boolean)
+  if (itens.length === 0) return []
+  const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+  const todosSaoPlanos = itens.every((it) => nomesValidos.has(norm(it)))
+  return todosSaoPlanos ? itens : []
+}
+
 function extrairPlanosDoSufixo(descricao: string, nomesValidos: Set<string>): string[] {
   const grupos = [...descricao.matchAll(/\(([^()]+)\)/g)]
   for (let i = grupos.length - 1; i >= 0; i--) {

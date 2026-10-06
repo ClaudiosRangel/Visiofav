@@ -294,6 +294,49 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
     expect(dados.etapas.find((e) => /Guilhotina/.test(e.descricao))!.planoNome).toBe('TAMPA')
     expect(dados.etapas.find((e) => /Seladora/.test(e.descricao))!.planoNome).toBe('BOLSA')
   })
+
+  it('reconhece o plano quando o sufixo "(PLANO)" está no DETALHE após a "/" (OP-3133 real: Verniz e Fechadora de Caixa)', () => {
+    // Caso real da OP-3133: algumas operações trazem o sufixo de plano NÃO no
+    // nome, mas no texto após a "/" (o detalhe). Ex.:
+    //   "Verniz / Heidelberg CD 5cores (TAMPA)"           → plano TAMPA
+    //   "Fechadora de Caixa / Diana (Coladeira) (CAIXA)"  → plano CAIXA
+    // Só vale quando o grupo "(PLANO)" é o FINAL do detalhe (evita capturar um
+    // "(BOLSA,CAIXA,TAMPA)" que apareça no meio de um detalhe longo — como a
+    // linha de continuação do Dayuan "...Acoplado Repetição (BOLSA,CAIXA,
+    // TAMPA)  2477B - Tampa / 2478B - Bolsa", que NÃO é o plano da operação).
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.133 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   SOL & NEVE',
+      'Produto:   Cartucho Composto',
+      'Descrição:   Caixa de Sorvete 7 Litros',
+      'Quantidade:   5.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'TAMPA   780 x 480   2x2   1.375   4x0 +V   Heidelberg CD 5cores   4   Verniz',
+      'CAIXA   831 x 585   1x2   2.750   4x0   Heidelberg CD 5cores   4   Fechadora de Caixa',
+      'BOLSA   648 x 830   2x1   2.750   0x0   Seladora Bolsa',
+      'Acabamentos   Fixo   Variável',
+      'Verniz / Heidelberg CD 5cores (TAMPA)  00:00  00:00',
+      'Fechadora de Caixa / Diana (Coladeira) (CAIXA)  01:30  01:00',
+      'Dayuan (Corte e Vinc / Matriz: 2570B / Acoplado Repetição (BOLSA,CAIXA,TAMPA)  2477B - Tampa / 2478B - Bolsa  04:30  01:55',
+      'Materiais   Qtde.',
+      'NZ Fibra Longa 200   103,88   KG',
+    ].join('\n')
+
+    const dados = parseGprintPdf(texto)
+
+    const verniz = dados.etapas.find((e) => /Verniz/.test(e.descricao))
+    expect(verniz?.planoNome).toBe('TAMPA')
+
+    const fechadora = dados.etapas.find((e) => /Fechadora de Caixa/.test(e.descricao))
+    expect(fechadora?.planoNome).toBe('CAIXA')
+
+    // O Dayuan NÃO deve ser desmembrado pelos planos que aparecem no MEIO do
+    // seu detalhe (a captura só considera o sufixo FINAL do detalhe).
+    const dayuans = dados.etapas.filter((e) => /Dayuan/.test(e.descricao))
+    expect(dayuans).toHaveLength(1)
+    expect(dayuans[0].planoNome == null).toBe(true)
+  })
 })
 
 describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {
