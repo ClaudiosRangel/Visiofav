@@ -243,6 +243,40 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
     etapas = expandidas
   }
 
+  // ── FRENTE/COSTA de PLANO ÚNICO (retiração — ex.: OP-3092 cores 5x1) ──
+  // Regra confirmada pelo usuário (05/10/2026): a retiração é um fenômeno da
+  // IMPRESSORA (a mesma folha passa 2× na máquina). Portanto só a etapa de
+  // IMPRESSÃO é desmembrada em 2 (FRENTE e COSTA), controláveis
+  // separadamente; os demais centros (cortadeira/acabamento/colagem) ficam
+  // com UMA etapa única (a folha já é uma só). A OP só conclui quando as 2
+  // faces + as etapas únicas fecharem (regra every(CONCLUIDA) existente).
+  //
+  // Só se aplica quando há EXATAMENTE 1 plano e ele é frenteCosta — o caso
+  // multi-componente (2+ planos) já foi tratado acima e tem sua própria
+  // lógica de faces na confirmação, se necessário.
+  if (planos.length === 1 && planos[0].frenteCosta && etapas.length > 0) {
+    const expandidas: EtapaOp[] = []
+    let seq = 1
+    for (const e of etapas) {
+      if (e.tipo === 'IMPRESSAO') {
+        // Desmembra a impressão em FRENTE e COSTA (2 passagens).
+        for (const face of ['FRENTE', 'COSTA']) {
+          expandidas.push({
+            ...e,
+            sequencia: seq++,
+            descricao: `${e.descricao} — ${face}`,
+            planoNome: face,
+            planosNomes: [face],
+          })
+        }
+      } else {
+        // Demais centros: etapa única, vinculada à FRENTE (default).
+        expandidas.push({ ...e, sequencia: seq++, planoNome: 'FRENTE', planosNomes: ['FRENTE'] })
+      }
+    }
+    etapas = expandidas
+  }
+
   // Fallback (OS tipo A, raro): multi-plano SEM seção de acabamentos — usa as
   // etapas derivadas da tabela de planos, cada uma marcada com planoNome.
   if (planos.length >= 2 && etapas.length === 0) {
@@ -897,7 +931,20 @@ function extrairPlanos(texto: string): PlanoOp[] {
     }
   }
 
-  if (grupos.length < 2) return []
+  // Regra de ativação dos planos:
+  // - 2+ grupos → multi-componente (TAMPA/CAIXA/BOLSA): sempre processa.
+  // - 1 grupo → só processa se for RETIRAÇÃO (frente/costa): cores `NxM` com
+  //   N>0 e M>0 (ex.: 5x1). Caso contrário (OS de plano único SEM retiração,
+  //   cores `Nx0`), retorna [] e segue o fluxo legado de etapas achatadas
+  //   (NÃO-REGRESSÃO). `grupoUnicoEhRetiracao` usa a MESMA heurística de cores
+  //   do loop abaixo (lookbehind p/ não confundir tiragem "16.500 x 2").
+  if (grupos.length === 0) return []
+  if (grupos.length === 1) {
+    const coresMatches1 = [...grupos[0].resto.matchAll(/(?<![\d.])(\d)\s*x\s*(\d)(?![\d.])\s*(\+V[^\s]*)?/g)]
+    const cor1 = coresMatches1.length >= 2 ? coresMatches1[1] : coresMatches1[0]
+    const ehRetiracao = !!cor1 && parseInt(cor1[1]) > 0 && parseInt(cor1[2]) > 0
+    if (!ehRetiracao) return []
+  }
 
   const planos: PlanoOp[] = []
   let seq = 1
@@ -1331,14 +1378,26 @@ function tempoParaMinutos(tempo: string): number {
 
 /**
  * Extrai nome da máquina de uma string descritiva.
+ *
+ * IMPORTANTE (bug real corrigido 05/10/2026): máquinas gráficas com MODELO
+ * entre parênteses logo após o nome — ex.: "Cortadeira (Grande)",
+ * "Cortadeira (Pequena)" — são MÁQUINAS DIFERENTES (centros de produção
+ * distintos). O regex antigo `(${m}[\w\s]*?\d*)` parava no "(" e devolvia só
+ * "Cortadeira", fazendo TODAS as cortadeiras caírem no MESMO centro genérico
+ * "Cortadeira" (e criando/duplicando esse centro). Agora preservamos um grupo
+ * "(modelo)" imediatamente após o nome, de modo que "Cortadeira (Grande)"
+ * resolva para o centro certo. Nomes sem parênteses continuam iguais.
  */
 function extrairNomeMaquina(desc: string): string {
   // Tenta extrair nomes comuns de máquinas gráficas
   const maquinas = ['Heidelberg', 'KBA', 'Komori', 'Bobst', 'BOBST', 'AFT', 'Cortadeira']
   for (const m of maquinas) {
     if (desc.toLowerCase().includes(m.toLowerCase())) {
-      // Pega o nome + modelo
-      const regex = new RegExp(`(${m}[\\w\\s]*?\\d*)`, 'i')
+      // Pega o nome + modelo. Permite UM grupo "(modelo)" opcional logo após o
+      // nome (ex.: "Cortadeira (Grande)") — mas não arrasta parênteses de
+      // outras partes da descrição (o `\s*` só casa espaços entre o nome e o
+      // "(", e `[^()]+` não entra em grupos aninhados).
+      const regex = new RegExp(`(${m}[\\w\\s]*?\\d*(?:\\s*\\([^()]+\\))?)`, 'i')
       const match = desc.match(regex)
       return match ? match[1].trim() : m
     }

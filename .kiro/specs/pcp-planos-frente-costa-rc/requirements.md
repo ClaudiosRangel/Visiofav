@@ -119,8 +119,9 @@ de cada componente.
 ## Requisito 3 — Frente e Costa (planos tipo FACE)
 
 **User Story:** Como impressor, quero ver a frente e a costa de um trabalho
-de retiração como duas passagens distintas no painel, para apontar e concluir
-cada passagem separadamente, sem que isso crie uma segunda OP.
+de retiração como duas passagens distintas NA IMPRESSÃO, para apontar e
+concluir cada passagem separadamente, sem que isso crie uma segunda OP e sem
+duplicar os acabamentos (que operam sobre a folha única).
 
 ### Critérios de Aceitação
 
@@ -132,11 +133,19 @@ cada passagem separadamente, sem que isso crie uma segunda OP.
    receber a mesma tiragem base `qtd` (não duplicar a quantidade da OP).
 3. QUANDO os dois planos FACE forem criados, ENTÃO a OP DEVE permanecer com
    um único `numero` (sem violar `@@unique([empresaId, numero])`).
-4. QUANDO o painel exibir uma OP com planos FACE, ENTÃO DEVE mostrar cada
-   face como uma linha própria (ex.: "OP 2.849 · FRENTE", "OP 2.849 · COSTA"),
-   cada uma com fila/apontamento/conclusão independentes.
-5. QUANDO a OS NÃO for de retiração (Cores `Nx0`), ENTÃO nenhum plano FACE
+4. QUANDO o painel exibir uma OP com planos FACE, ENTÃO no CENTRO DE IMPRESSÃO
+   DEVE mostrar FRENTE e COSTA como duas linhas-filho (pai = OP), cada uma com
+   fila/apontamento/conclusão independentes (as 2 passagens na impressora).
+5. QUANDO a etapa for de um centro de ACABAMENTO/CORTE/COLAGEM (não impressão),
+   ENTÃO DEVE haver UMA etapa única por centro (vinculada à FRENTE por padrão),
+   SEM desmembrar por face — porque a retiração é um fenômeno exclusivo da
+   impressora; do acabamento em diante a folha é uma só. (Decisão confirmada
+   pelo usuário em 05/10/2026 — exemplo OP-3092, cores `5x1 +V+V`.)
+6. QUANDO a OS NÃO for de retiração (Cores `Nx0`), ENTÃO nenhum plano FACE
    DEVE ser criado (comportamento normal, 1 plano COMPONENTE ou nenhum).
+7. QUANDO a OP concluir, ENTÃO só DEVE ser considerada concluída quando TODAS
+   as etapas fecharem — as 2 faces da impressão E as etapas únicas dos demais
+   centros (regra `every(CONCLUIDA)` existente).
 
 ---
 

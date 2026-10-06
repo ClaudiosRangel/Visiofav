@@ -418,7 +418,16 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     // das etapas fica NULL = legado). Spec pcp-planos-frente-costa-rc.
     // ─────────────────────────────────────────────────────────────────────
     const planoIdPorNome = new Map<string, string>()
-    if (dados.planos && dados.planos.length >= 2) {
+    // Cria planos quando: há 2+ planos (multi-componente) OU há 1 plano de
+    // RETIRAÇÃO (frente/costa — ex.: OP-3092 cores 5x1). O caso de 1 plano
+    // frente/costa gera 2 FACES; o parser desmembra SÓ a impressão em
+    // FRENTE/COSTA (planoNome 'FRENTE'/'COSTA') e deixa os demais centros
+    // vinculados à FRENTE. Spec pcp-planos-frente-costa-rc §Fase C.1.
+    const temPlanosParaCriar = !!dados.planos && (
+      dados.planos.length >= 2 ||
+      (dados.planos.length === 1 && dados.planos[0].frenteCosta)
+    )
+    if (temPlanosParaCriar) {
       let seqPlano = 1
       for (const planoOp of dados.planos) {
         // Dados de material comuns ao plano (cartão/gramatura/peso/aproveit.).
@@ -438,7 +447,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
               sequencia: seqPlano++, ...mat,
             } as any,
           })
-          await prisma.planoOrdemProducao.create({
+          const costa = await prisma.planoOrdemProducao.create({
             data: {
               ordemProducaoId: op.id, empresaId: user.empresaId,
               nome: `${planoOp.nome} (COSTA)`, tipo: 'FACE',
@@ -447,6 +456,11 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
               faceDeId: frente.id, sequencia: seqPlano++, ...mat,
             } as any,
           })
+          // Vínculo das etapas: o parser marca as etapas de impressão com
+          // planoNome 'FRENTE'/'COSTA' e as demais com 'FRENTE' (default).
+          // Também mantém a chave pelo nome original do plano por segurança.
+          planoIdPorNome.set('FRENTE', frente.id)
+          planoIdPorNome.set('COSTA', costa.id)
           planoIdPorNome.set(planoOp.nome, frente.id)
         } else {
           const plano = await prisma.planoOrdemProducao.create({
@@ -511,6 +525,10 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         const centroPorNome = await prisma.centroProducao.findFirst({
           where: { empresaId: user.empresaId, descricao: { equals: nomeCentro, mode: 'insensitive' } },
           select: { id: true },
+          // DETERMINÍSTICO: se existir mais de um centro de mesmo nome (dado
+          // sujo de importações antigas), reusa SEMPRE o mesmo (o de menor
+          // código), para não espalhar etapas entre duplicados.
+          orderBy: { codigo: 'asc' },
         })
         const centroExistente = centroPorNome || await prisma.centroProducao.findFirst({
           where: { empresaId: user.empresaId, codigo: codigoCentro },

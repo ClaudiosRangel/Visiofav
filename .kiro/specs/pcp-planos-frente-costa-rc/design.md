@@ -220,19 +220,47 @@ Quando um plano vem com `frenteCosta`, em vez de 1 plano criar 2 do tipo
 - "COSTA" (cores = coresCosta, tiragem = qtd, sequencia n+1,
   `faceDeId` = id da FRENTE)
 
-As etapas de impressão/acabamento daquele plano são distribuídas conforme a
-regra de negócio (por padrão, cada face recebe sua etapa de impressão; o
-acabamento comum fica na FRENTE ou é duplicado — **a confirmar com o usuário
-no detalhamento das tasks**, default: impressão por face, acabamento na
-FRENTE).
+### Distribuição de etapas entre FRENTE/COSTA — REGRA CONFIRMADA
+
+**Decisão do usuário (confirmada): FACE só na IMPRESSÃO (pai e filhos).** A
+retiração (tira-retira) é um fenômeno da impressora — a mesma folha passa 2×
+na máquina (daí `tiragem qtd x 2` e cores `NxM`). Do acabamento em diante
+(Cortadeira, Guilhotina, Verniz, Destacar, Coladeira, etc.) a folha já é UMA
+só; não existe "frente" e "costa" para apontar separadamente nesses centros.
+
+Portanto:
+- **Centro de IMPRESSÃO**: desmembra em 2 etapas FACE (FRENTE e COSTA),
+  controláveis individualmente (iniciar/apontar/concluir por face) — reusa o
+  layout pai/filho da Fase B. O pai é a OP; os dois filhos são FRENTE/COSTA.
+- **Demais centros (acabamento/corte/colagem)**: UMA etapa única, SEM
+  desmembrar por face. Não ganham subitens FRENTE/COSTA. A etapa fica
+  vinculada ao plano FRENTE (default) só para efeito de dado; visualmente é
+  uma linha normal (sem pai/filho) nesses centros.
+- A OP só conclui quando TODAS as etapas (as 2 faces da impressão + as etapas
+  únicas dos demais centros) fecharem (regra `every(CONCLUIDA)` já existente).
+
+Exemplo real — **OP-3092 (PROBELLE), plano único CARTUCHO, cores `5x1 +V+V`,
+tiragem `16.500 x 2`**:
+- Impressão (KBA Rapida 75): PAI "OP 3.092 — CARTUCHOS..." + filhos
+  "FRENTE" (5 cores, 16.500) e "COSTA" (1 cor, 16.500), ações habilitadas.
+- Cortadeira (Grande), Guilhotina maior, Verniz, Verniz UV Total, Bobst E,
+  Destacar, AFT70 (Coladeira): cada uma como ETAPA ÚNICA (sem face), tiragem
+  base 16.500.
+
+NOTA: a OP-3092 NÃO é multi-componente (é um único plano CARTUCHO que vira
+2 FACES). Diferente da OP-3133, que tem 3 COMPONENTES (TAMPA/CAIXA/BOLSA),
+cada um peça física distinta com material/tiragem próprios.
 
 A OP permanece com um único `numero`. Os dois planos FACE são apenas filhos
 da mesma OP → `@@unique([empresaId, numero])` nunca é violado.
 
 ### Painel
 
-Idêntico à Fase B: cada plano FACE vira uma linha ("OP 2.849 · FRENTE",
-"OP 2.849 · COSTA"). Nenhum tratamento especial além do nome.
+- Na IMPRESSÃO: FRENTE/COSTA aparecem como linhas-filho (badge `violet`
+  "FACE", ex.: "OP 3.092 · FRENTE") sob a linha-pai da OP — reusa o layout
+  pai/filho e o drag/recolher já implementados na Fase B.
+- Nos demais centros: linha única sem pai/filho (render legado), badge de
+  plano opcional só informativo.
 
 ---
 

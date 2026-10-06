@@ -386,4 +386,70 @@ describe('parseGprintPdf — frente/costa (Fase C)', () => {
     // tiragem base = 8250 (o "x 2" indica 2 passagens, não dobra a quantidade)
     expect(fc!.tiragem).toBe(8250)
   })
+
+  it('detecta frente/costa de PLANO ÚNICO (OP-3092 real: cores 5x1, tiragem 16.500 x 2)', () => {
+    // Antes havia a trava `grupos.length < 2` que impedia detectar retiração em
+    // OS de UM único plano — a OP-3092 (CARTUCHO, 5x1) caía no fluxo legado
+    // achatado. Agora 1 plano COM cores NxM (N>0, M>0) ativa frente/costa.
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.092 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   PROBELLE   Cód. Cliente:   78',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHOS BURGUESINHAS',
+      'Quantidade:   99.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'CARTUCHO   540 x 740   3x2   16.500 x 2   5x1 +V+V   KBA Rapida 75 6cores   6   Cortadeira (Grande), Guilhotina maior, Verniz, Destacar',
+      'Materiais   Qtde.',
+      'Nz Bobina 238   1.685,47   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    expect(dados.planos).toHaveLength(1)
+    const p = dados.planos[0]
+    expect(p.frenteCosta).toBe(true)
+    expect(p.coresFrente).toBe('5x0')
+    expect(p.coresCosta).toBe('1x0')
+    expect(p.tiragem).toBe(16500)
+  })
+
+  it('desmembra FACE só na IMPRESSÃO; demais centros = etapa única (OP-3092)', () => {
+    // Regra confirmada: a retiração é fenômeno da impressora. Só a impressão
+    // vira 2 etapas (FRENTE/COSTA); os acabamentos ficam 1 etapa cada,
+    // vinculados à FRENTE.
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.092 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   PROBELLE',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHOS BURGUESINHAS',
+      'Quantidade:   99.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'CARTUCHO   540 x 740   3x2   16.500 x 2   5x1 +V+V   KBA Rapida 75 6cores   6   Cortadeira (Grande), Guilhotina maior, Verniz, Destacar',
+      'Impressão   Fixo   Variável',
+      'Offset Plana KBA Rapida 75 6cores   02:35   03:40',
+      'Acabamentos   Fixo   Variável',
+      'Cortadeira (Grande)  / 17.000 folhas 58,0 x 74,0 cm  00:15  04:04',
+      'Destacar  00:00  01:39',
+      'Guilhotina maior  / Refilar 17.000 folhas  00:00  04:08',
+      'Verniz  / Verniz Primer  00:00  00:00',
+      'Materiais   Qtde.',
+      'Nz Bobina 238   1.685,47   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+
+    // Impressão desmembrada em 2 (FRENTE/COSTA)
+    const impressao = dados.etapas.filter((e) => e.tipo === 'IMPRESSAO')
+    expect(impressao).toHaveLength(2)
+    expect(impressao.map((e) => e.planoNome).sort()).toEqual(['COSTA', 'FRENTE'])
+
+    // Acabamentos: UMA etapa cada, vinculada à FRENTE (sem desmembrar por face)
+    const cortadeira = dados.etapas.filter((e) => /Cortadeira/.test(e.descricao))
+    expect(cortadeira).toHaveLength(1)
+    expect(cortadeira[0].planoNome).toBe('FRENTE')
+    const verniz = dados.etapas.filter((e) => e.tipo === 'VERNIZ')
+    expect(verniz).toHaveLength(1)
+    expect(verniz[0].planoNome).toBe('FRENTE')
+    // Nenhuma etapa de acabamento com planoNome COSTA
+    expect(dados.etapas.filter((e) => e.tipo !== 'IMPRESSAO' && e.planoNome === 'COSTA')).toHaveLength(0)
+  })
 })

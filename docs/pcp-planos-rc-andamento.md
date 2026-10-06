@@ -135,3 +135,45 @@
 - Verificação: `get_diagnostics`; `npm run build` (back = prisma generate;
   front = next build ~4min); testes do parser `npx vitest run
   src/modules/pcp/importacao-op/parsers/gprint-parser.test.ts --reporter=dot`.
+
+## Sessão 05/10/2026 — Frente/Costa plano único + Centros duplicados
+
+### Zerado a VisioFab Demo (a pedido do usuário)
+Apagadas 13 OPs + dependências (etapas/planos/itens/logs/prog.entrega/reservas/
+sugestões/1 RC) SÓ na VisioFab Demo (guarda por nome; Carton Wega intacta).
+Cadastros preservados. Script temp `_tmp-zerar-pcp-demo.ts` (dry-run + APPLY=1),
+já removido. Base de programação limpa para revalidar.
+
+### Diagnóstico dos "dois cards Cortadeira" (NÃO era frente/costa)
+Confirmado no banco: cada `CentroProducao` é uma máquina física (unicidade por
+`@@unique([empresaId, codigo])`). "Cortadeira", "Cortadeira (Grande)",
+"(Pequena)", "Coin", "Doin" são máquinas DIFERENTES → cards separados é certo.
+O BUG era: existem DOIS centros com nome idêntico "Cortadeira" (cod 30 e 48),
+ambos recebendo etapas. Três falhas encadeadas:
+- **A** reuso por nome não-determinístico (`findFirst` sem orderBy) → importações
+  espalham etapas entre os duplicados.
+- **B** `extrairNomeMaquina("Cortadeira (Grande)")` devolvia só "Cortadeira"
+  (regex parava no "(") → toda cortadeira caía no centro genérico.
+- **C** dado sujo: os 2 "Cortadeira" já existem no cadastro (lixo antigo).
+
+### Correções FEITAS nesta sessão (backend, parser + confirmação)
+1. **Falha B** — `extrairNomeMaquina` preserva um grupo "(modelo)" após o nome
+   (regex `(${m}[\w\s]*?\d*(?:\s*\([^()]+\))?)`). Agora "Cortadeira (Grande)" →
+   "Cortadeira (Grande)". Regressão 14/14 (nomes passaram a incluir o modelo,
+   contagem de etapas idêntica).
+2. **Falha A** — reuso de centro por nome com `orderBy: { codigo: 'asc' }`
+   (determinístico; sempre o mesmo centro quando o nome coincide).
+3. **Frente/Costa de PLANO ÚNICO (OP-3092, 5x1)** — `extrairPlanos` deixou de
+   travar em `grupos.length < 2`: com 1 plano, processa SE for retiração (cores
+   NxM, N>0, M>0). Novo bloco em `parseGprintPdf` desmembra FACE SÓ na
+   IMPRESSÃO (2 etapas planoNome FRENTE/COSTA); demais centros = 1 etapa única
+   (planoNome FRENTE). Confirmação cria 2 PlanoOrdemProducao FACE também com 1
+   plano de origem; mapa de vínculo ganhou chaves 'FRENTE'/'COSTA'.
+   Testes do parser: 18/18 (2 novos).
+
+### PENDENTE (confirmar após reimportar — decisão do usuário)
+- **Falha C (consolidar centros duplicados)**: fundir os 2 "Cortadeira"
+  (cod 30/48), e re-apontar/ativar "Cortadeira (Grande)" (cod CORT-GDE, hoje
+  prog=false). O usuário pediu para fazer SÓ depois de validar o frente/costa.
+- Reimportar OP-3092 na base zerada e conferir no painel: impressão pai +
+  FRENTE/COSTA; acabamentos linha única; sem novos duplicados de centro.

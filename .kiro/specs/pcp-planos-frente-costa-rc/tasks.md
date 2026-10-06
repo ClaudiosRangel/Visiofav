@@ -116,14 +116,74 @@ Costa). Cada alteração de `schema.prisma` entra no MESMO commit que o
 - [x] 13. Confirmação — gerar planos FACE
   - Quando um plano vier `frenteCosta`, criar 2 `PlanoOrdemProducao` tipo
     `FACE` (FRENTE/COSTA), COSTA com `faceDeId` → FRENTE, mesma tiragem base.
-  - Distribuir etapas conforme regra confirmada (default: impressão por face,
-    acabamento na FRENTE) — CONFIRMAR com o usuário antes de implementar.
+  - **REGRA CONFIRMADA pelo usuário (OP-3092):** FACE só na IMPRESSÃO (pai e
+    filhos). O centro de impressão recebe 2 etapas (FRENTE e COSTA); os demais
+    centros (acabamento/corte/colagem) ficam com UMA etapa única vinculada à
+    FRENTE, SEM desmembrar por face. Ver design.md §"Distribuição de etapas
+    entre FRENTE/COSTA — REGRA CONFIRMADA".
   - Garantir que a OP continua com `numero` único.
   - _Requisitos: 3.1, 3.2, 3.3, 3.5_
 
 - [x] 14. Painel — exibir faces
   - Verificar que FRENTE/COSTA aparecem como linhas próprias (reusa o badge
     de plano da task 10; sem código extra além de dados corretos).
+  - _Requisitos: 3.4_
+
+---
+
+## Fase C.1 — Refinamento Frente/Costa (OP-3092, cores 5x1)
+
+Decisão confirmada em 05/10/2026: FACE só na impressão (pai e filhos); demais
+centros = etapa única. Validar o comportamento atual contra a OP-3092 e
+ajustar se o código ainda não fizer exatamente isso.
+
+### BUG DE RAIZ DIAGNOSTICADO (05/10/2026)
+
+A frente/costa de OS de **plano ÚNICO** (ex.: OP-3092, só o plano CARTUCHO,
+cores `5x1 +V+V`) **nunca é detectada** porque `extrairPlanos` tem a trava
+`if (grupos.length < 2) return []` — com 1 plano, retorna vazio e o fluxo cai
+no caminho legado (etapas achatadas, sem face). Por isso no painel a OP-3092
+aparece como linha ÚNICA (achatada) na impressão/Bobst/Cortadeira, em vez de
+pai + FRENTE/COSTA. O teste de frente/costa atual mascara isso (usa 2 planos
+artificiais; comentário "o 2º é só para satisfazer o mínimo").
+
+Correção pretendida: detectar frente/costa também com `grupos.length === 1`
+QUANDO as cores forem `NxM` (N>0, M>0); gerar as 2 FACES; desmembrar SÓ a
+impressão (demais centros = etapa única). NÃO quebrar OS de plano único SEM
+retiração (`Nx0`), que deve continuar achatada (não-regressão).
+
+- [x] 16. Validar comportamento atual com a OP-3092 (DIAGNÓSTICO FEITO)
+  - Confirmado por leitura de código: `extrairPlanos` retorna `[]` para 1
+    plano → frente/costa não roda em OS de plano único. É a causa da linha
+    achatada vista no painel.
+  - _Requisitos: 3.1, 3.2_
+
+- [x] 17. Ajustar detecção + desmembramento: FACE só na impressão
+  - `extrairPlanos`: permite 1 plano QUANDO cores `NxM` (N>0, M>0) →
+    marca `frenteCosta`. OS de 1 plano SEM retiração continua `[]` (legado).
+    FEITO (pré-check de retiração do grupo único antes da trava).
+  - Desmembramento (`parseGprintPdf`): bloco FACE para `planos.length === 1 &&
+    frenteCosta` → impressão vira 2 etapas (planoNome FRENTE/COSTA); demais
+    centros = 1 etapa única (planoNome FRENTE). FEITO.
+  - Confirmação (`importacao-op.routes.ts`): cria 2 `PlanoOrdemProducao` FACE
+    (COSTA.faceDeId → FRENTE) também com 1 plano frenteCosta; mapa de vínculo
+    ganhou chaves 'FRENTE'/'COSTA'. FEITO.
+  - BÔNUS (mesma leva): corrigidas as Falhas A e B dos centros duplicados —
+    `extrairNomeMaquina` preserva o modelo "(Grande)"/"(Pequena)"/"(Laminadora)"
+    (cada máquina → centro certo); reuso de centro por nome agora é
+    determinístico (`orderBy: codigo asc`).
+  - Regressão: `scripts/testar-todos-pdfs-op.ts` → 14/14, contagem de etapas
+    idêntica (só o NOME da máquina passou a incluir o modelo, como esperado).
+    Testes do parser: 18/18 (2 novos: detecção 5x1 plano único + desmembramento
+    FACE só na impressão).
+  - _Requisitos: 3.1, 3.2, 3.3, 3.5, 3.6_
+
+- [ ] 18. Validar no painel após reimportar (PENDENTE — usuário confirma)
+  - Reimportar a OP-3092 na VisioFab Demo (base zerada) e confirmar:
+    impressão com pai + FRENTE/COSTA; demais centros linha única; e que NÃO
+    surgem centros "Cortadeira" duplicados (Falhas A/B corrigidas).
+  - Consolidar os centros duplicados pré-existentes (Falha C) — SÓ APÓS a
+    confirmação do usuário (decisão dele: deixar p/ depois do frente/costa).
   - _Requisitos: 3.4_
 
 ---
