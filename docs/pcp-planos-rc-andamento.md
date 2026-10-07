@@ -177,3 +177,31 @@ ambos recebendo etapas. Três falhas encadeadas:
   prog=false). O usuário pediu para fazer SÓ depois de validar o frente/costa.
 - Reimportar OP-3092 na base zerada e conferir no painel: impressão pai +
   FRENTE/COSTA; acabamentos linha única; sem novos duplicados de centro.
+
+## Sessão (reclamações do cliente Caio — OP 3154)
+
+Três pontos relatados. Status:
+
+1. ✅ **Check de concluído por plano** — cliente confirmou OK (corrigido antes:
+   `todasEtapasPorOp` ganhou `planoId`; precedência filtra pelo mesmo plano).
+2. ✅ **Acopladeira/Bimac não lia planos** (commit `950876b0b`) — o grupo de
+   MICRO `(CAIXA (M),TAMPA (M))` abre no fim do nome e fecha numa 2ª linha, com
+   os tempos no meio. COSTURA CIRÚRGICA em `extrairEtapas`: quando a linha tem
+   "(" aberto e a PRÓXIMA é cauda `(M)` (regex `^\(M\)` / `(M))$`), insere a
+   cauda ANTES do primeiro " / " (dentro do NOME), reconstruindo o grupo.
+   `extrairPlanosDoSufixo`/`removerSufixoPlanos` ganharam regex p/ grupo com
+   `(M)` aninhado. OP-3133 também tinha o bug (17→18 etapas). Teste + regressão
+   15/15.
+3. ✅ **Matriz/faca por plano** (ESTA leva, toca schema) — cada plano tem sua
+   faca (OP-3154: Caixa=2468B, Bolsa=2505B, Tampa=2469B). Antes mostrava só a
+   1ª p/ todos.
+   - Schema: `PlanoOrdemProducao.matriz` (VARCHAR(80)). migrate-prod:
+     `ADD COLUMN IF NOT EXISTS "matriz"` (idempotente). `prisma generate` OK.
+   - Parser: `extrairMatrizesPorPlano(texto)` casa `<cod>B - <Plano>` e mapeia
+     por nome de plano; `PlanoOp.matriz` populado em `extrairPlanos`. Validado
+     na 3154 (TAMPA→2469B, CAIXA→2468B, BOLSA→2505B).
+   - Confirmação: grava `matriz` em cada PlanoOrdemProducao (FACE e COMPONENTE).
+   - Painel: `plano.matriz` exposto; campo `etapa.matriz` prioriza a matriz do
+     plano e cai p/ tag global `[Matriz]` no legado. Frontend já renderiza
+     `etapa.matriz` (sem alteração necessária).
+   - Testes parser 20/20; regressão 15/15.

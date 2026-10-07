@@ -3487,6 +3487,10 @@ model PlanoOrdemProducao {
   gramatura       Decimal?      @db.Decimal(10, 2)
   pesoKg          Decimal?      @map("peso_kg") @db.Decimal(12, 2)
   aproveitamento  Int?
+  // Matriz/faca de corte DESTE plano (ex.: "2468B - Caixa"). Cada plano tem a
+  // sua (OP-3154: Caixa=2468B, Bolsa=2505B, Tampa=2469B) — extraída do detalhe
+  // da operação de corte/vinco. null quando não identificada no PDF.
+  matriz          String?       @db.VarChar(80)
   // Para planos FACE: a COSTA aponta para a FRENTE (mesma chapa, 2ª passagem).
   faceDeId        String?               @map("face_de_id")
   faceDe          PlanoOrdemProducao?   @relation("FaceParDeDe", fields: [faceDeId], references: [id])

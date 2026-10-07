@@ -4802,6 +4802,8 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD COLUMN IF NOT EXISTS "gramatura" DECIMAL(10,2)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD COLUMN IF NOT EXISTS "peso_kg" DECIMAL(12,2)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD COLUMN IF NOT EXISTS "aproveitamento" INTEGER`)
+  // Matriz/faca de corte POR plano (OP-3154: Caixa=2468B, Bolsa=2505B, Tampa=2469B)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "plano_ordem_producao" ADD COLUMN IF NOT EXISTS "matriz" VARCHAR(80)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "plano_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "planos_nomes" VARCHAR(200)`)
   // FKs (Postgres não tem ADD CONSTRAINT IF NOT EXISTS — envolver em try/catch)

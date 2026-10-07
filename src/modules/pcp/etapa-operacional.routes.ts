@@ -1890,7 +1890,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         // Plano/componente da etapa (TAMPA/CAIXA/BOLSA ou FRENTE/COSTA).
         // null = etapa legada "sem plano". Incluído no select p/ evitar N+1.
         // Inclui material/tiragem/gramatura/peso do plano (subitens do painel).
-        plano: { select: { id: true, nome: true, tipo: true, tiragem: true, material: true, gramatura: true, pesoKg: true, formato: true, montagem: true } },
+        plano: { select: { id: true, nome: true, tipo: true, tiragem: true, material: true, gramatura: true, pesoKg: true, formato: true, montagem: true, matriz: true } },
       },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { ordemProducao: { prioridade: 'desc' } }, { sequencia: 'asc' }],
     })
@@ -2190,6 +2190,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               pesoKg: e.plano.pesoKg != null ? Number(e.plano.pesoKg) : null,
               formato: e.plano.formato ?? null,
               montagem: e.plano.montagem ?? null,
+              matriz: (e.plano as any).matriz ?? null,
             } : null,
             // Planos que a etapa (operação física) atende — modelo Opção 1
             // (ex.: Cortadeira processa TAMPA+CAIXA+BOLSA). Lista de nomes.
@@ -2262,7 +2263,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               }
             })(),
             tipoOp: extrairTipoOpObs(e.ordemProducao.observacoes),
-            matriz: extrairMatrizObs(e.ordemProducao.observacoes),
+            // Matriz: prioriza a matriz DO PLANO da etapa (OP multi-plano, cada
+            // plano tem sua faca) e cai para a tag global [Matriz] no legado.
+            matriz: ((e.plano as any)?.matriz) || extrairMatrizObs(e.ordemProducao.observacoes),
             // Status de pré-impressão: lê diretamente do campo dedicado
             preImpressaoStatus: e.preImpressaoStatus || (() => {
               // Fallback: verificar tags legadas no observacaoOperador (migração)

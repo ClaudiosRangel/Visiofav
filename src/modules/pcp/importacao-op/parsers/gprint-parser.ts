@@ -55,6 +55,7 @@ export interface PlanoOp {
   gramatura: number | null // extraída do nome do material (ex.: 200)
   pesoKg: number | null    // Quant(Kg) do plano
   aproveitamento: number | null // coluna "Aprov" (peças por folha) — p/ tiragem
+  matriz: string | null    // faca/matriz de corte DESTE plano (ex.: "2468B - Caixa")
 }
 
 export interface CabecalhoOp {
@@ -965,11 +966,37 @@ function removerSufixoPlanos(descricao: string, nomesValidos: Set<string>): stri
  * costuma ter cores 0x0 — é agregado ao plano-pai pela raiz do nome quando o
  * acabamento é só "Bimac (Acoplagem)" (não gera plano separado).
  */
+/**
+ * Extrai a matriz/faca de corte POR plano. No PDF, a operação de corte/vinco
+ * lista as matrizes com o NOME do plano ao lado, ex.:
+ *   "Matriz: 2468B - Caixa / 2505B - Bolsa / 2469B - Tampa"
+ * Retorna um mapa NOME-DO-PLANO (maiúsculo, sem "(M)") → "2468B - Caixa".
+ * Casa códigos no formato <dígitos>[letra opcional] seguidos de "- <plano>".
+ * O nome do plano casado é usado como chave (normalizado). Só mapeia nomes de
+ * planos que fazem sentido (até ~20 chars, sem dígitos no nome).
+ */
+function extrairMatrizesPorPlano(texto: string): Map<string, string> {
+  const mapa = new Map<string, string>()
+  const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+  // Ex.: "2468B - Caixa", "2505 - Bolsa", "M2469B - Tampa"
+  const re = /\b(M?\d{3,5}[A-Z]?)\s*[-–]\s*([A-Za-zÀ-ú]{3,20})\b/g
+  for (const m of texto.matchAll(re)) {
+    const codigo = m[1].trim()
+    const planoNome = norm(m[2])
+    // Ignora nomes que claramente não são plano (palavras comuns do detalhe).
+    if (/^(FACA|NOVA|BRAILLE|COM|SEM|ONDA|CORTE|VINCO|VINC|REPETI|ACOPLAD)/i.test(planoNome)) continue
+    if (!mapa.has(planoNome)) mapa.set(planoNome, `${codigo} - ${m[2].trim()}`)
+  }
+  return mapa
+}
+
 function extrairPlanos(texto: string): PlanoOp[] {
   // Materiais por plano (tabela "Plano/Material/Formato/Quant(Kg)/..."): mapa
   // nome-do-plano → { material, gramatura, pesoKg, aproveitamento }. Usado
   // para cada plano mostrar o SEU cartão (não o Micro Pardo do (M)).
   const materiaisPorPlano = extrairMateriaisPorPlano(texto)
+  // Matriz/faca por plano (ex.: "2468B - Caixa / 2505B - Bolsa / 2469B - Tampa")
+  const matrizesPorPlano = extrairMatrizesPorPlano(texto)
 
   // Isola a seção da tabela de processo: do cabeçalho que contém
   // "Mont." "Tiragem" "Cores" ... "Acabamento" até a próxima seção conhecida.
@@ -1068,6 +1095,7 @@ function extrairPlanos(texto: string): PlanoOp[] {
     // Material do plano (casado pelo nome, ignorando o sufixo "(M)").
     const chaveMat = g.nome.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
     const mat = materiaisPorPlano.get(chaveMat) || null
+    const matrizPlano = matrizesPorPlano.get(chaveMat) ?? null
 
     planos.push({
       nome: g.nome,
@@ -1080,6 +1108,7 @@ function extrairPlanos(texto: string): PlanoOp[] {
       frenteCosta,
       coresFrente,
       coresCosta,
+      matriz: matrizPlano,
       material: mat?.material ?? null,
       gramatura: mat?.gramatura ?? null,
       pesoKg: mat?.pesoKg ?? null,

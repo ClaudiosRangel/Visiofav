@@ -431,11 +431,13 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       let seqPlano = 1
       for (const planoOp of dados.planos) {
         // Dados de material comuns ao plano (cartão/gramatura/peso/aproveit.).
+        // Inclui a matriz/faca POR plano (ex.: "2468B - Caixa").
         const mat = {
           material: planoOp.material ?? undefined,
           gramatura: planoOp.gramatura ?? undefined,
           pesoKg: planoOp.pesoKg ?? undefined,
           aproveitamento: planoOp.aproveitamento ?? undefined,
+          matriz: planoOp.matriz ?? undefined,
         }
         if (planoOp.frenteCosta) {
           const frente = await prisma.planoOrdemProducao.create({
