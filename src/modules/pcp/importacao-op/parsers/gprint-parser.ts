@@ -738,7 +738,46 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
   // aqui para manter a mesma regra nos dois pontos do arquivo.
   const secaoAcab = texto.match(/Acabamentos\s+Fixo\s+Vari[áa]vel([\s\S]*?)(?:Obs\.:|Materiais)/i)
   if (secaoAcab) {
-    const linhasBrutas = secaoAcab[1].split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+    const linhasBrutasRaw = secaoAcab[1].split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+
+    // COSTURA CIRÚRGICA de grupo de planos "(M)" quebrado (bug real OP-3154 —
+    // Bimac/Acoplagem). O grupo "(CAIXA (M),TAMPA (M))" abre no fim do NOME de
+    // uma linha e FECHA numa linha seguinte curta, com os tempos no meio:
+    //   "Bimac (Acoplagem) Cartão+Micro Fornecido (CAIXA  / Segue obs  00:30  05:30"
+    //   "(M),TAMPA (M))"
+    // Só costuramos quando a PRÓXIMA linha é claramente a cauda de um grupo de
+    // acoplagem "(M)": casa `^\(M\)` ou termina em "(M))". Isso é restrito o
+    // bastante para NÃO afetar nomes com "(" legítimo e aberto como "Dayuan
+    // (Corte e Vinc" (cuja próxima linha NÃO começa com "(M)"). A cauda entra
+    // ANTES dos dois tempos, reconstruindo o grupo íntegro.
+    const reCaudaMicro = /^\(M\)|^\([^)]*\(M\)|\(M\)\)\s*$/i
+    const reTempos = /\s+(\d{2,3}:\d{2})\s+(\d{2,3}:\d{2})\s*$/
+    const linhasBrutas: string[] = []
+    for (let i = 0; i < linhasBrutasRaw.length; i++) {
+      let linha = linhasBrutasRaw[i]
+      const prox = linhasBrutasRaw[i + 1]
+      // Linha com "(" aberto não fechado E próxima linha é cauda de "(M)".
+      const abertos = (linha.match(/\(/g)?.length || 0) - (linha.match(/\)/g)?.length || 0)
+      if (abertos > 0 && prox && reCaudaMicro.test(prox.trim())) {
+        const cauda = prox.trim()
+        // A cauda fecha o grupo que ficou ABERTO no NOME da operação (antes do
+        // primeiro " / " de detalhe). Então inserimos a cauda logo ANTES do
+        // primeiro " / " — assim "(CAIXA" + "(M),TAMPA (M))" vira
+        // "(CAIXA (M),TAMPA (M))" DENTRO do nome. Se não houver " / ", inserimos
+        // antes dos tempos; se também não houver, concatenamos ao fim.
+        const idxBarra = linha.indexOf(' / ')
+        const mT = linha.match(reTempos)
+        if (idxBarra >= 0) {
+          linha = linha.slice(0, idxBarra) + ' ' + cauda + linha.slice(idxBarra)
+        } else if (mT && mT.index !== undefined) {
+          linha = linha.slice(0, mT.index) + ' ' + cauda + mT[0]
+        } else {
+          linha = `${linha} ${cauda}`
+        }
+        i++ // consumiu a cauda
+      }
+      linhasBrutas.push(linha)
+    }
 
     // Índice, no array `etapas`, da última etapa criada dentro desta seção —
     // usado para anexar linhas de continuação de detalhe (texto que quebrou
@@ -851,11 +890,25 @@ function extrairPlanosSufixoFinal(detalhe: string, nomesValidos: Set<string>): s
 }
 
 function extrairPlanosDoSufixo(descricao: string, nomesValidos: Set<string>): string[] {
+  const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+
+  // Caso ACOPLAGEM (Bimac): o grupo FINAL contém sub-parênteses "(M)", ex.:
+  // "...Fornecido (CAIXA (M),TAMPA (M))". O regex simples abaixo não captura
+  // grupos aninhados; aqui tentamos primeiro o grupo externo no FIM da string,
+  // tolerando 1 nível de aninhamento. Cada item ("CAIXA (M)") é normalizado
+  // removendo o "(M)" → "CAIXA", e validado contra os planos conhecidos.
+  const mAninhado = descricao.match(/\(([^()]*(?:\([^()]*\)[^()]*)+)\)\s*$/)
+  if (mAninhado) {
+    const itens = mAninhado[1].split(',').map((s) => s.trim()).filter(Boolean)
+    if (itens.length > 0 && itens.every((it) => nomesValidos.has(norm(it)))) {
+      return itens.map((it) => norm(it))
+    }
+  }
+
   const grupos = [...descricao.matchAll(/\(([^()]+)\)/g)]
   for (let i = grupos.length - 1; i >= 0; i--) {
     const itens = grupos[i][1].split(',').map((s) => s.trim()).filter(Boolean)
     if (itens.length === 0) continue
-    const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
     const todosSaoPlanos = itens.every((it) => nomesValidos.has(norm(it)))
     if (todosSaoPlanos) {
       // Mantém a ordem/caixa original dos itens do PDF.
@@ -873,14 +926,22 @@ function extrairPlanosDoSufixo(descricao: string, nomesValidos: Set<string>): st
  */
 function removerSufixoPlanos(descricao: string, nomesValidos: Set<string>): string {
   const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
-  const resultado = descricao.replace(/\s*\(([^()]+)\)/g, (match, conteudo) => {
+  // 1º: remove grupo FINAL com "(M)" aninhado (acoplagem Bimac):
+  // "...Fornecido (CAIXA (M),TAMPA (M))" → "...Fornecido".
+  let base = descricao.replace(/\s*\(([^()]*(?:\([^()]*\)[^()]*)+)\)\s*$/, (match, conteudo) => {
+    const itens = String(conteudo).split(',').map((s) => s.trim()).filter(Boolean)
+    if (itens.length > 0 && itens.every((it) => nomesValidos.has(norm(it)))) return ''
+    return match
+  })
+  // 2º: remove grupos simples de planos "(BOLSA,CAIXA,TAMPA)".
+  base = base.replace(/\s*\(([^()]+)\)/g, (match, conteudo) => {
     const itens = String(conteudo).split(',').map((s) => s.trim()).filter(Boolean)
     if (itens.length > 0 && itens.every((it) => nomesValidos.has(norm(it)))) {
       return '' // é grupo de planos → remove
     }
     return match // mantém (ex.: "(Grande)")
   })
-  return resultado.replace(/\s{2,}/g, ' ').trim()
+  return base.replace(/\s{2,}/g, ' ').trim()
 }
 
 // ============================================================================

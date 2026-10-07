@@ -362,6 +362,43 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
     const vernizUV = dados.etapas.filter((e) => /Verniz UV Total/.test(e.descricao))
     expect(vernizUV.map((e) => e.planoNome).sort()).toEqual(['CAIXA', 'TAMPA'])
   })
+
+  it('costura o grupo de planos "(M)" quebrado em 2 linhas (OP-3154 real: Bimac/Acoplagem)', () => {
+    // Caso real OP-3154: a operação de Acoplagem (Bimac) traz o grupo de planos
+    // de MICRO "(CAIXA (M),TAMPA (M))" aberto no fim do nome e FECHADO numa 2ª
+    // linha curta, com os tempos no meio:
+    //   "Bimac (Acoplagem) Cartão+Micro Fornecido (CAIXA  / Segue obs  00:30  05:30"
+    //   "(M),TAMPA (M))"
+    // O parser deve costurar a cauda "(M),TAMPA (M))" dentro do NOME (antes do
+    // " / "), reconstruir o grupo "(CAIXA (M),TAMPA (M))" e desmembrar em
+    // CAIXA e TAMPA. Antes ficava SEM plano (bug relatado pelo cliente).
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.154 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   TESTE',
+      'Produto:   Cartucho Composto',
+      'Descrição:   Caixa com Tampa e Bolsa',
+      'Quantidade:   22.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'TAMPA   820 x 530   2x2   11.000   4x0   Heidelberg CD 5cores   4   Bimac (Acoplagem)',
+      'CAIXA   715 x 875   2x1   22.000   4x0   Heidelberg CD 5cores   4   Bimac (Acoplagem)',
+      'BOLSA   860 x 720   2x1   22.000   0x0   Seladora Bolsa',
+      'Acabamentos   Fixo   Variável',
+      'Seladora Bolsa (BOLSA)  00:00  27:30',
+      'Bimac (Acoplagem) Cartão+Micro Fornecido (CAIXA  / Segue obs de impressão  00:30  05:30',
+      '(M),TAMPA (M))',
+      'Destacar (CAIXA,TAMPA)  00:00  03:18',
+      'Materiais   Qtde.',
+      'NZ Fibra Longa 200   103,88   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+
+    const bimac = dados.etapas.filter((e) => /Bimac/.test(e.descricao))
+    expect(bimac).toHaveLength(2)
+    expect(bimac.map((e) => e.planoNome).sort()).toEqual(['CAIXA', 'TAMPA'])
+    // Nome base limpo (sem o "(CAIXA" truncado nem o grupo de planos).
+    expect(bimac[0].descricao).toMatch(/^Bimac \(Acoplagem\) Cartão\+Micro Fornecido — (CAIXA|TAMPA)$/)
+  })
 })
 
 describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {
