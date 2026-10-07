@@ -1938,8 +1938,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       }
     }
 
-    // Mapa: opId → array de { tipoProcessoPosicao, sequencia, status }
-    const todasEtapasPorOp = new Map<string, Array<{ tipoProcessoPosicao: number; sequencia: number; status: string }>>()
+    // Mapa: opId → array de { tipoProcessoPosicao, sequencia, status, planoId }
+    // planoId é essencial no fluxo MULTI-PLANO: o check de "etapa anterior
+    // concluída" deve seguir o MESMO plano (ex.: a Guilhotina da CAIXA só
+    // libera quando a Cortadeira da CAIXA concluir — não quando qualquer
+    // etapa anterior da OP concluir). Sem isso, o ✓ "vazava" entre planos.
+    const todasEtapasPorOp = new Map<string, Array<{ tipoProcessoPosicao: number; sequencia: number; status: string; planoId: string | null }>>()
     if (opIdsNoPainel.length > 0) {
       const todasEtapas = await prisma.etapaOrdemProducao.findMany({
         where: { ordemProducaoId: { in: opIdsNoPainel } },
@@ -1947,6 +1951,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           ordemProducaoId: true,
           sequencia: true,
           status: true,
+          planoId: true,
           centroProducao: { select: { tipoProcessoId: true } },
         },
       })
@@ -1954,7 +1959,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         const tipoProcessoId = et.centroProducao?.tipoProcessoId
         const posicao = tipoProcessoId ? (tipoProcessoPosicaoMap.get(tipoProcessoId) ?? 999) : 999
         if (!todasEtapasPorOp.has(et.ordemProducaoId)) todasEtapasPorOp.set(et.ordemProducaoId, [])
-        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ tipoProcessoPosicao: posicao, sequencia: et.sequencia, status: et.status })
+        todasEtapasPorOp.get(et.ordemProducaoId)!.push({ tipoProcessoPosicao: posicao, sequencia: et.sequencia, status: et.status, planoId: (et as any).planoId ?? null })
       }
     }
 
@@ -2276,7 +2281,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             etapaAnteriorConcluida: (() => {
               const minhaPosicao = tipoProcessoPosicaoMap.get(e.centroProducao?.tipoProcessoId || '') ?? 999
               const minhaSequencia = e.sequencia
-              const todasDaOp = todasEtapasPorOp.get(e.ordemProducaoId) || []
+              const meuPlanoId = (e as any).planoId ?? e.plano?.id ?? null
+              let todasDaOp = todasEtapasPorOp.get(e.ordemProducaoId) || []
+
+              // MULTI-PLANO: se esta etapa pertence a um plano (CAIXA/BOLSA/
+              // TAMPA ou FRENTE/COSTA), o fluxo de precedência é POR PLANO —
+              // considera apenas as etapas do MESMO plano. Assim o ✓ da
+              // Guilhotina da CAIXA depende da Cortadeira da CAIXA, não de
+              // outro plano. Etapas sem plano (legado) seguem o fluxo por
+              // processo/sequência como antes.
+              if (meuPlanoId) {
+                todasDaOp = todasDaOp.filter(ea => ea.planoId === meuPlanoId)
+              }
 
               // Caso 1: verificar processos anteriores (posição menor)
               const etapasProcessoAnterior = todasDaOp.filter(ea => ea.tipoProcessoPosicao < minhaPosicao)
