@@ -828,16 +828,26 @@ function extrairEtapas(texto: string, avisos: string[]): EtapaOp[] {
  * "(Corte e Vinc)" não são confundidos com planos. Retorna [] se não achar.
  */
 function extrairPlanosSufixoFinal(detalhe: string, nomesValidos: Set<string>): string[] {
-  // Exige que o detalhe TERMINE com o grupo "(PLANO1,PLANO2,...)" (admite
-  // espaços no fim). Assim só casa quando o sufixo de plano é de fato o
-  // final da descrição, não um grupo no meio de um texto longo.
-  const m = detalhe.trim().match(/\(([^()]+)\)\s*$/)
-  if (!m) return []
-  const itens = m[1].split(',').map((s) => s.trim()).filter(Boolean)
-  if (itens.length === 0) return []
+  // O detalhe pode ter vários segmentos separados por "/" (ex.:
+  // "Heidelberg CD 5cores (CAIXA,TAMPA) / Verniz Primer"). O grupo de planos
+  // "(PLANO,...)" costuma vir ao FIM de UM desses segmentos — não
+  // necessariamente ao fim absoluto do detalhe. Testamos o fim de CADA
+  // segmento. Isso casa o Verniz ("...5cores (CAIXA,TAMPA)" é fim do 1º
+  // segmento) MAS NÃO casa o Dayuan ("...Acoplado Repetição (BOLSA,CAIXA,
+  // TAMPA)  2469B - Tampa" — o grupo NÃO está no fim de nenhum segmento,
+  // pois é seguido de "2469B - Tampa" no mesmo segmento), evitando o
+  // falso-positivo. Pega o 1º segmento que casar.
   const norm = (s: string) => s.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
-  const todosSaoPlanos = itens.every((it) => nomesValidos.has(norm(it)))
-  return todosSaoPlanos ? itens : []
+  const segmentos = detalhe.split('/').map((s) => s.trim()).filter(Boolean)
+  for (const seg of segmentos) {
+    const m = seg.match(/\(([^()]+)\)\s*$/)
+    if (!m) continue
+    const itens = m[1].split(',').map((s) => s.trim()).filter(Boolean)
+    if (itens.length === 0) continue
+    const todosSaoPlanos = itens.every((it) => nomesValidos.has(norm(it)))
+    if (todosSaoPlanos) return itens
+  }
+  return []
 }
 
 function extrairPlanosDoSufixo(descricao: string, nomesValidos: Set<string>): string[] {

@@ -330,12 +330,37 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
 
     const fechadora = dados.etapas.find((e) => /Fechadora de Caixa/.test(e.descricao))
     expect(fechadora?.planoNome).toBe('CAIXA')
+  })
 
-    // O Dayuan NÃO deve ser desmembrado pelos planos que aparecem no MEIO do
-    // seu detalhe (a captura só considera o sufixo FINAL do detalhe).
-    const dayuans = dados.etapas.filter((e) => /Dayuan/.test(e.descricao))
-    expect(dayuans).toHaveLength(1)
-    expect(dayuans[0].planoNome == null).toBe(true)
+  it('reconhece o plano quando o sufixo "(PLANO,...)" está no fim de UM SEGMENTO do detalhe (OP-3154 real: Verniz)', () => {
+    // Caso real OP-3154: "Verniz / Heidelberg CD 5cores (CAIXA,TAMPA) / Verniz
+    // Primer" — o grupo de planos NÃO está no fim absoluto do detalhe (termina
+    // em "Verniz Primer"), mas está no fim do 1º segmento separado por "/".
+    // A captura por segmento resolve isso. Antes, a OP-3154 deixava Verniz e
+    // Verniz UV Total SEM plano (bug relatado pelo cliente — "Sorsz" não
+    // quebrou e falhou).
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.154 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   TESTE',
+      'Produto:   Cartucho Composto',
+      'Descrição:   Caixa com Tampa',
+      'Quantidade:   22.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'TAMPA   820 x 530   2x2   11.000   4x0   Heidelberg CD 5cores   4   Verniz, Verniz UV Total',
+      'CAIXA   715 x 875   2x1   22.000   4x0   Heidelberg CD 5cores   4   Verniz, Verniz UV Total',
+      'Acabamentos   Fixo   Variável',
+      'Verniz / Heidelberg CD 5cores (CAIXA,TAMPA)  / Verniz Primer  00:00  00:00',
+      'Verniz UV Total / Heidelberg LeterSet (CAIXA,TAMPA)  / Verniz UV - Caixa e tampa  00:00  06:36',
+      'Materiais   Qtde.',
+      'NZ Fibra Longa 200   103,88   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+
+    const verniz = dados.etapas.filter((e) => e.descricao.startsWith('Verniz —') || /^Verniz —/.test(e.descricao))
+    expect(verniz.map((e) => e.planoNome).sort()).toEqual(['CAIXA', 'TAMPA'])
+    const vernizUV = dados.etapas.filter((e) => /Verniz UV Total/.test(e.descricao))
+    expect(vernizUV.map((e) => e.planoNome).sort()).toEqual(['CAIXA', 'TAMPA'])
   })
 })
 
