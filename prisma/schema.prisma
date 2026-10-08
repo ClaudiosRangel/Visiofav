@@ -3457,7 +3457,16 @@ model RequisicaoCorte {
   nomeServico         String    @map("nome_servico") @db.VarChar(200)
   pesoKg              Decimal?  @map("peso_kg") @db.Decimal(12, 2)
   instrucoesRefile    String?   @map("instrucoes_refile") @db.Text
-  status              String    @default("ABERTA") @db.VarChar(20) // ABERTA, EM_CORTE, CORTADA, CANCELADA
+  // Guilhotina DESTINO: ao concluir o corte na cortadeira, a RC passa para a
+  // fila deste centro (tipo guilhotina) para registrar início/fim de refile.
+  // Escolhida ao iniciar o corte. NULL = RC sem etapa de guilhotina.
+  guilhotinaDestinoId String?   @map("guilhotina_destino_id")
+  // Registro de início/fim de CORTE (cortadeira) e de GUILHOTINA (refile).
+  dataInicioCorte       DateTime? @map("data_inicio_corte")
+  dataFimCorte          DateTime? @map("data_fim_corte")
+  dataInicioGuilhotina  DateTime? @map("data_inicio_guilhotina")
+  dataFimGuilhotina     DateTime? @map("data_fim_guilhotina")
+  status              String    @default("ABERTA") @db.VarChar(20) // ABERTA, EM_CORTE, CORTADA, EM_GUILHOTINA, CONCLUIDA, CANCELADA
   // Posição na fila da Cortadeira no painel de Programação. A RC se comporta
   // como uma "OP avulsa de corte": aparece na fila do(s) centro(s) CORTADEIRA,
   // ordenável junto com as etapas, e sai da fila quando status != ABERTA.

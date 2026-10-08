@@ -4780,7 +4780,13 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "posicao_fila" INTEGER`)
   // Centro/grupo onde a RC foi criada (aparece só nesse grupo). Nullable.
   await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "centro_producao_id" TEXT`)
-  console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id, posicao_fila, centro_producao_id)')
+  // Guilhotina destino + registro de início/fim de corte e de guilhotina.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "guilhotina_destino_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_inicio_corte" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_fim_corte" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_inicio_guilhotina" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_fim_guilhotina" TIMESTAMP(3)`)
+  console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id, posicao_fila, centro_producao_id, guilhotina_destino_id)')
 
   // =========================================================================
   // PCP — Planos de Produção — spec pcp-planos-frente-costa-rc (Fase B/C)

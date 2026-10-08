@@ -144,9 +144,10 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
         nomeServico: body.nomeServico,
         pesoKg: body.pesoKg ?? undefined,
         instrucoesRefile: body.instrucoesRefile ?? undefined,
+        guilhotinaDestinoId: body.guilhotinaDestinoId ?? undefined,
         status: body.status ?? 'ABERTA',
         criadoPorId: user.id,
-      },
+      } as any,
     })
 
     return reply.status(201).send(rc)
@@ -194,8 +195,9 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
         nomeServico: body.nomeServico,
         pesoKg: body.pesoKg ?? null,
         instrucoesRefile: body.instrucoesRefile ?? null,
+        guilhotinaDestinoId: body.guilhotinaDestinoId ?? undefined,
         status: body.status ?? undefined,
-      },
+      } as any,
     })
 
     return rc
@@ -224,6 +226,9 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
   app.patch('/requisicoes-corte/:id/iniciar', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    // guilhotinaDestinoId é informado ao iniciar o corte: define para qual
+    // guilhotina a RC vai quando o corte terminar.
+    const body = z.object({ guilhotinaDestinoId: z.string().uuid().optional().nullable() }).parse(request.body ?? {})
 
     const existe = await prisma.requisicaoCorte.findFirst({
       where: { id, empresaId: user.empresaId },
@@ -231,29 +236,135 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
     })
     if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
 
+    // Valida a guilhotina destino (se informada): precisa ser um centro da
+    // empresa e do tipo de processo guilhotina.
+    let guilhotinaId: string | null | undefined = undefined
+    if (body.guilhotinaDestinoId !== undefined) {
+      guilhotinaId = null
+      if (body.guilhotinaDestinoId) {
+        const centro = await prisma.centroProducao.findFirst({
+          where: { id: body.guilhotinaDestinoId, empresaId: user.empresaId },
+          select: { id: true },
+        })
+        if (!centro) return reply.status(400).send({ message: 'Guilhotina destino inválida.' })
+        guilhotinaId = centro.id
+      }
+    }
+
     const rc = await prisma.requisicaoCorte.update({
       where: { id },
-      data: { status: 'EM_CORTE' },
+      data: {
+        status: 'EM_CORTE',
+        dataInicioCorte: new Date(),
+        ...(guilhotinaId !== undefined ? { guilhotinaDestinoId: guilhotinaId } : {}),
+      } as any,
     })
     return rc
   })
 
   // ---------------------------------------------------------------------------
-  // PATCH /requisicoes-corte/:id/concluir — Marca como CORTADA (sai da fila)
+  // PATCH /requisicoes-corte/:id/concluir — Conclui o CORTE. Se houver
+  // guilhotina destino, a RC PASSA para a fila dessa guilhotina (EM_GUILHOTINA)
+  // para o refile. Sem guilhotina destino, encerra como CORTADA (fluxo legado).
+  // Aceita guilhotinaDestinoId no body (caso não tenha sido definido no iniciar).
   // ---------------------------------------------------------------------------
   app.patch('/requisicoes-corte/:id/concluir', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ guilhotinaDestinoId: z.string().uuid().optional().nullable() }).parse(request.body ?? {})
 
+    const existe = await prisma.requisicaoCorte.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, guilhotinaDestinoId: true } as any,
+    })
+    if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
+
+    // Guilhotina destino: usa a do body (se enviada) ou a já definida no iniciar.
+    let guilhotinaId: string | null = (existe as any).guilhotinaDestinoId ?? null
+    if (body.guilhotinaDestinoId !== undefined) {
+      guilhotinaId = null
+      if (body.guilhotinaDestinoId) {
+        const centro = await prisma.centroProducao.findFirst({
+          where: { id: body.guilhotinaDestinoId, empresaId: user.empresaId },
+          select: { id: true },
+        })
+        if (!centro) return reply.status(400).send({ message: 'Guilhotina destino inválida.' })
+        guilhotinaId = centro.id
+      }
+    }
+
+    if (guilhotinaId) {
+      // Vai para a guilhotina: entra no FIM da fila dela.
+      const [maxPosRc, maxPosEtapa] = await Promise.all([
+        prisma.requisicaoCorte.aggregate({
+          where: { empresaId: user.empresaId, status: 'EM_GUILHOTINA', guilhotinaDestinoId: guilhotinaId } as any,
+          _max: { posicaoFila: true },
+        }),
+        prisma.etapaOrdemProducao.aggregate({
+          where: {
+            status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+            centroProducaoId: guilhotinaId,
+            ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+          },
+          _max: { posicaoFila: true },
+        }),
+      ])
+      const proximaPos = Math.max(maxPosRc._max.posicaoFila || 0, maxPosEtapa._max.posicaoFila || 0) + 1
+      const rc = await prisma.requisicaoCorte.update({
+        where: { id },
+        data: {
+          status: 'EM_GUILHOTINA',
+          dataFimCorte: new Date(),
+          dataCorte: new Date(),
+          guilhotinaDestinoId: guilhotinaId,
+          posicaoFila: proximaPos,
+        } as any,
+      })
+      return rc
+    }
+
+    // Sem guilhotina: encerra o corte (fluxo legado — sai da fila).
+    const rc = await prisma.requisicaoCorte.update({
+      where: { id },
+      data: { status: 'CORTADA', dataCorte: new Date(), dataFimCorte: new Date(), posicaoFila: null } as any,
+    })
+    return rc
+  })
+
+  // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/:id/iniciar-guilhotina — Inicia o refile na
+  // guilhotina (registra dataInicioGuilhotina). RC continua EM_GUILHOTINA.
+  // ---------------------------------------------------------------------------
+  app.patch('/requisicoes-corte/:id/iniciar-guilhotina', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const existe = await prisma.requisicaoCorte.findFirst({
       where: { id, empresaId: user.empresaId },
       select: { id: true },
     })
     if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
-
     const rc = await prisma.requisicaoCorte.update({
       where: { id },
-      data: { status: 'CORTADA', dataCorte: new Date(), posicaoFila: null },
+      data: { dataInicioGuilhotina: new Date() } as any,
+    })
+    return rc
+  })
+
+  // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/:id/concluir-guilhotina — Conclui o refile na
+  // guilhotina: RC vira CONCLUIDA e sai da fila (registra dataFimGuilhotina).
+  // ---------------------------------------------------------------------------
+  app.patch('/requisicoes-corte/:id/concluir-guilhotina', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const existe = await prisma.requisicaoCorte.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
+    const rc = await prisma.requisicaoCorte.update({
+      where: { id },
+      data: { status: 'CONCLUIDA', dataFimGuilhotina: new Date(), posicaoFila: null } as any,
     })
     return rc
   })
@@ -370,7 +481,8 @@ const bodySchema = z.object({
   nomeServico: z.string().min(1, 'Nome do serviço é obrigatório').max(200),
   pesoKg: z.number().nonnegative().optional().nullable(),
   instrucoesRefile: z.string().optional().nullable(),
-  status: z.enum(['ABERTA', 'CORTADA', 'CANCELADA']).optional(),
+  guilhotinaDestinoId: z.string().uuid().optional().nullable(),
+  status: z.enum(['ABERTA', 'EM_CORTE', 'CORTADA', 'EM_GUILHOTINA', 'CONCLUIDA', 'CANCELADA']).optional(),
 })
 
 // =============================================================================

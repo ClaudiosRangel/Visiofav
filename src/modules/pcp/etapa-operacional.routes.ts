@@ -2491,8 +2491,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // corte" na fila da Cortadeira. Anexadas a TODOS os centros do tipo de
     // processo CORTADEIRA (o operador escolhe em qual máquina cortar). Spec
     // pcp-planos-frente-costa-rc (Fase A). Isolamento por empresaId.
+    // Fases ativas da RC no painel: ABERTA/EM_CORTE (na Cortadeira) e
+    // EM_GUILHOTINA (na guilhotina destino, para registrar o refile). CORTADA
+    // é o fim quando NÃO há guilhotina destino (fluxo legado).
     const rcsAbertas = await prisma.requisicaoCorte.findMany({
-      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
+      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE', 'EM_GUILHOTINA'] } },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { criadoEm: 'asc' }],
     })
     const rcsPainel = rcsAbertas.map((rc) => ({
@@ -2500,6 +2503,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       numero: rc.numero,
       status: rc.status,
       centroProducaoId: rc.centroProducaoId,
+      guilhotinaDestinoId: (rc as any).guilhotinaDestinoId ?? null,
       posicaoFila: rc.posicaoFila,
       requisitante: rc.requisitante,
       fabricanteCartao: rc.fabricanteCartao,
@@ -2510,19 +2514,27 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       larguraBobinaCm: rc.larguraBobinaCm != null ? Number(rc.larguraBobinaCm) : null,
       tamanhoCorteCm: rc.tamanhoCorteCm != null ? Number(rc.tamanhoCorteCm) : null,
       qtdFolhasCortadeira: rc.qtdFolhasCortadeira,
+      qtdFolhasGuilhotina: rc.qtdFolhasGuilhotina,
+      textoGuilhotina: rc.textoGuilhotina,
       pesoKg: rc.pesoKg != null ? Number(rc.pesoKg) : null,
       dataSolicitacao: rc.dataSolicitacao,
+      dataInicioGuilhotina: (rc as any).dataInicioGuilhotina ?? null,
     }))
-    // Cada RC aparece SÓ no centro onde foi criada (centroProducaoId). RCs
-    // antigas sem centro (legado) continuam em todos os CORTADEIRA. Assim uma
-    // RC criada no grupo "Guilhotina menor" aparece só nele, não nos demais.
+    // Posicionamento da RC por FASE:
+    // - ABERTA/EM_CORTE → aparece no centro onde foi criada (Cortadeira). RCs
+    //   antigas sem centro (legado) continuam em todos os CORTADEIRA.
+    // - EM_GUILHOTINA → aparece SÓ no centro guilhotinaDestinoId (refile).
     for (const centroPainel of painelPorCentro) {
       const ehCortadeira = centroPainel.centro.tipoProcesso?.codigo === 'CORTADEIRA'
-      ;(centroPainel as any).requisicoesCorte = rcsPainel.filter((rc) =>
-        rc.centroProducaoId
+      ;(centroPainel as any).requisicoesCorte = rcsPainel.filter((rc) => {
+        if (rc.status === 'EM_GUILHOTINA') {
+          return rc.guilhotinaDestinoId === centroPainel.centro.id
+        }
+        // ABERTA / EM_CORTE → na cortadeira de origem
+        return rc.centroProducaoId
           ? rc.centroProducaoId === centroPainel.centro.id
-          : ehCortadeira, // legado: sem centro → todos os CORTADEIRA
-      )
+          : ehCortadeira // legado: sem centro → todos os CORTADEIRA
+      })
     }
 
     return { centros: painelPorCentro, aguardandoCartao }
