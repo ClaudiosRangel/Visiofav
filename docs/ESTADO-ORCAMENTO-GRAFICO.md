@@ -4,6 +4,66 @@
 > QUALQUER sessão retomar sem perder contexto. Última atualização: 03/10/2026
 > (módulo de ACABAMENTOS — motor + golden 15.235 batendo, em andamento).
 
+## ⭐ HANDOFF (ler PRIMEIRO numa nova sessão) — validação do 15.235 na tela
+
+Empresa Carton Wega produção (Neon): `75848e24-742e-461d-b913-1642c5b83ae9`.
+Connection via `$env:DATABASE_URL` (string no steering/sessão, NUNCA em git).
+Login QA: admin@visiofab.com / 987123 (SUPER_ADMIN); selecionar Wega:
+`POST /empresas/:id/selecionar` body `{}` → token novo. API prod:
+`https://api.vizorerp.com.br/api`. Repos SEPARimport: back `VisioFab.Wms.Back`
+(github ClaudiosRangel/Visiofav), front `VisioFab.Wms.Front` (Visiofav-Front-).
+
+### Onde o fluxo de orçamento JÁ FUNCIONA (tudo em produção/commitado)
+- Wizard calcula ponta a ponta (Cliente→Tipo→Medidas→Papel→Cores→Acabamentos→Revisão).
+- Suportes (78) + vínculo preço→suporte (1.710) + TabelaMargem + ParametroPerda
+  padrão TODOS semeados na Wega. StepPapel em 2 níveis (Suporte→Preço, só
+  preço>0). StepAcabamentos lista 67 acabamentos com tempos do cadastro.
+  Paginação 50 em todo o módulo. Schema de acabamentoRico com z.coerce.number.
+- KBA Rapida 75 6cores (código KBA-75-6): `acertoPorCorMin=27` setado em prod
+  (impressão calibrada → R$ 1.600 em vez de R$ 273).
+
+### O QUE FALTA p/ o 15.235 bater EXATO na TELA (decisão do usuário: fazer A agora)
+Golden alvo: `docs/calcgraf-golden-15235-acabamentos.md` — MD 6.598,70 / CT
+3.814,80 / C.Prod 10.413,50 / preço 30,01% = 19.960,00 (tiragem 20.000).
+O MOTOR já bate (testes ≤0,5%); a TELA depende de:
+1. **Encaixe/imposição real** — deu 3 peças/folha; o golden é 4-up (TR 2x2,
+   5.000 folhas). O cálculo do Vizor é GEOMÉTRICO (`calcularEncaixe`), não
+   reproduz a imposição do Calcgraf. É a maior fonte de divergência (papel +
+   folhas). SOLUÇÃO definitiva = catálogo de facas GCad (spec B). AJUSTE
+   POSSÍVEL agora: permitir o usuário informar o aproveitamento/nº de poses
+   manualmente OU ajustar a planificação do tipo "Cartuchos" p/ dar 4-up na
+   folha 605×620. INVESTIGAR: fórmulas do tipo Cartuchos geram peça grande.
+2. **Materiais de acabamento** (Cola Branca/Vegetal, Verniz Base D'Água Fosco,
+   Caixa Padrão) NÃO existem no cadastro de Acabamentos — só "Faca Nova"
+   apareceu. Sem eles o MD fica incompleto (~R$ 323 a menos). FAZER: cadastrar
+   esses materiais como AcabamentoGrafico (MATERIAL_KG/MATERIAL_UN) na Wega, ou
+   deixá-los selecionáveis no StepAcabamentos. Valores do golden: Cola 1,14 kg
+   × 29,15; Verniz 5,63 kg × 24,2; Caixa Padrão 20 un × 7,7.
+3. **Escolha da máquina de impressão no wizard** — hoje o cálculo pega a 1ª
+   máquina IMPRESSAO por `posicao`; o golden exige a KBA-75-6. Se a KBA não for
+   a 1ª, a impressão não calibra. FAZER: adicionar seletor de máquina no wizard
+   (StepCores ou StepRevisao) e enviar `maquinaId` ao /calcular e POST /.
+4. **Matriz de impressão** (KBA 5 PC × 35,2 = 176,00) — no golden entra no MD;
+   verificar se está sendo contemplada.
+5. **Tinta** — modelo SPANKS depende da cobertura; o golden tratou tinta como
+   itens diretos (Escala 137,05 + Metálica 303,60 = 440,65). Na tela a tinta
+   varia com a cobertura informada. Calibrar coberturas OU oferecer entrada
+   direta de consumo.
+6. Lembrar: tiragem 20.000 (não 10.000).
+
+### SPEC B (próxima — multi-item) — NÃO começar sem o usuário pedir
+Orçamento multi-item (PARTE 01 + PARTE 02…), como o 15.185 (Cartucho Composto —
+caixa mãe + cartuchos, 4 suportes). Hoje 1 orçamento = 1 item. Levantamento do
+fluxo em `docs/calcgraf-fluxo-manutencao-orcamento.md`. Também no backlog:
+catálogo de facas GCad (encaixe real), restrições por acabamento. O usuário
+pediu para deixar o multi-item como "B" e tratar depois.
+
+### Golden 15.185 (2º caso, multi-item — para a spec B)
+Print recebida: Cartucho Composto "Caixa Mãe p/ 12 cartuchos" 280×270×178,
+PARTE 01 + PARTE 02, suportes Stora Enzo 191 + Micro Pardo 230, Heidelberg CD
+5cores, tintas Escala, HotStamping, Cola Vegetal, Faca Nova etc. C.Prod
+44.005,36 / Total 43.400,65. Transcrever para doc golden quando iniciar a spec B.
+
 ## 0. EM ANDAMENTO — Módulo de Acabamentos (spec orcamento-grafico-acabamentos)
 
 Objetivo: Vizor emitir relatório IGUAL ao Calcgraf e bater valores. Golden alvo:
@@ -170,6 +230,72 @@ já existiam). Implementado (NÃO commitado — aguardando pedido do usuário):
 - Documento de levantamento do fluxo multi-item do Calcgraf criado:
   `docs/calcgraf-fluxo-manutencao-orcamento.md` (backlog: multi-item,
   restrições por acabamento, catálogo de facas GCad, UI de itens diversos).
+
+### 🔴 HANDOFF PARA A PRÓXIMA SESSÃO (03/10/2026 — contexto cheio, retomar AQUI)
+
+Estado: o fluxo do wizard de orçamento gráfico FUNCIONA ponta a ponta na tela
+(Cliente→Tipo→Medidas→Papel→Cores→Acabamentos→Revisão calcula sem erro). Vários
+bugs foram corrigidos nesta sessão (ver abaixo). FALTA fazer o 15.235 BATER EXATO
+na tela e implementar o multi-item. Empresa Wega produção `75848e24-742e-461d-b913-1642c5b83ae9`.
+Connection Neon via `$env:DATABASE_URL` (nunca commitar).
+
+**JÁ CORRIGIDO nesta sessão (tudo commitado/pushed + aplicado em produção):**
+- Vínculo preço→suporte (1.710 papéis) — fase `vincular-suportes` no importador.
+- Paginação 50/página em todo o módulo (back `totalPages` + front `Pagination`).
+- StepAcabamentos: limit 100 (era 200 → estourava Zod → lista vazia).
+- Seed de ParametroPerda padrão na Wega (destrava o bloqueio Req 5.4 que dava
+  "Dados inválidos" na Revisão). `scripts/importar-calcgraf.ts --fase seed-margem`.
+- Bug "Expected number, received string": StepAcabamentos converte Decimals-string
+  do cadastro p/ number + schema Zod com `z.coerce.number()` (back).
+- Filtro `comPreco=true` em /precos-mp (StepPapel só lista papéis com preço>0; o
+  "Klabin Advanced Triplex 280" genérico tem preço 0, os com bobina têm 8,30).
+- StepRevisao exibe acabamentos ricos (centros CT + Mat.Acabamento MD).
+- Máquina KBA-75-6 em produção: `acertoPorCorMin=27` (impressão calibrada do
+  golden: 5 cores × 27 = 135min = 02:15 → R$ 1.600 em vez de R$ 273 legado).
+
+**FAZER AGORA (ajustes que AFETAM o resultado — pedido do usuário "bater exato"):**
+1. **Materiais de acabamento JÁ EXISTEM no cadastro** (confirmado 03/10: 44
+   HORA_MAQUINA + 21 MATERIAL_KG + 2 MATERIAL_UN). Para o 15.235 use:
+   - Cola → "Colagem Manual" (CG-ACAB-54, MATERIAL_KG) ou cadastrar "Cola Branca"
+   - Verniz → "Verniz BA Fosco" (CG-ACAB-55, MATERIAL_KG) = Verniz Base D'Água Fosco
+   - Caixa → "Caixa Padrão" (CG-ACAB-39, MATERIAL_UN)
+   PORÉM: todos com `preco_unitario=null` (Calcgraf não exportou o preço do
+   material de acabamento). Na tela o operador informa consumo (kg/un) E preço —
+   OU cadastrar o preço nos AcabamentoGrafico. O usuário só viu a Faca Nova porque
+   não rolou/marcou os demais (eles aparecem na lista, basta marcar). → DECIDIR:
+   preencher `precoUnitario` desses materiais no cadastro (de onde? Itc
+   Origem=MAT.ACABAMENTO tem preço — cruzar) ou deixar o operador digitar sempre.
+2. **Escolha de máquina de impressão no wizard** — hoje o /calcular pega a 1ª
+   máquina de impressão por `posicao`. O golden exige a KBA-75-6. Se a KBA não
+   for a 1ª, a impressão não calibra. → Adicionar seletor de máquina no wizard
+   (StepTipo ou StepRevisao) + enviar `maquinaId`. As máquinas de IMPRESSAO da
+   Wega: HEID-CD5(440), HEID-CD7(550), KBA-75-6(480,acerto27), ROLAND-RVU4(140),
+   ROLAND-RZU2(100), HEID-SM2(155), HEID-LETTER(155) + algumas sem vel/custo
+   (códigos 19/2/10/21/39 — legados sem parâmetros, ignorar/inativar).
+3. **Encaixe/imposição real** — o cálculo geométrico dá 3 peças/folha; o golden é
+   4 (TR 2x2). Isso faz o PAPEL e as FOLHAS divergirem. É o item estrutural =
+   catálogo de FACAS (GCad). Entra junto do multi-item (item B abaixo).
+4. Tiragem: o usuário testou com 10.000; o golden é 20.000 (lembrar na validação).
+
+**ITEM B — PRÓXIMA GRANDE SPEC (decisão do usuário): MULTI-ITEM + GCad**
+Orçamento com várias PARTES (ex.: 15.185 "Caixa Mãe p/ 12 cartuchos" = PARTE 01 +
+PARTE 02, 4 suportes). Hoje Vizor = 1 item/orçamento. Junto vem o catálogo de
+FACAS/GCad (imposição real: dimensões/repetição/formato de corte/suporte por
+modelo) — resolve o encaixe (item 3). Levantamento do fluxo multi-item do Calcgraf
+em `docs/calcgraf-fluxo-manutencao-orcamento.md`. Golden composto: 15.185 (print
+transcrever quando for implementar).
+
+**Golden de item único (validar primeiro):** 15.235 em
+`docs/calcgraf-golden-15235-acabamentos.md`. Alvo: MD 6.598,70 / CT 3.814,80 /
+C.Prod 10.413,50 / preço 30,01% = 19.960,00 (tiragem 20.000, papel Triplex 280
+R$ 8,30, 5 cores 5x0+V, 5 acabamentos HORA_MAQUINA + materiais). O MOTOR bate
+≤0,5% nos testes (suíte orcamento-grafico 130 verde); a TELA depende dos itens
+1-3 acima.
+
+**Specs do módulo (todas feitas, exceto multi-item):**
+- orcamento-grafico-acabamentos (motor + relatório) ✅
+- orcamento-grafico-suporte-fechamento (suporte/preço/margem/perda) ✅ 130 testes
+- orcamento-grafico-multi-item-gcad — A CRIAR (item B).
 
 ### Extensão do motor nesta rodada (importante)
 `ItemAcabamentoRico` HORA_MAQUINA ganhou `tempoFixoHoras`/`tempoVarHoras`
