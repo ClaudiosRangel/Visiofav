@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { resolverPendenciasAutomaticamente } from '../pendencia-logistica/pendencia-logistica.routes'
 import { authenticate } from '../../middleware/authenticate'
+import { verificarCodigoBarraDuplicado, mensagemConflito } from './sku-codigo-barra.service'
 
 function getDb(request: any) { return request.prismaScoped || prisma }
 
@@ -47,6 +48,12 @@ export async function skuRoutes(app: FastifyInstance) {
       altura: z.number().optional(),
       comprimento: z.number().optional(),
       volume: z.number().optional(),
+      // Medidas da unidade (EAN-13), independentes das da caixa (ocorrência 1).
+      larguraUnidade: z.number().optional(),
+      alturaUnidade: z.number().optional(),
+      comprimentoUnidade: z.number().optional(),
+      volumeUnidade: z.number().optional(),
+      pesoLiquidoUnidade: z.number().optional(),
       pesoLiquido: z.number().optional(),
       pesoBruto: z.number().optional(),
       pesoPalete: z.number().optional(),
@@ -58,6 +65,18 @@ export async function skuRoutes(app: FastifyInstance) {
     // Calcula volume se não informado
     if (!body.volume && body.largura && body.altura && body.comprimento) {
       (body as any).volume = (body.largura * body.altura * body.comprimento) / 1000000
+    }
+
+    // Ocorrência 6 (crítico): bloquear código de barras duplicado por empresa.
+    // Padrão GS1/SAP — um GTIN é atribuído uma única vez. Evita entrada/picking/
+    // inventário no item errado por EAN compartilhado entre produtos distintos.
+    if (empresaId) {
+      const conflito = await verificarCodigoBarraDuplicado(db, empresaId, {
+        codigoBarra: body.codigoBarra,
+        codigoBarraDun: body.codigoBarraDun,
+        codigoBarraDisplay: body.codigoBarraDisplay,
+      })
+      if (conflito) return reply.status(409).send({ message: mensagemConflito(conflito) })
     }
 
     const item = await db.sku.create({ data: empresaId ? { ...body, empresaId } : body })
@@ -99,6 +118,12 @@ export async function skuRoutes(app: FastifyInstance) {
       altura: z.number().nullable().optional(),
       comprimento: z.number().nullable().optional(),
       volume: z.number().nullable().optional(),
+      // Medidas da unidade (EAN-13), independentes das da caixa (ocorrência 1).
+      larguraUnidade: z.number().nullable().optional(),
+      alturaUnidade: z.number().nullable().optional(),
+      comprimentoUnidade: z.number().nullable().optional(),
+      volumeUnidade: z.number().nullable().optional(),
+      pesoLiquidoUnidade: z.number().nullable().optional(),
       pesoLiquido: z.number().nullable().optional(),
       pesoBruto: z.number().nullable().optional(),
       pesoPalete: z.number().nullable().optional(),
@@ -107,6 +132,23 @@ export async function skuRoutes(app: FastifyInstance) {
       tipoPalete: z.string().nullable().optional(),
       status: z.boolean().optional(),
     }).parse(request.body)
+
+    // Ocorrência 6 (crítico): bloquear código de barras duplicado por empresa
+    // também na edição (ignora o próprio SKU). Só checa os campos de código
+    // efetivamente enviados no payload.
+    if (empresaId && (body.codigoBarra !== undefined || body.codigoBarraDun !== undefined || body.codigoBarraDisplay !== undefined)) {
+      const conflito = await verificarCodigoBarraDuplicado(
+        db,
+        empresaId,
+        {
+          codigoBarra: body.codigoBarra,
+          codigoBarraDun: body.codigoBarraDun,
+          codigoBarraDisplay: body.codigoBarraDisplay,
+        },
+        id,
+      )
+      if (conflito) return reply.status(409).send({ message: mensagemConflito(conflito) })
+    }
 
     const updated = await db.sku.update({ where: { id }, data: body })
 

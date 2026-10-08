@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma'
+import { taraPalete } from '../sku/tara-palete'
 
 export interface CapacityCheckInput {
   enderecoId: string
@@ -81,7 +82,13 @@ export class ValidadorCapacidade {
     const volumeAtual = await this.calcularVolumeAtual(enderecoId)
 
     // 5. Calculate incoming weight and volume
-    const pesoIncoming = skuPesoBruto != null ? quantidade * skuPesoBruto : 0
+    const cargaIncoming = skuPesoBruto != null ? quantidade * skuPesoBruto : 0
+    // Ocorrência 5 do relatório 3: somar a TARA do palete ao peso da carga, para
+    // o limite da porta-paletes não ser estourado. Só aplica quando há dados de
+    // paletização (lastro×camada×qtdEmbalagem) para estimar quantos paletes a
+    // quantidade recebida monta. Sem esses dados, comportamento preservado.
+    const taraIncoming = this.calcularTaraPaletes(sku, quantidade)
+    const pesoIncoming = cargaIncoming + taraIncoming
     const volumeIncoming = skuVolume != null ? quantidade * skuVolume : 0
 
     // 6. Weight check — skip if capacidade is null/zero or pesoBruto is null
@@ -163,6 +170,29 @@ export class ValidadorCapacidade {
       pesoLimite,
       volumeLimite,
     }
+  }
+
+  /**
+   * Estima a tara total dos paletes montados por `quantidade` unidades do SKU.
+   * Paletes montados = ceil(quantidade / (lastro × camada × qtdEmbalagem)).
+   * Retorna 0 quando faltam dados de paletização (comportamento preservado).
+   * Se o SKU informa `pesoPalete` manual (peso do palete MONTADO, já com tara),
+   * NÃO soma tara aqui para não contar o peso do estrado duas vezes.
+   */
+  calcularTaraPaletes(
+    sku: { lastro?: number | null; camada?: number | null; qtdEmbalagem?: number | null; tipoPalete?: string | null; pesoPalete?: unknown } | null,
+    quantidade: number,
+  ): number {
+    if (!sku) return 0
+    // pesoPalete manual já embute a tara — evitar dupla contagem.
+    if (sku.pesoPalete != null && Number(sku.pesoPalete) > 0) return 0
+    const lastro = sku.lastro ? Number(sku.lastro) : 0
+    const camada = sku.camada ? Number(sku.camada) : 0
+    const qtdEmb = sku.qtdEmbalagem ? Number(sku.qtdEmbalagem) : 1
+    const unidadesPorPalete = lastro * camada * (qtdEmb > 0 ? qtdEmb : 1)
+    if (unidadesPorPalete <= 0) return 0
+    const paletes = Math.ceil(quantidade / unidadesPorPalete)
+    return paletes * taraPalete(sku.tipoPalete)
   }
 
   /**

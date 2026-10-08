@@ -67,3 +67,44 @@ O relatório está 100% atendido quando todas as linhas ❌ acima virarem ✅,
 com o cadastro de produto permitindo preencher periculosidade + os shelf lifes
 multi-camada, e o WMS aplicando as travas de recebimento/expedição/quarentena
 descritas. A spec `atributos-logisticos-shelf-life` é o veículo disso.
+
+---
+
+# Relatório 3 — Ocorrências e Ajustes (Cadastro SKU), 01/10/2026
+
+**Fonte:** `3 -RELATÓRIO DE OCORRENCIAS E AJUSTE.pdf` (raiz do
+`VisioFab.Wms.Back`). Follow-up focado em cadastro de Produto/SKU e recebimento.
+
+**Spec:** `.kiro/specs/relatorio-ocorrencias-cadastro-sku/` (requirements/design/
+tasks). Benchmark de mercado (GS1/SAP/Oracle/Walmart) registrado no requirements.
+
+**Decisões firmadas:** (A) medidas independentes por nível GS1 + cubagem
+derivada opcional por divisão; (B) EAN-13 oficial = `Produto.cEAN`, SKU reflete
+read-only; (C) BLOQUEAR EAN duplicado por empresa (padrão SAP); (D) spec
+rastreável começando pela ocorrência crítica.
+
+## Status por ocorrência do relatório 3
+
+| # | Ocorrência | Status | Onde |
+|---|---|---|---|
+| **6** 🔴 | EAN duplicado era aceito (Leite Condensado reusou EAN do K-Othrine) | ✅ **Backend feito** | `sku/sku-codigo-barra.service.ts` + 409 em `POST/PUT /skus`. Unicidade por empresa, colisão cruzada EAN-13/EAN-14/display. Teste 7/7. |
+| 4 | Herança lote/validade ao ler EAN-14 no recebimento | ✅ **Resolver corrigido** | `resolver-codigo-produto-item.service.ts` agora casa `codigoBarraDun`/`codigoBarraDisplay`, não só `codigoBarra`. Falta teste dedicado (task 3.2). |
+| 6 (front) | Modal fechava em erro | ✅ **Já ok** | `SkuPanel.handleSave` fecha só no sucesso. |
+| 1 | Medidas independentes unidade (EAN-13) × caixa (EAN-14) | ✅ **Feito** | Schema `Sku` +5 campos `*Unidade` + `migrate-prod.ts` (ADD COLUMN IF NOT EXISTS). Zod/hook/`SkuPanel` com seção "Medidas da Unidade". ⚠️ migração NÃO testada local (Postgres local off) — validar antes do deploy. |
+| 2 | Cubagem derivada da unidade = caixa ÷ multiplicador | ✅ **Feito** | `SkuPanel` botão "Derivar cubagem da unidade" (`volume ÷ qtdEmbalagem`), sobrescrevível; medida real tem prioridade. |
+| 5 | EAN-13 read-only no SKU vindo do `Produto.cEAN` | ✅ **Feito** | `SkuPanel` busca o produto, campo EAN-13 read-only espelhando `cEAN`, destaque vermelho do produto, aviso quando vazio. |
+| 8 | Shelf-Life (dias) × RLM (%) mutuamente dependentes | ✅ **Feito** | `utils/shelfLifeRlm.ts` (puro, validado via Node) + `ProdutoModal`: RLM% inibe/calcula dias (padrão SAP). |
+| 6 (tara) | Peso tara do palete na capacidade porta-paletes | ✅ **Feito** | `sku/tara-palete.ts` + `validador-capacidade.calcularTaraPaletes` (ceil por palete, sem dupla contagem). Teste 6/6. |
+| 7 | Código interno automático fora de ordem | 🔎 **Diagnóstico** | Geração está correta/atômica. "Fora de ordem" provavelmente é ORDENAÇÃO DE EXIBIÇÃO (`GET /produtos` ordena por `nome`, não `codigo`). Aguarda o print do relatório para confirmar antes de alterar. |
+
+**Atualize esta tabela ao concluir cada task.**
+
+### Pendências antes do deploy (relatório 3)
+- Rodar `npx tsx prisma/migrate-prod.ts` 2x em banco local (idempotência) —
+  não foi possível nesta sessão (Postgres local em `localhost:5432` estava
+  fora do ar). As 5 colunas usam `ADD COLUMN IF NOT EXISTS` (padrão idempotente).
+- `schema.prisma` + `migrate-prod.ts` DEVEM ir no MESMO commit (steering
+  database-migrations).
+- Testes `shelfLifeRlm.test.ts` (front) não rodaram: vitest do front não inicia
+  worker nesta máquina (infra). Lógica validada via Node. Rodar em CI/outra máquina.
+- Ocorrência 7: obter o print para confirmar exibição vs geração.

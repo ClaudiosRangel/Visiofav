@@ -2586,6 +2586,14 @@ model Sku {
   altura             Decimal? @db.Decimal(10, 3)
   comprimento        Decimal? @db.Decimal(10, 3)
   volume             Decimal? @db.Decimal(10, 6)
+  // Medidas da UNIDADE contida (EAN-13), independentes das da caixa/embalagem
+  // acima (EAN-14/DUN). Padrão GS1: cada nível logístico tem dimensões próprias.
+  // Relatório 3, ocorrência 1. Todas nullable (retrocompat).
+  larguraUnidade     Decimal? @map("largura_unidade") @db.Decimal(10, 3)
+  alturaUnidade      Decimal? @map("altura_unidade") @db.Decimal(10, 3)
+  comprimentoUnidade Decimal? @map("comprimento_unidade") @db.Decimal(10, 3)
+  volumeUnidade      Decimal? @map("volume_unidade") @db.Decimal(10, 6)
+  pesoLiquidoUnidade Decimal? @map("peso_liquido_unidade") @db.Decimal(10, 3)
   pesoLiquido        Decimal? @map("peso_liquido") @db.Decimal(10, 3)
   pesoBruto          Decimal? @map("peso_bruto") @db.Decimal(10, 3)
   pesoPalete         Decimal? @map("peso_palete") @db.Decimal(10, 3)

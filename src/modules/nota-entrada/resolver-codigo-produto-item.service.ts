@@ -97,10 +97,22 @@ export async function resolverCodigosProdutoItensXml(
 
   let skuPorEanMap = new Map<string, { produtoId: string; codigoProduto: string }>()
   if (eansParaBuscar.length > 0) {
+    // Ocorrência 4 do relatório 3: ao ler o EAN-14/DUN da CAIXA no recebimento,
+    // o resolver precisa encontrar o produto para que as regras de lote/shelf
+    // life (vinculadas ao Produto pai) sejam aplicadas. Antes só casava
+    // `codigoBarra` (EAN-13 da unidade); agora também `codigoBarraDun` (EAN-14)
+    // e `codigoBarraDisplay`. Padrão GS1/Oracle: atributos do item físico valem
+    // para todos os níveis de embalagem que o contêm.
     const skusMatch = await tx.sku.findMany({
-      where: { codigoBarra: { in: eansParaBuscar } },
+      where: {
+        OR: [
+          { codigoBarra: { in: eansParaBuscar } },
+          { codigoBarraDun: { in: eansParaBuscar } },
+          { codigoBarraDisplay: { in: eansParaBuscar } },
+        ],
+      },
       orderBy: { sequencia: 'asc' },
-      select: { codigoBarra: true, produtoId: true },
+      select: { codigoBarra: true, codigoBarraDun: true, codigoBarraDisplay: true, produtoId: true },
     })
     if (skusMatch.length > 0) {
       const produtoIds = Array.from(new Set(skusMatch.map((s) => s.produtoId)))
@@ -112,9 +124,12 @@ export async function resolverCodigosProdutoItensXml(
       for (const sku of skusMatch) {
         const codigo = produtoCodigoPorId.get(sku.produtoId)
         if (!codigo) continue // SKU de produto de outra empresa — ignorar
-        const chave = sku.codigoBarra as string
-        if (!skuPorEanMap.has(chave)) {
-          skuPorEanMap.set(chave, { produtoId: sku.produtoId, codigoProduto: codigo })
+        // Mapeia TODOS os códigos do SKU (EAN-13/EAN-14/display) para o produto,
+        // sem sobrescrever um match anterior (prioridade = menor sequência).
+        for (const chave of [sku.codigoBarra, sku.codigoBarraDun, sku.codigoBarraDisplay]) {
+          if (chave && !skuPorEanMap.has(chave)) {
+            skuPorEanMap.set(chave, { produtoId: sku.produtoId, codigoProduto: codigo })
+          }
         }
       }
     }

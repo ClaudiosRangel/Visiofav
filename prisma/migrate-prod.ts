@@ -2557,6 +2557,14 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "codigo_barra_dun" VARCHAR(30)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "codigo_barra_display" VARCHAR(30)`)
 
+  // SKU — medidas da UNIDADE (EAN-13), independentes das da caixa (relatório 3,
+  // ocorrência 1). Padrão GS1: dimensões por nível logístico. Todas nullable.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "largura_unidade" DECIMAL(10,3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "altura_unidade" DECIMAL(10,3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "comprimento_unidade" DECIMAL(10,3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "volume_unidade" DECIMAL(10,6)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "peso_liquido_unidade" DECIMAL(10,3)`)
+
   // DadosLogisticosArmazenagem — pulmão regulador em outro depósito
   await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_armazenagem" ADD COLUMN IF NOT EXISTS "pulmao_regulador_deposito_id" TEXT`)
 
