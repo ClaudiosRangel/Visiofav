@@ -4742,6 +4742,149 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_acabamento_grafico_empresa_status" ON "acabamento_grafico"("empresa_id","status")`)
   console.log('✅ Orçamento Gráfico Acabamentos: acabamento_grafico criado (unique empresa+codigo, index empresa+status)')
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Orçamento Gráfico Multi-Item + GCad — Fase 1 (Task 1): estrutura multi-item.
+  // Cria item_orcamento_grafico (filho de orcamento_grafico, cascade) e adiciona
+  // as colunas aditivas do cabeçalho (série/data/consolidados). Enums como
+  // VARCHAR; blocos idempotentes (CREATE TABLE/INDEX IF NOT EXISTS, ADD COLUMN
+  // IF NOT EXISTS, FK em try/catch). A FK para modelo_faca fica para a Task 8
+  // (a tabela modelo_faca ainda não existe nesta fase).
+  // Ver .kiro/specs/orcamento-grafico-multi-item-gcad (design §3.2/§3.5).
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "item_orcamento_grafico" (
+    "id" TEXT NOT NULL,
+    "orcamento_id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "sequencia" INTEGER NOT NULL,
+    "tipo_embalagem_id" TEXT NOT NULL,
+    "descricao" VARCHAR(200),
+    "medidas" JSONB NOT NULL,
+    "papel_id" TEXT,
+    "papel_descricao" VARCHAR(200),
+    "suporte_id" TEXT,
+    "gramatura" DECIMAL(6,2),
+    "num_cores" INTEGER NOT NULL DEFAULT 4,
+    "cores" JSONB,
+    "maquina_id" TEXT,
+    "matriz_quantidade" DECIMAL(12,3),
+    "matriz_preco_unitario" DECIMAL(14,4),
+    "tinta_modo" VARCHAR(20),
+    "tinta_consumo_kg" DECIMAL(12,3),
+    "acabamentos_ricos" JSONB,
+    "modelo_faca_id" TEXT,
+    "itens_diversos" JSONB,
+    "itens_fornecidos" JSONB,
+    "campos_livres" JSONB,
+    "quantidade" INTEGER NOT NULL,
+    "resultado_calculo" JSONB,
+    "margem_selecionada" DECIMAL(5,2),
+    "custo_producao" DECIMAL(14,2),
+    "valor_total" DECIMAL(14,2),
+    "pendente" BOOLEAN NOT NULL DEFAULT false,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "item_orcamento_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "item_orcamento_grafico_orcamento_id_sequencia_key" ON "item_orcamento_grafico"("orcamento_id","sequencia")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_item_orc_grafico_empresa" ON "item_orcamento_grafico"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_item_orc_grafico_orcamento" ON "item_orcamento_grafico"("orcamento_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_item_orc_grafico_modelo_faca" ON "item_orcamento_grafico"("modelo_faca_id")`)
+  // FK em try/catch (Postgres não tem ADD CONSTRAINT IF NOT EXISTS)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD CONSTRAINT "item_orc_grafico_orcamento_fk" FOREIGN KEY ("orcamento_id") REFERENCES "orcamento_grafico"("id") ON DELETE CASCADE`)
+  } catch { /* constraint já existe */ }
+  // FK modelo_faca adicionada na Task 8 (tabela modelo_faca ainda não existe nesta fase)
+
+  // Cabeçalho orcamento_grafico — colunas novas ADITIVAS (não-destrutivo)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "serie" VARCHAR(10)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "data_orcamento" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "custo_producao_consolidado" DECIMAL(14,2)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "valor_total_consolidado" DECIMAL(14,2)`)
+  console.log('✅ Orçamento Gráfico Multi-Item: item_orcamento_grafico criado (unique orcamento+sequencia, index empresa/orcamento/modelo_faca, FK orcamento cascade) + colunas consolidadas em orcamento_grafico')
+
+  // Migração de dados item-único → item-filho (Task 2): cria 1 ItemOrcamentoGrafico
+  // por OrcamentoGrafico existente que ainda não tenha item. Idempotente
+  // (WHERE NOT EXISTS → 2ª execução não cria nada) e NÃO-destrutivo (nenhum
+  // DROP/UPDATE no cabeçalho; só INSERT). sequencia=1. Copia resultado_calculo
+  // tal como está (não recalcula — preserva o valor congelado, Req 4.1/4.6);
+  // espelha custo_total→custo_producao e preco_venda→valor_total para a
+  // consolidação (1 item → soma = o próprio item, Req 3.5).
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "item_orcamento_grafico" (
+      "id","orcamento_id","empresa_id","sequencia","tipo_embalagem_id",
+      "medidas","papel_id","papel_descricao","gramatura","num_cores","cores",
+      "acabamentos_ricos","quantidade","resultado_calculo","custo_producao","valor_total","pendente"
+    )
+    SELECT gen_random_uuid(), o."id", o."empresa_id", 1, o."tipo_embalagem_id",
+      o."medidas", o."papel_id", o."papel_descricao", o."gramatura", o."num_cores", o."cores",
+      o."acabamentos", o."quantidade", o."resultado_calculo",
+      o."custo_total", o."preco_venda", false
+    FROM "orcamento_grafico" o
+    WHERE NOT EXISTS (SELECT 1 FROM "item_orcamento_grafico" i WHERE i."orcamento_id" = o."id")
+  `)
+  console.log('✅ Multi-Item (Task 2): migração item-único → item-filho (idempotente, não-destrutiva)')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Orçamento Gráfico Multi-Item + GCad — Fase 2 (Task 8): catálogo de
+  // Modelos/Facas (GCad). Cria modelo_faca (gabarito técnico: dimensões,
+  // repetição/encaixe, formato de corte) e adiciona a FK pendente da Task 1
+  // (item_orcamento_grafico.modelo_faca_id → modelo_faca.id, ON DELETE RESTRICT).
+  // Enums como VARCHAR; blocos idempotentes (CREATE TABLE/INDEX IF NOT EXISTS,
+  // FK em try/catch). Ver .kiro/specs/orcamento-grafico-multi-item-gcad (§3.3/§3.5).
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "modelo_faca" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo" VARCHAR(40) NOT NULL,
+    "cliente_nome" VARCHAR(200),
+    "modelo" VARCHAR(200) NOT NULL,
+    "servico" VARCHAR(200) NOT NULL,
+    "largura_mm" DECIMAL(10,2) NOT NULL,
+    "altura_mm" DECIMAL(10,2) NOT NULL,
+    "repeticao_linhas" INTEGER NOT NULL,
+    "repeticao_colunas" INTEGER NOT NULL,
+    "formato_corte_largura_mm" DECIMAL(10,2) NOT NULL,
+    "formato_corte_altura_mm" DECIMAL(10,2) NOT NULL,
+    "tipo_cartucho" VARCHAR(100),
+    "suporte_id" TEXT,
+    "gramatura" DECIMAL(6,2),
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "modelo_faca_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "modelo_faca_empresa_id_codigo_key" ON "modelo_faca"("empresa_id","codigo")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_modelo_faca_empresa_status" ON "modelo_faca"("empresa_id","status")`)
+  // FK pendente da Task 1: item_orcamento_grafico.modelo_faca_id → modelo_faca.id
+  // (Postgres não tem ADD CONSTRAINT IF NOT EXISTS → try/catch)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD CONSTRAINT "item_orc_grafico_modelo_faca_fk" FOREIGN KEY ("modelo_faca_id") REFERENCES "modelo_faca"("id") ON DELETE RESTRICT`)
+  } catch { /* constraint já existe */ }
+  console.log('✅ Orçamento Gráfico GCad (Task 8): modelo_faca criado (unique empresa+codigo, index empresa/status) + FK item_orcamento_grafico→modelo_faca (RESTRICT)')
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Orçamento Gráfico Multi-Item + GCad — Fase 3 (Task 14): restrições por
+  // atividade de acabamento. Flag exigeRestricao em acabamento_grafico + tabela
+  // restricao_acabamento (filho cascade). Idempotente; enum N/A (sem CREATE TYPE).
+  // ──────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "exige_restricao" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "restricao_acabamento" (
+    "id" TEXT NOT NULL,
+    "acabamento_grafico_id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "nome" VARCHAR(100) NOT NULL,
+    "tempo_acerto_min" DECIMAL(10,2) NOT NULL,
+    "tempo_operacao_min" DECIMAL(10,2) NOT NULL,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "restricao_acabamento_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_restricao_acab_acabamento" ON "restricao_acabamento"("acabamento_grafico_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_restricao_acab_empresa" ON "restricao_acabamento"("empresa_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "restricao_acabamento" ADD CONSTRAINT "restricao_acab_acabamento_fk" FOREIGN KEY ("acabamento_grafico_id") REFERENCES "acabamento_grafico"("id") ON DELETE CASCADE`)
+  } catch {}
+  console.log('✅ Orçamento Gráfico Restrições (Task 14): exige_restricao em acabamento_grafico + restricao_acabamento criado (índices acabamento/empresa, FK cascade)')
+
   // =========================================================================
   // PCP — Requisição de Corte de Cartão (RC) — spec pcp-planos-frente-costa-rc
   // Fase A. Tabela independente; não toca OP/etapas. Isolamento por empresa_id.

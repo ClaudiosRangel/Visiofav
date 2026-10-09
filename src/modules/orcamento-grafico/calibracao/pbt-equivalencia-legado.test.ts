@@ -1,3 +1,4 @@
+// Feature: orcamento-grafico-multi-item-gcad, Property 2: Para todo item único sem modelo GCad, sem restrição de acabamento e sem campos introduzidos por esta spec (ausentes/nulos), o resultado do envelope (MD, CT, Servex, Custo de Produção, Custo Financeiro, Total e cada campo de fechamento) é idêntico, com desvio zero, ao resultado do motor puro congelado para os mesmos parâmetros.
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
 import { calcularOrcamentoGrafico, type ParamsOrcamento } from '../orcamento-grafico-calculo.service'

@@ -3071,15 +3071,38 @@ model AcabamentoGrafico {
   /// FOLHA (processa folhasBrutas) | PRODUTO (processa a tiragem).
   unidadeBase String? @map("unidade_base") @db.VarChar(10)
 
+  // Exige escolha de uma sub-opção (restrição) ao usar no orçamento (Req 7).
+  exigeRestricao Boolean @default(false) @map("exige_restricao")
+
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
-  centroProducao CentroProducao? @relation(fields: [centroProducaoId], references: [id])
+  centroProducao CentroProducao?        @relation(fields: [centroProducaoId], references: [id])
+  restricoes     RestricaoAcabamento[]
 
   @@unique([empresaId, codigo])
   @@index([empresaId, status])
   @@map("acabamento_grafico")
+}
+
+/// Sub-opção (restrição) de uma atividade de acabamento (Req 7). Ex.: coladeira
+/// AFT70 → "Lateral Simples", "Fundo Automático Normal". Sobrepõe o acerto/tempo
+/// da atividade no Custo de Transformação. Filho de AcabamentoGrafico (cascade).
+model RestricaoAcabamento {
+  id                  String  @id @default(uuid())
+  acabamentoGraficoId String  @map("acabamento_grafico_id")
+  empresaId           String  @map("empresa_id")
+  nome                String  @db.VarChar(100)
+  tempoAcertoMin      Decimal @map("tempo_acerto_min") @db.Decimal(10, 2)
+  tempoOperacaoMin    Decimal @map("tempo_operacao_min") @db.Decimal(10, 2)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  acabamento AcabamentoGrafico @relation(fields: [acabamentoGraficoId], references: [id], onDelete: Cascade)
+
+  @@index([acabamentoGraficoId])
+  @@index([empresaId])
+  @@map("restricao_acabamento")
 }
 
 /// Cadastro de Tipo de Processo produtivo (ex: Cortadeira, Impressão,
@@ -3949,8 +3972,121 @@ model OrcamentoGrafico {
   criadoEm         DateTime      @default(now()) @map("criado_em")
   atualizadoEm     DateTime      @updatedAt @map("atualizado_em")
 
+  // ── NOVO: cabeçalho multi-item (spec orcamento-grafico-multi-item-gcad) ──
+  // Campos ADITIVOS — não removem/alteram nada do legado acima. Ver design §3.1/§3.2.
+  serie                    String?   @db.VarChar(10) // Req 1.1
+  dataOrcamento            DateTime? @map("data_orcamento") // Req 1.1 (Data)
+  custoProducaoConsolidado Decimal?  @map("custo_producao_consolidado") @db.Decimal(14, 2) // Req 3.2
+  valorTotalConsolidado    Decimal?  @map("valor_total_consolidado") @db.Decimal(14, 2) // Req 3.1
+
+  itens ItemOrcamentoGrafico[] // 0..999 (Req 1.2)
+
   @@unique([empresaId, numero, versao])
   @@map("orcamento_grafico")
+}
+
+/// Item de cálculo de um Orçamento Gráfico (multi-item). Cada item é um
+/// "Cálculo" do Calcgraf: Linha de Produto + suporte + cores + acabamentos +
+/// tiragem + fechamento próprios. Isolamento por empresaId denormalizado +
+/// relação com o orçamento pai. Enums gravados como VARCHAR (sem CREATE TYPE).
+/// Spec orcamento-grafico-multi-item-gcad (§3.2).
+model ItemOrcamentoGrafico {
+  id          String @id @default(uuid())
+  orcamentoId String @map("orcamento_id")
+  empresaId   String @map("empresa_id") // denormalizado p/ filtro multi-tenant direto
+  sequencia   Int // 1..N único por orçamento (Req 1.5)
+
+  // ── Geometria / produto ──
+  tipoEmbalagemId String  @map("tipo_embalagem_id")
+  descricao       String? @db.VarChar(200)
+  medidas         Json // {L, A, P, ...}
+
+  // ── Papel / suporte ──
+  papelId        String?  @map("papel_id")
+  papelDescricao String?  @map("papel_descricao") @db.VarChar(200)
+  suporteId      String?  @map("suporte_id")
+  gramatura      Decimal? @db.Decimal(6, 2)
+
+  // ── Impressão ──
+  numCores  Int     @default(4) @map("num_cores")
+  cores     Json? // [{nome, tipo, cobertura%, precoKg, ...}]
+  maquinaId String? @map("maquina_id") // CentroProducao IMPRESSAO (Req 8)
+
+  // ── Matriz de impressão no MD (Req 10) ──
+  matrizQuantidade    Decimal? @map("matriz_quantidade") @db.Decimal(12, 3)
+  matrizPrecoUnitario Decimal? @map("matriz_preco_unitario") @db.Decimal(14, 4)
+
+  // ── Tinta por cobertura OU consumo direto (Req 11) ──
+  /// COBERTURA | CONSUMO_DIRETO — modo mutuamente exclusivo por item
+  tintaModo      String?  @map("tinta_modo") @db.VarChar(20)
+  tintaConsumoKg Decimal? @map("tinta_consumo_kg") @db.Decimal(12, 3)
+
+  // ── Acabamentos (ricos: hora-máquina / material kg / material un / fixo) ──
+  acabamentosRicos Json? @map("acabamentos_ricos")
+
+  // ── GCad / Faca (Req 6) ──
+  modeloFacaId String? @map("modelo_faca_id")
+
+  // ── Itens Diversos / Fornecidos / Campos Livres (Req 12) ──
+  itensDiversos   Json? @map("itens_diversos") // [{descricao, quantidade, valor, fixo}]
+  itensFornecidos Json? @map("itens_fornecidos") // [{descricao, quantidade}]
+  camposLivres    Json? @map("campos_livres") // [{rotulo, conteudo}]
+
+  // ── Tiragem e resultado ──
+  quantidade        Int
+  resultadoCalculo  Json?    @map("resultado_calculo") // ResultadoOrcamento do motor
+  margemSelecionada Decimal? @map("margem_selecionada") @db.Decimal(5, 2) // markup escolhido p/ Total consolidado
+  // Fechamento consolidável (margem selecionada) — espelho p/ a soma do orçamento
+  custoProducao Decimal? @map("custo_producao") @db.Decimal(14, 2)
+  valorTotal    Decimal? @map("valor_total") @db.Decimal(14, 2)
+  pendente      Boolean  @default(false) // Req 7.6 / 8.4 — bloqueia fechamento
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
+
+  @@unique([orcamentoId, sequencia])
+  @@index([empresaId])
+  @@index([orcamentoId])
+  @@index([modeloFacaId])
+  @@map("item_orcamento_grafico")
+}
+
+/// Catálogo de Modelos/Facas (GCad) — gabarito técnico real com dimensões,
+/// repetição/encaixe e formato de corte. Selecionar um modelo preenche a
+/// geometria e a imposição reais do item. Multi-tenant. Enums como VARCHAR.
+/// Spec orcamento-grafico-multi-item-gcad (§3.3, Task 8).
+model ModeloFaca {
+  id          String  @id @default(uuid())
+  empresaId   String  @map("empresa_id")
+  codigo      String  @db.VarChar(40) // CG-FACA-* p/ importados; livre p/ manuais
+  clienteNome String? @map("cliente_nome") @db.VarChar(200)
+  modelo      String  @db.VarChar(200) // Req 5.1
+  servico     String  @db.VarChar(200)
+
+  larguraMm        Decimal @map("largura_mm") @db.Decimal(10, 2) // > 0
+  alturaMm         Decimal @map("altura_mm") @db.Decimal(10, 2) // > 0
+  repeticaoLinhas  Int     @map("repeticao_linhas") // >= 1
+  repeticaoColunas Int     @map("repeticao_colunas") // >= 1
+
+  formatoCorteLarguraMm Decimal @map("formato_corte_largura_mm") @db.Decimal(10, 2) // > 0
+  formatoCorteAlturaMm  Decimal @map("formato_corte_altura_mm") @db.Decimal(10, 2) // > 0
+
+  tipoCartucho String?  @map("tipo_cartucho") @db.VarChar(100)
+  suporteId    String?  @map("suporte_id")
+  gramatura    Decimal? @db.Decimal(6, 2)
+  status       Boolean  @default(true)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  itens ItemOrcamentoGrafico[]
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId, status])
+  @@map("modelo_faca")
 }
 
 // ============================================================================

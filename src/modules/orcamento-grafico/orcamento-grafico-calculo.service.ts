@@ -101,6 +101,14 @@ export interface ParamsOrcamento {
     /** Densidade da tinta (SPANKS). Opcional; default 1,0 (preto) / 1,3 (process). */
     densidade?: number
   }>
+  /**
+   * Aproveitamento (peças por folha) INFORMADO manualmente — override do encaixe
+   * geométrico. O Calcgraf usa a faca/imposição real (ex.: TR 2x2 = 4 peças);
+   * o encaixe geométrico do Vizor pode divergir. Quando `aproveitamentoManual`
+   * > 0, o motor usa esse valor em `folhasNecessarias = ceil(quantidade / aprov)`
+   * no lugar do calculado. Aditivo: ausente → encaixe geométrico (atual).
+   */
+  aproveitamentoManual?: number
   /** Coeficiente de tinta do suporte (fator Stock SPANKS). Se presente, a tinta
    * usa o modelo calibrado SPANKS em vez de rendimentoM2Kg. */
   coefTintaSuporte?: number
@@ -889,8 +897,17 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
     pincaMm: maquinaImpressao.pinca,
   })
 
+  // Aproveitamento efetivo: override manual (imposição real/faca) quando
+  // informado e > 0; senão o calculado geometricamente. Reflete também no
+  // objeto `encaixe` para a tela mostrar o valor usado.
+  const aproveitamentoEfetivo =
+    params.aproveitamentoManual && params.aproveitamentoManual > 0
+      ? Math.floor(params.aproveitamentoManual)
+      : encaixe.aproveitamento
+  encaixe.aproveitamento = aproveitamentoEfetivo
+
   // Calcular folhas necessárias baseado na quantidade e aproveitamento
-  const folhasNecessarias = Math.ceil(quantidade / encaixe.aproveitamento)
+  const folhasNecessarias = Math.ceil(quantidade / aproveitamentoEfetivo)
   encaixe.folhasNecessarias = folhasNecessarias
 
   // 3. Calcular papel

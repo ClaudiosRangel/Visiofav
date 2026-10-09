@@ -183,3 +183,91 @@ export function montarRelatorio(d: DadosRelatorio): RelatorioOrcamento {
     margens,
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RELATÓRIO CONSOLIDADO (multi-item) — Req 13.6/13.7
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Um item do relatório consolidado: o relatório completo do item (6 componentes
+ *  + custoProducao + cev + margens, via `montarRelatorio`) mais os totais do
+ *  fechamento (margem selecionada) usados na soma do orçamento. */
+export interface RelatorioItemConsolidado {
+  sequencia: number
+  descricao?: string | null
+  relatorio: RelatorioOrcamento
+  custoProducao: number
+  valorTotal: number
+  margemSelecionada: number
+}
+
+/** Relatório de um orçamento multi-item: cabeçalho comercial único, a lista de
+ *  itens (cada um com seu relatório detalhado) e os totais consolidados do
+ *  orçamento (já calculados no cabeçalho). */
+export interface RelatorioConsolidado {
+  cabecalho: {
+    empresa?: string
+    data: string
+    numero?: string | number
+    cliente?: string
+    serie?: string | null
+    quantidadeItens: number
+  }
+  itens: RelatorioItemConsolidado[]
+  totais: {
+    custoProducaoConsolidado: number
+    valorTotalConsolidado: number
+  }
+}
+
+export interface DadosRelatorioConsolidado {
+  cabecalho: Partial<RelatorioConsolidado['cabecalho']>
+  itens: Array<{
+    sequencia: number
+    descricao?: string | null
+    resultado: ResultadoOrcamento
+    quantidade: number
+    custoProducao: number
+    valorTotal: number
+    margemSelecionada: number
+    cev?: { icms: number; juros: number; pisCofins: number; comissoes: number }
+  }>
+  custoProducaoConsolidado: number
+  valorTotalConsolidado: number
+}
+
+/**
+ * Monta o relatório consolidado de um orçamento multi-item. Função 100% pura:
+ * reusa `montarRelatorio` por item (componentes + totais do item) e compõe os
+ * totais do orçamento a partir dos valores consolidados do cabeçalho (já
+ * calculados em `consolidarOrcamento` na gravação). Os itens são ordenados por
+ * sequência para apresentação estável.
+ */
+export function montarRelatorioConsolidado(d: DadosRelatorioConsolidado): RelatorioConsolidado {
+  const itens: RelatorioItemConsolidado[] = [...d.itens]
+    .sort((a, b) => a.sequencia - b.sequencia)
+    .map((item) => ({
+      sequencia: item.sequencia,
+      descricao: item.descricao ?? null,
+      relatorio: montarRelatorio({
+        resultado: item.resultado,
+        quantidade: item.quantidade,
+        cev: item.cev,
+      }),
+      custoProducao: r2(item.custoProducao),
+      valorTotal: r2(item.valorTotal),
+      margemSelecionada: r2(item.margemSelecionada),
+    }))
+
+  return {
+    cabecalho: {
+      data: new Date().toLocaleDateString('pt-BR'),
+      quantidadeItens: itens.length,
+      ...d.cabecalho,
+    },
+    itens,
+    totais: {
+      custoProducaoConsolidado: r2(d.custoProducaoConsolidado),
+      valorTotalConsolidado: r2(d.valorTotalConsolidado),
+    },
+  }
+}
