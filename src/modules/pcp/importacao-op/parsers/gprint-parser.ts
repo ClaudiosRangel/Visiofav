@@ -242,6 +242,40 @@ export function parseGprintPdf(texto: string): DadosOpGprint {
       }
     }
     etapas = expandidas
+
+    // CASO OP-3143: multi-plano cujas operações da seção "Acabamentos" NÃO
+    // trazem o sufixo "(PLANO)" — então NENHUMA etapa recebeu plano acima.
+    // Nesse caso, cada plano tem o SEU roteiro na tabela de processo
+    // (plano.etapas, da coluna Acabamento). Geramos as etapas POR PLANO: o
+    // roteiro de cada plano + impressão desmembrada em FRENTE/COSTA quando o
+    // plano é retiração (frenteCosta). Assim CARTUCHO e BERÇO (ambos 5x5)
+    // ficam cada um com suas etapas e 2 passagens na impressão.
+    const nenhumaComPlano = etapas.every((e) => !e.planoNome)
+    const todosPlanosTemEtapas = planos.every((p) => p.etapas && p.etapas.length > 0)
+    if (nenhumaComPlano && todosPlanosTemEtapas) {
+      const porPlano: EtapaOp[] = []
+      let seqP = 1
+      // Etapa de IMPRESSÃO achatada (comum) — serve de molde para as faces.
+      const impressaoMolde = etapas.find((e) => e.tipo === 'IMPRESSAO')
+      for (const p of planos) {
+        // Impressão do plano: se frente/costa, 2 passagens; senão 1.
+        if (impressaoMolde) {
+          if (p.frenteCosta) {
+            for (const face of ['FRENTE', 'COSTA']) {
+              porPlano.push({ ...impressaoMolde, sequencia: seqP++, descricao: `${impressaoMolde.descricao} — ${p.nome} ${face}`, planoNome: `${p.nome} ${face}`, planosNomes: [`${p.nome} ${face}`] })
+            }
+          } else {
+            porPlano.push({ ...impressaoMolde, sequencia: seqP++, descricao: `${impressaoMolde.descricao} — ${p.nome}`, planoNome: p.nome, planosNomes: [p.nome] })
+          }
+        }
+        // Demais etapas do roteiro do plano (uma por operação, sem desmembrar
+        // por face — a folha já é uma só do acabamento em diante).
+        for (const e of p.etapas) {
+          porPlano.push({ ...e, sequencia: seqP++, descricao: `${e.descricao} — ${p.nome}`, maquina: extrairNomeMaquina(e.descricao), planoNome: p.nome, planosNomes: [p.nome] })
+        }
+      }
+      if (porPlano.length > 0) etapas = porPlano
+    }
   }
 
   // ── FRENTE/COSTA de PLANO ÚNICO (retiração — ex.: OP-3092 cores 5x1) ──
@@ -1015,7 +1049,14 @@ function extrairPlanos(texto: string): PlanoOp[] {
   // Nome do plano: letras/espaços/parênteses (ex.: "TAMPA", "CAIXA (M)", "BOLSA")
   const reInicioPlano = /^([A-ZÀ-Ú][A-ZÀ-Ú0-9\s()\/]+?)\s{2,}(\d{2,4})\s*x\s*(\d{2,4})\b(.*)$/i
 
+  // Linha que marca o FIM da tabela de processo (início da seção Impressão).
+  // Sem isso, o acabamento do ÚLTIMO plano "engole" a seção Impressão inteira
+  // (bug OP-3143: BERÇO absorvia "Impressão Fixo Variável Offset Plana...").
+  const reFimTabela = /^(Impress[ãa]o\b|Fixo\s+Vari[áa]vel|Offset\s+Plana|Digital\b|Flexo\b|Rotativa\b)/i
+  let fimTabela = false
   for (const linha of linhas) {
+    if (fimTabela) break
+    if (reFimTabela.test(linha)) { fimTabela = true; break }
     const m = linha.match(reInicioPlano)
     if (m) {
       grupos.push({
@@ -1089,7 +1130,14 @@ function extrairPlanos(texto: string): PlanoOp[] {
     // Acabamento: tudo após a última ocorrência de Máq.Impr./Chapa é difícil
     // de isolar por regex de coluna; heurística = pegar o trecho textual com
     // nomes de operação (após remover formato/mont/tiragem/cores/chapa/máquina).
-    const acabamentoTexto = extrairAcabamentoDoResto(resto)
+    // Limpa resíduo "Ncores" (ex.: "7cores" da máquina de impressão
+    // "Heidelberg CD 7cores" cuja quebra de linha vazou para o acabamento —
+    // "Guilhotina 7cores maior" → "Guilhotina maior"). "Ncores" nunca faz
+    // parte do nome de uma operação de acabamento.
+    const acabamentoTexto = (extrairAcabamentoDoResto(resto) || '')
+      .replace(/\b\d+\s*cores\b/gi, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || null
     const etapasPlano = derivarEtapasDeAcabamento(acabamentoTexto)
 
     // Material do plano (casado pelo nome, ignorando o sufixo "(M)").
@@ -1177,13 +1225,24 @@ function extrairAcabamentoDoResto(resto: string): string | null {
  */
 function derivarEtapasDeAcabamento(acabamento: string | null): EtapaOp[] {
   if (!acabamento) return []
-  // Split por vírgula que NÃO esteja dentro de parênteses.
+  // Split por vírgula que NÃO esteja dentro de parênteses — PROTEGE
+  // "Dayuan (Corte e Vinco)" de ser dividido no "e Vinco". Mas se os
+  // parênteses estiverem DESBALANCEADOS (ex.: "Bobst E (Corte e Vi" com "("
+  // aberto sem fechar — truncamento do GPrint), o controle por profundidade
+  // ficaria "preso" e não separaria "Destacar"/"AFT70" seguintes (bug real
+  // OP-3143 no plano BERÇO). Nesse caso, dividimos por vírgula ignorando os
+  // parênteses.
+  const abre = (acabamento.match(/\(/g) || []).length
+  const fecha = (acabamento.match(/\)/g) || []).length
+  const parensBalanceados = abre === fecha
   const tokens: string[] = []
   let depth = 0
   let atual = ''
   for (const ch of acabamento) {
-    if (ch === '(') depth++
-    if (ch === ')') depth = Math.max(0, depth - 1)
+    if (parensBalanceados) {
+      if (ch === '(') depth++
+      if (ch === ')') depth = Math.max(0, depth - 1)
+    }
     if (ch === ',' && depth === 0) {
       if (atual.trim()) tokens.push(atual.trim())
       atual = ''

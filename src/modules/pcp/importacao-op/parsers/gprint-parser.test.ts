@@ -449,6 +449,46 @@ describe('parseGprintPdf — frente/costa (Fase C)', () => {
     expect(fc!.tiragem).toBe(8250)
   })
 
+  it('MÚLTIPLOS planos frente/costa (OP-3143 real: CARTUCHO e BERÇO, ambos 5x5) — cada plano com roteiro + impressão FRENTE/COSTA', () => {
+    // Caso real OP-3143: 2 planos, AMBOS retiração (5x5). As operações da
+    // tabela de processo NÃO têm sufixo "(PLANO)" — cada plano tem seu roteiro
+    // na própria linha da tabela. Esperado: cada plano gera suas etapas, com a
+    // impressão desmembrada em FRENTE/COSTA. Antes, só o 1º plano era lido.
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.143 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   DESINCHA',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHO CHA MISTO',
+      'Quantidade:   33.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'CARTUCHO   585 x 640   1x2   16.500 x 2   5x5 +V   Heidelberg CD   10   Cortadeira (Grande), Guilhotina maior, Verniz, HotStamping, Destacar, AFT70 (Coladeira)',
+      'BERÇO   710 x 525   3x3   3.667 x 2   5x5 +V   Heidelberg CD   10   Cortadeira (Grande), Guilhotina maior, Verniz, HotStamping, Destacar, AFT70 (Coladeira)',
+      'Impressão   Fixo   Variável',
+      'Offset Plana Heidelberg CD 7cores   08:30   06:24',
+      'Materiais   Qtde.',
+      'NZ Super White 281   1.790,15   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+
+    expect(dados.planos.map((p) => p.nome)).toEqual(['CARTUCHO', 'BERÇO'])
+    expect(dados.planos.every((p) => p.frenteCosta)).toBe(true)
+
+    // Impressão: 2 por plano (FRENTE/COSTA) = 4 no total.
+    const impressoes = dados.etapas.filter((e) => e.tipo === 'IMPRESSAO')
+    expect(impressoes).toHaveLength(4)
+    expect(impressoes.map((e) => e.planoNome).sort()).toEqual(['BERÇO COSTA', 'BERÇO FRENTE', 'CARTUCHO COSTA', 'CARTUCHO FRENTE'])
+
+    // Cada plano tem suas etapas de acabamento (uma por operação, sem face).
+    const doCartucho = dados.etapas.filter((e) => e.planoNome === 'CARTUCHO')
+    const doBerco = dados.etapas.filter((e) => e.planoNome === 'BERÇO')
+    expect(doCartucho.length).toBeGreaterThanOrEqual(5)
+    expect(doBerco.length).toBeGreaterThanOrEqual(5)
+    // Nenhuma etapa de acabamento do BERÇO deve "engolir" as outras (split OK).
+    expect(doBerco.some((e) => /Destacar/.test(e.descricao))).toBe(true)
+    expect(doBerco.some((e) => /AFT70/.test(e.descricao))).toBe(true)
+  })
+
   it('detecta frente/costa de PLANO ÚNICO (OP-3092 real: cores 5x1, tiragem 16.500 x 2)', () => {
     // Antes havia a trava `grupos.length < 2` que impedia detectar retiração em
     // OS de UM único plano — a OP-3092 (CARTUCHO, 5x1) caía no fluxo legado
