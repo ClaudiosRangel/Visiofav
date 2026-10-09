@@ -402,6 +402,36 @@ describe('parseGprintPdf — planos multi-componente (Fase B)', () => {
 })
 
 describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {
+  it('OS com 1 plano real + "(M)" de acoplagem retorna planos[] vazio (OP-3145: Cartão + Cartão (M), sem retiração) — SEM pai/filho', () => {
+    // Bug real OP-3145: "Cartão" (plano real, 2x0 — não é retiração) + "Cartão
+    // (M)" (Micro de acoplagem) eram contados como 2 planos → painel mostrava
+    // pai/filho numa OS de plano ÚNICO. O "(M)" deve ser agregado ao pai, não
+    // contar como plano. Resultado esperado: planos[] vazio → fluxo legado.
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.145 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   ESAB',
+      'Produto:   Cartucho Composto',
+      'Descrição:   CAIXA DE PAPELAO P/5KG',
+      'Quantidade:   5.600',
+      'Plano   Material   Formato   Quant(Kg)   TR   Form. Corte   Form   Aprov',
+      'Cartão   NZ Fibra Longa 203   950 x 670   198,98   N   915 x 670   1/1   4',
+      'Cartão (M)   Micro Pardo Formato 245   660 x 905   225,36   N   660 x 905   1/1   4',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'Cartão   915 x 670   1x4   1.540   2x0 +V   Heidelberg CD 5cores   2   Cortadeira (Grande), Guilhotina maior, Verniz, Destacar, AFT70 (Coladeira)',
+      'Cartão (M)   660 x 905   1x4   1.540   0x0   Bimac (Acoplagem)',
+      'Impressão   Fixo   Variável',
+      'Offset Plana Heidelberg CD 5cores   00:50   01:00',
+      'Materiais   Qtde.',
+      'NZ Fibra Longa 203   198,98   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    expect(dados.planos).toHaveLength(0)
+    expect(dados.etapas.length).toBeGreaterThan(0)
+    // Nenhuma etapa deve ter plano (sem pai/filho no painel).
+    expect(dados.etapas.every((e) => !e.planoNome)).toBe(true)
+  })
+
   it('OS de plano único retorna planos[] vazio (usa fluxo de etapas achatado)', () => {
     const texto = [
       'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 2.997 R',

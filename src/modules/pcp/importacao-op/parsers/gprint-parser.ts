@@ -1070,6 +1070,22 @@ function extrairPlanos(texto: string): PlanoOp[] {
     }
   }
 
+  // O "(M)" é o plano de MICRO (acoplagem), NÃO um plano/componente separado —
+  // ele acompanha um plano-pai de mesma raiz (ex.: "Cartão (M)" acompanha
+  // "Cartão"; "TAMPA (M)" acompanha "TAMPA"). Removemos os grupos "(M)" cuja
+  // raiz já existe como plano principal, para não inflar a contagem de planos.
+  // Bug real OP-3145: "Cartão" + "Cartão (M)" eram contados como 2 planos →
+  // painel mostrava pai/filho numa OS de plano ÚNICO. Agora sobra só "Cartão".
+  const raizDe = (nome: string) => nome.toUpperCase().replace(/\s*\(M\)\s*$/i, '').trim()
+  const raizesPrincipais = new Set(grupos.filter((g) => !/\(M\)\s*$/i.test(g.nome)).map((g) => raizDe(g.nome)))
+  const gruposFiltrados = grupos.filter((g) => {
+    const ehMicro = /\(M\)\s*$/i.test(g.nome)
+    // Remove o "(M)" se há um plano principal de mesma raiz (caso normal).
+    return !(ehMicro && raizesPrincipais.has(raizDe(g.nome)))
+  })
+  grupos.length = 0
+  grupos.push(...gruposFiltrados)
+
   // Regra de ativação dos planos:
   // - 2+ grupos → multi-componente (TAMPA/CAIXA/BOLSA): sempre processa.
   // - 1 grupo → só processa se for RETIRAÇÃO (frente/costa): cores `NxM` com
