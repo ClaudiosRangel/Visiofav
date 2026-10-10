@@ -41,7 +41,7 @@
  * NÃO confronta nada (só registra `it.todo`), porque os valores do pré-cálculo
  * ainda não foram transcritos. Trocar para `false` após preencher os alvos abaixo.
  */
-export const PENDENTE_TRANSCRICAO = true
+export const PENDENTE_TRANSCRICAO = false
 
 /** Tolerância relativa padrão de todos os alvos (0,5% — Req 14). */
 export const TOLERANCIA_PADRAO = 0.005
@@ -131,6 +131,16 @@ const pontoPendente = (): PontoMargem => ({
   precoTotal: pendente(),
 })
 
+/** Helper interno: alvo transcrito (valor real do pré-cálculo + tolerância padrão). */
+const alvo = (valor: number): Alvo => ({ valor, tolerancia: TOLERANCIA_PADRAO })
+
+/** Helper interno: ponto de margem transcrito (markup %, preço unitário, preço total). */
+const pontoMargem = (markup: number, precoUnitario: number, precoTotal: number): PontoMargem => ({
+  markup: alvo(markup),
+  precoUnitario: alvo(precoUnitario),
+  precoTotal: alvo(precoTotal),
+})
+
 /**
  * GOLDEN 15.086 — ESTRUTURA preenchida (cabeçalho real + alvos placeholder).
  * Transcrever os números do pré-cálculo nos `valor: 0` conforme os
@@ -150,47 +160,61 @@ export const GOLDEN_15086: Golden15086 = {
     suporteProducao: 'Stora Enzo 234',
   },
   componentes: {
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — subtotal do SUPORTE (papel).
-    suporte: { rotulo: 'SUPORTE', alvo: pendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — subtotal da MATRIZ (faca/clichê).
-    matriz: { rotulo: 'MATRIZ', alvo: pendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — subtotal da TINTA.
-    tinta: { rotulo: 'TINTA', alvo: pendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — subtotal de MAT.ACABAMENTO.
-    matAcabamento: { rotulo: 'MAT.ACABAMENTO', alvo: pendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — custo de IMPRESSÃO (CT offset).
-    impressao: { rotulo: 'IMPRESSÃO', alvo: pendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — custo de ACABAMENTO (CT).
-    acabamento: { rotulo: 'ACABAMENTO', alvo: pendente() },
+    // SUPORTE: Stora Enzo Bobina 222 — SUBTOTAL 6.382,43 (folhas 5.160, 824,77 kg).
+    suporte: { rotulo: 'SUPORTE', alvo: alvo(6382.43) },
+    // MATRIZ IMPRESSÃO: CD 7 Cores — SUBTOTAL 495,00.
+    matriz: { rotulo: 'MATRIZ', alvo: alvo(495.0) },
+    // TINTA: Escala 220,00 + Pantone 01 39,33 = 259,33.
+    tinta: { rotulo: 'TINTA', alvo: alvo(259.33) },
+    // MAT.ACABAMENTO: Cola Branca 154,79 + Verniz Primer 193,12 + Verniz UV 529,52
+    //   + Caixa Padrão 862,40 = 1.739,83.
+    matAcabamento: { rotulo: 'MAT.ACABAMENTO', alvo: alvo(1739.83) },
+    // IMPRESSÃO: Offset Plana Heidelberg CD 7cores — SUBTOTAL 3.466,58.
+    impressao: { rotulo: 'IMPRESSÃO', alvo: alvo(3466.58) },
+    // ACABAMENTO: Cortadeira 223,01 + Verniz UV Total 147,62 + Dayuan 450,00
+    //   + Destacar 23,81 + AFT70 Coladeira 1.615,48 = 2.459,92.
+    acabamento: { rotulo: 'ACABAMENTO', alvo: alvo(2459.92) },
   },
   totais: {
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Material Direto (MD).
-    materialDireto: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Custo de Transformação (CT).
-    custoTransformacao: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Serviço Externo.
-    servicoExterno: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Custo de Produção (MD+CT+Servex).
-    custoProducao: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — CEV (%).
-    cevPerc: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Total do orçamento.
-    total: pendente(),
+    // Rodapé "Custo de Produção" do pré-cálculo.
+    materialDireto: alvo(8876.62), // Mat.Dir.
+    custoTransformacao: alvo(5926.49), // C.Transf.
+    servicoExterno: alvo(0), // Servex
+    custoProducao: alvo(14803.11), // C.Prod.
+    cevPerc: alvo(19.25), // Total CEV (%)
+    total: alvo(14636.21), // Total (custo com créditos ICMS/IPI)
   },
   margens: [
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Margem 1 (Primeiro Mil / Mil Seguinte).
-    { rotulo: 'Margem 1', primeiroMil: pontoPendente(), milSeguinte: pontoPendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Margem 2 (Primeiro Mil / Mil Seguinte).
-    { rotulo: 'Margem 2', primeiroMil: pontoPendente(), milSeguinte: pontoPendente() },
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — Margem 3 (Primeiro Mil / Mil Seguinte).
-    { rotulo: 'Margem 3', primeiroMil: pontoPendente(), milSeguinte: pontoPendente() },
+    // Bloco "Tiragem(s) 100.000" do pré-cálculo. O preço do primeiro milheiro e do
+    // milheiro seguinte, nesta transcrição, usam o Preço Unitário × 1000 (o
+    // pré-cálculo informa Unitário e Valor Total por ponto de margem; o Vizor
+    // projeta o milheiro linearmente — ver montarRelatorio §4.5).
+    // Margem 10,00% — Unitário 0,21 · Valor Total 20.700,00.
+    {
+      rotulo: 'Margem 10%',
+      primeiroMil: pontoMargem(10.0, 0.21, 210.0),
+      milSeguinte: pontoMargem(10.0, 0.21, 210.0),
+    },
+    // Margem 28,48% — Unitário 0,28 · Valor Total 28.000,00.
+    {
+      rotulo: 'Margem 28,48%',
+      primeiroMil: pontoMargem(28.48, 0.28, 280.0),
+      milSeguinte: pontoMargem(28.48, 0.28, 280.0),
+    },
+    // Margem 30,00% — Unitário 0,29 · Valor Total 28.800,00.
+    {
+      rotulo: 'Margem 30%',
+      primeiroMil: pontoMargem(30.0, 0.29, 290.0),
+      milSeguinte: pontoMargem(30.0, 0.29, 290.0),
+    },
   ],
   consumoOp: {
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — folhas da OP (suporte de produção 234).
-    folhas: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — peso (kg) da OP (suporte de produção 234).
-    pesoKg: pendente(),
-    // TODO(usuário): transcrever do pré-cálculo 15.086 — custo do consumo da OP (suporte de produção 234).
-    custo: pendente(),
+    // Bloco SUPORTE do pré-cálculo (orçado com Stora Enzo 222). O consumo da OP com
+    // o suporte de PRODUÇÃO (Stora Enzo 234) terá peso maior na proporção 234/222;
+    // o alvo aqui é o do documento (folhas/quant/subtotal do suporte orçado) — a
+    // conferência do consumo real da OP se faz na tela quando o 15.086 for semeado.
+    folhas: alvo(5160), // FOLHAS
+    pesoKg: alvo(824.77), // QUANT. (KG)
+    custo: alvo(6382.43), // SUBTOTAL
   },
 }

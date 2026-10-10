@@ -1191,6 +1191,23 @@ async function seedGolden15086(empresaId: string): Promise<void> {
     itemOrcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
     planoCalculoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
     ordemProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    usuarioEmpresa: { findFirst: (a: unknown) => Promise<{ usuarioId: string } | null> }
+  }
+
+  // Resolve um usuário vinculado à empresa (criadoPorId é obrigatório em
+  // OrcamentoGrafico). Preferir ADMIN/SUPER_ADMIN; cair para qualquer usuário
+  // ativo da empresa. Sem usuário → aborta sem gravar o orçamento.
+  const vinculo = await comRetry(() =>
+    p.usuarioEmpresa.findFirst({
+      where: { empresaId, usuario: { status: true } } as never,
+      orderBy: { usuario: { perfil: 'asc' } } as never, // ADMIN/SUPER_ADMIN antes de OPERADOR
+      select: { usuarioId: true } as never,
+    }),
+  )
+  const criadoPorId = vinculo?.usuarioId
+  if (!criadoPorId && !dryRun) {
+    console.error('ABORTADO: nenhum usuário vinculado à empresa Carton Wega para gravar o orçamento (criadoPorId). Nada do orçamento foi gravado.')
+    return
   }
 
   // 1. Suportes orçado (222) e produção (234) — idempotentes por código.
@@ -1239,9 +1256,14 @@ async function seedGolden15086(empresaId: string): Promise<void> {
       data: {
         empresaId, numero: 5316, versao: 1, serie: 'OG',
         clienteNome: 'ICEFRESH (cód 903)', tipoEmbalagemId: tipoEmbId,
-        medidas: { comprimento: 60, largura: 30, altura: 150 },
+        // Formato final 38 x 28 x 177 mm (pré-cálculo 15.086).
+        medidas: { comprimento: 38, largura: 28, altura: 177 },
         gramatura: 222, numCores: 5, quantidade: 100000, status: 'RASCUNHO',
-        observacoes: 'Golden 15.086 — Cartucho CIMED Super Fresh. Vendedor IGOR ARNEIRO.',
+        criadoPorId,
+        observacoes:
+          'Golden 15.086 — CARTUCHO CIMED SUPER FRESH 90G CRUZEIRO/PALMEIRAS. ' +
+          'Cliente ICEFRESH (903). Vendedores IGOR ARNEIRO + JOAO BORTOLOMAI. ' +
+          'Cód. Acabado 4931/4932. Cond. Pagto 45 DDL.',
       } as never,
     }))
     orcamentoId = o.id
@@ -1257,48 +1279,64 @@ async function seedGolden15086(empresaId: string): Promise<void> {
       const it = await comRetry(() => p.itemOrcamentoGrafico.create({
         data: {
           orcamentoId, empresaId, sequencia: 1,
-          tipoEmbalagemId: tipoEmbId, descricao: 'Cartucho CIMED Super Fresh',
-          medidas: { comprimento: 60, largura: 30, altura: 150 },
+          tipoEmbalagemId: tipoEmbId,
+          descricao: 'CARTUCHO CIMED SUPER FRESH 90G CRUZEIRO/PALMEIRAS',
+          // Geometria do pré-cálculo: formato final 38 x 28 x 177 mm.
+          medidas: { comprimento: 38, largura: 28, altura: 177 },
+          comprimentoMm: 38, larguraMm: 28, alturaMm: 177,
           gramatura: 222, numCores: 5, quantidade: 100000,
           suporteId: suporteOrcadoId, suporteProducaoId, // troca orçado→produção
-          siglaAcabado: 'CART', montagemLinhas: 4, montagemColunas: 5,
+          siglaAcabado: 'CART', fabricante: 'Stora Enzo',
+          // Montagem 7x3 (plano CARTUCHO) e formato de corte 720 x 1000 mm.
+          montagemLinhas: 7, montagemColunas: 3,
+          formatoCorteLarguraMm: 720, formatoCorteAlturaMm: 1000,
         } as never,
       }))
       itemId = it.id
     }
 
-    // 1 plano no item (Stora Enzo), com suporte orçado/produção espelhando a troca.
+    // 1 plano no item (CARTUCHO / Stora Enzo), com suporte orçado/produção
+    // espelhando a troca 222 → 234. Formato de corte 720 x 1000 (pré-cálculo).
     const planoJa = await comRetry(() => p.planoCalculoGrafico.findFirst({ where: { itemId, empresaId, sequencia: 1 } as never }))
     if (!planoJa) {
       await comRetry(() => p.planoCalculoGrafico.create({
         data: {
-          itemId, empresaId, sequencia: 1, nome: 'Cartão',
+          itemId, empresaId, sequencia: 1, nome: 'CARTUCHO',
           suporteId: suporteOrcadoId, suporteProducaoId, gramatura: 222,
-          formatoLarguraMm: 660, formatoAlturaMm: 960, numCores: 5,
+          formatoLarguraMm: 720, formatoAlturaMm: 1000, numCores: 5,
         } as never,
       }))
     }
 
-    // 5. OP 3.149 vinculada (NATIVA_CALCULO), idempotente por (empresaId, numero=3149).
-    const opJa = await comRetry(() => p.ordemProducao.findFirst({ where: { empresaId, numero: 3149 } as never }))
+    // 5. OP vinculada (NATIVA_CALCULO). O número REAL do documento é 3.149, mas
+    //    essa OP já existe no Vizor importada do PDF — por isso o seed usa 9999
+    //    (número "de demonstração", fácil de localizar e remover depois).
+    //    Idempotente por (empresaId, numero=9999).
+    const NUMERO_OP_SEED = 9999
+    const opJa = await comRetry(() => p.ordemProducao.findFirst({ where: { empresaId, numero: NUMERO_OP_SEED } as never }))
     if (!opJa) {
       await comRetry(() => p.ordemProducao.create({
         data: {
-          empresaId, numero: 3149, origemImportacao: 'NATIVA_CALCULO',
+          empresaId, numero: NUMERO_OP_SEED, origemImportacao: 'NATIVA_CALCULO',
           orcamentoItemId: itemId, via: 'PRIMEIRA', revisao: 0,
           status: 'PROGRAMADA', prioridade: 'NORMAL',
           quantidade: 100000, unidadeMedida: 'UN',
-          referenciaExterna: 'OG-5316-1',
-          observacoes: '[Cliente] ICEFRESH (cód 903)\n[Produto] Cartucho CIMED Super Fresh\n[TipoOp] NATIVA_CALCULO\n[Suporte] Stora Enzo 222 → 234 (troca na produção)',
+          referenciaExterna: 'OG-5316-1 (demo golden-15086; OP real 3.149)',
+          observacoes:
+            '[Cliente] ICEFRESH (cód 903)\n' +
+            '[Produto] CARTUCHO CIMED SUPER FRESH 90G CRUZEIRO/PALMEIRAS\n' +
+            '[TipoOp] NATIVA_CALCULO\n' +
+            '[Suporte] Stora Enzo 222 → 234 (troca na produção)\n' +
+            '[Obs] Seed de demonstração (golden-15086). OP real no documento = 3.149.',
           faturamentoRazaoSocial: 'ICEFRESH (cód 903)',
         } as never,
       }))
     } else {
-      console.log(`${pfx}OP 3149 já existe — não sobrescreve (idempotente).`)
+      console.log(`${pfx}OP ${NUMERO_OP_SEED} já existe — não sobrescreve (idempotente).`)
     }
   }
 
-  console.log(`${pfx}SEED golden-15086: orçamento 5316 + item (suporte 222→234) + OP 3149 ${dryRun ? 'seriam criados' : 'garantidos'} na empresa ${empresaId}.`)
+  console.log(`${pfx}SEED golden-15086: orçamento 5316 + item (suporte 222→234) + OP 9999 (demo; real 3.149) ${dryRun ? 'seriam criados' : 'garantidos'} na empresa ${empresaId}.`)
 }
 
 async function main() {
