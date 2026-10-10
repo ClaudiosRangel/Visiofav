@@ -115,3 +115,61 @@ describe('PBT — equivalência legado (fallback não-regressão)', () => {
     )
   })
 })
+
+// Feature: orcamento-grafico-op-relatorio-paridade, Property 2: aditividade/equivalência — a soma de um único plano é EXATAMENTE igual aos custos desse plano (2 casas), estabelecendo a equivalência com o fechamento item-único legado.
+import { somaPlanos as somaPlanosParidade, type FechamentoPlano as FechamentoPlanoParidade } from '../plano-calculo.service'
+
+/**
+ * PBT — Property 2 (spec orcamento-grafico-op-relatorio-paridade, task 33 /
+ * Valida Req 2.7, 5.5, 15.3): ADITIVIDADE / EQUIVALÊNCIA LEGADO.
+ *
+ * Para um item com UM único plano, a soma dos planos tem de reproduzir
+ * exatamente os custos (MD/CT/SE) desse plano (2 casas) — o caminho multi-plano
+ * degenera no fechamento item-único legado quando há 1 plano. Também provamos a
+ * aditividade: soma(a) + soma(b) ≡ soma(a ++ b) componente a componente (≤ 0,01).
+ */
+
+const arbCustoParidade = fc.integer({ min: 0, max: 50_000_00 }).map((c) => c / 100)
+const r2Paridade = (x: number) => Math.round(x * 100) / 100
+
+const arbPlanoParidade = fc.record({
+  sequencia: fc.integer({ min: 1, max: 1000 }),
+  custoSuporte: fc.constant(0),
+  custoImpressao: fc.constant(0),
+  custoAcabamento: fc.constant(0),
+  materialDireto: arbCustoParidade,
+  custoTransformacao: arbCustoParidade,
+  servicoExterno: arbCustoParidade,
+}) satisfies fc.Arbitrary<FechamentoPlanoParidade>
+
+describe('PBT — Property 2 (paridade OP): aditividade / equivalência item-único', () => {
+  it('plano único → soma = custos do próprio plano (2 casas)', () => {
+    fc.assert(
+      fc.property(arbPlanoParidade, (p) => {
+        const s = somaPlanosParidade([p])
+        expect(s.materialDireto).toBe(r2Paridade(p.materialDireto))
+        expect(s.custoTransformacao).toBe(r2Paridade(p.custoTransformacao))
+        expect(s.servicoExterno).toBe(r2Paridade(p.servicoExterno))
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('aditividade: soma(a) + soma(b) ≡ soma(a ++ b) (≤ 0,01 por componente)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(arbPlanoParidade, { minLength: 0, maxLength: 20 }),
+        fc.array(arbPlanoParidade, { minLength: 0, maxLength: 20 }),
+        (a, b) => {
+          const sa = somaPlanosParidade(a)
+          const sb = somaPlanosParidade(b)
+          const sab = somaPlanosParidade([...a, ...b])
+          expect(Math.abs(sab.materialDireto - r2Paridade(sa.materialDireto + sb.materialDireto))).toBeLessThanOrEqual(0.01)
+          expect(Math.abs(sab.custoTransformacao - r2Paridade(sa.custoTransformacao + sb.custoTransformacao))).toBeLessThanOrEqual(0.01)
+          expect(Math.abs(sab.servicoExterno - r2Paridade(sa.servicoExterno + sb.servicoExterno))).toBeLessThanOrEqual(0.01)
+        },
+      ),
+      { numRuns: 200 },
+    )
+  })
+})

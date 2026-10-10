@@ -6,7 +6,7 @@
  * Idempotente por empresa (limpa e recria o que importa).
  *
  * Uso:
- *   npx tsx scripts/importar-calcgraf.ts [--empresa <id>] [--fase precos|mapa|tipos-embalagem|tudo]
+ *   npx tsx scripts/importar-calcgraf.ts [--empresa <id>] [--fase precos|mapa|tipos-embalagem|golden-15086|tudo] [--dry-run]
  * Sem --empresa: cria/usa a Carton Wega (CNPJ 23.787.041/0001-75) no banco
  * apontado pelo .env (LOCAL de dev por padrão — NÃO rodar contra produção sem
  * confirmação). Ver docs/calcgraf-mapeamento-importacao.md.
@@ -1160,6 +1160,147 @@ async function vincularPrecosSuportes(empresaId: string) {
   )
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE golden-15086 — seed do cálculo 15.086 / orçamento 5.316 / OP 3.149
+// (Cartucho CIMED Super Fresh, cliente ICEFRESH 903, vendedor IGOR ARNEIRO,
+// tiragem 100.000) com a troca de suporte orçado Stora Enzo 222 → produção 234.
+//
+// Entregável (não opcional): cria os registros para VISUALIZAÇÃO em tela/relatório
+// INDEPENDENTEMENTE da transcrição dos números exatos do pré-cálculo (que destrava
+// o golden it.todo da Task 32). Idempotente (upsert por número; não duplica nem
+// sobrescreve ajuste manual). --dry-run relata sem gravar. Carton Wega ausente →
+// aborta sem gravar + mensagem (Req 13.1–13.6). SÓ opera na empresa alvo (empresaId).
+// ═══════════════════════════════════════════════════════════════════════════
+async function seedGolden15086(empresaId: string): Promise<void> {
+  const dryRun = temDryRun()
+  const pfx = dryRun ? '[DRY-RUN] ' : ''
+
+  // Req 13.6: a Carton Wega (empresa alvo) tem de existir — garantirEmpresa já
+  // resolve/cria, mas se o usuário passou --empresa inexistente, garantirEmpresa
+  // já teria abortado. Aqui validamos a presença explicitamente.
+  const empresa = await comRetry(() => prisma.empresa.findUnique({ where: { id: empresaId } }))
+  if (!empresa) {
+    console.error('ABORTADO: empresa alvo (Carton Wega) não encontrada. Nada foi gravado.')
+    return
+  }
+
+  const p = prisma as never as {
+    suporteGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    tipoEmbalagem: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    orcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    itemOrcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
+    planoCalculoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    ordemProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+  }
+
+  // 1. Suportes orçado (222) e produção (234) — idempotentes por código.
+  async function garantirSuporte(codigo: string, descricao: string): Promise<string> {
+    const ja = await comRetry(() => p.suporteGrafico.findFirst({ where: { empresaId, codigo } as never }))
+    if (ja) return ja.id
+    if (dryRun) { console.log(`${pfx}criaria suporte ${codigo} - ${descricao}`); return 'dry-suporte' }
+    const novo = await comRetry(() => p.suporteGrafico.create({
+      data: { empresaId, codigo, descricao, tipoSuporte: 'CARTAO', coefTinta: 2.2, status: true } as never,
+    }))
+    return novo.id
+  }
+  const suporteOrcadoId = await garantirSuporte('CG-SUP-GOLDEN-222', 'Stora Enzo Bobina 222g (orçado)')
+  const suporteProducaoId = await garantirSuporte('CG-SUP-GOLDEN-234', 'Stora Enzo Bobina 234g (produção)')
+
+  // 2. Tipo de embalagem (Cartucho) — reaproveita se já houver um CG-EMB-* de cartucho.
+  let tipoEmbId: string
+  const tipoJa = await comRetry(() => p.tipoEmbalagem.findFirst({ where: { empresaId, codigo: 'CG-EMB-GOLDEN-CARTUCHO' } as never }))
+  if (tipoJa) {
+    tipoEmbId = tipoJa.id
+  } else if (dryRun) {
+    tipoEmbId = 'dry-tipo'
+    console.log(`${pfx}criaria tipo de embalagem Cartucho (golden)`)
+  } else {
+    const t = await comRetry(() => p.tipoEmbalagem.create({
+      data: {
+        empresaId, codigo: 'CG-EMB-GOLDEN-CARTUCHO', descricao: 'Cartucho (golden 15.086)',
+        formulaLargura: '(C + L) * 2 + abaColagemMm', formulaAltura: 'A + L + abaColagemMm',
+        parametros: [], abaColagemMm: 15, sangriaMm: 3, pincaMm: 10, status: true,
+      } as never,
+    }))
+    tipoEmbId = t.id
+  }
+
+  // 3. Orçamento 5.316 — idempotente por (empresaId, numero=5316).
+  let orcamentoId: string
+  const orcJa = await comRetry(() => p.orcamentoGrafico.findFirst({ where: { empresaId, numero: 5316 } as never }))
+  if (orcJa) {
+    orcamentoId = orcJa.id
+    console.log(`${pfx}orçamento 5316 já existe (${orcamentoId}) — não sobrescreve (idempotente).`)
+  } else if (dryRun) {
+    orcamentoId = 'dry-orc'
+    console.log(`${pfx}criaria orçamento 5316 (Cartucho CIMED Super Fresh, cliente ICEFRESH 903, tiragem 100.000)`)
+  } else {
+    const o = await comRetry(() => p.orcamentoGrafico.create({
+      data: {
+        empresaId, numero: 5316, versao: 1, serie: 'OG',
+        clienteNome: 'ICEFRESH (cód 903)', tipoEmbalagemId: tipoEmbId,
+        medidas: { comprimento: 60, largura: 30, altura: 150 },
+        gramatura: 222, numCores: 5, quantidade: 100000, status: 'RASCUNHO',
+        observacoes: 'Golden 15.086 — Cartucho CIMED Super Fresh. Vendedor IGOR ARNEIRO.',
+      } as never,
+    }))
+    orcamentoId = o.id
+  }
+
+  // 4. Item do orçamento (com suporte orçado 222 + produção 234) + 1 plano.
+  if (!dryRun && orcamentoId !== 'dry-orc') {
+    let itemId: string
+    const itemJa = await comRetry(() => p.itemOrcamentoGrafico.findFirst({ where: { orcamentoId, empresaId, sequencia: 1 } as never }))
+    if (itemJa) {
+      itemId = itemJa.id
+    } else {
+      const it = await comRetry(() => p.itemOrcamentoGrafico.create({
+        data: {
+          orcamentoId, empresaId, sequencia: 1,
+          tipoEmbalagemId: tipoEmbId, descricao: 'Cartucho CIMED Super Fresh',
+          medidas: { comprimento: 60, largura: 30, altura: 150 },
+          gramatura: 222, numCores: 5, quantidade: 100000,
+          suporteId: suporteOrcadoId, suporteProducaoId, // troca orçado→produção
+          siglaAcabado: 'CART', montagemLinhas: 4, montagemColunas: 5,
+        } as never,
+      }))
+      itemId = it.id
+    }
+
+    // 1 plano no item (Stora Enzo), com suporte orçado/produção espelhando a troca.
+    const planoJa = await comRetry(() => p.planoCalculoGrafico.findFirst({ where: { itemId, empresaId, sequencia: 1 } as never }))
+    if (!planoJa) {
+      await comRetry(() => p.planoCalculoGrafico.create({
+        data: {
+          itemId, empresaId, sequencia: 1, nome: 'Cartão',
+          suporteId: suporteOrcadoId, suporteProducaoId, gramatura: 222,
+          formatoLarguraMm: 660, formatoAlturaMm: 960, numCores: 5,
+        } as never,
+      }))
+    }
+
+    // 5. OP 3.149 vinculada (NATIVA_CALCULO), idempotente por (empresaId, numero=3149).
+    const opJa = await comRetry(() => p.ordemProducao.findFirst({ where: { empresaId, numero: 3149 } as never }))
+    if (!opJa) {
+      await comRetry(() => p.ordemProducao.create({
+        data: {
+          empresaId, numero: 3149, origemImportacao: 'NATIVA_CALCULO',
+          orcamentoItemId: itemId, via: 'PRIMEIRA', revisao: 0,
+          status: 'PROGRAMADA', prioridade: 'NORMAL',
+          quantidade: 100000, unidadeMedida: 'UN',
+          referenciaExterna: 'OG-5316-1',
+          observacoes: '[Cliente] ICEFRESH (cód 903)\n[Produto] Cartucho CIMED Super Fresh\n[TipoOp] NATIVA_CALCULO\n[Suporte] Stora Enzo 222 → 234 (troca na produção)',
+          faturamentoRazaoSocial: 'ICEFRESH (cód 903)',
+        } as never,
+      }))
+    } else {
+      console.log(`${pfx}OP 3149 já existe — não sobrescreve (idempotente).`)
+    }
+  }
+
+  console.log(`${pfx}SEED golden-15086: orçamento 5316 + item (suporte 222→234) + OP 3149 ${dryRun ? 'seriam criados' : 'garantidos'} na empresa ${empresaId}.`)
+}
+
 async function main() {
   const empresaId = await garantirEmpresa()
   const fase = arg('fase') ?? 'precos'
@@ -1191,6 +1332,9 @@ async function main() {
   }
   if (fase === 'acabamentos' || fase === 'tudo') {
     await importarAcabamentos(empresaId)
+  }
+  if (fase === 'golden-15086') {
+    await seedGolden15086(empresaId)
   }
   console.log('Importação concluída.')
 }

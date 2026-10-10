@@ -145,6 +145,15 @@ export interface ItemOrcamentoInput {
   /** Tabela de margem (quando ausente, usa o default legado 15/5/5/30). */
   tabelaMargemId?: string | null
 
+  // ── Frente A (Task 2): montagem/formatos que AFETAM o cálculo (Req 2) ─────
+  // Montagem informada (linhas × colunas) curto-circuita o encaixe geométrico
+  // via `aproveitamentoManual`; formato de corte alimenta a folha do motor.
+  // Os campos de PARIDADE (Req 1/3) NÃO entram aqui — só são persistidos.
+  montagemLinhas?: number | null
+  montagemColunas?: number | null
+  formatoCorteLarguraMm?: number | null
+  formatoCorteAlturaMm?: number | null
+
   // ── Paridade Calcgraf (opcionais/aditivos) ───────────────────────────────
   servicosExternos?: Array<{ descricao: string; valor: number }>
   itensDiversos?: Array<{ descricao: string; valor: number }>
@@ -546,11 +555,32 @@ export async function montarParamsDoItem(
     cev: input.cev,
   }
 
+  // ── Frente A (Task 2): montagem → aproveitamento EXATO + formato de corte ──
+  // Montagem informada: poses/folha = linhas × colunas (valores EXATOS, Req 2.4).
+  // Curto-circuita o encaixe geométrico via aproveitamentoManual (ponto de injeção
+  // já existente no motor). Sem montagem → não seta nada (encaixe legado, Req 2.7).
+  // ATENÇÃO à precedência: este bloco vem ANTES do `if (input.modeloFacaId)` para
+  // que o modelo GCad (quando presente) sobrescreva por último (precedência do
+  // modelo — Req 6.1).
+  if (input.montagemLinhas != null && input.montagemColunas != null
+      && input.montagemLinhas >= 1 && input.montagemColunas >= 1) {
+    params.aproveitamentoManual = input.montagemLinhas * input.montagemColunas
+  }
+  // Formato de corte alimenta a folha do motor (peso de papel/consumo).
+  if (input.formatoCorteLarguraMm && input.formatoCorteLarguraMm > 0) {
+    params.maquinaImpressao.formatoLargura = input.formatoCorteLarguraMm
+  }
+  if (input.formatoCorteAlturaMm && input.formatoCorteAlturaMm > 0) {
+    params.maquinaImpressao.formatoAltura = input.formatoCorteAlturaMm
+  }
+
   // ── Task 10: ponto de injeção do encaixe REAL do modelo GCad ───────────────
   // SEM modeloFacaId: nada acontece aqui → comportamento 100% legado (encaixe
   // geométrico), resultado idêntico ao motor puro congelado (Req 6.4, Prop 2).
   // COM modeloFacaId: injeta a imposição real sem reescrever o motor —
   // `aproveitamentoManual` já curto-circuita o encaixe geométrico no motor.
+  // O modelo GCad tem PRECEDÊNCIA FINAL (Req 6.1) — por isso vem DEPOIS da
+  // injeção de montagem/formatos acima.
   if (input.modeloFacaId) {
     const modelo = await prisma.modeloFaca.findFirst({
       where: { id: input.modeloFacaId, empresaId },
@@ -607,4 +637,103 @@ export async function calcularItem(
 ): Promise<ResultadoOrcamento> {
   const params = await montarParamsDoItem(empresaId, input)
   return calcularOrcamentoGrafico(params)
+}
+
+// ============================================================================
+// MONTAGEM DOS PARAMS DE UM PLANO (frente B — envelope por plano)
+// ============================================================================
+
+/**
+ * Parâmetros EXCLUSIVOS de UM `PlanoCalculoGrafico` que afetam o cálculo
+ * (design §4.2/§5.1, Req 5.1). Cada plano calcula com SEUS próprios suporte,
+ * gramatura, formato, cores/máquina, acabamentos e montagem; o restante
+ * (tipo de embalagem, medidas, quantidade/tiragem, margem, perdas, CEV,
+ * créditos, encargo, serviços externos, itens diversos/fornecidos) é HERDADO do
+ * item base.
+ *
+ * Nomenclatura espelha o model `PlanoCalculoGrafico`:
+ *  - `suporteId` é o PAPEL/suporte ORÇADO do plano → vira o `papelId` do input
+ *    (o item resolve coefTinta via PrecoMateriaPrima→SuporteGrafico).
+ *  - `formatoLarguraMm`/`formatoAlturaMm` são o FORMATO DE CORTE do plano →
+ *    alimentam `formatoCorteLarguraMm`/`formatoCorteAlturaMm` (folha do motor).
+ *  - `suporteProducaoId` NÃO entra no cálculo do ORÇAMENTO (frente C: o consumo
+ *    da OP é calculado à parte com o suporte real). Fica aqui só por completude
+ *    da assinatura do plano; `montarParamsDoPlano` o ignora de propósito.
+ *  - `precoKgPapel` é opcional: quando o plano referencia um suporte diferente
+ *    do item, o preço do papel do plano deve ser informado (senão herda o do item).
+ */
+export interface PlanoCalculoInput {
+  nome?: string
+  /** Suporte/papel ORÇADO do plano (resolve coefTinta via PrecoMateriaPrima). */
+  suporteId?: string | null
+  /** Suporte REAL de produção (frente C) — NÃO afeta o custo orçado; ignorado aqui. */
+  suporteProducaoId?: string | null
+  gramatura?: number
+  /** Preço do papel por kg do plano (quando difere do item). */
+  precoKgPapel?: number
+  /** Formato de corte do plano (folha) — alimenta o peso de papel/consumo. */
+  formatoLarguraMm?: number
+  formatoAlturaMm?: number
+  numCores?: number
+  cores?: CorInput[]
+  maquinaId?: string | null
+  acabamentosRicos?: AcabamentoRicoInput[]
+  // Montagem do plano (linhas × colunas) → aproveitamento EXATO (poses/folha).
+  montagemLinhas?: number | null
+  montagemColunas?: number | null
+}
+
+/**
+ * Monta os `ParamsOrcamento` de UM plano reusando `montarParamsDoItem` (DRY).
+ *
+ * Estratégia (design §5.1, Princípio-mestre (b) — envelope por plano): constrói
+ * um `ItemOrcamentoInput` a partir do item base e SOBREPÕE apenas os parâmetros
+ * EXCLUSIVOS do plano (suporte/gramatura/formato/cores/máquina/acabamentos/
+ * montagem). Toda a lógica de montagem→aproveitamentoManual, formato de corte,
+ * coefTinta, acabamentos ricos, margem, perdas, matriz/tinta, itens
+ * diversos/fornecidos, CEV etc. é reutilizada SEM duplicação — o motor puro
+ * `orcamento-grafico-calculo.service.ts` NÃO é alterado.
+ *
+ * Cada plano usa EXCLUSIVAMENTE seus próprios parâmetros (Req 5.1): quando o
+ * plano informa um campo, ele VENCE; quando não informa, herda o do item base.
+ * Multi-tenant por `empresaId`.
+ */
+export async function montarParamsDoPlano(
+  empresaId: string,
+  itemBase: ItemOrcamentoInput,
+  plano: PlanoCalculoInput,
+): Promise<ParamsOrcamento> {
+  const inputDoPlano: ItemOrcamentoInput = {
+    ...itemBase,
+
+    // ── Suporte/papel ORÇADO do plano (precedência sobre o do item) ──
+    // `suporteId` do plano = papel do plano no cadastro de PrecoMateriaPrima.
+    papelId: plano.suporteId ?? itemBase.papelId,
+    gramatura: plano.gramatura ?? itemBase.gramatura,
+    // Preço do papel do plano quando informado; senão herda o do item (que já
+    // aceita o alias `precoKg`). montarParamsDoItem exige um dos dois > 0.
+    precoKgPapel: plano.precoKgPapel ?? itemBase.precoKgPapel ?? itemBase.precoKg,
+
+    // ── Impressão: cores + máquina próprios do plano ──
+    cores: plano.cores ?? itemBase.cores,
+    maquinaId: plano.maquinaId ?? itemBase.maquinaId,
+
+    // ── Acabamentos próprios do plano ──
+    acabamentosRicos: plano.acabamentosRicos ?? itemBase.acabamentosRicos,
+
+    // ── Montagem do plano → aproveitamento EXATO (linhas × colunas) ──
+    montagemLinhas: plano.montagemLinhas ?? itemBase.montagemLinhas,
+    montagemColunas: plano.montagemColunas ?? itemBase.montagemColunas,
+
+    // ── Formato de corte do plano (folha) ──
+    formatoCorteLarguraMm: plano.formatoLarguraMm ?? itemBase.formatoCorteLarguraMm,
+    formatoCorteAlturaMm: plano.formatoAlturaMm ?? itemBase.formatoCorteAlturaMm,
+  }
+
+  // `suporteProducaoId` do plano é deliberadamente IGNORADO aqui: o custo do
+  // ORÇAMENTO usa sempre o suporte ORÇADO (`suporteId`→`papelId`). O consumo com
+  // o suporte real é tratado pelo `consumo-op.service.ts` (frente C), fora do
+  // cálculo do orçamento. Isso preserva a imutabilidade do orçamento orçado.
+
+  return montarParamsDoItem(empresaId, inputDoPlano)
 }

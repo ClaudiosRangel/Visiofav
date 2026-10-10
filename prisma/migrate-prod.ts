@@ -4885,6 +4885,84 @@ async function seedMateriaisFromOPs() {
   } catch {}
   console.log('✅ Orçamento Gráfico Restrições (Task 14): exige_restricao em acabamento_grafico + restricao_acabamento criado (índices acabamento/empresa, FK cascade)')
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Orçamento Gráfico — OP/Relatório/Paridade — Fase 1 (Task 1): campos de
+  // paridade + geometria/formatos + acondicionamento + suporte de produção no
+  // item. Todos ADITIVOS/opcionais; enums como VARCHAR; idempotente.
+  // ──────────────────────────────────────────────────────────────────────────
+  for (const [col, tipo] of [
+    ['sigla_acabado', 'VARCHAR(60)'], ['tributacao', 'VARCHAR(60)'],
+    ['processo_impressao', 'VARCHAR(60)'], ['cobertura_tinta_texto', 'VARCHAR(60)'],
+    ['fabricante', 'VARCHAR(120)'], ['arte', 'VARCHAR(60)'],
+    ['observacao', 'VARCHAR(1000)'], ['observacao_areas_op', 'VARCHAR(1000)'],
+    ['acondicionamento', 'JSONB'],
+    ['comprimento_mm', 'DECIMAL(10,2)'], ['largura_mm', 'DECIMAL(10,2)'], ['altura_mm', 'DECIMAL(10,2)'],
+    ['aba_cola_mm', 'DECIMAL(10,2)'], ['aba_fechamento_mm', 'DECIMAL(10,2)'],
+    ['formato_sup_largura_mm', 'DECIMAL(10,2)'], ['formato_sup_altura_mm', 'DECIMAL(10,2)'],
+    ['formato_corte_largura_mm', 'DECIMAL(10,2)'], ['formato_corte_altura_mm', 'DECIMAL(10,2)'],
+    ['suporte_producao_id', 'TEXT'],
+  ] as const) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "${col}" ${tipo}`)
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "microondulado" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "fornecido" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "fibra" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "qtd_modelos" INTEGER NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "montagem_linhas" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "montagem_colunas" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "conteudo_volume" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "ajuste_corte_micro_mm" DECIMAL(10,2) DEFAULT 0`)
+  console.log('✅ Orçamento Gráfico Paridade/OP (Task 1): campos de paridade/geometria/acondicionamento/suporte-produção em item_orcamento_grafico (aditivos, idempotentes)')
+
+  // ── Fase 2: planos por cálculo ───────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "plano_calculo_grafico" (
+  "id" TEXT NOT NULL, "item_id" TEXT NOT NULL, "empresa_id" TEXT NOT NULL,
+  "sequencia" INTEGER NOT NULL, "nome" VARCHAR(60) NOT NULL,
+  "suporte_id" TEXT, "suporte_producao_id" TEXT, "gramatura" DECIMAL(6,2),
+  "formato_largura_mm" DECIMAL(10,2) NOT NULL, "formato_altura_mm" DECIMAL(10,2) NOT NULL,
+  "pre_impressao" JSONB, "num_cores" INTEGER NOT NULL DEFAULT 0, "cores" JSONB, "maquina_id" TEXT,
+  "acabamentos_ricos" JSONB, "resultado_calculo" JSONB,
+  "custo_suporte" DECIMAL(14,2), "custo_impressao" DECIMAL(14,2), "custo_acabamento" DECIMAL(14,2),
+  "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "plano_calculo_grafico_pkey" PRIMARY KEY ("id")
+)`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "plano_calculo_grafico_item_id_sequencia_key" ON "plano_calculo_grafico"("item_id","sequencia")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_plano_calc_empresa" ON "plano_calculo_grafico"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_plano_calc_item" ON "plano_calculo_grafico"("item_id")`)
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE "plano_calculo_grafico" ADD CONSTRAINT "plano_calc_item_fk" FOREIGN KEY ("item_id") REFERENCES "item_orcamento_grafico"("id") ON DELETE CASCADE`) } catch {}
+  console.log('✅ Orçamento Gráfico Paridade/OP (Fase 2): tabela plano_calculo_grafico + índices + FK item (idempotente)')
+
+  // ── Fase 3: histórico de troca de suporte ────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "historico_troca_suporte" (
+  "id" TEXT NOT NULL, "empresa_id" TEXT NOT NULL, "item_id" TEXT, "plano_id" TEXT,
+  "suporte_anterior_id" TEXT, "suporte_novo_id" TEXT NOT NULL, "usuario_id" TEXT,
+  "trocado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "historico_troca_suporte_pkey" PRIMARY KEY ("id")
+)`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_hist_troca_empresa" ON "historico_troca_suporte"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_hist_troca_item" ON "historico_troca_suporte"("item_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_hist_troca_plano" ON "historico_troca_suporte"("plano_id")`)
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE "historico_troca_suporte" ADD CONSTRAINT "hist_troca_item_fk" FOREIGN KEY ("item_id") REFERENCES "item_orcamento_grafico"("id") ON DELETE CASCADE`) } catch {}
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE "historico_troca_suporte" ADD CONSTRAINT "hist_troca_plano_fk" FOREIGN KEY ("plano_id") REFERENCES "plano_calculo_grafico"("id") ON DELETE CASCADE`) } catch {}
+  console.log('✅ Orçamento Gráfico Paridade/OP (Fase 3): tabela historico_troca_suporte + índices + FKs item/plano (idempotente)')
+
+  // ── Fase 4: extensão aditiva da OP (frente D) ────────────────────────────────
+  for (const [col, tipo] of [
+    ['orcamento_item_id','TEXT'],['via','VARCHAR(20)'],
+    ['emitida_por_id','TEXT'],['emitida_em','TIMESTAMP(3)'],
+    ['reemitida_por_id','TEXT'],['reemitida_em','TIMESTAMP(3)'],
+    ['faturamento_razao_social','VARCHAR(200)'],['faturamento_cod_cliente','VARCHAR(30)'],
+    ['faturamento_pedido_interno','VARCHAR(30)'],['faturamento_ficha_tecnica','VARCHAR(60)'],
+    ['faturamento_qtd_por_acabado','DECIMAL(12,4)'],
+  ] as const) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "${col}" ${tipo}`)
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "op_reserva" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "revisao" INTEGER NOT NULL DEFAULT 0`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_ordem_producao_orcamento_item" ON "ordem_producao"("orcamento_item_id")`)
+  console.log('✅ Orçamento Gráfico Paridade/OP (Fase 4): extensão aditiva da ordem_producao (colunas + índice, idempotente)')
+
   // =========================================================================
   // PCP — Requisição de Corte de Cartão (RC) — spec pcp-planos-frente-costa-rc
   // Fase A. Tabela independente; não toca OP/etapas. Isolamento por empresa_id.

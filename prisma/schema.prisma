@@ -3274,6 +3274,21 @@ model OrdemProducao {
   criadoEm            DateTime          @default(now()) @map("criado_em")
   atualizadoEm        DateTime          @updatedAt @map("atualizado_em")
 
+  // ── Frente D (Task 20): vínculo e metadados da emissão nativa de OP ──
+  orcamentoItemId   String?   @map("orcamento_item_id")
+  opReserva         Boolean   @default(false) @map("op_reserva")
+  via               String?   @db.VarChar(20)
+  revisao           Int       @default(0)
+  emitidaPorId      String?   @map("emitida_por_id")
+  emitidaEm         DateTime? @map("emitida_em")
+  reemitidaPorId    String?   @map("reemitida_por_id")
+  reemitidaEm       DateTime? @map("reemitida_em")
+  faturamentoRazaoSocial   String?  @map("faturamento_razao_social") @db.VarChar(200)
+  faturamentoCodCliente    String?  @map("faturamento_cod_cliente") @db.VarChar(30)
+  faturamentoPedidoInterno String?  @map("faturamento_pedido_interno") @db.VarChar(30)
+  faturamentoFichaTecnica  String?  @map("faturamento_ficha_tecnica") @db.VarChar(60)
+  faturamentoQtdPorAcabado Decimal? @map("faturamento_qtd_por_acabado") @db.Decimal(12, 4)
+
   itens               ItemOrdemProducao[]
   etapas              EtapaOrdemProducao[]
   apontamentos        ApontamentoProducao[]
@@ -3286,6 +3301,7 @@ model OrdemProducao {
   planos              PlanoOrdemProducao[]
 
   @@unique([empresaId, numero])
+  @@index([orcamentoItemId])
   @@map("ordem_producao")
 }
 
@@ -4044,14 +4060,114 @@ model ItemOrcamentoGrafico {
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
+  // ── Frente A: Campos de Paridade (Req 1) — NÃO afetam o custo ──
+  siglaAcabado        String?  @map("sigla_acabado") @db.VarChar(60)
+  tributacao          String?  @db.VarChar(60)
+  processoImpressao   String?  @map("processo_impressao") @db.VarChar(60)
+  coberturaTintaTexto String?  @map("cobertura_tinta_texto") @db.VarChar(60)
+  fabricante          String?  @db.VarChar(120)
+  microondulado       Boolean  @default(false)
+  fornecido           Boolean  @default(false)
+  qtdModelos          Int      @default(0) @map("qtd_modelos")
+  arte                String?  @db.VarChar(60)
+  observacao          String?  @db.VarChar(1000)
+  observacaoAreasOp   String?  @map("observacao_areas_op") @db.VarChar(1000)
+  conteudoVolume      Int?     @map("conteudo_volume")
+  acondicionamento    Json?
+
+  // ── Frente A: Geometria/formatos (Req 2) — AFETAM o cálculo ──
+  comprimentoMm   Decimal? @map("comprimento_mm") @db.Decimal(10, 2)
+  larguraMm       Decimal? @map("largura_mm") @db.Decimal(10, 2)
+  alturaMm        Decimal? @map("altura_mm") @db.Decimal(10, 2)
+  abaColaMm       Decimal? @map("aba_cola_mm") @db.Decimal(10, 2)
+  abaFechamentoMm Decimal? @map("aba_fechamento_mm") @db.Decimal(10, 2)
+  fibra           Boolean  @default(false)
+  montagemLinhas  Int?     @map("montagem_linhas")
+  montagemColunas Int?     @map("montagem_colunas")
+  formatoSupLarguraMm   Decimal? @map("formato_sup_largura_mm") @db.Decimal(10, 2)
+  formatoSupAlturaMm    Decimal? @map("formato_sup_altura_mm") @db.Decimal(10, 2)
+  formatoCorteLarguraMm Decimal? @map("formato_corte_largura_mm") @db.Decimal(10, 2)
+  formatoCorteAlturaMm  Decimal? @map("formato_corte_altura_mm") @db.Decimal(10, 2)
+  ajusteCorteMicroMm    Decimal? @default(0) @map("ajuste_corte_micro_mm") @db.Decimal(10, 2)
+
+  // ── Frente C: suporte de produção quando o item NÃO tem planos (Req 6.1) ──
+  suporteProducaoId String? @map("suporte_producao_id")
+
   orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
+  planos     PlanoCalculoGrafico[]
+  historicoTrocaSuporte HistoricoTrocaSuporte[]
 
   @@unique([orcamentoId, sequencia])
   @@index([empresaId])
   @@index([orcamentoId])
   @@index([modeloFacaId])
   @@map("item_orcamento_grafico")
+}
+
+/// Plano/cálculo filho de ItemOrcamentoGrafico (Fase 2 — paridade de
+/// cálculo por plano: suporte/formato/cores/acabamentos próprios). Isolamento
+/// por empresaId denormalizado + relação com o item pai (cascade). Enums e
+/// estruturas ricas gravados como Json. Spec orcamento-grafico-op-relatorio-paridade (§3.2).
+model PlanoCalculoGrafico {
+  id        String @id @default(uuid())
+  itemId    String @map("item_id")
+  empresaId String @map("empresa_id")
+  sequencia Int
+  nome      String @db.VarChar(60)
+
+  suporteId         String? @map("suporte_id")
+  suporteProducaoId String? @map("suporte_producao_id")
+  gramatura         Decimal? @db.Decimal(6, 2)
+
+  formatoLarguraMm Decimal @map("formato_largura_mm") @db.Decimal(10, 2)
+  formatoAlturaMm  Decimal @map("formato_altura_mm") @db.Decimal(10, 2)
+
+  preImpressao Json?   @map("pre_impressao")
+  numCores     Int     @default(0) @map("num_cores")
+  cores        Json?
+  maquinaId    String? @map("maquina_id")
+
+  acabamentosRicos Json? @map("acabamentos_ricos")
+
+  resultadoCalculo Json?    @map("resultado_calculo")
+  custoSuporte     Decimal? @map("custo_suporte") @db.Decimal(14, 2)
+  custoImpressao   Decimal? @map("custo_impressao") @db.Decimal(14, 2)
+  custoAcabamento  Decimal? @map("custo_acabamento") @db.Decimal(14, 2)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  item ItemOrcamentoGrafico @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  historicoTrocaSuporte HistoricoTrocaSuporte[]
+
+  @@unique([itemId, sequencia])
+  @@index([empresaId])
+  @@index([itemId])
+  @@map("plano_calculo_grafico")
+}
+
+/// Histórico de troca de suporte orçado → produção (Fase 3 — Req 7.4).
+/// Registra cada troca (de→para), usuário e data, por item OU plano. Isolamento
+/// por empresaId denormalizado. Cascade a partir do item/plano pai.
+/// Spec orcamento-grafico-op-relatorio-paridade (§3.3).
+model HistoricoTrocaSuporte {
+  id                 String   @id @default(uuid())
+  empresaId          String   @map("empresa_id")
+  itemId             String?  @map("item_id")
+  planoId            String?  @map("plano_id")
+  suporteAnteriorId  String?  @map("suporte_anterior_id")
+  suporteNovoId      String   @map("suporte_novo_id")
+  usuarioId          String?  @map("usuario_id")
+  trocadoEm          DateTime @default(now()) @map("trocado_em")
+
+  item  ItemOrcamentoGrafico? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  plano PlanoCalculoGrafico?  @relation(fields: [planoId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId])
+  @@index([itemId])
+  @@index([planoId])
+  @@map("historico_troca_suporte")
 }
 
 /// Catálogo de Modelos/Facas (GCad) — gabarito técnico real com dimensões,

@@ -6,12 +6,29 @@ import { authenticate } from '../../middleware/authenticate'
 import {
   calcularItem,
   ItemOrcamentoError,
+  montarParamsDoPlano,
   type ItemOrcamentoInput,
+  type PlanoCalculoInput,
 } from './orcamento-grafico-item.service'
 import {
   consolidarOrcamento,
   type FechamentoItem,
 } from './orcamento-grafico-consolidacao.service'
+import {
+  calcularPlano,
+  somaPlanos,
+  fechamentoDoResultado as fechamentoPlanoDoResultado,
+  type FechamentoPlano,
+} from './plano-calculo.service'
+import {
+  trocarSuporteProducao,
+  TrocaSuporteError,
+} from './troca-suporte.service'
+import {
+  emitirOpDoCalculo,
+  emitirOpEmLote,
+  EmissaoOpError,
+} from './orcamento-grafico-op.service'
 import type { ResultadoOrcamento } from './orcamento-grafico-calculo.service'
 
 /**
@@ -303,6 +320,34 @@ const itemOrcamentoBodySchema = z.object({
   cev: z
     .object({ icms: z.number(), juros: z.number(), pisCofins: z.number(), comissoes: z.number() })
     .optional(),
+  // ── Frente A (Task 3) — paridade (não afeta custo) ──
+  siglaAcabado: z.string().max(60).optional().nullable(),
+  tributacao: z.string().max(60).optional().nullable(),
+  processoImpressao: z.string().max(60).optional().nullable(),
+  coberturaTintaTexto: z.string().max(60).optional().nullable(),
+  fabricante: z.string().max(120).optional().nullable(),
+  microondulado: z.boolean().optional(),
+  fornecido: z.boolean().optional(),
+  qtdModelos: z.number().int().min(0).optional(),
+  arte: z.string().max(60).optional().nullable(),
+  observacao: z.string().max(1000).optional().nullable(),
+  observacaoAreasOp: z.string().max(1000).optional().nullable(),
+  conteudoVolume: z.number().int().min(1).optional().nullable(),
+  acondicionamento: z.array(z.object({ descricao: z.string().min(1).max(100) })).max(20).optional().nullable(),
+  // ── Frente A (Task 3) — geometria/formatos (afetam cálculo) ──
+  comprimentoMm: z.number().positive().optional().nullable(),
+  larguraMm: z.number().positive().optional().nullable(),
+  alturaMm: z.number().positive().optional().nullable(),
+  abaColaMm: z.number().min(0).optional().nullable(),
+  abaFechamentoMm: z.number().min(0).optional().nullable(),
+  fibra: z.boolean().optional(),
+  montagemLinhas: z.number().int().min(1).optional().nullable(),
+  montagemColunas: z.number().int().min(1).optional().nullable(),
+  formatoSupLarguraMm: z.number().positive().optional().nullable(),
+  formatoSupAlturaMm: z.number().positive().optional().nullable(),
+  formatoCorteLarguraMm: z.number().positive().optional().nullable(),
+  formatoCorteAlturaMm: z.number().positive().optional().nullable(),
+  ajusteCorteMicroMm: z.number().min(0).optional().nullable(),
 })
 
 type ItemOrcamentoBody = z.infer<typeof itemOrcamentoBodySchema>
@@ -323,6 +368,12 @@ function montarInputDoItem(body: ItemOrcamentoBody): ItemOrcamentoInput {
     precoKg: body.precoKg,
     maquinaId: body.maquinaId ?? null,
     aproveitamentoManual: body.aproveitamentoManual,
+    // Frente A (Task 2/3) — montagem/formatos que AFETAM o cálculo. Os campos de
+    // PARIDADE (sigla/tributação/etc.) NÃO vão para o input do motor.
+    montagemLinhas: body.montagemLinhas ?? null,
+    montagemColunas: body.montagemColunas ?? null,
+    formatoCorteLarguraMm: body.formatoCorteLarguraMm ?? null,
+    formatoCorteAlturaMm: body.formatoCorteAlturaMm ?? null,
     cores: (body.cores ?? []) as ItemOrcamentoInput['cores'],
     acabamentosRicos: body.acabamentosRicos as ItemOrcamentoInput['acabamentosRicos'],
     quantidade: body.quantidade,
@@ -396,6 +447,34 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     margemSelecionada: fech.margemSelecionada,
     custoProducao: fech.custoProducao,
     valorTotal: fech.valorTotal,
+    // ── Frente A (Task 3) — paridade (persistida; não afeta custo) ──
+    siglaAcabado: body.siglaAcabado ?? null,
+    tributacao: body.tributacao ?? null,
+    processoImpressao: body.processoImpressao ?? null,
+    coberturaTintaTexto: body.coberturaTintaTexto ?? null,
+    fabricante: body.fabricante ?? null,
+    microondulado: body.microondulado ?? false,
+    fornecido: body.fornecido ?? false,
+    qtdModelos: body.qtdModelos ?? 0,
+    arte: body.arte ?? null,
+    observacao: body.observacao ?? null,
+    observacaoAreasOp: body.observacaoAreasOp ?? null,
+    conteudoVolume: body.conteudoVolume ?? null,
+    acondicionamento: (body.acondicionamento ?? undefined) as any,
+    // ── Frente A (Task 3) — geometria/formatos ──
+    comprimentoMm: body.comprimentoMm ?? null,
+    larguraMm: body.larguraMm ?? null,
+    alturaMm: body.alturaMm ?? null,
+    abaColaMm: body.abaColaMm ?? null,
+    abaFechamentoMm: body.abaFechamentoMm ?? null,
+    fibra: body.fibra ?? false,
+    montagemLinhas: body.montagemLinhas ?? null,
+    montagemColunas: body.montagemColunas ?? null,
+    formatoSupLarguraMm: body.formatoSupLarguraMm ?? null,
+    formatoSupAlturaMm: body.formatoSupAlturaMm ?? null,
+    formatoCorteLarguraMm: body.formatoCorteLarguraMm ?? null,
+    formatoCorteAlturaMm: body.formatoCorteAlturaMm ?? null,
+    ajusteCorteMicroMm: body.ajusteCorteMicroMm ?? 0,
   }
 }
 
@@ -424,6 +503,144 @@ async function reconsolidarOrcamento(orcamentoId: string, empresaId: string): Pr
       valorTotalConsolidado: consolidado.valorTotalConsolidado,
     },
   })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLANOS DO CÁLCULO (Task 9 — CRUD de planos aninhados + consolidação do item)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Zod do corpo de um Plano de Cálculo (design §5, Req 4.1/4.5). Validação de
+ * faixa ANTES de calcular → 400 com mensagem do campo preservando o estado
+ * (Req 4.5). Campos comuns herdados do item (tipoEmbalagem, medidas, tiragem,
+ * margem, perdas) NÃO são aceitos aqui — vêm do item base (ver
+ * `reconstruirInputBaseDoItem`).
+ */
+const planoBodySchema = z.object({
+  nome: z.string().min(1).max(60),
+  suporteId: z.string().uuid().optional().nullable(),
+  suporteProducaoId: z.string().uuid().optional().nullable(),
+  gramatura: z.number().positive().optional(),
+  precoKgPapel: z.number().positive().optional(),
+  formatoLarguraMm: z.number().positive(),
+  formatoAlturaMm: z.number().positive(),
+  preImpressao: z.record(z.unknown()).optional().nullable(),
+  numCores: z.number().int().min(0).max(12),
+  cores: z.array(corItemSchema).optional().nullable(),
+  maquinaId: z.string().uuid().optional().nullable(),
+  acabamentosRicos: z
+    .array(acabamentoRicoRequestSchema.extend({ restricaoAcabamentoId: z.string().uuid().optional() }))
+    .optional(),
+  montagemLinhas: z.number().int().min(1).optional().nullable(),
+  montagemColunas: z.number().int().min(1).optional().nullable(),
+})
+
+type PlanoBody = z.infer<typeof planoBodySchema>
+
+/** Linha persistida do item relevante para reconstruir o `ItemOrcamentoInput`. */
+type ItemPersistidoBase = {
+  tipoEmbalagemId: string
+  medidas: unknown
+  papelId: string | null
+  gramatura: unknown
+  cores: unknown
+  maquinaId: string | null
+  acabamentosRicos: unknown
+  quantidade: number
+  matrizQuantidade: unknown
+  matrizPrecoUnitario: unknown
+  tintaModo: string | null
+  tintaConsumoKg: unknown
+  modeloFacaId: string | null
+  itensDiversos: unknown
+  itensFornecidos: unknown
+  montagemLinhas: number | null
+  montagemColunas: number | null
+  formatoCorteLarguraMm: unknown
+  formatoCorteAlturaMm: unknown
+  margemSelecionada: unknown
+  resultadoCalculo: unknown
+}
+
+const numOuUndef = (v: unknown): number | undefined =>
+  v == null ? undefined : Number(v)
+
+/**
+ * Reconstrói um `ItemOrcamentoInput` equivalente a partir da linha persistida do
+ * item, para servir de BASE ao cálculo de cada plano (os parâmetros exclusivos
+ * do plano sobrepõem via `montarParamsDoPlano`). Reaproveita o mapeamento que o
+ * `montarInputDoItem` faz do body — aqui a origem são as colunas do item.
+ *
+ * Precisa que o item traga: tipoEmbalagem, medidas, quantidade (tiragem), papel/
+ * gramatura/preço (herdados quando o plano não informa), margem/tabela, matriz/
+ * tinta, itens diversos/fornecidos. O preço do papel não é persistido no item;
+ * quando o plano não informa `precoKgPapel`, derivamos do PrecoMateriaPrima do
+ * papel do item (resolvido na rota) e injetamos aqui.
+ */
+function reconstruirInputBaseDoItem(
+  item: ItemPersistidoBase,
+  precoKgPapelItem: number | undefined,
+): ItemOrcamentoInput {
+  const matriz =
+    item.matrizQuantidade != null && item.matrizPrecoUnitario != null
+      ? { quantidade: Number(item.matrizQuantidade), precoUnitario: Number(item.matrizPrecoUnitario) }
+      : undefined
+  const tinta =
+    item.tintaModo === 'CONSUMO_DIRETO' && item.tintaConsumoKg != null
+      ? ({ modo: 'CONSUMO_DIRETO', consumoKg: Number(item.tintaConsumoKg), precoKg: precoKgPapelItem ?? 0 } as const)
+      : item.tintaModo === 'COBERTURA'
+        ? ({ modo: 'COBERTURA' } as const)
+        : undefined
+
+  const itensDiversos = Array.isArray(item.itensDiversos)
+    ? (item.itensDiversos as any[]).map((i) => ({
+        descricao: String(i.descricao),
+        valor: i.fixo ? Number(i.valor) : Number(i.valor) * Number(i.quantidade ?? 1),
+      }))
+    : undefined
+  const itensFornecidos = Array.isArray(item.itensFornecidos)
+    ? (item.itensFornecidos as any[]).map((i) => ({ descricao: String(i.descricao), valor: 0 }))
+    : undefined
+
+  return {
+    tipoEmbalagemId: item.tipoEmbalagemId,
+    medidas: (item.medidas ?? {}) as Record<string, number>,
+    papelId: item.papelId ?? null,
+    gramatura: Number(item.gramatura ?? 0),
+    precoKgPapel: precoKgPapelItem,
+    maquinaId: item.maquinaId ?? null,
+    cores: (item.cores ?? []) as ItemOrcamentoInput['cores'],
+    acabamentosRicos: (item.acabamentosRicos ?? undefined) as ItemOrcamentoInput['acabamentosRicos'],
+    quantidade: item.quantidade,
+    matriz,
+    tinta,
+    modeloFacaId: item.modeloFacaId ?? null,
+    itensDiversos,
+    itensFornecidos,
+    montagemLinhas: item.montagemLinhas ?? null,
+    montagemColunas: item.montagemColunas ?? null,
+    formatoCorteLarguraMm: numOuUndef(item.formatoCorteLarguraMm) ?? null,
+    formatoCorteAlturaMm: numOuUndef(item.formatoCorteAlturaMm) ?? null,
+  }
+}
+
+/** Traduz o body do plano no `PlanoCalculoInput` consumido por `montarParamsDoPlano`. */
+function montarInputDoPlano(body: PlanoBody): PlanoCalculoInput {
+  return {
+    nome: body.nome,
+    suporteId: body.suporteId ?? null,
+    suporteProducaoId: body.suporteProducaoId ?? null,
+    gramatura: body.gramatura,
+    precoKgPapel: body.precoKgPapel,
+    formatoLarguraMm: body.formatoLarguraMm,
+    formatoAlturaMm: body.formatoAlturaMm,
+    numCores: body.numCores,
+    cores: (body.cores ?? undefined) as PlanoCalculoInput['cores'],
+    maquinaId: body.maquinaId ?? null,
+    acabamentosRicos: body.acabamentosRicos as PlanoCalculoInput['acabamentosRicos'],
+    montagemLinhas: body.montagemLinhas ?? null,
+    montagemColunas: body.montagemColunas ?? null,
+  }
 }
 
 export async function orcamentoGraficoRoutes(app: FastifyInstance) {
@@ -2014,6 +2231,55 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             pendente: true,
             criadoEm: true,
             atualizadoEm: true,
+            // ── Frente A (Task 3) — paridade/geometria/acondicionamento ──
+            siglaAcabado: true,
+            tributacao: true,
+            processoImpressao: true,
+            coberturaTintaTexto: true,
+            fabricante: true,
+            microondulado: true,
+            fornecido: true,
+            qtdModelos: true,
+            arte: true,
+            observacao: true,
+            observacaoAreasOp: true,
+            conteudoVolume: true,
+            acondicionamento: true,
+            comprimentoMm: true,
+            larguraMm: true,
+            alturaMm: true,
+            abaColaMm: true,
+            abaFechamentoMm: true,
+            fibra: true,
+            montagemLinhas: true,
+            montagemColunas: true,
+            formatoSupLarguraMm: true,
+            formatoSupAlturaMm: true,
+            formatoCorteLarguraMm: true,
+            formatoCorteAlturaMm: true,
+            ajusteCorteMicroMm: true,
+            suporteProducaoId: true,
+            // ── Fase 2 (Task 9/11) — planos do cálculo para hidratar a tela ──
+            planos: {
+              orderBy: { sequencia: 'asc' },
+              select: {
+                id: true,
+                sequencia: true,
+                nome: true,
+                suporteId: true,
+                suporteProducaoId: true,
+                gramatura: true,
+                formatoLarguraMm: true,
+                formatoAlturaMm: true,
+                numCores: true,
+                cores: true,
+                maquinaId: true,
+                acabamentosRicos: true,
+                custoSuporte: true,
+                custoImpressao: true,
+                custoAcabamento: true,
+              },
+            },
           },
         },
       },
@@ -3380,6 +3646,795 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
 
     return { simulacoes }
+  })
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // PLANOS DO CÁLCULO (Task 9 — CRUD aninhado + consolidação do item)
+  // Rotas sob /:id/itens/:itemId/planos. SEMPRE filtram por empresaId explícito.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Carrega o item garantindo que ele + o orçamento pertencem à empresa
+   * (findFirst por id+orcamentoId+empresaId). Retorna os campos necessários para
+   * reconstruir o input base dos planos. Null quando não pertence à empresa.
+   */
+  async function carregarItemDaEmpresa(orcamentoId: string, itemId: string, empresaId: string) {
+    return prisma.itemOrcamentoGrafico.findFirst({
+      where: { id: itemId, orcamentoId, empresaId },
+      select: {
+        id: true,
+        tipoEmbalagemId: true,
+        medidas: true,
+        papelId: true,
+        gramatura: true,
+        cores: true,
+        maquinaId: true,
+        acabamentosRicos: true,
+        quantidade: true,
+        matrizQuantidade: true,
+        matrizPrecoUnitario: true,
+        tintaModo: true,
+        tintaConsumoKg: true,
+        modeloFacaId: true,
+        itensDiversos: true,
+        itensFornecidos: true,
+        montagemLinhas: true,
+        montagemColunas: true,
+        formatoCorteLarguraMm: true,
+        formatoCorteAlturaMm: true,
+        margemSelecionada: true,
+        resultadoCalculo: true,
+      },
+    })
+  }
+
+  /**
+   * Resolve o preço do papel por kg do item a partir do PrecoMateriaPrima do
+   * `papelId` (não persistido no item). Usado como fallback para os planos que
+   * não informam preço próprio. Multi-tenant.
+   */
+  async function precoKgPapelDoItem(papelId: string | null, empresaId: string): Promise<number | undefined> {
+    if (!papelId) return undefined
+    const papel = await prisma.precoMateriaPrima.findFirst({
+      where: { id: papelId, empresaId },
+      select: { precoUnitario: true },
+    })
+    return papel ? Number(papel.precoUnitario) : undefined
+  }
+
+  /**
+   * Reconsolida o item a partir dos seus planos (Req 5.2/5.3/5.5):
+   *  - Busca todos os planos do item (findMany por itemId + empresaId).
+   *  - Monta FechamentoPlano[] dos custos persistidos de cada plano (via o
+   *    resultadoCalculo de cada plano → `fechamentoDoResultado(sequencia, resultado)`).
+   *  - SE há planos: MD/CT/Servex do item = soma dos planos (`somaPlanos`);
+   *    custoProducao = MD+CT+Servex; valorTotal recomposto pela mesma proporção
+   *    preço/custo do resultado item-único (preserva markup/CEV do item).
+   *  - SE não há planos: NÃO altera o resultadoCalculo item-único (caminho
+   *    legado, Req 5.5).
+   *  - Sempre reconsolida o cabeçalho do orçamento.
+   */
+  async function reconsolidarItemComPlanos(
+    orcamentoId: string,
+    itemId: string,
+    empresaId: string,
+  ): Promise<void> {
+    const planos = await prisma.planoCalculoGrafico.findMany({
+      where: { itemId, empresaId },
+      orderBy: { sequencia: 'asc' },
+      select: { sequencia: true, resultadoCalculo: true, custoSuporte: true, custoImpressao: true, custoAcabamento: true },
+    })
+
+    if (planos.length > 0) {
+      const fechamentos: FechamentoPlano[] = planos.map((p) => {
+        const resultado = (p.resultadoCalculo ?? null) as ResultadoOrcamento | null
+        if (resultado) return fechamentoPlanoDoResultado(p.sequencia, resultado)
+        // Fallback: deriva dos custos espelhados quando não há resultadoCalculo.
+        const cs = p.custoSuporte != null ? Number(p.custoSuporte) : 0
+        const ci = p.custoImpressao != null ? Number(p.custoImpressao) : 0
+        const ca = p.custoAcabamento != null ? Number(p.custoAcabamento) : 0
+        return {
+          sequencia: p.sequencia,
+          custoSuporte: cs,
+          custoImpressao: ci,
+          custoAcabamento: ca,
+          materialDireto: cs,
+          custoTransformacao: ci + ca,
+          servicoExterno: 0,
+        }
+      })
+      const soma = somaPlanos(fechamentos)
+      const custoProducao = Math.round((soma.materialDireto + soma.custoTransformacao + soma.servicoExterno) * 100) / 100
+
+      // Deriva o valorTotal do item mantendo a relação preço/custo do fechamento
+      // item-único (preserva markup/CEV): valorTotal = custoProducao × (preço/custo).
+      const resItem = (await prisma.itemOrcamentoGrafico.findFirst({
+        where: { id: itemId, empresaId },
+        select: { resultadoCalculo: true, valorTotal: true, custoProducao: true, margemSelecionada: true },
+      }))
+      let valorTotal = custoProducao
+      const custoAnterior = resItem?.custoProducao != null ? Number(resItem.custoProducao) : 0
+      const valorAnterior = resItem?.valorTotal != null ? Number(resItem.valorTotal) : 0
+      if (custoAnterior > 0 && valorAnterior > 0) {
+        valorTotal = Math.round(custoProducao * (valorAnterior / custoAnterior) * 100) / 100
+      }
+
+      await prisma.itemOrcamentoGrafico.update({
+        where: { id: itemId },
+        data: {
+          custoProducao,
+          valorTotal,
+        },
+      })
+    }
+    // length === 0 → NÃO altera o caminho legado item-único (Req 5.5).
+
+    await reconsolidarOrcamento(orcamentoId, empresaId)
+  }
+
+  /** Serializa os custos espelho + resultado de um plano a partir do resultado do motor. */
+  function dadosPersistenciaPlano(body: PlanoBody, empresaId: string, itemId: string, sequencia: number, resultado: ResultadoOrcamento) {
+    const fech = fechamentoPlanoDoResultado(sequencia, resultado)
+    return {
+      empresaId,
+      itemId,
+      sequencia,
+      nome: body.nome,
+      suporteId: body.suporteId ?? null,
+      // Suporte de produção inicia = suporte orçado (Req 6.2).
+      suporteProducaoId: body.suporteProducaoId ?? body.suporteId ?? null,
+      gramatura: body.gramatura ?? null,
+      formatoLarguraMm: body.formatoLarguraMm,
+      formatoAlturaMm: body.formatoAlturaMm,
+      preImpressao: (body.preImpressao ?? undefined) as any,
+      numCores: body.numCores,
+      cores: (body.cores ?? undefined) as any,
+      maquinaId: body.maquinaId ?? null,
+      acabamentosRicos: (body.acabamentosRicos ?? undefined) as any,
+      resultadoCalculo: resultado as any,
+      custoSuporte: fech.custoSuporte,
+      custoImpressao: fech.custoImpressao,
+      custoAcabamento: fech.custoAcabamento,
+    }
+  }
+
+  /**
+   * POST /api/orcamento-grafico/:id/itens/:itemId/planos
+   * Cria um plano: sequencia = max+1 (Req 4.3). Calcula via envelope por plano
+   * (`montarParamsDoPlano` → `calcularPlano`) e reconsolida o item (soma dos
+   * planos). Isolamento por empresaId. Zod → 400 preservando estado (Req 4.5).
+   */
+  app.post('/:id/itens/:itemId/planos', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+    const body = planoBodySchema.parse(request.body)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const precoItem = await precoKgPapelDoItem(item.papelId, user.empresaId)
+    const inputBase = reconstruirInputBaseDoItem(item, precoItem)
+
+    let resultado: ResultadoOrcamento
+    try {
+      const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
+      resultado = calcularPlano(params)
+    } catch (err) {
+      if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+
+    // sequencia = max(sequencia)+1 dos planos do item (Req 4.3).
+    const ultimo = await prisma.planoCalculoGrafico.findFirst({
+      where: { itemId, empresaId: user.empresaId },
+      orderBy: { sequencia: 'desc' },
+      select: { sequencia: true },
+    })
+    const sequencia = (ultimo?.sequencia ?? 0) + 1
+
+    const plano = await prisma.planoCalculoGrafico.create({
+      data: dadosPersistenciaPlano(body, user.empresaId, itemId, sequencia, resultado),
+    })
+
+    await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+
+    return reply.status(201).send(plano)
+  })
+
+  /**
+   * PUT /api/orcamento-grafico/:id/itens/:itemId/planos/:planoId
+   * Recalcula SÓ esse plano, atualiza e reconsolida o item (Req 5.3). Não toca
+   * os demais planos (localidade).
+   */
+  app.put('/:id/itens/:itemId/planos/:planoId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId, planoId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid(), planoId: z.string().uuid() })
+      .parse(request.params)
+    const body = planoBodySchema.parse(request.body)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const existente = await prisma.planoCalculoGrafico.findFirst({
+      where: { id: planoId, itemId, empresaId: user.empresaId },
+      select: { id: true, sequencia: true },
+    })
+    if (!existente) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
+
+    const precoItem = await precoKgPapelDoItem(item.papelId, user.empresaId)
+    const inputBase = reconstruirInputBaseDoItem(item, precoItem)
+
+    let resultado: ResultadoOrcamento
+    try {
+      const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
+      resultado = calcularPlano(params)
+    } catch (err) {
+      if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+
+    const dados = dadosPersistenciaPlano(body, user.empresaId, itemId, existente.sequencia, resultado)
+    const plano = await prisma.planoCalculoGrafico.update({
+      where: { id: planoId },
+      // empresaId/itemId/sequencia não mudam no update (chaves de identidade).
+      data: {
+        nome: dados.nome,
+        suporteId: dados.suporteId,
+        suporteProducaoId: dados.suporteProducaoId,
+        gramatura: dados.gramatura,
+        formatoLarguraMm: dados.formatoLarguraMm,
+        formatoAlturaMm: dados.formatoAlturaMm,
+        preImpressao: dados.preImpressao,
+        numCores: dados.numCores,
+        cores: dados.cores,
+        maquinaId: dados.maquinaId,
+        acabamentosRicos: dados.acabamentosRicos,
+        resultadoCalculo: dados.resultadoCalculo,
+        custoSuporte: dados.custoSuporte,
+        custoImpressao: dados.custoImpressao,
+        custoAcabamento: dados.custoAcabamento,
+      },
+    })
+
+    await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+
+    return plano
+  })
+
+  /**
+   * DELETE /api/orcamento-grafico/:id/itens/:itemId/planos/:planoId
+   * Remove o plano e reconsolida o item. NÃO renumera os demais (lacunas ok,
+   * Req 4.4). Isolamento por empresaId.
+   */
+  app.delete('/:id/itens/:itemId/planos/:planoId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId, planoId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid(), planoId: z.string().uuid() })
+      .parse(request.params)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const existente = await prisma.planoCalculoGrafico.findFirst({
+      where: { id: planoId, itemId, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!existente) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
+
+    await prisma.planoCalculoGrafico.delete({ where: { id: planoId } })
+
+    await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+
+    return reply.status(204).send()
+  })
+
+  /**
+   * POST /api/orcamento-grafico/:id/itens/:itemId/planos/:planoId/calcular
+   * Recalcula e persiste o resultado/custos do plano, reconsolida o item
+   * (Req 5.1). Não altera os demais planos (localidade).
+   */
+  app.post('/:id/itens/:itemId/planos/:planoId/calcular', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId, planoId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid(), planoId: z.string().uuid() })
+      .parse(request.params)
+    const body = planoBodySchema.parse(request.body)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const existente = await prisma.planoCalculoGrafico.findFirst({
+      where: { id: planoId, itemId, empresaId: user.empresaId },
+      select: { id: true, sequencia: true },
+    })
+    if (!existente) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
+
+    const precoItem = await precoKgPapelDoItem(item.papelId, user.empresaId)
+    const inputBase = reconstruirInputBaseDoItem(item, precoItem)
+
+    let resultado: ResultadoOrcamento
+    try {
+      const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
+      resultado = calcularPlano(params)
+    } catch (err) {
+      if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+
+    const fech = fechamentoPlanoDoResultado(existente.sequencia, resultado)
+    const plano = await prisma.planoCalculoGrafico.update({
+      where: { id: planoId },
+      data: {
+        resultadoCalculo: resultado as any,
+        custoSuporte: fech.custoSuporte,
+        custoImpressao: fech.custoImpressao,
+        custoAcabamento: fech.custoAcabamento,
+      },
+    })
+
+    await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+
+    return { plano, resultado }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TROCA DE SUPORTE DE PRODUÇÃO + HISTÓRICO (Task 16 — Req 6.3, 6.4, 7.4)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Zod do body de troca de suporte de produção (§5). */
+  const suporteProducaoBodySchema = z.object({
+    suporteProducaoId: z.string().uuid(),
+  })
+
+  /**
+   * Monta o rótulo de troca resolvendo os nomes dos suportes anterior/novo.
+   * Retorna `null` quando não há troca (`rotuloTrocaSuporte` decide a regra).
+   */
+  async function rotuloTrocaResolvido(
+    empresaId: string,
+    suporteAnteriorId: string | null,
+    suporteNovoId: string,
+  ): Promise<string | null> {
+    const { rotuloTrocaSuporte } = await import('./troca-suporte.service')
+    const ids = [suporteAnteriorId, suporteNovoId].filter(
+      (x): x is string => !!x,
+    )
+    const suportes = ids.length
+      ? await prisma.suporteGrafico.findMany({
+          where: { id: { in: ids }, empresaId },
+          select: { id: true, descricao: true },
+        })
+      : []
+    const nomePorId = new Map(suportes.map((s) => [s.id, s.descricao]))
+    const anteriorNome = suporteAnteriorId
+      ? nomePorId.get(suporteAnteriorId) ?? ''
+      : ''
+    const novoNome = nomePorId.get(suporteNovoId) ?? ''
+    return rotuloTrocaSuporte(
+      anteriorNome,
+      novoNome,
+      suporteAnteriorId,
+      suporteNovoId,
+    )
+  }
+
+  /**
+   * PATCH /api/orcamento-grafico/:id/itens/:itemId/suporte-producao
+   * Troca o suporte de PRODUÇÃO do ITEM (sem planos), preservando o orçado e
+   * gravando o histórico (via `trocarSuporteProducao`). Isolamento por empresaId:
+   * valida que o orçamento+item pertencem à empresa antes de agir (404 se não).
+   * Suporte inexistente/de outra empresa → 400 "Suporte inválido." (Req 6.4).
+   */
+  app.patch('/:id/itens/:itemId/suporte-producao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+    const body = suporteProducaoBodySchema.parse(request.body)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    try {
+      const resultado = await trocarSuporteProducao({
+        empresaId: user.empresaId,
+        itemId,
+        novoSuporteId: body.suporteProducaoId,
+        usuarioId: user.id,
+      })
+      const rotulo = await rotuloTrocaResolvido(
+        user.empresaId,
+        resultado.suporteAnteriorId,
+        resultado.suporteNovoId,
+      )
+      return { ...resultado, rotuloTrocaSuporte: rotulo }
+    } catch (err) {
+      if (err instanceof TrocaSuporteError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  /**
+   * PATCH /api/orcamento-grafico/:id/itens/:itemId/planos/:planoId/suporte-producao
+   * Troca o suporte de PRODUÇÃO do PLANO, preservando o orçado e gravando o
+   * histórico. Isolamento por empresaId: valida orçamento+item+plano antes de
+   * agir (404 se não). Suporte inválido → 400 genérico (Req 6.4).
+   */
+  app.patch(
+    '/:id/itens/:itemId/planos/:planoId/suporte-producao',
+    async (request, reply) => {
+      const user = request.user as { id: string; empresaId: string }
+      const { id, itemId, planoId } = z
+        .object({ id: z.string().uuid(), itemId: z.string().uuid(), planoId: z.string().uuid() })
+        .parse(request.params)
+      const body = suporteProducaoBodySchema.parse(request.body)
+
+      const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+      if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+      const plano = await prisma.planoCalculoGrafico.findFirst({
+        where: { id: planoId, itemId, empresaId: user.empresaId },
+        select: { id: true },
+      })
+      if (!plano) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
+
+      try {
+        const resultado = await trocarSuporteProducao({
+          empresaId: user.empresaId,
+          planoId,
+          novoSuporteId: body.suporteProducaoId,
+          usuarioId: user.id,
+        })
+        const rotulo = await rotuloTrocaResolvido(
+          user.empresaId,
+          resultado.suporteAnteriorId,
+          resultado.suporteNovoId,
+        )
+        return { ...resultado, rotuloTrocaSuporte: rotulo }
+      } catch (err) {
+        if (err instanceof TrocaSuporteError) return reply.status(err.statusCode).send({ message: err.message })
+        throw err
+      }
+    },
+  )
+
+  /**
+   * GET /api/orcamento-grafico/:id/itens/:itemId/historico-troca-suporte
+   * Lista o histórico de trocas de suporte do ITEM E dos PLANOS do item,
+   * ordenado por `trocadoEm desc`, com os nomes dos suportes anterior/novo
+   * resolvidos (join com SuporteGrafico). Isolamento por empresaId explícito.
+   *
+   * Multi-tenant: busca primeiro os `planoIds` do item (filtrando por empresa)
+   * e consulta o histórico por `empresaId` + `OR: [{ itemId }, { planoId in }]`,
+   * em vez de depender só do filtro aninhado `plano.itemId`.
+   */
+  app.get('/:id/itens/:itemId/historico-troca-suporte', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    // planoIds do item (isolados por empresa) para o filtro do histórico.
+    const planos = await prisma.planoCalculoGrafico.findMany({
+      where: { itemId, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    const planoIds = planos.map((p) => p.id)
+
+    const historico = await prisma.historicoTrocaSuporte.findMany({
+      where: {
+        empresaId: user.empresaId,
+        OR: [
+          { itemId },
+          ...(planoIds.length ? [{ planoId: { in: planoIds } }] : []),
+        ],
+      },
+      orderBy: { trocadoEm: 'desc' },
+    })
+
+    // Resolve os nomes dos suportes referenciados (anterior/novo) de uma vez.
+    const suporteIds = Array.from(
+      new Set(
+        historico.flatMap((h) =>
+          [h.suporteAnteriorId, h.suporteNovoId].filter(
+            (x): x is string => !!x,
+          ),
+        ),
+      ),
+    )
+    const suportes = suporteIds.length
+      ? await prisma.suporteGrafico.findMany({
+          where: { id: { in: suporteIds }, empresaId: user.empresaId },
+          select: { id: true, descricao: true },
+        })
+      : []
+    const nomePorId = new Map(suportes.map((s) => [s.id, s.descricao]))
+
+    return historico.map((h) => ({
+      id: h.id,
+      itemId: h.itemId,
+      planoId: h.planoId,
+      suporteAnteriorId: h.suporteAnteriorId,
+      suporteNovoId: h.suporteNovoId,
+      suporteAnteriorNome: h.suporteAnteriorId
+        ? nomePorId.get(h.suporteAnteriorId) ?? null
+        : null,
+      suporteNovoNome: nomePorId.get(h.suporteNovoId) ?? null,
+      usuarioId: h.usuarioId,
+      trocadoEm: h.trocadoEm,
+    }))
+  })
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // RELATÓRIO FIEL POR ITEM (Task 28 — frente E) — HTML/JSON + PDF
+  // Usa a fonte única `montarRelatorio` (Task 26) alimentada com os planos do
+  // item + nomes dos suportes (orçado/produção) para a sinalização de troca.
+  // Isolamento por empresaId explícito. select explícito (nunca omit).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Monta os `DadosRelatorio` fiéis de um item do orçamento, resolvendo:
+   *  - o cabeçalho comercial (empresa/cliente/produto/série/OP vinculada);
+   *  - os planos do item (com resultadoCalculo + nomes de suporte orçado/produção
+   *    para o rótulo de troca — Task 17);
+   *  - o item sem planos → plano implícito (nomes de suporte do próprio item).
+   * Retorna `null` quando o item não pertence à empresa (404 na rota).
+   */
+  async function montarDadosRelatorioItem(orcamentoId: string, itemId: string, empresaId: string) {
+    const orcamento = await prisma.orcamentoGrafico.findFirst({
+      where: { id: orcamentoId, empresaId },
+      select: {
+        numero: true, versao: true, serie: true, clienteNome: true,
+      },
+    })
+    if (!orcamento) return null
+
+    const item = await prisma.itemOrcamentoGrafico.findFirst({
+      where: { id: itemId, orcamentoId, empresaId },
+      select: {
+        id: true, descricao: true, quantidade: true, resultadoCalculo: true,
+        suporteId: true, suporteProducaoId: true,
+        planos: {
+          orderBy: { sequencia: 'asc' },
+          select: {
+            sequencia: true, nome: true, resultadoCalculo: true,
+            suporteId: true, suporteProducaoId: true,
+          },
+        },
+      },
+    })
+    if (!item) return null
+
+    const resultadoItem = item.resultadoCalculo as any
+    if (!resultadoItem || typeof resultadoItem !== 'object') return 'SEM_RESULTADO' as const
+
+    // Resolve nomes dos suportes referenciados (item + planos) de uma vez.
+    const suporteIds = Array.from(
+      new Set(
+        [
+          item.suporteId, item.suporteProducaoId,
+          ...item.planos.flatMap((p) => [p.suporteId, p.suporteProducaoId]),
+        ].filter((x): x is string => !!x),
+      ),
+    )
+    const suportes = suporteIds.length
+      ? await prisma.suporteGrafico.findMany({
+          where: { id: { in: suporteIds }, empresaId },
+          select: { id: true, descricao: true },
+        })
+      : []
+    const nomePorId = new Map(suportes.map((s) => [s.id, s.descricao]))
+
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: empresaId }, select: { razaoSocial: true },
+    })
+
+    // OP vinculada (para o cabeçalho — Req 12.2).
+    const op = await prisma.ordemProducao.findFirst({
+      where: { orcamentoItemId: itemId, empresaId },
+      select: { numero: true },
+    })
+
+    const planosComResultado = item.planos.filter(
+      (p) => p.resultadoCalculo && typeof p.resultadoCalculo === 'object',
+    )
+
+    const dados: Parameters<typeof import('./orcamento-grafico-relatorio.service')['montarRelatorio']>[0] = {
+      resultado: resultadoItem,
+      quantidade: item.quantidade || resultadoItem.quantidade || 0,
+      cabecalho: {
+        empresa: empresa?.razaoSocial,
+        numero: orcamento.versao ? `${orcamento.numero}/${orcamento.versao}` : String(orcamento.numero),
+        cliente: orcamento.clienteNome || undefined,
+        descricao: item.descricao || undefined,
+        serie: orcamento.serie || undefined,
+        numeroOpVinculada: op?.numero,
+      },
+      // Planos do item (layout fiel por plano) com nomes de suporte p/ troca.
+      planos: planosComResultado.length
+        ? planosComResultado.map((p) => ({
+            sequencia: p.sequencia,
+            nome: p.nome,
+            resultadoCalculo: p.resultadoCalculo as any,
+            suporteOrcadoId: p.suporteId,
+            suporteProducaoId: p.suporteProducaoId,
+            suporteOrcadoNome: p.suporteId ? nomePorId.get(p.suporteId) ?? null : null,
+            suporteProducaoNome: p.suporteProducaoId ? nomePorId.get(p.suporteProducaoId) ?? null : null,
+          }))
+        : undefined,
+      // Item sem planos → troca de suporte do bloco implícito (nível item).
+      suporteOrcadoId: item.suporteId,
+      suporteProducaoId: item.suporteProducaoId,
+      suporteOrcadoNome: item.suporteId ? nomePorId.get(item.suporteId) ?? null : null,
+      suporteProducaoNome: item.suporteProducaoId ? nomePorId.get(item.suporteProducaoId) ?? null : null,
+    }
+    return dados
+  }
+
+  /**
+   * GET /api/orcamento-grafico/:id/itens/:itemId/relatorio
+   * Relatório fiel (HTML/JSON) de UM item, com blocos por plano e sinalização de
+   * troca de suporte. Isolamento por empresaId.
+   */
+  app.get('/:id/itens/:itemId/relatorio', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+    const { montarRelatorio } = await import('./orcamento-grafico-relatorio.service')
+
+    const dados = await montarDadosRelatorioItem(id, itemId, user.empresaId)
+    if (dados === null) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+    if (dados === 'SEM_RESULTADO') {
+      return reply.status(400).send({ message: 'Item sem resultado de cálculo. Recalcule antes de gerar o relatório.' })
+    }
+    return montarRelatorio(dados)
+  })
+
+  /**
+   * GET /api/orcamento-grafico/:id/itens/:itemId/relatorio.pdf
+   * Mesmo relatório do item em PDF (fonte única — Task 27). Isolamento por empresaId.
+   */
+  app.get('/:id/itens/:itemId/relatorio.pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+    const { montarRelatorio } = await import('./orcamento-grafico-relatorio.service')
+    const { gerarRelatorioPdf } = await import('./orcamento-grafico-relatorio-pdf.service')
+
+    const dados = await montarDadosRelatorioItem(id, itemId, user.empresaId)
+    if (dados === null) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+    if (dados === 'SEM_RESULTADO') {
+      return reply.status(400).send({ message: 'Item sem resultado de cálculo. Recalcule antes de gerar o relatório.' })
+    }
+    const relatorio = montarRelatorio(dados)
+    const pdf = await gerarRelatorioPdf(relatorio)
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `inline; filename="relatorio-item-${itemId}.pdf"`)
+    return reply.send(pdf)
+  })
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // EMISSÃO DE OP (Task 23 — frente D) — consome orcamento-grafico-op.service
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Opções de emissão de OP (Req 11, §5). Todas as flags são booleanas
+   * opcionais; `emails` são aceitos (máx 20, cada um validado) mas por ora só
+   * registrados — não há envio obrigatório nesta task (Req 11.6).
+   */
+  const emitirOpOpcoesSchema = z
+    .object({
+      naoGerarPedido: z.boolean().optional(),
+      opReserva: z.boolean().optional(),
+      imprimirTracado: z.boolean().optional(),
+      serieAutomatica: z.boolean().optional(),
+      gerarEmArquivo: z.boolean().optional(),
+    })
+    .partial()
+
+  const emailsSchema = z.array(z.string().email()).max(20).optional()
+
+  const emitirOpBody = emitirOpOpcoesSchema.extend({
+    emails: emailsSchema,
+  })
+
+  /**
+   * POST /api/orcamento-grafico/:id/itens/:itemId/emitir-op
+   * Emite (ou reemite) a OP NATIVA do item. Valida orçamento+item por empresa
+   * antes (404 se não). Opções em `emitirOpBody` (§5); `emails` só registrados
+   * nesta task (Req 11.6). Retorna `{ op, avisos }`.
+   */
+  app.post('/:id/itens/:itemId/emitir-op', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+    const body = emitirOpBody.parse(request.body ?? {})
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const { emails, ...opcoes } = body
+
+    try {
+      const resultado = await emitirOpDoCalculo(itemId, opcoes, user.id, user.empresaId)
+      const avisos = [...resultado.avisos]
+      if (emails && emails.length > 0) {
+        avisos.push(
+          `${emails.length} e-mail(s) registrado(s) para envio futuro (nenhum envio foi realizado nesta emissão).`,
+        )
+      }
+      return { op: resultado.op, avisos }
+    } catch (err) {
+      if (err instanceof EmissaoOpError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  /**
+   * POST /api/orcamento-grafico/emitir-op-lote
+   * Emite OP em lote para vários itens (mesmas opções a todos). Não há `:id` de
+   * orçamento no path — cada item é validado dentro do service (que filtra por
+   * empresaId). Retorna `{ resultados: ResultadoItemLote[] }`.
+   */
+  app.post('/emitir-op-lote', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z
+      .object({
+        itemIds: z.array(z.string().uuid()).min(1).max(100),
+        opcoes: emitirOpOpcoesSchema.optional(),
+        emails: emailsSchema,
+      })
+      .parse(request.body)
+
+    const resultados = await emitirOpEmLote(
+      body.itemIds,
+      body.opcoes ?? {},
+      user.id,
+      user.empresaId,
+    )
+    return { resultados }
+  })
+
+  /**
+   * GET /api/orcamento-grafico/:id/itens/:itemId/op
+   * Status/número da OP vinculada ao item (Req 9.5). Valida orçamento+item por
+   * empresa antes (404 se não). Retorna `{ op: {...} | null, label }`
+   * (ex.: "OP: 3149").
+   */
+  app.get('/:id/itens/:itemId/op', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+
+    const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { orcamentoItemId: itemId, empresaId: user.empresaId },
+      select: {
+        id: true,
+        numero: true,
+        status: true,
+        via: true,
+        revisao: true,
+        opReserva: true,
+      },
+    })
+
+    return {
+      op: op ?? null,
+      label: op ? `OP: ${op.numero}` : null,
+    }
   })
 }
 
