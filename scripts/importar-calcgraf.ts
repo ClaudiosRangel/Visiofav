@@ -35,6 +35,10 @@ import {
 export { mapearSuporte }
 export type { SuporteOrigemRow, SuporteMapeado, ResultadoMapeamentoSuporte }
 
+// Motor de orçamento (envelope por item) — usado pela fase golden-15086 para
+// CALCULAR o item e persistir resultado/custo (seed completo, Opção A).
+import { calcularItem, type ItemOrcamentoInput } from '../src/modules/orcamento-grafico/orcamento-grafico-item.service'
+
 const prisma = new PrismaClient()
 const EXPORT_DIR = join('cartoon', 'export')
 const CNPJ_WEGA = '23.787.041/0001-75'
@@ -1186,12 +1190,16 @@ async function seedGolden15086(empresaId: string): Promise<void> {
 
   const p = prisma as never as {
     suporteGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
-    tipoEmbalagem: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
-    orcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    tipoEmbalagem: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
+    orcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
     itemOrcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
     planoCalculoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
     ordemProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
     usuarioEmpresa: { findFirst: (a: unknown) => Promise<{ usuarioId: string } | null> }
+    precoMateriaPrima: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    centroProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+    tabelaMargem: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+    acabamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string; naturezaCusto: string } | null> }
   }
 
   // Resolve um usuário vinculado à empresa (criadoPorId é obrigatório em
@@ -1223,11 +1231,69 @@ async function seedGolden15086(empresaId: string): Promise<void> {
   const suporteOrcadoId = await garantirSuporte('CG-SUP-GOLDEN-222', 'Stora Enzo Bobina 222g (orçado)')
   const suporteProducaoId = await garantirSuporte('CG-SUP-GOLDEN-234', 'Stora Enzo Bobina 234g (produção)')
 
+  // 1b. Preço de papel vinculado a cada suporte golden (idempotente por descrição).
+  //     SEM esse preço, o motor BLOQUEIA o cálculo ("Suporte sem preço vinculado").
+  //     Preço R$ 7,738/kg (unitário do SUPORTE no pré-cálculo 15.086: 6.382,43 / 824,77 kg).
+  const PRECO_KG_PAPEL = 7.74
+  async function garantirPrecoPapel(suporteId: string, descricao: string, gramatura: number): Promise<void> {
+    if (dryRun) { console.log(`${pfx}vincularia preço R$ ${PRECO_KG_PAPEL}/kg ao suporte ${descricao}`); return }
+    if (suporteId === 'dry-suporte') return
+    const ja = await comRetry(() => p.precoMateriaPrima.findFirst({ where: { empresaId, suporteId, tipo: 'PAPEL' } as never }))
+    if (ja) return
+    await comRetry(() => p.precoMateriaPrima.create({
+      data: {
+        empresaId, descricao, tipo: 'PAPEL', unidade: 'KG',
+        precoUnitario: PRECO_KG_PAPEL, gramatura, suporteId, status: true,
+      } as never,
+    }))
+  }
+  await garantirPrecoPapel(suporteOrcadoId, 'Stora Enzo Bobina 222g (golden)', 222)
+  await garantirPrecoPapel(suporteProducaoId, 'Stora Enzo Bobina 234g (golden)', 234)
+
+  // Resolve o papel (PrecoMateriaPrima) do suporte ORÇADO para o cálculo do item.
+  const precoPapelOrcado = dryRun
+    ? null
+    : await comRetry(() => p.precoMateriaPrima.findFirst({ where: { empresaId, suporteId: suporteOrcadoId, tipo: 'PAPEL' } as never }))
+
+  // Máquina de impressão real do pré-cálculo: Heidelberg CD 7cores (HEID-CD7).
+  const maquina = dryRun
+    ? null
+    : await comRetry(() => p.centroProducao.findFirst({ where: { empresaId, codigo: 'HEID-CD7' } as never }))
+
+  // Tabela de margem padrão da Carton Wega (Calcgraf).
+  const tabelaMargem = dryRun
+    ? null
+    : await comRetry(() => p.tabelaMargem.findFirst({ where: { empresaId, status: true } as never }))
+
+  // Acabamentos reais do pré-cálculo 15.086 (resolvidos por nome). Os que não
+  // existirem são ignorados (o cálculo prossegue com os encontrados).
+  const nomesAcab = [
+    'Cortadeira (Grande)', 'Dayuan (Corte e Vinc', 'Destacar',
+    'AFT70 (Coladeira)', 'Verniz UV Total', 'Caixa Padrão',
+  ]
+  const acabamentosRicos: Array<{ acabamentoId: string }> = []
+  if (!dryRun) {
+    for (const nome of nomesAcab) {
+      const a = await comRetry(() => p.acabamentoGrafico.findFirst({ where: { empresaId, nome, status: true } as never }))
+      if (a) acabamentosRicos.push({ acabamentoId: a.id })
+    }
+  }
+
   // 2. Tipo de embalagem (Cartucho) — reaproveita se já houver um CG-EMB-* de cartucho.
   let tipoEmbId: string
+  const FORMULA_LARG = '(COMPRIMENTO + LARGURA) * 2 + ABA'
+  const FORMULA_ALT = 'ALTURA + LARGURA + ABA'
   const tipoJa = await comRetry(() => p.tipoEmbalagem.findFirst({ where: { empresaId, codigo: 'CG-EMB-GOLDEN-CARTUCHO' } as never }))
   if (tipoJa) {
     tipoEmbId = tipoJa.id
+    // Correção idempotente: garante que as fórmulas usem as variáveis do motor
+    // (COMPRIMENTO/LARGURA/ALTURA), caso o tipo tenha sido criado com fórmula antiga.
+    if (!dryRun) {
+      await comRetry(() => p.tipoEmbalagem.update({
+        where: { id: tipoEmbId },
+        data: { formulaLargura: FORMULA_LARG, formulaAltura: FORMULA_ALT } as never,
+      }))
+    }
   } else if (dryRun) {
     tipoEmbId = 'dry-tipo'
     console.log(`${pfx}criaria tipo de embalagem Cartucho (golden)`)
@@ -1235,7 +1301,10 @@ async function seedGolden15086(empresaId: string): Promise<void> {
     const t = await comRetry(() => p.tipoEmbalagem.create({
       data: {
         empresaId, codigo: 'CG-EMB-GOLDEN-CARTUCHO', descricao: 'Cartucho (golden 15.086)',
-        formulaLargura: '(C + L) * 2 + abaColagemMm', formulaAltura: 'A + L + abaColagemMm',
+        // Variáveis do motor: COMPRIMENTO, LARGURA, ALTURA, ABA, SANGRIA, PINCA.
+        // Planificação de cartucho simples (gancho/aba): larg = 2*(C+L)+ABA; alt = A+L+ABA.
+        formulaLargura: '(COMPRIMENTO + LARGURA) * 2 + ABA',
+        formulaAltura: 'ALTURA + LARGURA + ABA',
         parametros: [], abaColagemMm: 15, sangriaMm: 3, pincaMm: 10, status: true,
       } as never,
     }))
@@ -1271,28 +1340,92 @@ async function seedGolden15086(empresaId: string): Promise<void> {
 
   // 4. Item do orçamento (com suporte orçado 222 + produção 234) + 1 plano.
   if (!dryRun && orcamentoId !== 'dry-orc') {
+    // Cores do pré-cálculo (CMYK + Verniz como 5ª "cor"). Coberturas do documento:
+    // Ciano 80%, Magenta 30%, Amarelo 30%, Preto 40%, Verniz 100% (campo +V+V).
+    const cores = [
+      { nome: 'Ciano', tipo: 'CMYK' as const, coberturaPercent: 80, precoKg: 46, rendimentoM2Kg: 25 },
+      { nome: 'Magenta', tipo: 'CMYK' as const, coberturaPercent: 30, precoKg: 46, rendimentoM2Kg: 25 },
+      { nome: 'Amarelo', tipo: 'CMYK' as const, coberturaPercent: 30, precoKg: 46, rendimentoM2Kg: 25 },
+      { nome: 'Preto', tipo: 'CMYK' as const, coberturaPercent: 40, precoKg: 46, rendimentoM2Kg: 25 },
+      { nome: 'Pantone 01', tipo: 'PANTONE' as const, coberturaPercent: 30, precoKg: 71.5, rendimentoM2Kg: 25 },
+    ]
+
+    // Monta o input do item para o motor (Opção A — item calculável).
+    const inputItem: ItemOrcamentoInput = {
+      tipoEmbalagemId: tipoEmbId,
+      medidas: { comprimento: 38, largura: 28, altura: 177 },
+      papelId: precoPapelOrcado?.id ?? null,
+      gramatura: 222,
+      precoKgPapel: PRECO_KG_PAPEL,
+      maquinaId: maquina?.id ?? null,
+      cores,
+      acabamentosRicos: acabamentosRicos as never,
+      quantidade: 100000,
+      tabelaMargemId: tabelaMargem?.id ?? null,
+      montagemLinhas: 7,
+      montagemColunas: 3,
+      formatoCorteLarguraMm: 720,
+      formatoCorteAlturaMm: 1000,
+    }
+
+    // Calcula o item via o motor (envelope). Se o cálculo falhar (ex.: cadastro
+    // incompleto), registra o motivo e segue criando o item SEM resultado — a
+    // tela ainda abre, mas sem preço (não aborta o seed).
+    let resultadoCalc: unknown = null
+    let custoProducao: number | null = null
+    let valorTotal: number | null = null
+    try {
+      const r = await calcularItem(empresaId, inputItem)
+      resultadoCalc = r
+      custoProducao = Number((r as { custoProducao?: number; custoTotal?: number }).custoProducao
+        ?? (r as { custoTotal?: number }).custoTotal ?? 0)
+      valorTotal = Number((r as { precoVenda?: number }).precoVenda ?? 0)
+      console.log(`${pfx}item calculado: C.Prod R$ ${custoProducao?.toFixed(2)} · Valor R$ ${valorTotal?.toFixed(2)}`)
+    } catch (e) {
+      console.log(`${pfx}AVISO: cálculo do item falhou (${(e as Error).message}). Item criado sem resultado.`)
+    }
+
+    const dadosItem = {
+      tipoEmbalagemId: tipoEmbId,
+      descricao: 'CARTUCHO CIMED SUPER FRESH 90G CRUZEIRO/PALMEIRAS',
+      // Geometria do pré-cálculo: formato final 38 x 28 x 177 mm.
+      medidas: { comprimento: 38, largura: 28, altura: 177 },
+      comprimentoMm: 38, larguraMm: 28, alturaMm: 177,
+      papelId: precoPapelOrcado?.id ?? null,
+      papelDescricao: 'Stora Enzo Bobina 222g (golden)',
+      gramatura: 222, numCores: 5, quantidade: 100000,
+      cores: cores as never,
+      maquinaId: maquina?.id ?? null,
+      acabamentosRicos: acabamentosRicos as never,
+      suporteId: suporteOrcadoId, suporteProducaoId, // troca orçado→produção
+      siglaAcabado: 'CART', fabricante: 'Stora Enzo',
+      // Montagem 7x3 (plano CARTUCHO) e formato de corte 720 x 1000 mm.
+      montagemLinhas: 7, montagemColunas: 3,
+      formatoCorteLarguraMm: 720, formatoCorteAlturaMm: 1000,
+      resultadoCalculo: (resultadoCalc ?? undefined) as never,
+      margemSelecionada: 30,
+      custoProducao, valorTotal,
+    }
+
     let itemId: string
     const itemJa = await comRetry(() => p.itemOrcamentoGrafico.findFirst({ where: { orcamentoId, empresaId, sequencia: 1 } as never }))
     if (itemJa) {
       itemId = itemJa.id
+      // Atualiza o item existente com os dados completos + resultado calculado.
+      await comRetry(() => p.itemOrcamentoGrafico.update({ where: { id: itemId }, data: dadosItem as never }))
     } else {
       const it = await comRetry(() => p.itemOrcamentoGrafico.create({
-        data: {
-          orcamentoId, empresaId, sequencia: 1,
-          tipoEmbalagemId: tipoEmbId,
-          descricao: 'CARTUCHO CIMED SUPER FRESH 90G CRUZEIRO/PALMEIRAS',
-          // Geometria do pré-cálculo: formato final 38 x 28 x 177 mm.
-          medidas: { comprimento: 38, largura: 28, altura: 177 },
-          comprimentoMm: 38, larguraMm: 28, alturaMm: 177,
-          gramatura: 222, numCores: 5, quantidade: 100000,
-          suporteId: suporteOrcadoId, suporteProducaoId, // troca orçado→produção
-          siglaAcabado: 'CART', fabricante: 'Stora Enzo',
-          // Montagem 7x3 (plano CARTUCHO) e formato de corte 720 x 1000 mm.
-          montagemLinhas: 7, montagemColunas: 3,
-          formatoCorteLarguraMm: 720, formatoCorteAlturaMm: 1000,
-        } as never,
+        data: { orcamentoId, empresaId, sequencia: 1, ...dadosItem } as never,
       }))
       itemId = it.id
+    }
+
+    // Reconsolida o cabeçalho do orçamento (custo/valor consolidados).
+    if (custoProducao != null && valorTotal != null) {
+      await comRetry(() => p.orcamentoGrafico.update({
+        where: { id: orcamentoId },
+        data: { custoProducaoConsolidado: custoProducao, valorTotalConsolidado: valorTotal } as never,
+      }))
     }
 
     // 1 plano no item (CARTUCHO / Stora Enzo), com suporte orçado/produção
