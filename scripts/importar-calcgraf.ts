@@ -1340,6 +1340,17 @@ async function seedGolden15086(empresaId: string): Promise<void> {
       { naturezaCusto: 'MATERIAL_KG', nome: 'Verniz UV (material)', variavelKg: consumoVernizUV, precoKg: 57.2 },
       { naturezaCusto: 'MATERIAL_UN', nome: 'Caixa Padrão', variavelUn: consumoCaixaUn, precoUn: 7.7 },
     )
+
+    // Vincula `acabamentoId` por NOME no cadastro AcabamentoGrafico (quando
+    // existir), para o item salvo marcar corretamente os acabamentos no wizard
+    // de edição (o StepAcabamentos casa por id). Sem isso, os acabamentos vêm
+    // só por nome e apareciam DESMARCADOS ao editar.
+    for (const ac of acabamentosRicos) {
+      const cad = await comRetry(() =>
+        p.acabamentoGrafico.findFirst({ where: { empresaId, nome: ac.nome as string, status: true } as never }),
+      )
+      if (cad) ac.acabamentoId = cad.id
+    }
   }
 
   // 2. Tipo de embalagem (Cartucho) — reaproveita se já houver um CG-EMB-* de cartucho.
