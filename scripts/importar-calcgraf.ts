@@ -1276,11 +1276,12 @@ async function seedGolden15086(empresaId: string): Promise<void> {
       where: { id: maquina.id },
       data: {
         custoHora: 550, velocidade: 4233,
-        acertoPorCorMin: 18, tempoSetupMin: 30,
+        // Acerto por cor REAL da Heidelberg CD 7cores = 36 min (decifrado em
+        // massa do backup Calcgraf — ver docs/calcgraf-ct-decifracao-definitiva.md).
+        // NÃO sobrescrever com valores do caso 15.086 (que tem chapa excedente):
+        // o cadastro reflete a MÁQUINA, para orçamentos NOVOS baterem o Calcgraf.
+        acertoPorCorMin: 36, tempoSetupMin: 30,
         formatoFolhaLargura: 720, formatoFolhaAltura: 1000,
-        // fatorOperacao da impressão (folhas-equivalentes do Calcgraf) = 3,5298
-        // (base 5.160 folhas). Campo do schema: fatorOperacaoImpressao.
-        fatorOperacaoImpressao: 3.5298497201576846,
       } as never,
     }))
   }

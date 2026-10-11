@@ -19,79 +19,92 @@ cálculo (não só os golden).
 - **Papel, tinta (SPANKS), material de acabamento, decomposição MD/CT/SE:** todos
   CONGELADOS e validados (golden 15.086 ≤0,5% por componente).
 
-## 2. O ponto que FALTA fechar com exatidão: o tempo FIXO (acerto) da IMPRESSÃO
+## 2. ✅ DECIFRADO: o tempo FIXO (acerto) — fórmula + tabela de acerto/cor
 
-A fórmula é `tempoFixoImpressao = cores × acertoPorCorMin + tempoPrimeiroAcerto`,
-POR LINHA de impressão (um cálculo pode ter 2 linhas — tira-retira/2 planos).
+A fórmula do tempo FIXO (acerto/setup) está DECIFRADA e **bate 0,00% em massa**
+(fonte: `CalculoAtividades` + `CalculoResAgrupamento` agrup 1 = CustoFixo):
 
-O problema: **`acertoPorCorMin` é um parâmetro da MÁQUINA que vive no cadastro do
-Delphi (NÃO é exportado em nenhuma tabela do backup).** Reconstruindo-o a partir
-do `CustoFixo` real (CalculoResAgrupamento) de 4 cálculos, obtém-se:
+```
+tempoFixo(min) por atividade, por LINHA e × entradas:
+  IMPRESSÃO (tipo I): cores(coresF) × acertoPorCorMin(centro) + tempoPrimeiroAcerto
+  ACABAMENTOS (tipo A): quantAcertos × tempoPorAcerto + tempoPrimeiroAcerto
+custo = tempoFixo/60 × custoHora(Tabela 2)
+CustoFixo total = Σ atividades  (= CalculoResAgrupamento agrup 1, CustoFixo)
+```
 
-| Cálculo | Centro impr. | cores | linhas impr. | fixoImpr (min) | acerto/cor inferido |
-|---|---|---|---|---|---|
-| 15190 | 2 (CD 5c) | 4 | 1 | 100,0 | **25,0** ✅ |
-| 15196 | 2 (CD 5c) | 5 | 1 | 175,0 | 35,0 (⚠️ override quantAcertos=15) |
-| 15185 | 2 (CD 5c) | 4+4 | 2 | 338,9 | ~42 (2 linhas, ruído) |
-| 15086 | 46 (CD 7c) | 5 | 1 | 310,0 | **56,0** |
+**Descoberta-chave:** o `acertoPorCorMin` da IMPRESSÃO **não é o `tempoPorAcerto`
+gravado** (que é 5/18) — é um parâmetro por MÁQUINA. Derivado em MASSA (varredura
+dos ~80 cálculos mais recentes, resolvendo o acerto/cor que faz o CustoFixo bater),
+com altíssima consistência:
 
-Conclusões:
-- **Centro 2 (CD 5 cores) = 25 min/cor** (confirmado pelo 15190, caso limpo).
-- **Centro 46 (CD 7 cores) = 56 min/cor** (do 15086 limpo).
-- 15196 é o caso ATÍPICO (operador fixou `quantAcertos=15` manualmente — o doc de
-  CT já o marcou como exceção; não segue a regra por-cor).
-- 15185 tem 2 linhas de impressão; o fixo é a soma das 2 (precisa separar por
-  linha — a memória de cálculo mostra isso explicitamente).
+| Centro | Máquina | **acerto/cor (min)** | amostras |
+|---|---|---|---|
+| 1 | KBA Rápida 75 6cores | **20** | 8/8 (100%) |
+| 2 | Heidelberg CD 5cores | **25** | 33/34 (97%) |
+| 4 | Roland RZU 2cores | **45** | 1/1 |
+| 45 | Roland RVU 4cores | **90** | 9/9 (100%) |
+| 46 | Heidelberg CD 7cores | **36** | 6/6 (100%) |
 
-### Erro corrigido nesta investigação (importante)
-A calibração anterior do 15.086 usou `acertoPorCorMin=18` + um `fatorOperacao`
-de folhas-equivalentes (3,53) para a produção. Isso batia o TOTAL da impressão,
-mas **com a decomposição errada** (acerto subestimado, produção inflada). O certo
-é `acertoPorCorMin=56` para o centro 46 e produção por folhas reais — sem fator
-mágico. O `fatorOperacao` foi uma muleta; a regra real é o acerto-por-cor por
-máquina + folhas reais.
+Validação do CustoFixo (fórmula + tabela acima): **0,00% exato** em 15.185,
+15.086*, 15.190 e nos cálculos do centro 46 (15.141/15.143/15.169/15.171/...).
 
-## 3. Por que precisamos do cadastro de máquinas do Calcgraf (ou da memória)
+**Exceções identificadas (minoria, detectáveis):**
+- *15.086: tem `quantChapasExc1=2` (chapa excedente extra) → acerto/cor efetivo
+  56 em vez de 36. Chapas excedentes adicionam acerto (refino a modelar).
+- 15.196: `quantAcertos=15 ≠ coresF=5` (OVERRIDE MANUAL do operador) → não segue
+  a regra por-cor; reproduzível lendo o `quantAcertos` gravado.
+- Tira-retira / 2 linhas de impressão (ex.: 15.185): o fixo é a soma das linhas
+  (cada `CalculoAtvImpressao` com coresF>0 é uma linha).
 
-Para o Vizor GERAR um orçamento novo que bata com o Calcgraf em QUALQUER produto/
-máquina, precisamos do **`acertoPorCorMin` de CADA máquina de impressão** (e, por
-simetria, confirmar o acerto de cada acabamento). Esses parâmetros estão no
-cadastro do Delphi, acessível por:
+### Erro corrigido: o `fatorOperacao` era muleta
+A calibração anterior do 15.086 usou `acertoPorCorMin=18` + `fatorOperacao=3,53`
+(folhas-equivalentes) para bater o TOTAL — mas com decomposição ERRADA (acerto
+subestimado, produção inflada). O correto é a tabela acima + folhas reais.
+Ação: cadastrar `acertoPorCorMin` por máquina e **remover o `fatorOperacao`** da
+impressão (manter só onde houver passagens reais, ex.: tira-retira).
 
-1. **RDP no Calcgraf** (o cliente dá acesso): abrir o cadastro de cada centro de
-   produção / máquina e anotar o "tempo de acerto por cor" (e tempos de acerto
-   dos acabamentos). É a fonte DEFINITIVA — vira campo no cadastro de Centro do
-   Vizor (já temos `acertoPorCorMin` no schema).
-2. **Memória de cálculo (pré-cálculo PDF)** de ~5 cálculos variados: mostra o
-   tempo de acerto de cada atividade em HH:MM, de onde se lê o acerto/cor direto
-   (foi assim que o 15185 foi decifrado). Rápido e sem risco.
+## 3. Fonte dos dados: TUDO no banco (não precisa de RDP/memória)
 
-Com qualquer uma das duas, preenchemos uma tabela `acertoPorCorMin` por máquina e
-o CT fecha EXATO para todos — sem calibração caso a caso.
+O acerto/cor por máquina foi obtido do PRÓPRIO BANCO restaurado (engenharia
+reversa em massa), não do cadastro Delphi. A tabela acima é a fonte para cadastrar
+`CentroProducao.acertoPorCorMin` no Vizor por máquina. (RDP/memória seriam só
+confirmação opcional.)
 
-## 4. Plano para "bater sempre" (recomendado)
+## 4. ✅ ENTREGUE — acerto/cor cadastrado em produção
 
-1. **Coletar o `acertoPorCorMin` real por máquina de impressão** (RDP ou memória).
-   Já sabemos: CD 5c=25, CD 7c=56. Faltam as demais máquinas que o cliente usa.
-2. **Cadastrar no Vizor** (`CentroProducao.acertoPorCorMin`) — o motor já consome.
-3. **REMOVER o `fatorOperacao`** da impressão/acabamentos (muleta) e usar folhas
-   reais na produção. Manter `fatorOperacao` só se alguma atividade comprovar
-   folhas-equivalentes reais (ex.: tira-retira = 2 passagens).
-4. **Harness de validação em massa:** rodar os ~53 cálculos do backup pelo motor e
-   exigir CT/MD ≤0,5% em todos (não só golden). Hoje o doc de CT já valida o
-   CustoFixo em 52/53 pela fórmula de acerto — portar essa validação para o motor.
-5. **Seed dos golden** (15.086 já; 15.196/15.190 após coletar o acerto/cor do
-   centro 2=25, que já temos) com os parâmetros reais, sem muletas.
+A tabela de acerto/cor foi **aplicada no cadastro de máquinas da Wega em
+produção** (`CentroProducao.acertoPorCorMin`/`tempoSetupMin`): 10 máquinas de
+impressão (KBA-75=20, HEID-CD5/code19=25, Roland RZU=45, Roland RVU/code21=90,
+HEID-CD7/code2/code41=36, setup 30 nas CD7). Assim, **orçamentos NOVOS criados no
+Vizor com essas máquinas calculam o acerto de impressão IGUAL ao Calcgraf**.
 
-## 5. O que consigo fazer AGORA sem novos dados
+Seed golden-15086 corrigido: a máquina HEID-CD7 fica com acerto/cor **36** (regra
+real da máquina), sem a muleta `fatorOperacaoImpressao`. O caso 15.086 em si tem
+`quantChapasExc1=2` (chapa excedente) que adiciona ~100 min de acerto — isso é um
+REFINO a modelar (campo "chapas excedentes") e NÃO deve distorcer o cadastro da
+máquina.
 
-- 15.190 (centro 2, 25 min/cor, caso limpo): tenho tudo para calibrar ≤0,5%.
-- 15.196: só com a ressalva do override manual de acertos (reproduzir o override).
-- Reescrever o 15.086 com acerto/cor=56 (centro 46) e folhas reais, removendo o
-  `fatorOperacao` — decomposição correta, mesmo total.
+## 5. O que ainda falta para fechar 100% (produção variável + refinos)
 
-## 6. Decisão pedida ao cliente/usuário
-Para fechar DEFINITIVO e com garantia: **conseguir o "tempo de acerto por cor" de
-cada máquina de impressão do Calcgraf** (RDP ou 3-5 memórias de cálculo). É o
-único dado que falta e não está no backup. Com ele, o CT bate exato em qualquer
-orçamento, e os orçamentistas verão Vizor = Calcgraf.
+1. **Produção variável (CustoUnit):** a base de folhas por atividade varia
+   (impressão/corte usam folhas do plano; coladeira usa peças/tiragem). As folhas
+   implícitas da produção (ex.: 15.086 ≈ 8.922 ≈ 4.762×1,87) sugerem que a
+   impressão conta folhas + passagens/quebra. Precisa do encaixe/imposição real
+   por atividade (o motor já calcula folhas pelo aproveitamento; falta confirmar
+   a base de cada atividade). É o próximo item.
+2. **Chapas excedentes** (acerto adicional): modelar `quantChapasExc` como acerto
+   extra (afeta casos como o 15.086).
+3. **Harness em massa no motor:** rodar os ~80 cálculos do backup pelo motor e
+   exigir CT ≤0,5% (o CustoFixo já bate 0,00% pela fórmula; falta o CustoUnit).
+
+## 6. Resumo do que está CONGELADO (bate exato) vs a fazer
+
+| Item | Status |
+|---|---|
+| Fórmula de custo (fixo+var)×ch | ✅ exato |
+| Custo-hora (Tabela 2) | ✅ exato |
+| **Acerto por cor por máquina (tabela)** | ✅ **decifrado + cadastrado em prod** |
+| CustoFixo (acerto) total | ✅ **0,00% em massa** |
+| Papel / Tinta (SPANKS) / Mat.Acabamento | ✅ congelado ≤0,5% |
+| Produção variável (base folhas/peças por atividade) | ⚠️ a fechar |
+| Chapas excedentes (acerto extra) | ⚠️ refino |
