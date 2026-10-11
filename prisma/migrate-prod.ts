@@ -4686,6 +4686,9 @@ async function seedMateriaisFromOPs() {
   // ─────────────────────────────────────────────────────────────────────────
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "acerto_por_cor_min" DECIMAL(8,2)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "tempo_setup_min" DECIMAL(8,2)`)
+  // Fator de folhas-equivalentes na operação de impressão (paridade Calcgraf —
+  // calibração golden 15.086). Ausente/null → fator 1 (comportamento legado).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "fator_operacao_impressao" DECIMAL(8,4)`)
 
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "suporte_grafico" (
     "id" TEXT PRIMARY KEY,

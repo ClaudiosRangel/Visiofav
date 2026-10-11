@@ -52,6 +52,15 @@ export type ItemAcabamentoRico =
        */
       tempoFixoHoras?: number
       tempoVarHoras?: number
+      /**
+       * Fator de FOLHAS-EQUIVALENTES na operação (paridade Calcgraf). Algumas
+       * atividades processam mais que as folhas puras por passagens/retiro/
+       * quebra embutidos no código Delphi (ex.: a impressão offset reimprime a
+       * folha). Multiplica `unidadesProcessadas` no MODO DERIVADO. Default 1
+       * (ausente → comportamento atual, sem fator). Só afeta a produção (var),
+       * não o acerto (fixo). Ver docs/calcgraf-golden-15086-parametros.md §6.
+       */
+      fatorOperacao?: number
     }
   | { naturezaCusto: 'MATERIAL_KG'; nome: string; variavelKg: number; precoKg: number }
   | { naturezaCusto: 'MATERIAL_UN'; nome: string; variavelUn: number; precoUn: number }
@@ -91,6 +100,13 @@ export interface ParamsOrcamento {
     acertoPorCorMin?: number
     /** Nº de cores da impressão (para o acerto por cor). Default = cores.length. */
     numCoresImpressao?: number
+    /**
+     * Fator de FOLHAS-EQUIVALENTES na operação de impressão (paridade Calcgraf).
+     * A impressão offset reimprime a folha (passagens/retiro) → folhas-equiv >
+     * folhas puras. Multiplica as folhas na produção (var), não no acerto (fixo).
+     * Default 1 (ausente → comportamento atual). Calibrado no 15.086 = ~3,826.
+     */
+    fatorOperacao?: number
   }
   cores: Array<{
     nome: string
@@ -114,6 +130,16 @@ export interface ParamsOrcamento {
   coefTintaSuporte?: number
   /** Partida de consumo de tinta (kg) por cor — modelo SPANKS. Default 0,2. */
   partidaConsumoTintaKg?: number
+  /**
+   * Cobertura AGREGADA (%) das cores de policromia (CMYK/Escala) — paridade
+   * Calcgraf. O Calcgraf trata a Escala (seleção CMYK) como UMA tinta com uma
+   * `areaTinta` agregada (ex.: 60%), não a soma das coberturas por cor. Quando
+   * presente e > 0, o modelo SPANKS colapsa todas as cores `tipo==='CMYK'` numa
+   * única linha "Escala CMYK" com esta cobertura (a partida de consumo conta o
+   * nº real de cores CMYK). Cores PANTONE seguem individuais. Aditivo: ausente
+   * → comportamento legado (uma passagem por cor, cobertura individual).
+   */
+  coberturaCmykAgregadaPercent?: number
   /**
    * Acabamentos do orçamento. Aceita itens LEGADOS (sem `naturezaCusto`) e
    * itens RICOS (com `naturezaCusto`) no mesmo array. Ver `ItemAcabamento`.
@@ -932,9 +958,37 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
   if (params.coefTintaSuporte && params.coefTintaSuporte > 0 && cores.length > 0) {
     // Modelo SPANKS: uma passagem por cor; cobertura e densidade por cor.
     const partida = params.partidaConsumoTintaKg ?? 0.2
+
+    // Paridade Calcgraf: colapsar a policromia (CMYK/Escala) numa única tinta
+    // com cobertura AGREGADA, quando `coberturaCmykAgregadaPercent` informado.
+    // A Escala do Calcgraf (CalculoTintas) é UMA tinta com `areaTinta` agregada
+    // (ex.: 60%), não a soma das coberturas por cor. A partida (acerto) continua
+    // contando o nº REAL de cores CMYK. Aditivo: ausente → caminho legado.
+    const agregCmyk = params.coberturaCmykAgregadaPercent
+    const coresEfetivas: typeof cores =
+      agregCmyk && agregCmyk > 0
+        ? (() => {
+            const cmyk = cores.filter((c) => c.tipo === 'CMYK')
+            const outras = cores.filter((c) => c.tipo !== 'CMYK')
+            if (cmyk.length === 0) return cores
+            const escala = {
+              nome: 'Escala CMYK',
+              tipo: 'CMYK' as const,
+              coberturaPercent: agregCmyk,
+              precoKg: cmyk[0].precoKg,
+              rendimentoM2Kg: cmyk[0].rendimentoM2Kg,
+              densidade: cmyk[0].densidade,
+              // nº real de cores CMYK, para a partida/acerto por cor.
+              _coresPartida: cmyk.length,
+            } as (typeof cores)[number] & { _coresPartida?: number }
+            return [escala, ...outras]
+          })()
+        : cores
+
     const detalhePorCor: Array<{ cor: string; consumoKg: number; custo: number }> = []
     let custoTotalTinta = 0
-    for (const cor of cores) {
+    for (const cor of coresEfetivas) {
+      const coresPartida = (cor as { _coresPartida?: number })._coresPartida ?? 1
       const r = calcularConsumoTinta({
         coefSuporte: params.coefTintaSuporte,
         fatorProcesso: 0.5, // offset
@@ -944,7 +998,7 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
         // Densidade: default 1,0 (valor que calibrou no 15185 — ver
         // docs/calcgraf-consumo-tinta.md). Override opcional por cor/tinta.
         densidade: cor.densidade ?? 1.0,
-        cores: 1, // partida por cor (1 cor por iteração)
+        cores: coresPartida, // partida pelo nº real de cores do grupo
         ocorrencias: 1,
         precoKg: cor.precoKg,
         partidaConsumoKg: partida,
@@ -975,7 +1029,7 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
       impressao: true,
       custoHora: maquinaImpressao.custoHora,
       producaoHora: maquinaImpressao.velocidade,
-      unidadesProcessadas: folhasBrutas,
+      unidadesProcessadas: folhasBrutas * (maquinaImpressao.fatorOperacao ?? 1),
       cores: numCores,
       acertoPorCorMin: maquinaImpressao.acertoPorCorMin,
       tempoPrimeiroAcertoMin: maquinaImpressao.setupMinutos || 0,
@@ -1135,7 +1189,8 @@ export function calcularOrcamentoGrafico(params: ParamsOrcamento): ResultadoOrca
               impressao: false,
               custoHora: a.custoHora,
               producaoHora: a.producaoHora ?? 0,
-              unidadesProcessadas: a.unidadeBase === 'FOLHA' ? folhasBrutas : quantidade,
+              unidadesProcessadas:
+                (a.unidadeBase === 'FOLHA' ? folhasBrutas : quantidade) * (a.fatorOperacao ?? 1),
               quantAcertos: a.quantAcertos,
               tempoPorAcertoMin: a.tempoPorAcertoMin,
               tempoPrimeiroAcertoMin: a.tempoPrimeiroAcertoMin,

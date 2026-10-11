@@ -82,6 +82,8 @@ export interface AcabamentoRicoInput {
   tempoPrimeiroAcertoMin?: number
   tempoFixoHoras?: number
   tempoVarHoras?: number
+  /** Fator de folhas-equivalentes na operação (paridade Calcgraf). Default 1. */
+  fatorOperacao?: number
 }
 
 /**
@@ -161,6 +163,20 @@ export interface ItemOrcamentoInput {
   creditosFiscais?: number
   encargoFinanceiroPerc?: number
   cev?: { icms: number; juros: number; pisCofins: number; comissoes: number }
+  /**
+   * Cobertura AGREGADA (%) da policromia CMYK (paridade Calcgraf — a Escala é
+   * UMA tinta com `areaTinta` agregada, ex.: 60%). Repassado ao motor; ausente
+   * → cálculo legado (cobertura por cor). Ver `coberturaCmykAgregadaPercent` em
+   * `ParamsOrcamento`.
+   */
+  coberturaCmykAgregadaPercent?: number
+  /**
+   * Override da perda de impressão (paridade Calcgraf). Quando presente, tem
+   * precedência sobre o `ParametroPerda` global do tenant — usado para fixar a
+   * quebra de impressão do golden (ex.: fixa 350 folhas + 0,939% → 5.160 folhas
+   * brutas no 15.086), sem alterar a perda geral da empresa. Ausente → legado.
+   */
+  perdasOverride?: { impressaoPercent?: number; impressaoFixaFolhas?: number }
 }
 
 /** Erro de regra de negócio ao montar os params (ex.: cadastro ausente). */
@@ -316,6 +332,7 @@ export async function montarAcabamentosRicos(
         tempoPrimeiroAcertoMin: it.tempoPrimeiroAcertoMin ?? num(cad?.tempoPrimeiroAcertoMin),
         tempoFixoHoras: it.tempoFixoHoras,
         tempoVarHoras: it.tempoVarHoras,
+        fatorOperacao: it.fatorOperacao,
       }
       // Req 7.4 — restrição selecionada sobrepõe acerto/operação no CT.
       if (it.restricaoAcabamentoId) {
@@ -443,12 +460,19 @@ export async function montarParamsDoItem(
     }
   }
 
-  // Buscar perdas (parâmetro geral = sem centroProducaoId).
+  // Buscar perdas (parâmetro geral = sem centroProducaoId). Override opcional
+  // (`input.perdasOverride`) tem precedência — usado pela paridade Calcgraf
+  // (golden 15.086) para fixar a quebra de impressão sem depender do
+  // ParametroPerda global do tenant. Ausente → comportamento legado.
   const perdasParam = await prisma.parametroPerda.findMany({ where: { empresaId } })
   const perdaImpressao = perdasParam.find((p) => !p.centroProducaoId)
   const perdas = {
-    impressaoPercent: perdaImpressao ? Number(perdaImpressao.perdaVariavel) : 5,
-    impressaoFixaFolhas: perdaImpressao ? perdaImpressao.perdaFixaFolhas : 50,
+    impressaoPercent:
+      input.perdasOverride?.impressaoPercent ??
+      (perdaImpressao ? Number(perdaImpressao.perdaVariavel) : 5),
+    impressaoFixaFolhas:
+      input.perdasOverride?.impressaoFixaFolhas ??
+      (perdaImpressao ? perdaImpressao.perdaFixaFolhas : 50),
     corteVincoPercent: 3,
     colagemPercent: 2,
   }
@@ -458,6 +482,10 @@ export async function montarParamsDoItem(
   // presentes, o motor usa os modelos SPANKS/acerto-por-cor; senão, legado.
   const acertoPorCorMin = maquina.acertoPorCorMin != null ? Number(maquina.acertoPorCorMin) : undefined
   const tempoSetupMin = maquina.tempoSetupMin != null ? Number(maquina.tempoSetupMin) : undefined
+  const fatorOperacaoImpressao =
+    (maquina as { fatorOperacaoImpressao?: unknown }).fatorOperacaoImpressao != null
+      ? Number((maquina as { fatorOperacaoImpressao?: unknown }).fatorOperacaoImpressao)
+      : undefined
   const partidaConsumoTintaKg = await resolverPartidaConsumoTinta(empresaId)
 
   // ── Req 11 (Task 19): tinta por COBERTURA vs CONSUMO_DIRETO ────────────────
@@ -531,6 +559,8 @@ export async function montarParamsDoItem(
       // Nº de cores preservado SEMPRE do input (mesmo no CONSUMO_DIRETO, onde a
       // cobertura das cores é zerada) — alimenta o acerto por cor / CT.
       numCoresImpressao: input.cores.length || undefined,
+      // Fator de folhas-equivalentes na operação de impressão (paridade Calcgraf).
+      fatorOperacao: fatorOperacaoImpressao,
     },
     cores: coresParaMotor,
     // Combina acabamentos LEGADOS com os RICOS (resolvidos do cadastro).
@@ -553,6 +583,7 @@ export async function montarParamsDoItem(
     creditosFiscais: input.creditosFiscais,
     encargoFinanceiroPerc: input.encargoFinanceiroPerc,
     cev: input.cev,
+    coberturaCmykAgregadaPercent: input.coberturaCmykAgregadaPercent,
   }
 
   // ── Frente A (Task 2): montagem → aproveitamento EXATO + formato de corte ──

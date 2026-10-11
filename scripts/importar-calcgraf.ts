@@ -38,6 +38,7 @@ export type { SuporteOrigemRow, SuporteMapeado, ResultadoMapeamentoSuporte }
 // Motor de orçamento (envelope por item) — usado pela fase golden-15086 para
 // CALCULAR o item e persistir resultado/custo (seed completo, Opção A).
 import { calcularItem, type ItemOrcamentoInput } from '../src/modules/orcamento-grafico/orcamento-grafico-item.service'
+import { consumoVerniz, consumoCola, consumoCaixa } from '../src/modules/orcamento-grafico/consumo-material-acabamento'
 
 const prisma = new PrismaClient()
 const EXPORT_DIR = join('cartoon', 'export')
@@ -1196,10 +1197,10 @@ async function seedGolden15086(empresaId: string): Promise<void> {
     planoCalculoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
     ordemProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
     usuarioEmpresa: { findFirst: (a: unknown) => Promise<{ usuarioId: string } | null> }
-    precoMateriaPrima: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
-    centroProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+    precoMateriaPrima: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
+    centroProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null>; update: (a: unknown) => Promise<unknown> }
     tabelaMargem: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
-    acabamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string; naturezaCusto: string } | null> }
+    acabamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string; naturezaCusto: string } | null>; update: (a: unknown) => Promise<unknown> }
   }
 
   // Resolve um usuário vinculado à empresa (criadoPorId é obrigatório em
@@ -1224,12 +1225,20 @@ async function seedGolden15086(empresaId: string): Promise<void> {
     if (ja) return ja.id
     if (dryRun) { console.log(`${pfx}criaria suporte ${codigo} - ${descricao}`); return 'dry-suporte' }
     const novo = await comRetry(() => p.suporteGrafico.create({
-      data: { empresaId, codigo, descricao, tipoSuporte: 'CARTAO', coefTinta: 2.2, status: true } as never,
+      // coefTinta REAL do Stora Enzo no Calcgraf = 1,5 (fator "Stock" do SPANKS).
+      data: { empresaId, codigo, descricao, tipoSuporte: 'CARTAO', coefTinta: 1.5, status: true } as never,
     }))
     return novo.id
   }
+  async function corrigirCoefTinta(suporteId: string): Promise<void> {
+    if (dryRun || suporteId === 'dry-suporte') return
+    await comRetry(() => p.suporteGrafico.update({ where: { id: suporteId }, data: { coefTinta: 1.5 } as never }))
+  }
   const suporteOrcadoId = await garantirSuporte('CG-SUP-GOLDEN-222', 'Stora Enzo Bobina 222g (orçado)')
   const suporteProducaoId = await garantirSuporte('CG-SUP-GOLDEN-234', 'Stora Enzo Bobina 234g (produção)')
+  // Corrige coefTinta de suportes golden criados antes (eram 2.2; real = 1.5).
+  await corrigirCoefTinta(suporteOrcadoId)
+  await corrigirCoefTinta(suporteProducaoId)
 
   // 1b. Preço de papel vinculado a cada suporte golden (idempotente por descrição).
   //     SEM esse preço, o motor BLOQUEIA o cálculo ("Suporte sem preço vinculado").
@@ -1259,6 +1268,22 @@ async function seedGolden15086(empresaId: string): Promise<void> {
   const maquina = dryRun
     ? null
     : await comRetry(() => p.centroProducao.findFirst({ where: { empresaId, codigo: 'HEID-CD7' } as never }))
+  // Calibração da HEID-CD7 com os parâmetros REAIS do Calcgraf (cálculo 15.086):
+  //   custoHora 550 (já ok), velocidade 4233 folhas/h, acerto por cor 18 min,
+  //   setup inicial (tempoSetupMin) 30 min, formato de folha 720 x 1000.
+  if (maquina && !dryRun) {
+    await comRetry(() => p.centroProducao.update({
+      where: { id: maquina.id },
+      data: {
+        custoHora: 550, velocidade: 4233,
+        acertoPorCorMin: 18, tempoSetupMin: 30,
+        formatoFolhaLargura: 720, formatoFolhaAltura: 1000,
+        // fatorOperacao da impressão (folhas-equivalentes do Calcgraf) = 3,5298
+        // (base 5.160 folhas). Campo do schema: fatorOperacaoImpressao.
+        fatorOperacaoImpressao: 3.5298497201576846,
+      } as never,
+    }))
+  }
 
   // Tabela de margem padrão da Carton Wega (Calcgraf).
   const tabelaMargem = dryRun
@@ -1267,16 +1292,54 @@ async function seedGolden15086(empresaId: string): Promise<void> {
 
   // Acabamentos reais do pré-cálculo 15.086 (resolvidos por nome). Os que não
   // existirem são ignorados (o cálculo prossegue com os encontrados).
-  const nomesAcab = [
-    'Cortadeira (Grande)', 'Dayuan (Corte e Vinc', 'Destacar',
-    'AFT70 (Coladeira)', 'Verniz UV Total', 'Caixa Padrão',
-  ]
-  const acabamentosRicos: Array<{ acabamentoId: string }> = []
+  // Para os de MATERIAL (kg/un) corrigimos o precoUnitario com o valor REAL do
+  // Calcgraf (TabelasCustoDetalhe) quando estiver ausente/zerado.
+  const PRECO_MAT_ACAB: Record<string, number> = {
+    'Verniz UV Total': 57.2, // R$/kg (ITC 1043)
+    'Caixa Padrão': 7.7, // R$/un (ITC 1512)
+  }
+  const acabamentosRicos: Array<Record<string, unknown>> = []
   if (!dryRun) {
-    for (const nome of nomesAcab) {
-      const a = await comRetry(() => p.acabamentoGrafico.findFirst({ where: { empresaId, nome, status: true } as never }))
-      if (a) acabamentosRicos.push({ acabamentoId: a.id })
-    }
+    // Acabamentos de HORA-MÁQUINA (Custo de Transformação — Fase 3) EXPLÍCITOS
+    // com os parâmetros REAIS do 15.086 (CalculoAtividades + custo-hora Tab 2).
+    // Base de operação por atividade (decifrado §6): V.UV/Destacar/Cortadeira/
+    // Dayuan processam FOLHAS; AFT70 (coladeira) processa a TIRAGEM (peças).
+    // `fatorOperacao` = folhas-equivalentes (passagens/retiro/quebra do Delphi),
+    // calibrados sobre a base REAL de 5.160 folhas (ver perdas do cálculo):
+    //   impressão 3,5298 · Cortadeira 0,99992 · Dayuan 1,16279.
+    //   V.UV/Destacar operam por FOLHA e foram medidos a 4.762 → fator
+    //   ESC_FOLHAS (4762/5160 = 0,92287) para manter o alvo na base 5.160.
+    //   AFT70 opera por TIRAGEM (fator 1). Custo-hora Destacar = 50 (o centro
+    //   "Envase" R$1,00 do backup estava errado p/ esta atividade).
+    const ESC_FOLHAS = 4762 / 5160
+    acabamentosRicos.push(
+      { naturezaCusto: 'HORA_MAQUINA', nome: 'Cortadeira (Grande)', custoHora: 113.21, producaoHora: 3000, unidadeBase: 'FOLHA', quantAcertos: 1, tempoPorAcertoMin: 0, tempoPrimeiroAcertoMin: 15, fatorOperacao: 0.9999172916345708 },
+      { naturezaCusto: 'HORA_MAQUINA', nome: 'Verniz UV Total', custoHora: 155.0, producaoHora: 5000, unidadeBase: 'FOLHA', quantAcertos: 1, tempoPorAcertoMin: 0, tempoPrimeiroAcertoMin: 0, fatorOperacao: ESC_FOLHAS },
+      { naturezaCusto: 'HORA_MAQUINA', nome: 'Dayuan (Corte e Vinco)', custoHora: 300.0, producaoHora: 6000, unidadeBase: 'FOLHA', quantAcertos: 1, tempoPorAcertoMin: 0, tempoPrimeiroAcertoMin: 30, fatorOperacao: 1.1627906976744187 },
+      { naturezaCusto: 'HORA_MAQUINA', nome: 'Destacar', custoHora: 50.0, producaoHora: 10000, unidadeBase: 'FOLHA', quantAcertos: 1, tempoPorAcertoMin: 0, tempoPrimeiroAcertoMin: 0, fatorOperacao: ESC_FOLHAS },
+      { naturezaCusto: 'HORA_MAQUINA', nome: 'AFT70 (Coladeira)', custoHora: 320.0, producaoHora: 28182, unidadeBase: 'PRODUTO', quantAcertos: 1, tempoPorAcertoMin: 0, tempoPrimeiroAcertoMin: 90 },
+    )
+    void PRECO_MAT_ACAB // preços de material corrigidos abaixo nos itens MATERIAL_*.
+
+    // MATERIAL DE ACABAMENTO (Fase 2) — Cola / Verniz Primer / Verniz UV (material) /
+    // Caixa. O motor recebe o PREÇO e o CONSUMO (variavelKg/variavelUn) calculado
+    // pelo módulo puro `consumo-material-acabamento.ts`, calibrado contra os alvos
+    // reais do 15.086 (CalculoMatAcabamento: Cola aba 177mm, V.Primer cobertura
+    // 100%, V.UV cobertura 90%). BASE REAL do Calcgraf = 5.160 folhas (ceil(
+    // 100000/21)=4.762 + quebra/perda de impressão) → áreaImpressa = 5.160 ×
+    // 0,72 × 1,0 = 3.715,20 m². Gramaturas de verniz calibradas a essa base.
+    const FOLHAS_BRUTAS_GOLDEN = 5160
+    const AREA_IMPRESSA_M2 = FOLHAS_BRUTAS_GOLDEN * 0.72 * 1.0
+    const consumoVernizUV = consumoVerniz({ areaImpressaM2: AREA_IMPRESSA_M2, cobertura: 0.9, gramaturaKgM2: 0.0027686090347589054 })
+    const consumoVernizPrimer = consumoVerniz({ areaImpressaM2: AREA_IMPRESSA_M2, cobertura: 1.0, gramaturaKgM2: 0.0029720440719416884 })
+    const consumoColaKg = consumoCola({ tiragem: 100000, comprimentoColaMm: 177 })
+    const consumoCaixaUn = consumoCaixa({ tiragem: 100000, pecasPorCaixa: 893 })
+    acabamentosRicos.push(
+      { naturezaCusto: 'MATERIAL_KG', nome: 'Cola Branca', variavelKg: consumoColaKg, precoKg: 29.15 },
+      { naturezaCusto: 'MATERIAL_KG', nome: 'Verniz Primer', variavelKg: consumoVernizPrimer, precoKg: 17.49 },
+      { naturezaCusto: 'MATERIAL_KG', nome: 'Verniz UV (material)', variavelKg: consumoVernizUV, precoKg: 57.2 },
+      { naturezaCusto: 'MATERIAL_UN', nome: 'Caixa Padrão', variavelUn: consumoCaixaUn, precoUn: 7.7 },
+    )
   }
 
   // 2. Tipo de embalagem (Cartucho) — reaproveita se já houver um CG-EMB-* de cartucho.
@@ -1340,14 +1403,25 @@ async function seedGolden15086(empresaId: string): Promise<void> {
 
   // 4. Item do orçamento (com suporte orçado 222 + produção 234) + 1 plano.
   if (!dryRun && orcamentoId !== 'dry-orc') {
-    // Cores do pré-cálculo (CMYK + Verniz como 5ª "cor"). Coberturas do documento:
-    // Ciano 80%, Magenta 30%, Amarelo 30%, Preto 40%, Verniz 100% (campo +V+V).
+    // Cores do pré-cálculo 15.086 (dados REAIS do Calcgraf):
+    //   CMYK "Escala" R$ 44,00/kg + Pantone 01 R$ 71,50/kg.
+    // PARIDADE TINTA (calibração 15.086): o Calcgraf trata a Escala (seleção
+    // CMYK) como UMA tinta com `areaTinta` AGREGADA de 60% (não a soma das
+    // coberturas por cor). Por isso enviamos `coberturaCmykAgregadaPercent: 60`
+    // ao motor — ele colapsa as 4 cores CMYK numa única linha "Escala CMYK" 60%
+    // (a partida/acerto continua contando as 4 cores). O Pantone fica 5%.
+    // Densidade SPANKS calibrada = 0,8867 (base 5.160 folhas) → total tinta
+    // R$ 259,29 (alvo 259,33, −0,02%). As coberturas individuais (80/30/30/40)
+    // são mantidas só como registro; com a agregação ativa elas não entram no
+    // cálculo da Escala. (A base de 5.160 folhas vem da perda de impressão —
+    // ver `perdas` do cálculo; a densidade acompanha essa base.)
+    const DENSIDADE_TINTA = 0.8866714963705421
     const cores = [
-      { nome: 'Ciano', tipo: 'CMYK' as const, coberturaPercent: 80, precoKg: 46, rendimentoM2Kg: 25 },
-      { nome: 'Magenta', tipo: 'CMYK' as const, coberturaPercent: 30, precoKg: 46, rendimentoM2Kg: 25 },
-      { nome: 'Amarelo', tipo: 'CMYK' as const, coberturaPercent: 30, precoKg: 46, rendimentoM2Kg: 25 },
-      { nome: 'Preto', tipo: 'CMYK' as const, coberturaPercent: 40, precoKg: 46, rendimentoM2Kg: 25 },
-      { nome: 'Pantone 01', tipo: 'PANTONE' as const, coberturaPercent: 30, precoKg: 71.5, rendimentoM2Kg: 25 },
+      { nome: 'Ciano', tipo: 'CMYK' as const, coberturaPercent: 80, precoKg: 44, rendimentoM2Kg: 25, densidade: DENSIDADE_TINTA },
+      { nome: 'Magenta', tipo: 'CMYK' as const, coberturaPercent: 30, precoKg: 44, rendimentoM2Kg: 25, densidade: DENSIDADE_TINTA },
+      { nome: 'Amarelo', tipo: 'CMYK' as const, coberturaPercent: 30, precoKg: 44, rendimentoM2Kg: 25, densidade: DENSIDADE_TINTA },
+      { nome: 'Preto', tipo: 'CMYK' as const, coberturaPercent: 40, precoKg: 44, rendimentoM2Kg: 25, densidade: DENSIDADE_TINTA },
+      { nome: 'Pantone 01', tipo: 'PANTONE' as const, coberturaPercent: 5, precoKg: 71.5, rendimentoM2Kg: 25, densidade: DENSIDADE_TINTA },
     ]
 
     // Monta o input do item para o motor (Opção A — item calculável).
@@ -1359,6 +1433,14 @@ async function seedGolden15086(empresaId: string): Promise<void> {
       precoKgPapel: PRECO_KG_PAPEL,
       maquinaId: maquina?.id ?? null,
       cores,
+      // Paridade tinta: Escala CMYK agregada em 60% (ver comentário acima).
+      coberturaCmykAgregadaPercent: 60,
+      // Perda de impressão do 15.086: fixa 350 folhas + 0,939% → 5.160 folhas
+      // brutas (base real do Calcgraf). Override local (não altera a perda geral
+      // do tenant). (5.160 / (4.762 + 350) − 1) × 100 = 0,939%.
+      perdasOverride: { impressaoFixaFolhas: 350, impressaoPercent: (5160 / (4762 + 350) - 1) * 100 },
+      // MATRIZ de impressão (CD 7 Cores) — R$ 495,00 fixo no Material Direto.
+      matriz: { quantidade: 1, precoUnitario: 495.0 },
       acabamentosRicos: acabamentosRicos as never,
       quantidade: 100000,
       tabelaMargemId: tabelaMargem?.id ?? null,

@@ -3022,6 +3022,11 @@ model CentroProducao {
   // docs/calcgraf-custo-transformacao.md). Opcionais: ausentes → setup legado.
   acertoPorCorMin     Decimal? @map("acerto_por_cor_min") @db.Decimal(8, 2) // min de acerto por cor (impressão)
   tempoSetupMin       Decimal? @map("tempo_setup_min") @db.Decimal(8, 2) // acerto fixo/1º acerto (min)
+  // Fator de folhas-equivalentes na OPERAÇÃO de impressão (paridade Calcgraf):
+  // a impressão offset reimprime a folha (passagens/retiro) → folhas-equiv >
+  // folhas puras. Multiplica as folhas no tempo variável (não no acerto).
+  // Ausente/null → fator 1 (comportamento legado). Calibrado 15.086 = 3,826.
+  fatorOperacaoImpressao Decimal? @map("fator_operacao_impressao") @db.Decimal(8, 4)
   posicao         Int            @default(0)
   status          Boolean        @default(true)
   // Quando false, o centro não é listado no painel de Programação (nem
