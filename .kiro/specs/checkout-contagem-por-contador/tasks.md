@@ -11,65 +11,65 @@ padrão continua `QUANTIDADE` (não-regressão).
 ## Tasks
 
 ## 1. Schema + migração (fundação)
-- [ ] 1.1 `CentroProducao`: `modoContagem` (default QUANTIDADE) +
+- [x] 1.1 `CentroProducao`: `modoContagem` (default QUANTIDADE) +
       `contadorZeraDiariamente` (default false).
-- [ ] 1.2 Model `LeituraContador` + `LogLeituraContador`.
-- [ ] 1.3 `migrate-prod.ts` idempotente: ADD COLUMN IF NOT EXISTS (2) +
+- [x] 1.2 Model `LeituraContador` + `LogLeituraContador`.
+- [x] 1.3 `migrate-prod.ts` idempotente: ADD COLUMN IF NOT EXISTS (2) +
       CREATE TABLE IF NOT EXISTS (2) + índices. Testar 2× local.
-- [ ] 1.4 `prisma generate`; `get_diagnostics` nos arquivos tocados.
+- [x] 1.4 `prisma generate`; `get_diagnostics` nos arquivos tocados.
 
 ## 2. Motor puro + testes (regra sem Prisma)
-- [ ] 2.1 `contador-maquina.service.ts`: `derivarInicial`, `calcularQuantidade`,
+- [x] 2.1 `contador-maquina.service.ts`: `derivarInicial`, `calcularQuantidade`,
       `validarCadeia` (funções puras).
-- [ ] 2.2 Helper de "hoje" em America/Sao_Paulo (offset -3h, padrão do projeto).
-- [ ] 2.3 `contador-maquina.service.test.ts` (vitest + fast-check): 1ª vez,
+- [x] 2.2 Helper de "hoje" em America/Sao_Paulo (offset -3h, padrão do projeto).
+- [x] 2.3 `contador-maquina.service.test.ts` (vitest + fast-check): 1ª vez,
       sequência contígua, zera-diário (1º do dia = 0), final<inicial = erro,
       cadeia consistente/inconsistente. Rodar `vitest run`.
 
 ## 3. Backend — apontamento por contador
-- [ ] 3.1 I/O no service: `derivarInicialDoCentro(etapaId, empresaId)` (busca
+- [x] 3.1 I/O no service: `derivarInicialDoCentro(etapaId, empresaId)` (busca
       última leitura + "tem leitura hoje" + flags do centro) → inicial.
-- [ ] 3.2 `GET /checkout/etapas/:id/contador` → `{ modo, leituraInicial,
+- [x] 3.2 `GET /checkout/etapas/:id/contador` → `{ modo, leituraInicial,
       zeraDiariamente }`. Isolamento por empresa (reusa buscarEtapaDoTerminal).
-- [ ] 3.3 Estender `POST /checkout/etapas/:id/apontar`: para PRODUCAO em centro
+- [x] 3.3 Estender `POST /checkout/etapas/:id/apontar`: para PRODUCAO em centro
       CONTADOR, aceitar `leituraFinal`; backend deriva inicial, calcula
       quantidade, cria `ApontamentoEtapa` + `LeituraContador`. PERDA/RETRABALHO
       e modo QUANTIDADE inalterados (não-regressão).
-- [ ] 3.4 `registrarLeitura` grava `LeituraContador` (empresaId da OP real) e
+- [x] 3.4 `registrarLeitura` grava `LeituraContador` (empresaId da OP real) e
       vincula ao `ApontamentoEtapa`. Atualiza `quantidadeProduzida` da etapa
       pelo mesmo caminho atual.
-- [ ] 3.5 `get_diagnostics`; teste manual via tsx se possível.
+- [x] 3.5 `get_diagnostics`; teste manual via tsx se possível.
 
 ## 4. Backend — histórico e correção (ERP / PCP)
-- [ ] 4.1 `GET /pcp/centros/:id/contador/historico` (lista cronológica, empresa).
-- [ ] 4.2 `PATCH /pcp/contador/leituras/:id`: valida cadeia (`validarCadeia`),
+- [x] 4.1 `GET /pcp/centros/:id/contador/historico` (lista cronológica, empresa).
+- [x] 4.2 `PATCH /pcp/contador/leituras/:id`: valida cadeia (`validarCadeia`),
       grava `LogLeituraContador`, recalcula quantidade + total da etapa.
       Retorna "valor esperado" quando bloqueia (409/422).
-- [ ] 4.3 Perfil: supervisor/PCP (não o terminal). moduloGuard('PCP').
+- [x] 4.3 Perfil: supervisor/PCP (não o terminal). moduloGuard('PCP').
 
 ## 5. Frontend — cadastro de Centros (VisioFab.Wms.Front)
-- [ ] 5.1 Form de Centro: `modoContagem` (Select QUANTIDADE/CONTADOR) +
+- [x] 5.1 Form de Centro: `modoContagem` (Select QUANTIDADE/CONTADOR) +
       `contadorZeraDiariamente` (Switch, visível só em CONTADOR).
-- [ ] 5.2 Enviar os campos no create/update do centro. get_diagnostics.
+- [x] 5.2 Enviar os campos no create/update do centro. get_diagnostics.
 
 ## 6. Frontend — Checkout apontar (VisioFab.Checkout)
-- [ ] 6.1 Ao abrir apontar e tipo=Produção: `GET /etapas/:id/contador`. Se
+- [x] 6.1 Ao abrir apontar e tipo=Produção: `GET /etapas/:id/contador`. Se
       `modo CONTADOR`: trocar "Quantidade" por "Leitura inicial" (readonly) +
       "Leitura final" (input). Enviar `leituraFinal` no POST.
-- [ ] 6.2 Validação client-side: final >= inicial; mostrar quantidade calculada.
-- [ ] 6.3 Perda/Retrabalho e centros QUANTIDADE: tela atual intacta.
+- [x] 6.2 Validação client-side: final >= inicial; mostrar quantidade calculada.
+- [x] 6.3 Perda/Retrabalho e centros QUANTIDADE: tela atual intacta.
 
 ## 7. Frontend — histórico de contagem (VisioFab.Wms.Front, PCP)
-- [ ] 7.1 Tela/aba por centro listando `LeituraContador` (inicial/final/qtd/
+- [x] 7.1 Tela/aba por centro listando `LeituraContador` (inicial/final/qtd/
       operador/data). Edição validada; exibe valor esperado ao bloquear.
-- [ ] 7.2 Mostrar logs de correção.
+- [x] 7.2 Mostrar logs de correção.
 
 ## 8. Fechamento
-- [ ] 8.1 Não-regressão: suíte do checkout/pcp (vitest) verde.
-- [ ] 8.2 Commits (back: schema+migrate juntos; front cadastro; front checkout)
+- [x] 8.1 Não-regressão: suíte do checkout/pcp (vitest) verde.
+- [-] 8.2 Commits (back: schema+migrate juntos; front cadastro; front checkout)
       + push main. Atualizar steering `pcp-modulo.md` (modo de contagem) e
       `checkout-apontamento` (nota do novo modo).
-- [ ] 8.3 QA manual: centro CONTADOR com e sem zera-diário; correção pelo
+- [-] 8.3 QA manual: centro CONTADOR com e sem zera-diário; correção pelo
       histórico; centro QUANTIDADE inalterado.
 
 ## Task Dependency Graph

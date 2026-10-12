@@ -41,8 +41,14 @@ Campos-chave:
   código) — migrado em 30/07/2026, ver seção 1.1.1.
 - `capacidadeHora`, `custoHora`, `posicao` (ordem de exibição dentro da
   própria aba), `status` (ativo/inativo).
+- `modoContagem` (`modo_contagem`, VARCHAR(20), default `QUANTIDADE`) +
+  `contadorZeraDiariamente` (`contador_zera_diariamente`, Boolean, default
+  `false`) — modo de apontamento de produção do centro. Ver seção 11
+  (Contagem por Contador de Máquina). O modo padrão (`QUANTIDADE`) é o
+  comportamento legado inalterado.
 - Relacionamentos: `recursos` (RecursoProducao), `etapasRoteiro`,
-  `etapasOp` (EtapaOrdemProducao), `apontamentos`, `tipoProcesso`.
+  `etapasOp` (EtapaOrdemProducao), `apontamentos`, `tipoProcesso`,
+  `leiturasContador` (LeituraContador — só modo CONTADOR).
 
 #### 1.1.1 `TipoProcesso` (`tipo_processo`) — cadastro dinâmico de processo produtivo
 
@@ -940,3 +946,73 @@ e é **criada no menu Ordem de Produção**, não mais na Programação.
 + PDF em `requisicao-corte-pdf.service.ts`). Numeração `NN/AAAA` por empresa/ano.
 Isolamento por `empresaId` explícito. Helper `proximaPosicaoFila(empresaId,
 centroId)` + `STATUS_NA_FILA = ['LIBERADA','EM_PRODUCAO']`.
+
+---
+
+## 11. Contagem por Contador de Máquina (Checkout)
+
+Spec: `.kiro/specs/checkout-contagem-por-contador/`. Recurso **aditivo**: o
+modo padrão continua `QUANTIDADE` (não-regressão garantida). Permite apontar a
+produção de um Centro pelo **contador/odômetro acumulativo** da máquina —
+quantidade = `leituraFinal − leituraInicial` (padrão MES de mercado:
+Sepasoft/Vorne). A inicial é **derivada no backend** (a última leitura final
+vira a próxima inicial); nunca aceita do cliente.
+
+### 11.1 Modelo de dados
+
+- **`CentroProducao`** ganhou `modoContagem` (`QUANTIDADE | CONTADOR`, default
+  `QUANTIDADE`) e `contadorZeraDiariamente` (Boolean, default `false`). O
+  reset diário só é relevante em `CONTADOR`: no 1º apontamento de cada dia
+  civil local (America/Sao_Paulo, offset -3h) a leitura inicial assume `0`.
+- **`LeituraContador`** (`leitura_contador`) — uma leitura por apontamento de
+  Produção em centro CONTADOR: `centroProducaoId`, `etapaOrdemProducaoId`,
+  `apontamentoEtapaId?`, `leituraInicial`/`leituraFinal`/`quantidade`
+  (Decimal 14,2; `quantidade = final − inicial >= 0`), `resetDoDia`,
+  `funcionarioId?`, `dataHora`. **Isolamento por `empresaId` da OP/centro
+  real** (gravado no apontamento do terminal, não o do usuário logado).
+- **`LogLeituraContador`** (`log_leitura_contador`) — auditoria de correção de
+  leitura: `leituraContadorId`, `campo` (`leituraInicial`|`leituraFinal`),
+  `valorAnterior`, `valorNovo`, `usuarioId?`.
+
+### 11.2 Motor puro (sem Prisma)
+
+`src/modules/checkout/contador-maquina.service.ts` — funções puras testadas em
+`contador-maquina.service.test.ts` (vitest + fast-check, **14/14**):
+- `derivarInicial({ ultimaLeituraFinalDoCentro, zeraDiariamente,
+  jaTemLeituraHoje })` → `{ leituraInicial, resetDoDia }`.
+- `calcularQuantidade(inicial, final)` → `final − inicial`; lança
+  `ContadorError` 400 se `final < inicial` (sem rollover).
+- `validarCadeia(leituras[])` → inconsistências com o `valorEsperado`
+  (inicial de uma leitura deve casar com a final anterior, salvo `resetDoDia`).
+- `dataCivilBrasilia(date)` → data civil local `-3h` (base do reset diário).
+
+### 11.3 Endpoints novos
+
+| Método | Rota | Lado | Descrição |
+|---|---|---|---|
+| GET | `/checkout/etapas/:id/contador` | Terminal (operador) | Retorna `{ modo, leituraInicial, zeraDiariamente }`. Em `CONTADOR`, a inicial já vem derivada. Isolamento via `buscarEtapaDoTerminal` (sessão do terminal). |
+| POST | `/checkout/etapas/:id/apontar` (estendido) | Terminal | Para PRODUCAO em centro CONTADOR, aceita `leituraFinal`; o backend deriva a inicial, calcula a quantidade, cria `ApontamentoEtapa` + `LeituraContador` e atualiza `quantidadeProduzida` da etapa. **PERDA/RETRABALHO e modo QUANTIDADE inalterados.** |
+| GET | `/api/pcp/centros/:id/contador/historico` | ERP/PCP (supervisor) | Lista cronológica (asc) das `LeituraContador` do centro (inicial/final/qtd/operador/data), isolada por `empresaId`. Centro de outra empresa → 404. |
+| PATCH | `/api/pcp/contador/leituras/:id` | ERP/PCP (supervisor) | Corrige `leituraInicial`/`leituraFinal`: valida a cadeia, grava `LogLeituraContador`, recalcula a quantidade da leitura e o total da etapa. Quando a correção quebra a consistência, retorna **409 com o valor esperado**. |
+
+Rotas de terminal em `checkout.routes.ts`/`checkout.service.ts`
+(auth do terminal). Rotas de ERP em `contador-pcp.routes.ts`/
+`contador-pcp.service.ts` (`authenticate` + `moduloGuard('PCP')`, prefixo
+`/api/pcp`) — correção fica no ERP (supervisor/PCP), **não** no terminal. A
+leitura inicial é travada no apontamento; só o histórico (perfil PCP) corrige,
+com log e validação de consistência.
+
+### 11.4 PENDÊNCIA / DÍVIDA conhecida — logs de correção não têm endpoint de leitura
+
+O backend **grava** `LogLeituraContador` na correção (dois `create` por campo
+alterado em `contador-pcp.service.ts`), mas **ainda NÃO existe endpoint que
+exponha esses logs persistidos para leitura**. O `GET
+/api/pcp/centros/:id/contador/historico` retorna apenas as `LeituraContador`
+(não os logs). O front do bloco 7 (histórico/correção no PCP) mostra só as
+**correções da sessão atual** (resposta do PATCH) + marca visualmente as
+leituras que foram corrigidas — não lê o histórico persistido de auditoria.
+Para expor o trilho de auditoria completo (quem/quando/valor anterior→novo de
+cada correção passada), falta criar a rota de leitura de `LogLeituraContador`
+(ex.: `GET /api/pcp/contador/leituras/:id/logs` ou embutir os logs no
+histórico do centro) + o consumo no frontend. Tratar quando o usuário pedir
+rastreabilidade de correções.

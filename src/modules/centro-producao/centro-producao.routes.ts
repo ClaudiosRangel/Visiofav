@@ -36,6 +36,11 @@ const centroProducaoBodySchema = z.object({
   // Quando false, o centro não aparece no painel de Programação. Default true
   // para preservar o comportamento atual de centros já cadastrados.
   disponivelProgramacao: z.boolean().optional(),
+  // Modo de contagem da Produção (spec checkout-contagem-por-contador):
+  // QUANTIDADE (digitada, padrão) | CONTADOR (leitura do display da máquina).
+  modoContagem: z.enum(['QUANTIDADE', 'CONTADOR']).optional(),
+  // Só relevante em CONTADOR: display reseta no início do 1º turno do dia.
+  contadorZeraDiariamente: z.boolean().optional(),
 })
 
 const listQuerySchema = z.object({
@@ -205,6 +210,8 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         acertoPorCorMin: body.acertoPorCorMin ?? undefined,
         tempoSetupMin: body.tempoSetupMin ?? undefined,
         disponivelProgramacao: body.disponivelProgramacao ?? true,
+        modoContagem: body.modoContagem ?? undefined,
+        contadorZeraDiariamente: body.contadorZeraDiariamente ?? undefined,
         posicao,
       },
     })
@@ -270,6 +277,8 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         acertoPorCorMin: body.acertoPorCorMin ?? null,
         tempoSetupMin: body.tempoSetupMin ?? null,
         disponivelProgramacao: body.disponivelProgramacao ?? centro.disponivelProgramacao,
+        modoContagem: body.modoContagem ?? centro.modoContagem,
+        contadorZeraDiariamente: body.contadorZeraDiariamente ?? centro.contadorZeraDiariamente,
       },
     })
 

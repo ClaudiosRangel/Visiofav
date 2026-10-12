@@ -211,6 +211,7 @@ import { financeiroVizorRoutes } from './modules/financeiro-vizor/financeiro-viz
 // Checkout de Apontamento — app web separado do ERP (Terminal + PIN)
 import { checkoutAuthRoutes } from './modules/checkout/checkout-auth.routes'
 import { checkoutRoutes } from './modules/checkout/checkout.routes'
+import { contadorPcpRoutes } from './modules/checkout/contador-pcp.routes'
 
 // Portal do Representante — módulo completo (auth separada, rotas próprias)
 import { portalRepRoutes } from './modules/portal-rep/index'
@@ -503,6 +504,9 @@ async function bootstrap() {
   await app.register(analiseProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(mapaCustoRoutes, { prefix: '/api/pcp' })
   await app.register(analiseGerencialRoutes, { prefix: '/api/pcp' })
+  // Histórico/correção de leituras de contador (perfil PCP/supervisor) —
+  // spec checkout-contagem-por-contador, tasks 4.1–4.3.
+  await app.register(contadorPcpRoutes, { prefix: '/api/pcp' })
 
   // Admin — Operações destrutivas (limpar dados)
   await app.register(adminPcpRoutes, { prefix: '/api/admin' })
