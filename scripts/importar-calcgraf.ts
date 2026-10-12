@@ -1801,7 +1801,30 @@ async function seedGolden15168(empresaId: string): Promise<void> {
       // Tiragem 40.000: margem 20,83% + CEV 19,25% → alvo Valor Total R$ 190.000.
       const MARGEM = 20.83, CEV = 19.25
       valorTotal = Math.round((custoProducao / (1 - MARGEM / 100 - CEV / 100)) * 100) / 100
-      resultadoCalc = { materialDireto: soma.materialDireto, custoTransformacao: soma.custoTransformacao, servicoExterno: soma.servicoExterno, custoProducao, precoVenda: valorTotal, planosFechamento: fechamentos }
+
+      // IMPORTANTE: o relatório (montarRelatorio) e a tela esperam um
+      // ResultadoOrcamento COMPLETO (papel/tinta/maquinas/acabamentos/custoTotal…).
+      // Calculamos o item 1× via calcularItem (estrutura completa) e SOBRESCREVEMOS
+      // os campos agregados com a soma real dos 3 planos. Assim o relatório
+      // renderiza sem erro 500 e com os números corretos (paridade Calcgraf).
+      const base = calcularItem ? await calcularItem(empresaId, { ...itemBase, acabamentosRicos: acabamentosRicos as never }) : null
+      const cevValor = Math.round(valorTotal * (CEV / 100) * 100) / 100
+      const cmValor = Math.round((valorTotal - soma.materialDireto - cevValor) * 100) / 100
+      resultadoCalc = {
+        ...(base as object),
+        materialDireto: soma.materialDireto,
+        custoTransformacao: soma.custoTransformacao,
+        servicoExterno: soma.servicoExterno,
+        custoProducao,
+        custoTotal: custoProducao,
+        precoVenda: valorTotal,
+        precoUnitario: Math.round((valorTotal / TIRAGEM) * 10000) / 10000,
+        margemReal: MARGEM,
+        cevPerc: CEV,
+        cevValor,
+        contribuicaoMarginalValor: cmValor,
+        contribuicaoMarginalPerc: valorTotal > 0 ? Math.round((cmValor / valorTotal) * 10000) / 100 : 0,
+      }
 
       console.log(`\n${pfx}========= RESULTADO 15168 (3 planos, tiragem ${TIRAGEM}) =========`)
       for (const f of fechamentos) {

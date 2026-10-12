@@ -297,8 +297,11 @@ export function montarSecoesDoResultado(r: ResultadoOrcamento): {
 } {
   // Material Direto decompõe em suporte/tinta/matriz/mat.acabamento quando o
   // resultado expõe os blocos; caso contrário, mostra o papel como suporte.
+  // Defesa em profundidade: um resultadoCalculo incompleto (ex.: salvo por um
+  // seed/import que não gravou os blocos) NÃO deve derrubar o relatório (500).
+  // Usa 0 quando o bloco não existe.
   const suporte: RelatorioSecaoLinha[] = [
-    { item: 'Suporte (papel)', unidade: 'KG', subtotal: r.papel.custo },
+    { item: 'Suporte (papel)', unidade: 'KG', subtotal: r.papel?.custo ?? 0 },
   ]
 
   // MAT.ACABAMENTO e MATRIZ: separa os itens de material do bloco matAcabamento.
