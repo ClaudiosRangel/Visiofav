@@ -21,8 +21,11 @@ import {
   autorizacaoSupervisorSchema,
   listarHistoricoApontamentos,
   listarEtapasEmAlertaParadaProlongada,
+  estadoContadorDaEtapa,
+  registrarApontamentoContador,
   CheckoutError,
 } from './checkout.service'
+import { ContadorError } from './contador-maquina.service'
 
 /**
  * Rotas operacionais do Checkout de Apontamento (task 12 do spec
@@ -61,7 +64,13 @@ const iniciarEtapaBodySchema = z.object({
 // =============================================================================
 const apontarBodySchema = z.object({
   tipo: z.enum(['PRODUCAO', 'PERDA', 'RETRABALHO']),
-  quantidade: z.coerce.number().min(0, 'Quantidade não pode ser negativa'),
+  // `quantidade` é obrigatória no modo QUANTIDADE e para PERDA/RETRABALHO.
+  // Em modo CONTADOR (Produção), o cliente envia `leituraFinal` em vez de
+  // `quantidade` — por isso aqui `quantidade` é opcional (validada depois).
+  quantidade: z.coerce.number().min(0, 'Quantidade não pode ser negativa').optional(),
+  // Leitura final do contador (modo CONTADOR, só Produção). A inicial é
+  // derivada no backend — nunca aceita do cliente.
+  leituraFinal: z.coerce.number().min(0).optional(),
   motivoPerda: z.enum(['ACERTO', 'REFUGO', 'DEFEITO', 'APARA']).optional(),
   funcionarioId: z.string().uuid().optional(),
   observacao: z.string().optional(),
@@ -234,11 +243,52 @@ export async function checkoutRoutes(app: FastifyInstance) {
     }
 
     try {
-      const apontamento = await registrarApontamentoProducao(id, request.checkoutUser, { ...body, fotoUrl })
+      // Modo CONTADOR: Produção com `leituraFinal` → calcula quantidade pela
+      // diferença de leituras. Demais casos (quantidade digitada, Perda,
+      // Retrabalho) seguem o caminho atual inalterado.
+      if (body.tipo === 'PRODUCAO' && body.leituraFinal != null) {
+        const resultado = await registrarApontamentoContador(id, request.checkoutUser, {
+          leituraFinal: body.leituraFinal,
+          funcionarioId: body.funcionarioId,
+          observacao: body.observacao,
+          fotoUrl,
+        })
+        return reply.status(201).send(resultado)
+      }
+
+      if (body.quantidade == null) {
+        return reply.status(400).send({ message: 'Informe a quantidade.' })
+      }
+      const apontamento = await registrarApontamentoProducao(id, request.checkoutUser, {
+        tipo: body.tipo,
+        quantidade: body.quantidade,
+        motivoPerda: body.motivoPerda,
+        funcionarioId: body.funcionarioId,
+        observacao: body.observacao,
+        fotoUrl,
+      })
 
       return reply.status(201).send(apontamento)
     } catch (err) {
-      if (err instanceof CheckoutError || err instanceof EtapaOperacionalError) {
+      if (err instanceof CheckoutError || err instanceof EtapaOperacionalError || err instanceof ContadorError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // =========================================================================
+  // GET /etapas/:id/contador — Estado do contador para a tela de apontar
+  // (spec checkout-contagem-por-contador). Retorna o modo do centro e, em
+  // modo CONTADOR, a leitura inicial derivada (última final / 0 no 1º do dia).
+  // =========================================================================
+  app.get('/etapas/:id/contador', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    try {
+      const estado = await estadoContadorDaEtapa(id, request.checkoutUser)
+      return reply.status(200).send(estado)
+    } catch (err) {
+      if (err instanceof CheckoutError || err instanceof ContadorError) {
         return reply.status(err.statusCode).send({ message: err.message })
       }
       throw err

@@ -6,6 +6,12 @@ import {
   pausarEtapa as pausarEtapaOperacional,
 } from '../pcp/etapa-operacional.service'
 import { SessaoTerminalError, validarCredenciaisSupervisorTerminal } from './sessao-terminal.service'
+import {
+  derivarInicial,
+  calcularQuantidade,
+  dataCivilBrasilia,
+  type DerivarInicialResultado,
+} from './contador-maquina.service'
 
 /**
  * Regras de negócio exclusivas do Checkout de Apontamento (task 10 do spec
@@ -1495,4 +1501,143 @@ export async function listarHistoricoApontamentos(
       autorizadoPorUsuarioId: apontamento.autorizadoPorUsuarioId,
     }
   })
+}
+
+// ============================================================================
+// Contagem por Contador de Máquina (spec checkout-contagem-por-contador)
+// Camada de I/O sobre o motor puro `contador-maquina.service.ts`.
+// ============================================================================
+
+/** Config de contagem do Centro de Produção de uma etapa. */
+export interface ModoContagemCentro {
+  modo: 'QUANTIDADE' | 'CONTADOR'
+  zeraDiariamente: boolean
+  centroProducaoId: string
+}
+
+/**
+ * Resolve o modo de contagem do Centro de Produção da etapa (isolado por
+ * empresa via `buscarEtapaDoTerminal`). Centro sem o campo (legado) = QUANTIDADE.
+ */
+export async function obterModoContagemDaEtapa(
+  etapaId: string,
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+): Promise<ModoContagemCentro> {
+  const etapa = await buscarEtapaDoTerminal(etapaId, checkoutUser)
+  const centro = await prisma.centroProducao.findFirst({
+    where: { id: etapa.centroProducaoId, empresaId: etapa.ordemProducao.empresaId },
+    select: { id: true, modoContagem: true, contadorZeraDiariamente: true },
+  })
+  return {
+    modo: (centro?.modoContagem as 'QUANTIDADE' | 'CONTADOR') === 'CONTADOR' ? 'CONTADOR' : 'QUANTIDADE',
+    zeraDiariamente: Boolean(centro?.contadorZeraDiariamente),
+    centroProducaoId: etapa.centroProducaoId,
+  }
+}
+
+/**
+ * Deriva a leitura inicial do próximo apontamento de Produção em modo CONTADOR,
+ * consultando a última `LeituraContador` do centro e se já houve leitura HOJE
+ * (data civil Brasília). Delega a regra para o motor puro `derivarInicial`.
+ */
+export async function derivarInicialDoCentro(
+  centro: ModoContagemCentro,
+  empresaId: string,
+): Promise<DerivarInicialResultado> {
+  const ultima = await prisma.leituraContador.findFirst({
+    where: { empresaId, centroProducaoId: centro.centroProducaoId },
+    orderBy: { dataHora: 'desc' },
+    select: { leituraFinal: true },
+  })
+  // "Tem leitura hoje?" — existe LeituraContador do centro na data civil local.
+  const hojeInicioUtc = new Date(`${dataCivilBrasilia()}T03:00:00.000Z`) // 00:00 Brasília = 03:00Z
+  const temHoje = await prisma.leituraContador.count({
+    where: { empresaId, centroProducaoId: centro.centroProducaoId, dataHora: { gte: hojeInicioUtc } },
+  })
+  return derivarInicial({
+    ultimaLeituraFinalDoCentro: ultima ? Number(ultima.leituraFinal) : null,
+    zeraDiariamente: centro.zeraDiariamente,
+    jaTemLeituraHoje: temHoje > 0,
+  })
+}
+
+/** Retorno de `GET /checkout/etapas/:id/contador`. */
+export interface EstadoContadorEtapa {
+  modo: 'QUANTIDADE' | 'CONTADOR'
+  zeraDiariamente: boolean
+  leituraInicial: number
+  resetDoDia: boolean
+}
+
+/**
+ * Estado do contador para a tela de apontar: modo do centro + leitura inicial
+ * derivada (quando CONTADOR). Para QUANTIDADE, devolve inicial 0 (a tela ignora).
+ */
+export async function estadoContadorDaEtapa(
+  etapaId: string,
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+): Promise<EstadoContadorEtapa> {
+  const centro = await obterModoContagemDaEtapa(etapaId, checkoutUser)
+  if (centro.modo !== 'CONTADOR') {
+    return { modo: 'QUANTIDADE', zeraDiariamente: false, leituraInicial: 0, resetDoDia: false }
+  }
+  const inicial = await derivarInicialDoCentro(centro, checkoutUser.empresaId)
+  return {
+    modo: 'CONTADOR',
+    zeraDiariamente: centro.zeraDiariamente,
+    leituraInicial: inicial.leituraInicial,
+    resetDoDia: inicial.resetDoDia,
+  }
+}
+
+/**
+ * Registra um apontamento de PRODUÇÃO em modo CONTADOR: deriva a inicial
+ * (NUNCA confia numa inicial vinda do cliente), calcula a quantidade
+ * (`leituraFinal − inicial`), cria o `ApontamentoEtapa` de PRODUCAO e a
+ * `LeituraContador` vinculada. `empresaId` sempre o da OP real.
+ */
+export async function registrarApontamentoContador(
+  etapaId: string,
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+  dados: { leituraFinal: number; funcionarioId?: string; observacao?: string; fotoUrl?: string },
+) {
+  const etapa = await buscarEtapaDoTerminal(etapaId, checkoutUser)
+  const empresaId = etapa.ordemProducao.empresaId
+
+  if (await existeSetupEmAberto(etapaId)) {
+    throw new CheckoutError(400, 'Finalize o setup em aberto antes de apontar produção')
+  }
+
+  const centro = await obterModoContagemDaEtapa(etapaId, checkoutUser)
+  const inicialDerivada = await derivarInicialDoCentro(centro, empresaId)
+  const leituraInicial = inicialDerivada.leituraInicial
+  // calcularQuantidade lança ContadorError(400) se final < inicial.
+  const quantidade = calcularQuantidade(leituraInicial, dados.leituraFinal)
+
+  // Cria o apontamento de produção (reusa o caminho operacional existente,
+  // que incrementa quantidadeProduzida da etapa).
+  const apontamento = await apontarProducaoEtapa(etapaId, empresaId, {
+    quantidadeProduzida: quantidade,
+    quantidadePerda: 0,
+    funcionarioId: dados.funcionarioId,
+    observacao: dados.observacao,
+    fotoUrl: dados.fotoUrl,
+  })
+
+  // Persiste a LeituraContador (histórico + base da próxima inicial).
+  await prisma.leituraContador.create({
+    data: {
+      empresaId,
+      centroProducaoId: centro.centroProducaoId,
+      etapaOrdemProducaoId: etapaId,
+      apontamentoEtapaId: (apontamento as { id?: string })?.id ?? null,
+      leituraInicial,
+      leituraFinal: dados.leituraFinal,
+      quantidade,
+      resetDoDia: inicialDerivada.resetDoDia,
+      funcionarioId: dados.funcionarioId ?? null,
+    },
+  })
+
+  return { apontamento, leituraInicial, leituraFinal: dados.leituraFinal, quantidade, resetDoDia: inicialDerivada.resetDoDia }
 }
