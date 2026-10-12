@@ -92,6 +92,25 @@
   font-size: 0.9rem;
 }
 
+/* Leitura inicial do contador (somente leitura, modo CONTADOR). */
+.input[readonly] {
+  color: #525252;
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+/* Quantidade calculada (final − inicial) exibida antes de confirmar. */
+.infoMessage {
+  margin: 0;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #166534;
+  background-color: #dcfce7;
+  border-radius: 8px;
+  text-align: center;
+}
+
 .errorMessage {
   margin: 0;
   padding: 12px;
