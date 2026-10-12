@@ -643,6 +643,117 @@ function montarInputDoPlano(body: PlanoBody): PlanoCalculoInput {
   }
 }
 
+// ============================================================================
+// REAPROVEITAMENTO — reconstrução de body a partir da linha persistida
+// ============================================================================
+
+/**
+ * Reconstrói um `ItemOrcamentoBody` a partir da linha persistida de um
+ * `ItemOrcamentoGrafico` (as mesmas colunas que `dadosPersistenciaItem` grava).
+ * Usado por `POST /:id/reaproveitar` para recalcular/recopiar o item num
+ * orçamento novo. `novaQuantidade` sobrepõe a tiragem (repetição em outra
+ * tiragem); omitido = mantém a do item de origem.
+ */
+function reconstruirBodyDoItem(item: any, novaQuantidade?: number): ItemOrcamentoBody {
+  const n = (v: unknown): number | null | undefined => (v == null ? (v as null | undefined) : Number(v))
+  return {
+    tipoEmbalagemId: item.tipoEmbalagemId,
+    descricao: item.descricao ?? null,
+    medidas: (item.medidas ?? {}) as Record<string, number>,
+    papelId: item.papelId ?? null,
+    papelDescricao: item.papelDescricao ?? null,
+    suporteId: item.suporteId ?? null,
+    gramatura: Number(item.gramatura ?? 0),
+    numCores: item.numCores,
+    cores: (item.cores ?? null) as ItemOrcamentoBody['cores'],
+    maquinaId: item.maquinaId ?? null,
+    modeloFacaId: item.modeloFacaId ?? null,
+    matriz:
+      item.matrizQuantidade != null && item.matrizPrecoUnitario != null
+        ? { quantidade: Number(item.matrizQuantidade), precoUnitario: Number(item.matrizPrecoUnitario) }
+        : null,
+    tinta:
+      item.tintaModo === 'CONSUMO_DIRETO' && item.tintaConsumoKg != null
+        ? { modo: 'CONSUMO_DIRETO', consumoKg: Number(item.tintaConsumoKg), precoKg: 0 }
+        : item.tintaModo === 'COBERTURA'
+          ? { modo: 'COBERTURA' }
+          : null,
+    acabamentosRicos: (item.acabamentosRicos ?? undefined) as ItemOrcamentoBody['acabamentosRicos'],
+    itensDiversos: (item.itensDiversos ?? undefined) as ItemOrcamentoBody['itensDiversos'],
+    itensFornecidos: (item.itensFornecidos ?? undefined) as ItemOrcamentoBody['itensFornecidos'],
+    camposLivres: (item.camposLivres ?? undefined) as ItemOrcamentoBody['camposLivres'],
+    quantidade: novaQuantidade ?? item.quantidade,
+    margemSelecionada: item.margemSelecionada != null ? Number(item.margemSelecionada) : null,
+    // Paridade (não afeta cálculo) — preservadas.
+    siglaAcabado: item.siglaAcabado ?? null,
+    tributacao: item.tributacao ?? null,
+    processoImpressao: item.processoImpressao ?? null,
+    coberturaTintaTexto: item.coberturaTintaTexto ?? null,
+    fabricante: item.fabricante ?? null,
+    microondulado: item.microondulado ?? false,
+    fornecido: item.fornecido ?? false,
+    qtdModelos: item.qtdModelos ?? 0,
+    arte: item.arte ?? null,
+    observacao: item.observacao ?? null,
+    observacaoAreasOp: item.observacaoAreasOp ?? null,
+    conteudoVolume: item.conteudoVolume ?? null,
+    acondicionamento: (item.acondicionamento ?? null) as ItemOrcamentoBody['acondicionamento'],
+    // Geometria/formatos (afetam cálculo).
+    comprimentoMm: n(item.comprimentoMm) ?? null,
+    larguraMm: n(item.larguraMm) ?? null,
+    alturaMm: n(item.alturaMm) ?? null,
+    abaColaMm: n(item.abaColaMm) ?? null,
+    abaFechamentoMm: n(item.abaFechamentoMm) ?? null,
+    fibra: item.fibra ?? false,
+    montagemLinhas: item.montagemLinhas ?? null,
+    montagemColunas: item.montagemColunas ?? null,
+    formatoSupLarguraMm: n(item.formatoSupLarguraMm) ?? null,
+    formatoSupAlturaMm: n(item.formatoSupAlturaMm) ?? null,
+    formatoCorteLarguraMm: n(item.formatoCorteLarguraMm) ?? null,
+    formatoCorteAlturaMm: n(item.formatoCorteAlturaMm) ?? null,
+    ajusteCorteMicroMm: item.ajusteCorteMicroMm != null ? Number(item.ajusteCorteMicroMm) : 0,
+  }
+}
+
+/**
+ * Monta os dados de persistência de um item COPIADO sem recálculo (fallback do
+ * reaproveitamento quando o recálculo falha por pré-condição — preserva a
+ * receita e o `resultadoCalculo`/custos ORIGINAIS do item de origem).
+ */
+function dadosPersistenciaItemSemRecalculo(body: ItemOrcamentoBody, itemOrigem: any) {
+  const resultadoOriginal = (itemOrigem.resultadoCalculo ?? null) as ResultadoOrcamento | null
+  if (resultadoOriginal) {
+    return dadosPersistenciaItem(body, resultadoOriginal)
+  }
+  // Sem resultado original: persiste os campos do body com custos zerados.
+  return {
+    ...dadosPersistenciaItem(body, {
+      custoProducao: itemOrigem.custoProducao != null ? Number(itemOrigem.custoProducao) : 0,
+      precoVenda: itemOrigem.valorTotal != null ? Number(itemOrigem.valorTotal) : 0,
+    } as unknown as ResultadoOrcamento),
+    resultadoCalculo: undefined as any,
+  }
+}
+
+/** Reconstrói o `PlanoBody` a partir da linha persistida de um `PlanoCalculoGrafico`. */
+function reconstruirBodyDoPlano(plano: any): PlanoBody {
+  return {
+    nome: plano.nome,
+    suporteId: plano.suporteId ?? null,
+    suporteProducaoId: plano.suporteProducaoId ?? null,
+    gramatura: plano.gramatura != null ? Number(plano.gramatura) : undefined,
+    formatoLarguraMm: Number(plano.formatoLarguraMm),
+    formatoAlturaMm: Number(plano.formatoAlturaMm),
+    preImpressao: (plano.preImpressao ?? null) as PlanoBody['preImpressao'],
+    numCores: plano.numCores,
+    cores: (plano.cores ?? null) as PlanoBody['cores'],
+    maquinaId: plano.maquinaId ?? null,
+    acabamentosRicos: (plano.acabamentosRicos ?? undefined) as PlanoBody['acabamentosRicos'],
+    montagemLinhas: plano.montagemLinhas ?? null,
+    montagemColunas: plano.montagemColunas ?? null,
+  }
+}
+
 export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
@@ -2864,6 +2975,188 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
 
     return reply.status(201).send(copia)
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REAPROVEITAR CÁLCULO (POST /:id/reaproveitar) — paridade Calcgraf (repetição)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /api/orcamento-grafico/:id/reaproveitar
+   *
+   * Reaproveita um orçamento JÁ CALCULADO como base para um orçamento NOVO
+   * (fluxo de "repetição" da Carton Wega — equivale ao "clonar CalculoHeader" do
+   * Calcgraf). Clona o cabeçalho + TODOS os itens multi-item (+ planos) para um
+   * NÚMERO novo (não é versão), aplicando overrides opcionais do body
+   * (cliente/tiragem/observações) e **recalculando** cada item/plano — a nova
+   * tiragem muda custo unitário/total. O orçamento de origem fica intacto.
+   *
+   * Doc de design: `docs/reutilizacao-calculo-orcamento.md`.
+   * Sem schema novo. Multi-tenant: só lê a origem da própria empresa e cria um
+   * registro novo da mesma empresa.
+   */
+  app.post('/:id/reaproveitar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const overrides = z
+      .object({
+        clienteId: z.string().uuid().optional().nullable(),
+        clienteNome: z.string().max(200).optional().nullable(),
+        vendedorId: z.string().uuid().optional().nullable(),
+        // Nova tiragem aplicada a TODOS os itens (quando informada). Omitir =
+        // mantém a tiragem de cada item de origem.
+        quantidade: z.number().int().positive().optional(),
+        observacoes: z.string().max(2000).optional().nullable(),
+      })
+      .parse(request.body ?? {})
+
+    // 1) Origem (cabeçalho + itens + planos), isolada por empresa.
+    const origem = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: {
+        clienteId: true,
+        clienteNome: true,
+        vendedorId: true,
+        serie: true,
+        tipoEmbalagemId: true,
+        medidas: true,
+        papelId: true,
+        papelDescricao: true,
+        gramatura: true,
+        numCores: true,
+        cores: true,
+        acabamentos: true,
+        quantidade: true,
+        observacoes: true,
+        produtoId: true,
+        itens: {
+          orderBy: { sequencia: 'asc' },
+          include: { planos: { orderBy: { sequencia: 'asc' } } },
+        },
+      },
+    })
+    if (!origem) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+
+    // 2) Número sequencial novo por empresa (igual ao POST principal).
+    const ultimo = await prisma.orcamentoGrafico.findFirst({
+      where: { empresaId: user.empresaId },
+      orderBy: { numero: 'desc' },
+      select: { numero: true },
+    })
+    const numero = (ultimo?.numero ?? 0) + 1
+
+    // 3) Cria o novo cabeçalho (RASCUNHO), aplicando overrides do body.
+    const novo = await prisma.orcamentoGrafico.create({
+      data: {
+        empresaId: user.empresaId,
+        numero,
+        versao: 1,
+        clienteId: overrides.clienteId !== undefined ? overrides.clienteId : origem.clienteId,
+        clienteNome: overrides.clienteNome !== undefined ? overrides.clienteNome : origem.clienteNome,
+        vendedorId: overrides.vendedorId !== undefined ? overrides.vendedorId : origem.vendedorId,
+        serie: origem.serie,
+        tipoEmbalagemId: origem.tipoEmbalagemId,
+        medidas: origem.medidas as any,
+        papelId: origem.papelId,
+        papelDescricao: origem.papelDescricao,
+        gramatura: origem.gramatura,
+        numCores: origem.numCores,
+        cores: origem.cores as any ?? undefined,
+        acabamentos: origem.acabamentos as any ?? undefined,
+        quantidade: overrides.quantidade ?? origem.quantidade,
+        status: 'RASCUNHO',
+        observacoes: overrides.observacoes !== undefined ? overrides.observacoes : origem.observacoes,
+        produtoId: origem.produtoId,
+        criadoPorId: user.id,
+      },
+      select: { id: true, numero: true, versao: true },
+    })
+
+    // 4) Clona + recalcula cada item (e seus planos). Erros de pré-condição de
+    //    cálculo (ItemOrcamentoError) são tolerados por item: o item é copiado
+    //    com o resultadoCalculo ORIGINAL quando o recálculo não é possível
+    //    (ex.: cadastro de preço ausente), para não perder a receita — a tela
+    //    permite recalcular manualmente depois. Avisos são acumulados.
+    const avisos: string[] = []
+    for (const item of origem.itens) {
+      const body = reconstruirBodyDoItem(item, overrides.quantidade)
+
+      let resultado: ResultadoOrcamento | null = null
+      try {
+        resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
+      } catch (err) {
+        if (err instanceof ItemOrcamentoError) {
+          avisos.push(`Item #${item.sequencia}: não recalculado (${err.message}). Copiado com o cálculo original.`)
+        } else {
+          throw err
+        }
+      }
+
+      const dados = resultado
+        ? dadosPersistenciaItem(body, resultado)
+        : dadosPersistenciaItemSemRecalculo(body, item)
+
+      const novoItem = await prisma.itemOrcamentoGrafico.create({
+        data: {
+          orcamentoId: novo.id,
+          empresaId: user.empresaId,
+          sequencia: item.sequencia,
+          ...dados,
+        },
+      })
+
+      // Clona os planos do item (recalcula quando possível; senão copia espelho).
+      for (const plano of item.planos) {
+        const planoBody = reconstruirBodyDoPlano(plano)
+        let resPlano: ResultadoOrcamento | null = null
+        try {
+          const inputBase = reconstruirInputBaseDoItem(item as any, undefined)
+          const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(planoBody))
+          resPlano = await import('./orcamento-grafico-calculo.service').then((m) => m.calcularOrcamentoGrafico(params))
+        } catch {
+          resPlano = null
+        }
+
+        if (resPlano) {
+          await prisma.planoCalculoGrafico.create({
+            data: dadosPersistenciaPlano(planoBody, user.empresaId, novoItem.id, plano.sequencia, resPlano),
+          })
+        } else {
+          // Copia espelho (custos salvos) quando o recálculo não foi possível.
+          await prisma.planoCalculoGrafico.create({
+            data: {
+              empresaId: user.empresaId,
+              itemId: novoItem.id,
+              sequencia: plano.sequencia,
+              nome: plano.nome,
+              suporteId: plano.suporteId ?? null,
+              suporteProducaoId: plano.suporteProducaoId ?? plano.suporteId ?? null,
+              gramatura: plano.gramatura ?? null,
+              formatoLarguraMm: plano.formatoLarguraMm,
+              formatoAlturaMm: plano.formatoAlturaMm,
+              numCores: plano.numCores,
+              cores: (plano.cores ?? undefined) as any,
+              maquinaId: plano.maquinaId ?? null,
+              acabamentosRicos: (plano.acabamentosRicos ?? undefined) as any,
+              resultadoCalculo: (plano.resultadoCalculo ?? undefined) as any,
+              custoSuporte: plano.custoSuporte,
+              custoImpressao: plano.custoImpressao,
+              custoAcabamento: plano.custoAcabamento,
+            },
+          })
+        }
+      }
+
+      // Reconsolida o item a partir dos planos (se houver) — mantém a mesma
+      // relação preço/custo do item recalculado.
+      if (item.planos.length > 0) {
+        await reconsolidarItemComPlanos(novo.id, novoItem.id, user.empresaId)
+      }
+    }
+
+    await reconsolidarOrcamento(novo.id, user.empresaId)
+
+    return reply.status(201).send({ id: novo.id, numero: novo.numero, versao: novo.versao, avisos })
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
