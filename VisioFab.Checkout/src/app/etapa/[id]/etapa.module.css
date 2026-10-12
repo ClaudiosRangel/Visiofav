@@ -190,6 +190,48 @@
   cursor: pointer;
 }
 
+/* Botão "Finalizar etapa" — ação de conclusão em destaque (verde forte,
+   mesmo tamanho dos botões principais). Separado visualmente dos demais. */
+.botaoFinalizar {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffffff;
+  background-color: #15803d;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.botaoFinalizar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Caixa de autorização de Supervisor (conclusão fora de sequência). */
+.autorizacaoBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background-color: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 12px;
+}
+
+.campoAutorizacao {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: 1rem;
+  color: #111111;
+  background-color: #ffffff;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+}
+
 .operadoresSection {
   padding: 16px;
   background-color: #ffffff;

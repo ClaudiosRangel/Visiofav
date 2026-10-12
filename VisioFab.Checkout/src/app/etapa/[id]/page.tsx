@@ -135,6 +135,16 @@ export default function EtapaPage() {
   const [iniciando, setIniciando] = useState(false)
   const [erroAcaoPrincipal, setErroAcaoPrincipal] = useState<string | null>(null)
 
+  // Finalizar etapa (task 2 — pedido do usuário): o backend já expõe
+  // PATCH /etapas/:id/concluir (concluirEtapaComBloqueio). Quando a conclusão
+  // é bloqueada por etapa anterior pendente (sequência), o backend responde
+  // 400 com mensagem "Conclusão bloqueada: ..."; aí exigimos autorização de
+  // Supervisor (email/senha) para reenviar e concluir fora de sequência.
+  const [concluindo, setConcluindo] = useState(false)
+  const [bloqueioSequencia, setBloqueioSequencia] = useState<string | null>(null)
+  const [supEmail, setSupEmail] = useState('')
+  const [supSenha, setSupSenha] = useState('')
+
   const [operadoresAtivos, setOperadoresAtivos] = useState<OperadorAtivo[]>([])
   const [carregandoOperadores, setCarregandoOperadores] = useState(false)
   const [erroOperadores, setErroOperadores] = useState<string | null>(null)
@@ -240,6 +250,46 @@ export default function EtapaPage() {
       setErroAcaoPrincipal('Não foi possível iniciar/retomar a etapa. Tente novamente.')
     } finally {
       setIniciando(false)
+    }
+  }
+
+  async function concluirEtapa(comAutorizacao = false) {
+    if (concluindo) return
+    // Confirmação só na primeira tentativa (sem autorização). Ação sensível.
+    if (!comAutorizacao && typeof window !== 'undefined') {
+      if (!window.confirm('Finalizar esta etapa? Esta ação conclui a etapa e, se for a última da OP, lança a produção no estoque.')) {
+        return
+      }
+    }
+    if (comAutorizacao && (!supEmail.trim() || !supSenha.trim())) {
+      setErroAcaoPrincipal('Informe e-mail e senha do Supervisor para autorizar.')
+      return
+    }
+    setConcluindo(true)
+    setErroAcaoPrincipal(null)
+    try {
+      await checkoutApiClient.patch(`/etapas/${etapaId}/concluir`, {
+        funcionarioId: funcionarioIdentificado?.funcionarioId,
+        // Autorização de Supervisor = credenciais (email/senha), conforme
+        // autorizacaoSupervisorSchema do backend. Só enviada quando autorizando.
+        ...(comAutorizacao ? { autorizacaoSupervisor: { email: supEmail.trim(), senha: supSenha } } : {}),
+      })
+      setEtapa((atual) => (atual ? { ...atual, status: 'CONCLUIDA' } : atual))
+      setBloqueioSequencia(null)
+      setSupEmail(''); setSupSenha('')
+      await buscarHistorico()
+    } catch (err: unknown) {
+      const resp = (err as { response?: { status?: number; data?: { message?: string } } })?.response
+      const msg = resp?.data?.message || 'Não foi possível finalizar a etapa. Tente novamente.'
+      // Bloqueio de sequência: backend responde 400 + "Conclusão bloqueada: ...".
+      // Nesse caso, exibimos o formulário de autorização do Supervisor.
+      if (/Conclus[aã]o bloqueada/i.test(msg)) {
+        setBloqueioSequencia(msg)
+      } else {
+        setErroAcaoPrincipal(msg)
+      }
+    } finally {
+      setConcluindo(false)
     }
   }
 
@@ -359,6 +409,58 @@ export default function EtapaPage() {
                 >
                   Falta de material
                 </button>
+
+                {/* Finalizar etapa (task 2) — conclui a etapa (PATCH /concluir).
+                    Em bloqueio de sequência, mostra o aviso + opção de autorizar. */}
+                {bloqueioSequencia ? (
+                  <div className={styles.autorizacaoBox}>
+                    <p className={styles.errorMessage}>{bloqueioSequencia}</p>
+                    <p className={styles.infoMessage}>
+                      Autorização de Supervisor para finalizar fora de sequência:
+                    </p>
+                    <input
+                      type="email"
+                      className={styles.campoAutorizacao}
+                      placeholder="E-mail do Supervisor"
+                      value={supEmail}
+                      onChange={(e) => setSupEmail(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <input
+                      type="password"
+                      className={styles.campoAutorizacao}
+                      placeholder="Senha do Supervisor"
+                      value={supSenha}
+                      onChange={(e) => setSupSenha(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className={styles.botaoFinalizar}
+                      onClick={() => concluirEtapa(true)}
+                      disabled={concluindo}
+                    >
+                      {concluindo ? 'Aguarde...' : 'Autorizar e finalizar'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.botaoSecundario}
+                      onClick={() => { setBloqueioSequencia(null); setSupEmail(''); setSupSenha('') }}
+                      disabled={concluindo}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.botaoFinalizar}
+                    onClick={() => concluirEtapa(false)}
+                    disabled={concluindo}
+                  >
+                    {concluindo ? 'Aguarde...' : 'Finalizar etapa'}
+                  </button>
+                )}
               </div>
             )}
 
