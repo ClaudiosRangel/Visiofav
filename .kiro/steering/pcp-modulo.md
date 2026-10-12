@@ -908,14 +908,35 @@ conclusão da OP (`todasEtapas.every(CONCLUIDA)`) já abrange todos os planos.
 
 ### 10.6 Requisição de Corte — RC (`RequisicaoCorte`)
 
-Formulário FO-002/PCP, criado a partir dos cards CORTADEIRA do painel. É uma
-**"OP avulsa de corte"**: aparece como linha na MESMA fila ordenável das OSs
-(id dnd `rc:<id>`), arrastável para qualquer posição. Status: `ABERTA →
-EM_CORTE → CORTADA` (CORTADA sai da fila). `posicaoFila` COMPARTILHADA com as
-etapas no centro — reordenação combinada via
-`PATCH /pcp/programacao/reordenar-fila-cortadeira` (recebe lista heterogênea
-`{tipo:'etapa'|'rc', id}` e grava posicaoFila 1..N nos dois models). Rotas em
-`requisicao-corte.routes.ts` (CRUD + iniciar/concluir/reabrir/reordenar + PDF
-da 1ª via em `requisicao-corte-pdf.service.ts`, pdfkit). Numeração `NN/AAAA`
-por empresa/ano. Isolamento por `empresaId` explícito. Ações na linha:
-iniciar, reimprimir, concluir, excluir.
+Formulário FO-002/PCP. É uma **"OP avulsa de corte"**: aparece como linha na
+MESMA fila ordenável das OSs (id dnd `rc:<id>`), arrastável.
+
+**MUDANÇA 12/10/2026 (pedido do usuário):** a RC agora segue os **status da OP**
+e é **criada no menu Ordem de Produção**, não mais na Programação.
+- **Status**: `RASCUNHO → PLANEJADA → PROGRAMADA → LIBERADA → EM_PRODUCAO →
+  CONCLUIDA` (+ `CANCELADA`). Os status antigos de corte (`ABERTA/EM_CORTE/
+  CORTADA/EM_GUILHOTINA`) foram REMOVIDOS. Migração de dados no `migrate-prod.ts`
+  (idempotente): `ABERTA→LIBERADA`, `EM_CORTE/CORTADA/EM_GUILHOTINA→EM_PRODUCAO`.
+- **Criação**: tela nova `pcp/ordens-producao/requisicoes-corte/page.tsx` (menu
+  PCP → "Requisições de Corte", sob Ordens de Produção). Nasce em RASCUNHO; o
+  usuário seleciona a **Cortadeira** (centro) que vai entrar. O botão "RC" dos
+  cards CORTADEIRA da Programação foi REMOVIDO.
+- **Fila da Programação**: a RC só aparece quando `LIBERADA`/`EM_PRODUCAO`
+  (antes era `ABERTA/EM_CORTE/EM_GUILHOTINA`). A transição administrativa é
+  `PATCH /requisicoes-corte/:id/status` (RASCUNHO→...→LIBERADA; ao LIBERAR,
+  recebe `posicaoFila` do centro; qualquer status não-LIBERADA tira da fila).
+- **Funcionamento de chão IDÊNTICO**: iniciar corte (`/iniciar` → EM_PRODUCAO,
+  grava `dataInicioCorte`), concluir corte (`/concluir` → vai p/ guilhotina
+  destino OU CONCLUIDA), guilhotina (`/iniciar-guilhotina`, `/concluir-guilhotina`
+  → CONCLUIDA). O **ESTÁGIO** corte vs guilhotina NÃO é mais um status: é
+  derivado das DATAS (`dataFimCorte` + `guilhotinaDestinoId` + guilhotina sem
+  fim = estágio GUILHOTINA). O painel (`etapa-operacional.routes.ts`) expõe
+  `estagio: 'CORTE'|'GUILHOTINA'` em cada RC; o front usa esse campo para as
+  ações/badges (fallback para o status antigo por compat.).
+
+`posicaoFila` COMPARTILHADA com as etapas no centro — reordenação combinada via
+`PATCH /pcp/programacao/reordenar-fila-cortadeira`. Rotas em
+`requisicao-corte.routes.ts` (CRUD + status + iniciar/concluir/reabrir/reordenar
++ PDF em `requisicao-corte-pdf.service.ts`). Numeração `NN/AAAA` por empresa/ano.
+Isolamento por `empresaId` explícito. Helper `proximaPosicaoFila(empresaId,
+centroId)` + `STATUS_NA_FILA = ['LIBERADA','EM_PRODUCAO']`.
