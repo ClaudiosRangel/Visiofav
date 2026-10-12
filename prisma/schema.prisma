@@ -3510,10 +3510,14 @@ model RequisicaoCorte {
   dataFimCorte          DateTime? @map("data_fim_corte")
   dataInicioGuilhotina  DateTime? @map("data_inicio_guilhotina")
   dataFimGuilhotina     DateTime? @map("data_fim_guilhotina")
-  status              String    @default("ABERTA") @db.VarChar(20) // ABERTA, EM_CORTE, CORTADA, EM_GUILHOTINA, CONCLUIDA, CANCELADA
+  // RC segue os status da OP: RASCUNHO (criada no menu Ordem de Produção) →
+  // PLANEJADA → PROGRAMADA → LIBERADA (entra na fila da Programação) →
+  // EM_PRODUCAO (corte/guilhotina em andamento; estágio pelas datas) →
+  // CONCLUIDA | CANCELADA. Nasce RASCUNHO; só aparece na Programação em LIBERADA.
+  status              String    @default("RASCUNHO") @db.VarChar(20) // RASCUNHO, PLANEJADA, PROGRAMADA, LIBERADA, EM_PRODUCAO, CONCLUIDA, CANCELADA
   // Posição na fila da Cortadeira no painel de Programação. A RC se comporta
-  // como uma "OP avulsa de corte": aparece na fila do(s) centro(s) CORTADEIRA,
-  // ordenável junto com as etapas, e sai da fila quando status != ABERTA.
+  // como uma "OP avulsa de corte": aparece na fila do(s) centro(s) CORTADEIRA
+  // SOMENTE quando LIBERADA/EM_PRODUCAO, ordenável junto com as etapas.
   posicaoFila         Int?      @map("posicao_fila")
   criadoPorId         String?   @map("criado_por_id")
   criadoEm            DateTime  @default(now()) @map("criado_em")

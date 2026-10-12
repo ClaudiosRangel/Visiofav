@@ -329,7 +329,46 @@ Steering do módulo: `.kiro/steering/pcp-modulo.md`.
 | Data de entrega no orçamento | 🔲 | Prazo = produção + fila + lead time de compra |
 | Verificação/previsão de estoque no orçamento | 🔲 | Papel disponível? Se não, prazo de compra embutido |
 | Integração CalcGraf → OP completa | 🔲 | OP com BOM completa + etapas + reserva + programação de entrega |
+| **Conector desktop Calcgraf → Vizor (sem PDF)** | 🔲 (roadmap — pedido 12/10/2026) | App desktop/serviço Windows que roda no **Terminal Service da Carton Wega** (onde o Calcgraf/G-Print está instalado, com o SQL Server local) e sincroniza **OPs novas/modificadas** direto do banco Calcgraf para o Vizor, dispensando a importação por PDF. Detecção de novo/alterado por `DataHoraGravacao`/`DataHoraUltAlteracao` + marcador de "último sync". Entrega via API nova do Vizor (`POST /pcp/importar-op-calcgraf`) reaproveitando a lógica de importação atual. Decisões a definir no spec: (a) linguagem/empacotamento (Node+pkg → .exe, ou serviço Windows); (b) a "OP" do Calcgraf é a de **produção do G-Print** (tabelas distintas das de cálculo/orçamento) — mapear; (c) SQL Server da Wega só aceita named pipes/sqlcmd (sem TCP) — ver `migracao-calcgraf-carton-wega.md`; (d) credenciais SQL local + token Vizor rodando no RDP. **App novo** (ex.: `VisioFab.CalcgrafSync`). Spec a criar: `calcgraf-sync-op`. Usuário vai fornecer o caminho de instalação do Calcgraf no RDP. |
 | Custo real vs orçado | 🔲 | Comparar consumo/horas reais × orçado; dashboard de rentabilidade |
+| **Painel de Programação em tempo real (multi-terminal)** | 🔲 (a decidir) | O painel de Programação é usado por VÁRIOS terminais no chão de fábrica simultaneamente; hoje depende de recarga que "pisca" a tela. Objetivo: sincronização quase instantânea e SILENCIOSA entre terminais (o que um faz aparece nos outros sem refresh). **Opções analisadas (ver abaixo).** Decidir abordagem + latência aceitável + nº de terminais antes de iniciar. Spec a criar: `pcp-programacao-tempo-real`. |
+
+### Painel de Programação em tempo real — análise para decisão futura
+
+**Problema:** o painel é "read-heavy, muitos espectadores" (vários terminais
+olhando a mesma fila). Hoje: ação → `GET /programacao/painel` → `setPainel(data)`
+troca o objeto inteiro → React re-renderiza tudo → pisca, perde scroll, recolhe
+grupos. A atualização otimista local (`atualizarEtapaLocal`/`atualizarRcLocal`)
+já evita o pisca da ação do PRÓPRIO terminal; falta sincronizar ENTRE terminais
+sem refresh.
+
+**Opções (da mais simples à mais robusta):**
+1. **Polling incremental silencioso** — `setInterval` (3–5s) busca o painel em
+   background e faz MERGE por id (nunca `setPainel(data)` cru), preservando
+   referências dos itens inalterados (React só re-renderiza o que mudou). Sem
+   infra nova. Latência de alguns segundos; tráfego constante.
+2. **Polling condicional por versão** — `GET /programacao/painel/versao`
+   (hash/`max(updatedAt)`); só busca o painel completo quando a versão muda.
+   Barato; reduz tráfego; ainda é polling.
+3. **SSE (Server-Sent Events) — RECOMENDADO.** Backend empurra eventos
+   (`etapa iniciada/concluída/reordenada`, `RC criada/movida`) por um stream
+   `GET /pcp/programacao/stream` filtrado por `empresaId`; o cliente aplica o
+   MESMO patch granular da ação otimista. Tempo real, leve, reconexão nativa do
+   browser, unidirecional (as ações continuam REST). Precisa de um event bus no
+   backend emitindo nas mutações.
+4. **WebSocket** — bidirecional; overkill aqui (cliente não precisa empurrar em
+   tempo real). Só se um dia houver presença/edição colaborativa.
+
+**Recomendação:** (a) base — tornar TODAS as ações granulares (merge por id,
+sem `setPainel` cru); (b) SSE para sincronizar entre terminais; (c) trava para
+não "puxar o tapete" durante um drag/edição inline em andamento, com fallback a
+polling leve se o stream cair. Faseável: Fase 1 (merge granular, ganho imediato),
+Fase 2 (SSE), Fase 3 (trava de drag + reconexão).
+
+**Pontos de atenção:** keys estáveis nas listas (já usam `id`/`dndId`);
+preservar referências no merge; SSE roda no backend Render (Fastify suporta
+conexão longa — a Vercel do front é estática); filtrar SSE por `empresaId`
+(multi-tenant); segurar updates remotos enquanto o operador arrasta/edita.
 
 ---
 
@@ -401,7 +440,10 @@ Contábil (exportação Domínio/Fortes — parte em F5), integrações
 | 6 | `erp-grupo-empresarial` | Grupo | Matriz/filial + lançamento e relatórios cross-empresa (solicitado 17/09/2026) |
 
 Depois da Frente Atual: `erp-compras-completo`, `erp-transferencia-fiscal`,
-`erp-grupo-empresarial`, e os refinos do Trilho Gráfico.
+`erp-grupo-empresarial`, e os refinos do Trilho Gráfico — incluindo
+`pcp-programacao-tempo-real` (sincronização silenciosa multi-terminal do painel
+de Programação; abordagem a decidir — ver "Painel de Programação em tempo real"
+no Trilho Gráfico).
 
 ---
 

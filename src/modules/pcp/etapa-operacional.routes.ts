@@ -2487,15 +2487,16 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       // Deduplica por OP (pode ter múltiplas etapas da mesma OP)
       .filter((item, index, self) => self.findIndex(i => i.opNumero === item.opNumero) === index)
 
-    // Requisições de Corte (RC) ABERTAS — comportam-se como "OP avulsa de
-    // corte" na fila da Cortadeira. Anexadas a TODOS os centros do tipo de
-    // processo CORTADEIRA (o operador escolhe em qual máquina cortar). Spec
-    // pcp-planos-frente-costa-rc (Fase A). Isolamento por empresaId.
-    // Fases ativas da RC no painel: ABERTA/EM_CORTE (na Cortadeira) e
-    // EM_GUILHOTINA (na guilhotina destino, para registrar o refile). CORTADA
-    // é o fim quando NÃO há guilhotina destino (fluxo legado).
+    // Requisições de Corte (RC) na fila — comportam-se como "OP avulsa de
+    // corte". A RC só aparece na Programação quando LIBERADA (criada no menu
+    // Ordem de Produção e liberada lá) ou EM_PRODUCAO (corte/guilhotina em
+    // andamento). RASCUNHO/PLANEJADA/PROGRAMADA NÃO aparecem aqui; CONCLUIDA/
+    // CANCELADA saem da fila. Isolamento por empresaId.
+    // O ESTÁGIO (cortadeira vs guilhotina) é identificado pelas DATAS, não mais
+    // por um status próprio: dataFimCorte preenchida + guilhotina destino +
+    // guilhotina sem fim = está na guilhotina.
     const rcsAbertas = await prisma.requisicaoCorte.findMany({
-      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE', 'EM_GUILHOTINA'] } },
+      where: { empresaId: user.empresaId, status: { in: ['LIBERADA', 'EM_PRODUCAO'] } },
       orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { criadoEm: 'asc' }],
     })
     const rcsPainel = rcsAbertas.map((rc) => ({
@@ -2518,19 +2519,25 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       textoGuilhotina: rc.textoGuilhotina,
       pesoKg: rc.pesoKg != null ? Number(rc.pesoKg) : null,
       dataSolicitacao: rc.dataSolicitacao,
+      dataInicioCorte: (rc as any).dataInicioCorte ?? null,
+      dataFimCorte: (rc as any).dataFimCorte ?? null,
       dataInicioGuilhotina: (rc as any).dataInicioGuilhotina ?? null,
+      // Estágio derivado das datas (não há mais status EM_GUILHOTINA):
+      // 'GUILHOTINA' quando o corte terminou e há guilhotina destino sem fim.
+      estagio: ((rc as any).dataFimCorte && (rc as any).guilhotinaDestinoId && !(rc as any).dataFimGuilhotina)
+        ? 'GUILHOTINA' : 'CORTE',
     }))
-    // Posicionamento da RC por FASE:
-    // - ABERTA/EM_CORTE → aparece no centro onde foi criada (Cortadeira). RCs
-    //   antigas sem centro (legado) continuam em todos os CORTADEIRA.
-    // - EM_GUILHOTINA → aparece SÓ no centro guilhotinaDestinoId (refile).
+    // Posicionamento da RC por ESTÁGIO (derivado das datas, não do status):
+    // - CORTE → aparece no centro onde foi criada (Cortadeira). RCs antigas
+    //   sem centro (legado) continuam em todos os CORTADEIRA.
+    // - GUILHOTINA → aparece SÓ no centro guilhotinaDestinoId (refile).
     for (const centroPainel of painelPorCentro) {
       const ehCortadeira = centroPainel.centro.tipoProcesso?.codigo === 'CORTADEIRA'
       ;(centroPainel as any).requisicoesCorte = rcsPainel.filter((rc) => {
-        if (rc.status === 'EM_GUILHOTINA') {
+        if (rc.estagio === 'GUILHOTINA') {
           return rc.guilhotinaDestinoId === centroPainel.centro.id
         }
-        // ABERTA / EM_CORTE → na cortadeira de origem
+        // CORTE → na cortadeira de origem
         return rc.centroProducaoId
           ? rc.centroProducaoId === centroPainel.centro.id
           : ehCortadeira // legado: sem centro → todos os CORTADEIRA

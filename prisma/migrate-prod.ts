@@ -5010,7 +5010,15 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_fim_corte" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_inicio_guilhotina" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "requisicao_corte" ADD COLUMN IF NOT EXISTS "data_fim_guilhotina" TIMESTAMP(3)`)
-  console.log('✅ PCP RC: tabela requisicao_corte criada (index empresa_id, posicao_fila, centro_producao_id, guilhotina_destino_id)')
+  // RC agora segue os status da OP (RASCUNHO/PLANEJADA/PROGRAMADA/LIBERADA/
+  // EM_PRODUCAO/CONCLUIDA/CANCELADA). Converte os status antigos de corte dos
+  // registros existentes (idempotente — só afeta linhas com o valor antigo).
+  // ABERTA → LIBERADA (já estava na fila, continua na fila); EM_CORTE → EM_PRODUCAO;
+  // CORTADA/EM_GUILHOTINA → EM_PRODUCAO (estágio identificado pelas datas de
+  // corte/guilhotina, não pelo status). CONCLUIDA/CANCELADA inalterados.
+  await prisma.$executeRawUnsafe(`UPDATE "requisicao_corte" SET "status" = 'LIBERADA' WHERE "status" = 'ABERTA'`)
+  await prisma.$executeRawUnsafe(`UPDATE "requisicao_corte" SET "status" = 'EM_PRODUCAO' WHERE "status" IN ('EM_CORTE', 'CORTADA', 'EM_GUILHOTINA')`)
+  console.log('✅ PCP RC: tabela requisicao_corte criada + status migrados p/ padrão OP (index empresa_id, posicao_fila, centro_producao_id, guilhotina_destino_id)')
 
   // =========================================================================
   // PCP — Planos de Produção — spec pcp-planos-frente-costa-rc (Fase B/C)

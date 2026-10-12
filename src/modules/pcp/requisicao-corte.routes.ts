@@ -14,7 +14,41 @@ import { gerarPdfRequisicaoCorte } from './requisicao-corte-pdf.service'
  * steering ATENCAO-pontos-verificar.md §2.1 sobre bypass de SUPER_ADMIN).
  *
  * Numeração: `NN/AAAA` sequencial por empresa + ano corrente.
+ *
+ * STATUS (seguem a OP): RASCUNHO → PLANEJADA → PROGRAMADA → LIBERADA →
+ * EM_PRODUCAO → CONCLUIDA | CANCELADA. A RC só aparece na fila do painel de
+ * Programação quando LIBERADA/EM_PRODUCAO (ver `proximaPosicaoFila` e os
+ * filtros `STATUS_NA_FILA`). O funcionamento de corte/guilhotina é idêntico ao
+ * anterior — só o rótulo de status mudou (estágio corte vs guilhotina é
+ * identificado pelas datas `dataInicio/FimCorte`/`dataInicio/FimGuilhotina`).
  */
+
+// Status em que a RC ocupa a fila da Programação (compartilhada com etapas).
+const STATUS_NA_FILA = ['LIBERADA', 'EM_PRODUCAO'] as const
+
+/**
+ * Próxima posição no FIM da fila do CENTRO (Cortadeira) — considera o maior
+ * posicaoFila tanto das RCs (LIBERADA/EM_PRODUCAO) quanto das ETAPAS daquele
+ * centro (a fila é compartilhada no painel). Multi-tenant por empresaId.
+ */
+async function proximaPosicaoFila(empresaId: string, centroProducaoId: string): Promise<number> {
+  const [maxPosRc, maxPosEtapa] = await Promise.all([
+    prisma.requisicaoCorte.aggregate({
+      where: { empresaId, status: { in: STATUS_NA_FILA as unknown as string[] }, centroProducaoId },
+      _max: { posicaoFila: true },
+    }),
+    prisma.etapaOrdemProducao.aggregate({
+      where: {
+        status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+        centroProducaoId,
+        ordemProducao: { empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+      },
+      _max: { posicaoFila: true },
+    }),
+  ])
+  return Math.max(maxPosRc._max.posicaoFila || 0, maxPosEtapa._max.posicaoFila || 0) + 1
+}
+
 export async function requisicaoCorteRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
   app.addHook('preHandler', moduloGuard('PCP'))
@@ -90,7 +124,7 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
 
     const numero = await proximoNumeroRc(user.empresaId)
 
-    // Valida o centro informado (grupo onde a RC foi criada) pertence à empresa.
+    // Valida o centro informado (Cortadeira onde a RC vai entrar) pertence à empresa.
     let centroIdValidado: string | null = null
     if (body.centroProducaoId) {
       const centro = await prisma.centroProducao.findFirst({
@@ -100,32 +134,20 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
       if (centro) centroIdValidado = centro.id
     }
 
-    // Posição no FIM da fila do CENTRO da RC — considera o maior posicaoFila
-    // tanto das RCs quanto das ETAPAS daquele centro (a fila é compartilhada
-    // no painel). Assim a nova RC entra por último, abaixo de tudo no grupo.
-    const [maxPosRc, maxPosEtapa] = await Promise.all([
-      prisma.requisicaoCorte.aggregate({
-        where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] }, centroProducaoId: centroIdValidado ?? undefined },
-        _max: { posicaoFila: true },
-      }),
-      centroIdValidado
-        ? prisma.etapaOrdemProducao.aggregate({
-            where: {
-              status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
-              centroProducaoId: centroIdValidado,
-              ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
-            },
-            _max: { posicaoFila: true },
-          })
-        : Promise.resolve({ _max: { posicaoFila: 0 } } as any),
-    ])
-    const proximaPos = Math.max(maxPosRc._max.posicaoFila || 0, maxPosEtapa._max.posicaoFila || 0) + 1
+    // RC nasce em RASCUNHO (criada pelo menu Ordem de Produção). SÓ entra na
+    // fila da Programação quando LIBERADA (ver PATCH /:id/liberar) — por isso
+    // NÃO recebe posicaoFila na criação, exceto se o body já pedir LIBERADA.
+    const statusInicial = body.status ?? 'RASCUNHO'
+    let posicaoFilaInicial: number | null = null
+    if (statusInicial === 'LIBERADA' && centroIdValidado) {
+      posicaoFilaInicial = await proximaPosicaoFila(user.empresaId, centroIdValidado)
+    }
 
     const rc = await prisma.requisicaoCorte.create({
       data: {
         empresaId: user.empresaId,
         numero,
-        posicaoFila: proximaPos,
+        posicaoFila: posicaoFilaInicial ?? undefined,
         centroProducaoId: centroIdValidado ?? undefined,
         ordemProducaoId: body.ordemProducaoId ?? undefined,
         dataSolicitacao: body.dataSolicitacao ? new Date(body.dataSolicitacao) : new Date(),
@@ -145,7 +167,7 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
         pesoKg: body.pesoKg ?? undefined,
         instrucoesRefile: body.instrucoesRefile ?? undefined,
         guilhotinaDestinoId: body.guilhotinaDestinoId ?? undefined,
-        status: body.status ?? 'ABERTA',
+        status: statusInicial,
         criadoPorId: user.id,
       } as any,
     })
@@ -223,6 +245,40 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // PATCH /requisicoes-corte/:id/iniciar — Marca como EM_CORTE (continua na fila)
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // PATCH /requisicoes-corte/:id/status — Transição administrativa do ciclo da
+  // RC (RASCUNHO/PLANEJADA/PROGRAMADA/LIBERADA/CANCELADA). Ao chegar em LIBERADA,
+  // a RC ENTRA na fila da Programação (recebe posicaoFila do centro). Ao sair de
+  // LIBERADA (ex.: cancelar/voltar p/ rascunho), sai da fila (posicaoFila=null).
+  // As transições operacionais de chão (iniciar/concluir corte, guilhotina)
+  // continuam nas rotas próprias abaixo e levam a EM_PRODUCAO/CONCLUIDA.
+  // ---------------------------------------------------------------------------
+  const STATUS_ADMIN = ['RASCUNHO', 'PLANEJADA', 'PROGRAMADA', 'LIBERADA', 'CANCELADA'] as const
+  app.patch('/requisicoes-corte/:id/status', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ status: z.enum(STATUS_ADMIN) }).parse(request.body)
+
+    const existe = await prisma.requisicaoCorte.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, centroProducaoId: true, status: true } as any,
+    })
+    if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
+
+    const data: Record<string, unknown> = { status: body.status }
+    if (body.status === 'LIBERADA') {
+      // Entra na fila do centro (Cortadeira) escolhido na criação.
+      const centroId = (existe as any).centroProducaoId as string | null
+      data.posicaoFila = centroId ? await proximaPosicaoFila(user.empresaId, centroId) : null
+    } else {
+      // Qualquer status administrativo que não seja LIBERADA sai da fila.
+      data.posicaoFila = null
+    }
+
+    const rc = await prisma.requisicaoCorte.update({ where: { id }, data: data as any })
+    return rc
+  })
+
   app.patch('/requisicoes-corte/:id/iniciar', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
@@ -254,7 +310,7 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
     const rc = await prisma.requisicaoCorte.update({
       where: { id },
       data: {
-        status: 'EM_CORTE',
+        status: 'EM_PRODUCAO', // corte iniciado (estágio pelas datas de corte)
         dataInicioCorte: new Date(),
         ...(guilhotinaId !== undefined ? { guilhotinaDestinoId: guilhotinaId } : {}),
       } as any,
@@ -294,26 +350,14 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
     }
 
     if (guilhotinaId) {
-      // Vai para a guilhotina: entra no FIM da fila dela.
-      const [maxPosRc, maxPosEtapa] = await Promise.all([
-        prisma.requisicaoCorte.aggregate({
-          where: { empresaId: user.empresaId, status: 'EM_GUILHOTINA', guilhotinaDestinoId: guilhotinaId } as any,
-          _max: { posicaoFila: true },
-        }),
-        prisma.etapaOrdemProducao.aggregate({
-          where: {
-            status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
-            centroProducaoId: guilhotinaId,
-            ordemProducao: { empresaId: user.empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
-          },
-          _max: { posicaoFila: true },
-        }),
-      ])
-      const proximaPos = Math.max(maxPosRc._max.posicaoFila || 0, maxPosEtapa._max.posicaoFila || 0) + 1
+      // Vai para a guilhotina: CONTINUA EM_PRODUCAO (estágio "na guilhotina"
+      // identificado pelas datas: dataFimCorte preenchida + guilhotina sem fim).
+      // Entra no FIM da fila da guilhotina.
+      const proximaPos = await proximaPosicaoFila(user.empresaId, guilhotinaId)
       const rc = await prisma.requisicaoCorte.update({
         where: { id },
         data: {
-          status: 'EM_GUILHOTINA',
+          status: 'EM_PRODUCAO',
           dataFimCorte: new Date(),
           dataCorte: new Date(),
           guilhotinaDestinoId: guilhotinaId,
@@ -323,10 +367,10 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
       return rc
     }
 
-    // Sem guilhotina: encerra o corte (fluxo legado — sai da fila).
+    // Sem guilhotina: corte encerra a RC (CONCLUIDA — sai da fila).
     const rc = await prisma.requisicaoCorte.update({
       where: { id },
-      data: { status: 'CORTADA', dataCorte: new Date(), dataFimCorte: new Date(), posicaoFila: null } as any,
+      data: { status: 'CONCLUIDA', dataCorte: new Date(), dataFimCorte: new Date(), posicaoFila: null } as any,
     })
     return rc
   })
@@ -383,13 +427,14 @@ export async function requisicaoCorteRoutes(app: FastifyInstance) {
     if (!existe) return reply.status(404).send({ message: 'Requisição de corte não encontrada' })
 
     const maxPos = await prisma.requisicaoCorte.aggregate({
-      where: { empresaId: user.empresaId, status: { in: ['ABERTA', 'EM_CORTE'] } },
+      where: { empresaId: user.empresaId, status: { in: STATUS_NA_FILA as unknown as string[] } },
       _max: { posicaoFila: true },
     })
 
+    // Reabrir volta a RC para LIBERADA (reentra na fila da Programação).
     const rc = await prisma.requisicaoCorte.update({
       where: { id },
-      data: { status: 'ABERTA', posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
+      data: { status: 'LIBERADA', posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
     })
     return rc
   })
@@ -482,7 +527,7 @@ const bodySchema = z.object({
   pesoKg: z.number().nonnegative().optional().nullable(),
   instrucoesRefile: z.string().optional().nullable(),
   guilhotinaDestinoId: z.string().uuid().optional().nullable(),
-  status: z.enum(['ABERTA', 'EM_CORTE', 'CORTADA', 'EM_GUILHOTINA', 'CONCLUIDA', 'CANCELADA']).optional(),
+  status: z.enum(['RASCUNHO', 'PLANEJADA', 'PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO', 'CONCLUIDA', 'CANCELADA']).optional(),
 })
 
 // =============================================================================
