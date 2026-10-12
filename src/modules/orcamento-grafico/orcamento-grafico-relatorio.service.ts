@@ -70,7 +70,11 @@ export interface RelatorioPlanoBloco {
   corte?: string
   aprovacao?: string
   tiragem?: number
-  impressao?: string
+  // NOTA: NÃO declarar aqui um `impressao?: string` descritivo — a chave
+  // `impressao` é reusada mais abaixo para a SEÇÃO detalhada
+  // (`impressao?: RelatorioSecaoLinha[]`). Declarar as duas tornava `impressao`
+  // ambíguo e levava o frontend (BlocoPlano) a renderizar o array de seção como
+  // texto → React #31. A seção é a única fonte de verdade dessa chave.
   producaoHora?: number
   quebraPerc?: number
   aparaPerc?: number
