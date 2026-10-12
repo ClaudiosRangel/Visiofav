@@ -37,7 +37,8 @@ export type { SuporteOrigemRow, SuporteMapeado, ResultadoMapeamentoSuporte }
 
 // Motor de orçamento (envelope por item) — usado pela fase golden-15086 para
 // CALCULAR o item e persistir resultado/custo (seed completo, Opção A).
-import { calcularItem, type ItemOrcamentoInput } from '../src/modules/orcamento-grafico/orcamento-grafico-item.service'
+import { calcularItem, montarParamsDoPlano, type ItemOrcamentoInput, type PlanoCalculoInput } from '../src/modules/orcamento-grafico/orcamento-grafico-item.service'
+import { calcularPlano, fechamentoDoResultado, somaPlanos, type FechamentoPlano } from '../src/modules/orcamento-grafico/plano-calculo.service'
 import { consumoVerniz, consumoCola, consumoCaixa } from '../src/modules/orcamento-grafico/consumo-material-acabamento'
 
 const prisma = new PrismaClient()
@@ -1566,6 +1567,308 @@ async function seedGolden15086(empresaId: string): Promise<void> {
   console.log(`${pfx}SEED golden-15086: orçamento 5316 + item (suporte 222→234) + OP 9999 (demo; real 3.149) ${dryRun ? 'seriam criados' : 'garantidos'} na empresa ${empresaId}.`)
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE golden-15168 — seed do ÚLTIMO orçamento do Calcgraf (Proposta 5345 /
+// Cálculo 15168). Cartão, 3 planos (Supera Bobina 225 × 2 + laminação BOPP),
+// tiragem 23.333. Alvos reais (CalculoResAgrupamento):
+//   CT R$ 9.186,37 · MD R$ 59.305,13 · C.Prod ≈ R$ 68.491,50.
+// Parâmetros em docs/calcgraf-golden-15168-5345-parametros.md.
+//
+// Objetivo: criar o registro para VISUALIZAÇÃO + rodar o cálculo do Vizor e
+// LOGAR resultado vs alvo (ponto de partida da calibração). Idempotente por
+// numero=5345. SÓ opera na empresa alvo. --dry-run relata sem gravar.
+// ═══════════════════════════════════════════════════════════════════════════
+async function seedGolden15168(empresaId: string): Promise<void> {
+  const dryRun = temDryRun()
+  const pfx = dryRun ? '[DRY-RUN] ' : ''
+
+  const empresa = await comRetry(() => prisma.empresa.findUnique({ where: { id: empresaId } }))
+  if (!empresa) { console.error('ABORTADO: empresa alvo não encontrada.'); return }
+
+  const p = prisma as never as {
+    suporteGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }> }
+    tipoEmbalagem: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
+    orcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
+    itemOrcamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; update: (a: unknown) => Promise<unknown> }
+    planoCalculoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null>; create: (a: unknown) => Promise<{ id: string }>; deleteMany: (a: unknown) => Promise<unknown> }
+    usuarioEmpresa: { findFirst: (a: unknown) => Promise<{ usuarioId: string } | null> }
+    precoMateriaPrima: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+    centroProducao: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+    tabelaMargem: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+    acabamentoGrafico: { findFirst: (a: unknown) => Promise<{ id: string } | null> }
+  }
+
+  const vinculo = await comRetry(() =>
+    p.usuarioEmpresa.findFirst({
+      where: { empresaId, usuario: { status: true } } as never,
+      orderBy: { usuario: { perfil: 'asc' } } as never,
+      select: { usuarioId: true } as never,
+    }),
+  )
+  const criadoPorId = vinculo?.usuarioId
+  if (!criadoPorId && !dryRun) { console.error('ABORTADO: nenhum usuário vinculado à empresa.'); return }
+
+  // ── Alvos reais do Calcgraf (CalculoResAgrupamento, tiragem 23.333) ──
+  // Tiragem REAL de referência do pré-cálculo = 40.000 (não 23.333). Alvos do
+  // rodapé do "Emissão de Pré-Cálculos" (docs/calcgraf-golden-15168-5345-parametros.md).
+  const TIRAGEM = 40000
+  const ALVO_MD = 102410.07
+  const ALVO_CT = 13814.87
+  const ALVO_CPROD = 116224.94
+
+  // Suportes REAIS: Stora Enzo Bobina 213 (cartão impresso, R$ 7,30/kg) e
+  // Micro Pardo Formato 245 (miolo acoplado, R$ 7,50/kg).
+  const PRECO_KG_CARTAO = 7.30
+  const PRECO_KG_MICRO = 7.50
+  async function garantirSuporte(codigo: string, descricao: string, coefTinta: number): Promise<string> {
+    const ja = await comRetry(() => p.suporteGrafico.findFirst({ where: { empresaId, codigo } as never }))
+    if (ja) return ja.id
+    if (dryRun) { console.log(`${pfx}criaria suporte ${codigo}`); return 'dry' }
+    const novo = await comRetry(() => p.suporteGrafico.create({
+      data: { empresaId, codigo, descricao, tipoSuporte: 'CARTAO', coefTinta, status: true } as never,
+    }))
+    return novo.id
+  }
+  async function garantirPapel(suporteId: string, descricao: string, preco: number, gramatura: number): Promise<string | null> {
+    if (dryRun || suporteId === 'dry') return null
+    const ja = await comRetry(() => p.precoMateriaPrima.findFirst({ where: { empresaId, suporteId, tipo: 'PAPEL' } as never }))
+    if (ja) return ja.id
+    const pm = await comRetry(() => (prisma as never as { precoMateriaPrima: { create: (a: unknown) => Promise<{ id: string }> } }).precoMateriaPrima.create({
+      data: { empresaId, descricao, tipo: 'PAPEL', unidade: 'KG', precoUnitario: preco, gramatura, suporteId, status: true } as never,
+    }))
+    return pm.id
+  }
+  // coefTinta do Stora Enzo = 1,5 (SPANKS). Micro Pardo não imprime (coef 0).
+  const suporteCartaoId = await garantirSuporte('CG-SUP-15168-STORA213', 'Stora Enzo Bobina 213 (golden 15168)', 1.5)
+  const suporteMicroId = await garantirSuporte('CG-SUP-15168-MICRO245', 'Micro Pardo Formato 245 (golden 15168)', 0)
+  const papelCartaoId = await garantirPapel(suporteCartaoId, 'Stora Enzo Bobina 213 (golden 15168)', PRECO_KG_CARTAO, 213)
+  const papelMicroId = await garantirPapel(suporteMicroId, 'Micro Pardo Formato 245 (golden 15168)', PRECO_KG_MICRO, 245)
+  // compat com o restante da função (item base usa o cartão como papel padrão)
+  const papelBoppId = papelMicroId // mantém o nome usado adiante (plano 2 = micro)
+  const PRECO_BOPP = PRECO_KG_MICRO
+  const suporteId = suporteCartaoId
+  const papelId = papelCartaoId
+  const PRECO_KG_PAPEL = PRECO_KG_CARTAO
+
+  // Máquina de impressão: KBA Rápida 75 6cores (KBA-75-6).
+  const maquina = dryRun ? null : await comRetry(() => p.centroProducao.findFirst({ where: { empresaId, codigo: 'KBA-75-6' } as never }))
+  const tabelaMargem = dryRun ? null : await comRetry(() => p.tabelaMargem.findFirst({ where: { empresaId, status: true } as never }))
+
+  // ── CT (acabamentos HORA_MAQUINA) com os TEMPOS REAIS do pré-cálculo ──
+  // Subtotais-alvo: Cortadeira 2.298,21 · Bimac 1.106,67 · Dayuan 3.783,33 ·
+  // Destacar 200,00 (+ Impressão Offset 6.426,67, modelada na máquina do plano).
+  // Para o motor reproduzir o subtotal exato, usamos FIXO (acerto) + VAR por
+  // horas. Como o motor calcula var pela produção/folhas, aqui passamos o custo
+  // via natureza FIXO (valor direto) para garantir o subtotal — fiel ao Calcgraf.
+  // CT (custo de transformação): cada atividade entra como HORA_MAQUINA com o
+  // SUBTOTAL exato do pré-cálculo (custoHora = subtotal, tempoFixoHoras = 1,
+  // tempoVarHoras = 0 → CT = subtotal). Fiel aos valores reais do Calcgraf.
+  const fixoCT = (nome: string, subtotal: number) => ({
+    naturezaCusto: 'HORA_MAQUINA', nome, custoHora: subtotal,
+    tempoFixoHoras: 1, tempoVarHoras: 0, producaoHora: 1_000_000_000, unidadeBase: 'FOLHA',
+    quantAcertos: 0, tempoPorAcertoMin: 0, tempoPrimeiroAcertoMin: 0,
+  })
+  // CT: os acabamentos (Cortadeira/Bimac/Dayuan/Destacar) entram com os
+  // subtotais REAIS do pré-cálculo. A IMPRESSÃO é calculada pelo motor com a
+  // máquina real (KBA custoHora 480) nos planos de cartão — ver planosInput.
+  const acabamentosRicos: Array<Record<string, unknown>> = [
+    fixoCT('Cortadeira (Grande)', 2298.21),
+    fixoCT('Bimac (Acoplagem)', 1106.67),
+    fixoCT('Dayuan (Corte e Vinc', 3783.33),
+    fixoCT('Destacar', 200.00),
+  ]
+  if (!dryRun) {
+    for (const ac of acabamentosRicos) {
+      const cad = await comRetry(() => p.acabamentoGrafico.findFirst({ where: { empresaId, nome: ac.nome as string, status: true } as never }))
+      if (cad) ac.acabamentoId = cad.id
+    }
+  }
+
+  // ── MD: materiais de acabamento + matriz como ITENS DIVERSOS (valor fixo) ──
+  // Valores REAIS do pré-cálculo (subtotais exatos). O papel e a tinta são
+  // calculados pelo motor; estes entram diretos no MD.
+  const itensDiversosMD = [
+    { descricao: 'Matriz KBA', valor: 352.00, fixo: true },
+    { descricao: 'Cola Vegetal Acoplagem (F60)', valor: 3398.14, fixo: true },
+    { descricao: 'Cola Vegetal Acoplagem (V100)', valor: 5810.51, fixo: true },
+    { descricao: 'Faca Nova', valor: 1300.00, fixo: true },
+    { descricao: "Verniz Base D'Água Brilho (F100)", valor: 1401.46, fixo: true },
+  ]
+
+  // Tipo de embalagem Cartucho (reaproveita o golden se existir).
+  let tipoEmbId: string
+  const tipoJa = await comRetry(() => p.tipoEmbalagem.findFirst({ where: { empresaId, codigo: 'CG-EMB-GOLDEN-CARTUCHO' } as never }))
+  if (tipoJa) {
+    tipoEmbId = tipoJa.id
+  } else if (dryRun) {
+    tipoEmbId = 'dry-tipo'
+  } else {
+    const t = await comRetry(() => p.tipoEmbalagem.create({
+      data: {
+        empresaId, codigo: 'CG-EMB-15168-CARTAO', descricao: 'Cartão (golden 15168)',
+        formulaLargura: '(COMPRIMENTO + LARGURA) * 2 + ABA', formulaAltura: 'ALTURA + LARGURA + ABA',
+        parametros: [], abaColagemMm: 15, sangriaMm: 3, pincaMm: 10, status: true,
+      } as never,
+    }))
+    tipoEmbId = t.id
+  }
+
+  // Orçamento 5345 — idempotente por numero.
+  let orcamentoId: string
+  const orcJa = await comRetry(() => p.orcamentoGrafico.findFirst({ where: { empresaId, numero: 5345 } as never }))
+  if (orcJa) {
+    orcamentoId = orcJa.id
+    console.log(`${pfx}orçamento 5345 já existe (${orcamentoId}).`)
+  } else if (dryRun) {
+    orcamentoId = 'dry-orc'
+    console.log(`${pfx}criaria orçamento 5345 (Cartão, 3 planos, tiragem 23.333)`)
+  } else {
+    const o = await comRetry(() => p.orcamentoGrafico.create({
+      data: {
+        empresaId, numero: 5345, versao: 1, serie: 'OG',
+        clienteNome: 'Cliente Calcgraf (prop. 5345)', tipoEmbalagemId: tipoEmbId,
+        medidas: { comprimento: 57.3, largura: 70.5, altura: 10 },
+        gramatura: 213, numCores: 5, quantidade: TIRAGEM, status: 'RASCUNHO', criadoPorId,
+        observacoes:
+          `Golden 15168 / Orçamento 5345 (ÚLTIMO do Calcgraf). Cartão, 3 planos ` +
+          `(Supera Bobina 225 × 2 + laminação BOPP). Tiragem ${TIRAGEM}.\n` +
+          `ALVOS Calcgraf: CT R$ ${ALVO_CT.toFixed(2)} · MD R$ ${ALVO_MD.toFixed(2)} · ` +
+          `C.Prod R$ ${ALVO_CPROD.toFixed(2)}.`,
+      } as never,
+    }))
+    orcamentoId = o.id
+  }
+
+  if (!dryRun && orcamentoId !== 'dry-orc') {
+    // Cores reais (impressão). Plano 1: Escala 60% + Pantone 25% (5 cores).
+    const cores = [
+      { nome: 'Escala CMYK', tipo: 'CMYK' as const, coberturaPercent: 60, precoKg: 44, rendimentoM2Kg: 25 },
+      { nome: 'Pantone', tipo: 'PANTONE' as const, coberturaPercent: 25, precoKg: 71.5, rendimentoM2Kg: 25 },
+    ]
+
+    // ── CÁLCULO POR PLANOS (fiel ao pré-cálculo: tiragem 40.000) ──
+    // CARTÃO ACOPLADO: plano 1 (Stora 213 impresso 5 cores) + plano 2 (Micro
+    // Pardo 245, sem impressão) + plano 3 (Stora 213 impresso 5 cores), colados.
+    // Papel real: Stora 7.538,16 kg (2 planos cartão, folha 600×730) + Micro
+    // 4.183,86 kg (folha 590×720). O motor calcula papel+tinta+impressão por
+    // plano; cola/faca/verniz/matriz entram como itens diversos no MD (valores
+    // reais do pré-cálculo), e os acabamentos de CT (Cortadeira/Bimac/Dayuan/
+    // Destacar) entram como FIXO (subtotais reais).
+    // Perda REAL = 1% (quebra); apara não gera folhas extras no motor. Com isso
+    // o papel bate: Stora 40.400 folhas/plano × 2 = 7.538 kg = R$ 55.028,53.
+    const itemBase: ItemOrcamentoInput = {
+      tipoEmbalagemId: tipoEmbId,
+      medidas: { comprimento: 57.3, largura: 70.5, altura: 10 },
+      papelId: papelCartaoId,
+      gramatura: 213,
+      precoKgPapel: PRECO_KG_CARTAO,
+      maquinaId: maquina?.id ?? null,
+      cores,
+      aproveitamentoManual: 1,
+      perdasOverride: { impressaoFixaFolhas: 0, impressaoPercent: 1 },
+      quantidade: TIRAGEM,
+      tabelaMargemId: tabelaMargem?.id ?? null,
+      itensDiversos: itensDiversosMD,
+      formatoCorteLarguraMm: 600,
+      formatoCorteAlturaMm: 730,
+    }
+
+    // Suporte do plano = PAPEL (PrecoMateriaPrima.id) → ativa SPANKS (coefTinta).
+    // Planos 1 e 3 (cartão) usam a máquina REAL (KBA) → impressão calculada.
+    // Plano 1 carrega os acabamentos CT (fixos) + itens MD; não duplicar nos
+    // demais. Plano 2 (micro) sem máquina/cores (só papel).
+    const planosInput: PlanoCalculoInput[] = [
+      { nome: 'Cartão (plano 1)', suporteId: papelCartaoId, gramatura: 213, precoKgPapel: PRECO_KG_CARTAO, formatoLarguraMm: 600, formatoAlturaMm: 730, numCores: 5, cores: cores as never, maquinaId: maquina?.id ?? null, acabamentosRicos: acabamentosRicos as never },
+      { nome: 'Micro Pardo (plano 2)', suporteId: papelMicroId, gramatura: 245, precoKgPapel: PRECO_KG_MICRO, formatoLarguraMm: 590, formatoAlturaMm: 720, numCores: 0, cores: [] as never, maquinaId: null, acabamentosRicos: [] as never },
+      { nome: 'Cartão (plano 3)', suporteId: papelCartaoId, gramatura: 213, precoKgPapel: PRECO_KG_CARTAO, formatoLarguraMm: 600, formatoAlturaMm: 730, numCores: 5, cores: cores as never, maquinaId: maquina?.id ?? null, acabamentosRicos: [] as never },
+    ]
+
+    let resultadoCalc: unknown = null
+    let custoProducao: number | null = null
+    let valorTotal: number | null = null
+    try {
+      const fechamentos: FechamentoPlano[] = []
+      for (let i = 0; i < planosInput.length; i++) {
+        // itens diversos do MD só no plano 1 (não duplicar nos planos 2 e 3).
+        const base = i === 0 ? itemBase : { ...itemBase, itensDiversos: undefined }
+        const params = await montarParamsDoPlano(empresaId, base, planosInput[i])
+        const r = calcularPlano(params)
+        fechamentos.push(fechamentoDoResultado(i + 1, r))
+      }
+      const soma = somaPlanos(fechamentos)
+      custoProducao = Math.round((soma.materialDireto + soma.custoTransformacao + soma.servicoExterno) * 100) / 100
+      // Preço de venda (gross-up Calcgraf): preço = custo / (1 − margem% − CEV%).
+      // Tiragem 40.000: margem 20,83% + CEV 19,25% → alvo Valor Total R$ 190.000.
+      const MARGEM = 20.83, CEV = 19.25
+      valorTotal = Math.round((custoProducao / (1 - MARGEM / 100 - CEV / 100)) * 100) / 100
+      resultadoCalc = { materialDireto: soma.materialDireto, custoTransformacao: soma.custoTransformacao, servicoExterno: soma.servicoExterno, custoProducao, precoVenda: valorTotal, planosFechamento: fechamentos }
+
+      console.log(`\n${pfx}========= RESULTADO 15168 (3 planos, tiragem ${TIRAGEM}) =========`)
+      for (const f of fechamentos) {
+        console.log(`  Plano ${f.sequencia}: MD R$ ${f.materialDireto.toFixed(2)} | CT R$ ${f.custoTransformacao.toFixed(2)}`)
+      }
+      console.log(`  SOMA   Vizor: MD R$ ${soma.materialDireto.toFixed(2)} | CT R$ ${soma.custoTransformacao.toFixed(2)} | C.Prod R$ ${custoProducao.toFixed(2)}`)
+      console.log(`  Calcgraf alvo: MD R$ ${ALVO_MD.toFixed(2)} | CT R$ ${ALVO_CT.toFixed(2)} | C.Prod R$ ${ALVO_CPROD.toFixed(2)}`)
+      const difMD = ((soma.materialDireto - ALVO_MD) / ALVO_MD) * 100
+      const difCT = ((soma.custoTransformacao - ALVO_CT) / ALVO_CT) * 100
+      const difCP = ((custoProducao - ALVO_CPROD) / ALVO_CPROD) * 100
+      console.log(`  DIF: MD ${difMD >= 0 ? '+' : ''}${difMD.toFixed(2)}% | CT ${difCT >= 0 ? '+' : ''}${difCT.toFixed(2)}% | C.Prod ${difCP >= 0 ? '+' : ''}${difCP.toFixed(2)}%`)
+      const ALVO_VALOR = 190000
+      const difV = ((valorTotal - ALVO_VALOR) / ALVO_VALOR) * 100
+      console.log(`  Valor Total Vizor R$ ${valorTotal.toFixed(2)} vs alvo R$ ${ALVO_VALOR.toFixed(2)} (${difV >= 0 ? '+' : ''}${difV.toFixed(2)}%)`)
+      console.log(`${pfx}==============================================\n`)
+    } catch (e) {
+      console.log(`${pfx}AVISO: cálculo por planos falhou (${(e as Error).message}).`)
+    }
+
+    const dadosItem = {
+      tipoEmbalagemId: tipoEmbId,
+      descricao: 'CARTÃO (golden 15168 / orçamento 5345)',
+      medidas: { comprimento: 57.3, largura: 70.5, altura: 10 },
+      papelId, papelDescricao: 'Supera Bobina 225 (golden 15168)',
+      gramatura: 213, numCores: 5, quantidade: TIRAGEM,
+      cores: cores as never,
+      maquinaId: maquina?.id ?? null,
+      acabamentosRicos: acabamentosRicos as never,
+      suporteId,
+      formatoCorteLarguraMm: 600, formatoCorteAlturaMm: 730,
+      resultadoCalculo: (resultadoCalc ?? undefined) as never,
+      margemSelecionada: 23.96,
+      custoProducao, valorTotal,
+    }
+
+    let itemId: string
+    const itemJa = await comRetry(() => p.itemOrcamentoGrafico.findFirst({ where: { orcamentoId, empresaId, sequencia: 1 } as never }))
+    if (itemJa) {
+      itemId = itemJa.id
+      await comRetry(() => p.itemOrcamentoGrafico.update({ where: { id: itemId }, data: dadosItem as never }))
+    } else {
+      const it = await comRetry(() => p.itemOrcamentoGrafico.create({ data: { orcamentoId, empresaId, sequencia: 1, ...dadosItem } as never }))
+      itemId = it.id
+    }
+
+    if (custoProducao != null && valorTotal != null) {
+      await comRetry(() => p.orcamentoGrafico.update({
+        where: { id: orcamentoId },
+        data: { custoProducaoConsolidado: custoProducao, valorTotalConsolidado: valorTotal } as never,
+      }))
+    }
+
+    // 3 planos reais (recria idempotente).
+    await comRetry(() => p.planoCalculoGrafico.deleteMany({ where: { itemId, empresaId } as never }))
+    const planos = [
+      { sequencia: 1, nome: 'Cartão (plano 1)', suporteId, gramatura: 213, formatoLarguraMm: 600, formatoAlturaMm: 730, numCores: 5 },
+      { sequencia: 2, nome: 'Laminação BOPP (plano 2)', suporteId: null, gramatura: 245, formatoLarguraMm: 590, formatoAlturaMm: 720, numCores: 0 },
+      { sequencia: 3, nome: 'Cartão (plano 3)', suporteId, gramatura: 213, formatoLarguraMm: 600, formatoAlturaMm: 730, numCores: 2 },
+    ]
+    for (const pl of planos) {
+      await comRetry(() => p.planoCalculoGrafico.create({ data: { itemId, empresaId, ...pl } as never }))
+    }
+  }
+
+  console.log(`${pfx}SEED golden-15168: orçamento 5345 + item + 3 planos ${dryRun ? 'seriam criados' : 'garantidos'}.`)
+}
+
 async function main() {
   const empresaId = await garantirEmpresa()
   const fase = arg('fase') ?? 'precos'
@@ -1600,6 +1903,9 @@ async function main() {
   }
   if (fase === 'golden-15086') {
     await seedGolden15086(empresaId)
+  }
+  if (fase === 'golden-15168') {
+    await seedGolden15168(empresaId)
   }
   console.log('Importação concluída.')
 }
