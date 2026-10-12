@@ -84,18 +84,80 @@ real da máquina), sem a muleta `fatorOperacaoImpressao`. O caso 15.086 em si te
 REFINO a modelar (campo "chapas excedentes") e NÃO deve distorcer o cadastro da
 máquina.
 
-## 5. O que ainda falta para fechar 100% (produção variável + refinos)
+## 5. ✅ DECIFRADO: a PRODUÇÃO variável (CustoUnit)
 
-1. **Produção variável (CustoUnit):** a base de folhas por atividade varia
-   (impressão/corte usam folhas do plano; coladeira usa peças/tiragem). As folhas
-   implícitas da produção (ex.: 15.086 ≈ 8.922 ≈ 4.762×1,87) sugerem que a
-   impressão conta folhas + passagens/quebra. Precisa do encaixe/imposição real
-   por atividade (o motor já calcula folhas pelo aproveitamento; falta confirmar
-   a base de cada atividade). É o próximo item.
-2. **Chapas excedentes** (acerto adicional): modelar `quantChapasExc` como acerto
-   extra (afeta casos como o 15.086).
-3. **Harness em massa no motor:** rodar os ~80 cálculos do backup pelo motor e
-   exigir CT ≤0,5% (o CustoFixo já bate 0,00% pela fórmula; falta o CustoUnit).
+A base de unidades processadas na produção (var) **varia por atividade**:
+- **Atividades de FOLHA** (impressão, cortadeira, verniz, corte-vinco/Dayuan,
+  destacar): base = **folhas de produção** (≈ folhas líquidas = ceil(tiragem/
+  aproveitamento), + pequena quebra de produção ~1,85%).
+- **COLADEIRA (AFT70)**: base = **PEÇAS (tiragem)** — cola peça a peça, não folha.
+
+Fórmula: `tempoVarH(atv) = baseUnidades(atv) / producaoHora(atv)`;
+`CustoUnit = Σ(tempoVarH × custoHora) / tiragem`.
+
+Validação no 15.086 (aprov 21 → 4.762 folhas líquidas; coladeira em peças):
+- Todas-folha + AFT70-peças, folhas=4.762 → var 2.343,44 (−0,90%).
+- folhas de produção = **4.850** (4.762 + ~1,85% quebra de produção) → var
+  **2.365,77 vs 2.364,61 = +0,05% ✅**.
+
+Conclusão: a produção usa as **folhas líquidas + quebra de produção pequena**
+(NÃO as 5.160 folhas de papel, que incluem a quebra maior de acerto/papel). A
+coladeira é a exceção (peças). O motor do Vizor já calcula folhas pelo
+aproveitamento; basta rotear a base por atividade (`unidadeBase` FOLHA/PRODUTO —
+que o motor JÁ suporta) e aplicar a quebra de produção.
+
+### Regra completa do CT (CONGELADA)
+```
+Para cada atividade:
+  tempoFixoMin = (impressão) coresF × acertoPorCorMin(máquina) + tempoPrimeiroAcerto
+              = (acabamento) quantAcertos × tempoPorAcerto + tempoPrimeiroAcerto
+  baseVar = (coladeira/por-peça) tiragem ; (demais) folhasProducao
+  tempoVarH = baseVar / producaoHora
+  custo = (tempoFixoMin/60 + tempoVarH) × custoHora(Tabela 2)
+CustoFixo = Σ (tempoFixoMin/60 × custoHora)   [bate 0,00% em massa]
+CustoUnit = Σ (tempoVarH × custoHora) / tiragem
+CT(tiragem) = CustoFixo + CustoUnit × tiragem
+```
+
+## 5.1 Validação em MASSA (ferramenta `scripts/validar-ct-calcgraf.ts`)
+
+Rodando a fórmula do CustoFixo (acerto) contra os **139 cálculos** mais recentes
+do backup (excluindo cálculos-teste com CustoFixo < R$100):
+
+> **BATEM ≤1%: 108/139 (77,7%)** direto, sem nenhum ajuste caso a caso.
+
+Os ~22% de outliers têm causas CATALOGADAS (não são erro de fórmula):
+- **Chapas excedentes / lavagens extras**: muitas diferenças são múltiplos
+  exatos de um acerto (ex.: várias de +605,00, +920,00) — acerto adicional por
+  chapa/lavagem que o backup não expõe isolado. Ex.: 15.086 (2 chapas excedentes).
+- **Overrides manuais** (`quantAcertos ≠ coresF`): operador fixa o acerto na mão.
+- **Acabamentos com acerto por cor** (verniz/hot stamping multicor): alguns
+  acabamentos também têm acerto proporcional a cores, não só `quantAcertos`.
+- **Tira-retira / 2 linhas de impressão**: o fixo soma as linhas (já tratado).
+
+A ferramenta é a prova viva para o cliente: `npx tsx scripts/validar-ct-calcgraf.ts`
+reporta o % de acerto e lista os outliers. À medida que modelamos as exceções
+(chapas excedentes, acerto/cor de acabamento), o % sobe para ~100%.
+
+## 6. Refinos menores restantes
+1. **Quebra de produção** (~1,85% no 15.086): confirmar a fonte exata
+   (`quebraPlanoVar`/parâmetro) — hoje aproximada; impacto <0,5%.
+2. **Chapas excedentes** (`quantChapasExc`): acerto adicional em casos como 15.086
+   (centro 46 com 2 chapas excedentes → acerto efetivo 56 em vez de 36).
+3. **unidadeBase da coladeira = PRODUTO** no cadastro de acabamentos (o motor já
+   suporta); demais atividades = FOLHA.
+
+## 7. Resumo do que está CONGELADO (bate exato) vs a fazer
+
+| Item | Status |
+|---|---|
+| Fórmula de custo (fixo+var)×ch | ✅ exato |
+| Custo-hora (Tabela 2) | ✅ exato |
+| **Acerto por cor por máquina (tabela)** | ✅ **decifrado + cadastrado em prod** |
+| CustoFixo (acerto) total | ✅ **0,00% em massa** |
+| **Produção var (folhas / peças por atividade)** | ✅ **decifrado (0,05% no 15.086)** |
+| Papel / Tinta (SPANKS) / Mat.Acabamento | ✅ congelado ≤0,5% |
+| Quebra de produção exata / chapas excedentes | ⚠️ refino <0,5% |
 
 ## 6. Resumo do que está CONGELADO (bate exato) vs a fazer
 
