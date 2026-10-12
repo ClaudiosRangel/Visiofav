@@ -5021,6 +5021,50 @@ async function seedMateriaisFromOPs() {
   console.log('✅ PCP RC: tabela requisicao_corte criada + status migrados p/ padrão OP (index empresa_id, posicao_fila, centro_producao_id, guilhotina_destino_id)')
 
   // =========================================================================
+  // Checkout — Contagem por Contador de Máquina (spec checkout-contagem-por-contador)
+  // CentroProducao: modo_contagem (QUANTIDADE padrão | CONTADOR) + flag de reset
+  // diário. Tabelas leitura_contador (histórico/derivação da inicial) e
+  // log_leitura_contador (auditoria de correção). Tudo idempotente.
+  // =========================================================================
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "modo_contagem" VARCHAR(20) DEFAULT 'QUANTIDADE'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "contador_zera_diariamente" BOOLEAN DEFAULT false`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "leitura_contador" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "centro_producao_id" TEXT NOT NULL,
+      "etapa_ordem_producao_id" TEXT NOT NULL,
+      "apontamento_etapa_id" TEXT,
+      "leitura_inicial" DECIMAL(14,2) NOT NULL,
+      "leitura_final" DECIMAL(14,2) NOT NULL,
+      "quantidade" DECIMAL(14,2) NOT NULL,
+      "reset_do_dia" BOOLEAN NOT NULL DEFAULT false,
+      "funcionario_id" TEXT,
+      "data_hora" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "leitura_contador_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "leitura_contador_empresa_id_idx" ON "leitura_contador"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "leitura_contador_centro_data_idx" ON "leitura_contador"("centro_producao_id", "data_hora")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "leitura_contador_etapa_idx" ON "leitura_contador"("etapa_ordem_producao_id")`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "log_leitura_contador" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "leitura_contador_id" TEXT NOT NULL,
+      "campo" VARCHAR(30) NOT NULL,
+      "valor_anterior" DECIMAL(14,2) NOT NULL,
+      "valor_novo" DECIMAL(14,2) NOT NULL,
+      "usuario_id" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "log_leitura_contador_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "log_leitura_contador_empresa_id_idx" ON "log_leitura_contador"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "log_leitura_contador_leitura_idx" ON "log_leitura_contador"("leitura_contador_id")`)
+  console.log('✅ Checkout contagem por contador: centro_producao.modo_contagem/contador_zera_diariamente + leitura_contador + log_leitura_contador')
+
+  // =========================================================================
   // PCP — Planos de Produção — spec pcp-planos-frente-costa-rc (Fase B/C)
   // Tabela plano_ordem_producao + coluna plano_id (nullable) em
   // etapa_ordem_producao. Compatibilidade: plano_id NULL = legado intacto.

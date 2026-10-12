@@ -3033,6 +3033,14 @@ model CentroProducao {
   // recebe etapas por lá), mesmo estando ATIVO. Útil para centros que
   // existem para orçamento/roteiro mas não devem aparecer no chão de fábrica.
   disponivelProgramacao Boolean  @default(true) @map("disponivel_programacao")
+  // Modo de contagem de PRODUÇÃO no Checkout (spec checkout-contagem-por-contador):
+  // QUANTIDADE (digitada, padrão) | CONTADOR (leitura do display/odômetro da
+  // máquina — quantidade = leituraFinal − leituraInicial). Perda/Retrabalho
+  // sempre por quantidade digitada, independente do modo.
+  modoContagem    String         @default("QUANTIDADE") @map("modo_contagem") @db.VarChar(20)
+  // Só relevante em CONTADOR: o display reseta no início do 1º turno do dia,
+  // logo a 1ª leitura inicial de cada dia assume 0.
+  contadorZeraDiariamente Boolean @default(false) @map("contador_zera_diariamente")
   criadoEm        DateTime       @default(now()) @map("criado_em")
   atualizadoEm    DateTime       @updatedAt @map("atualizado_em")
 
@@ -3042,9 +3050,54 @@ model CentroProducao {
   apontamentos    ApontamentoProducao[]
   sessoesTerminal SessaoTerminal[]
   acabamentosGraficos AcabamentoGrafico[]
+  leiturasContador LeituraContador[]
 
   @@unique([empresaId, codigo])
   @@map("centro_producao")
+}
+
+/// Leitura do contador/odômetro da máquina por apontamento de Produção, em
+/// Centros com `modoContagem = CONTADOR`. Fonte do histórico e da derivação da
+/// próxima leitura inicial (a última final vira a próxima inicial). Isolamento
+/// por empresaId (da OP/centro real). Spec checkout-contagem-por-contador.
+model LeituraContador {
+  id                   String   @id @default(uuid())
+  empresaId            String   @map("empresa_id")
+  centroProducaoId     String   @map("centro_producao_id")
+  centroProducao       CentroProducao @relation(fields: [centroProducaoId], references: [id])
+  etapaOrdemProducaoId String   @map("etapa_ordem_producao_id")
+  apontamentoEtapaId   String?  @map("apontamento_etapa_id")
+  leituraInicial       Decimal  @map("leitura_inicial") @db.Decimal(14, 2)
+  leituraFinal         Decimal  @map("leitura_final") @db.Decimal(14, 2)
+  quantidade           Decimal  @db.Decimal(14, 2) // = final − inicial (>= 0)
+  resetDoDia           Boolean  @default(false) @map("reset_do_dia")
+  funcionarioId        String?  @map("funcionario_id")
+  dataHora             DateTime @default(now()) @map("data_hora")
+  criadoEm             DateTime @default(now()) @map("criado_em")
+  atualizadoEm         DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId])
+  @@index([centroProducaoId, dataHora])
+  @@index([etapaOrdemProducaoId])
+  @@map("leitura_contador")
+}
+
+/// Auditoria de correção de leituras de contador (feita pelo histórico, perfil
+/// PCP). Guarda valor anterior/novo, campo e quem alterou. Spec
+/// checkout-contagem-por-contador (Req 4.3).
+model LogLeituraContador {
+  id                 String   @id @default(uuid())
+  empresaId          String   @map("empresa_id")
+  leituraContadorId  String   @map("leitura_contador_id")
+  campo              String   @db.VarChar(30) // 'leituraInicial' | 'leituraFinal'
+  valorAnterior      Decimal  @db.Decimal(14, 2)
+  valorNovo          Decimal  @db.Decimal(14, 2)
+  usuarioId          String?  @map("usuario_id")
+  criadoEm           DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@index([leituraContadorId])
+  @@map("log_leitura_contador")
 }
 
 /// Cadastro de Acabamentos do Orçamento Gráfico (paridade Calcgraf). Substitui
