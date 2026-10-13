@@ -12,6 +12,7 @@ import {
   dataCivilBrasilia,
   type DerivarInicialResultado,
 } from './contador-maquina.service'
+import { resolverPlanejadoDaEtapa, type ContagemResolvida } from '../pcp/base-contagem.service'
 
 /**
  * Regras de negócio exclusivas do Checkout de Apontamento (task 10 do spec
@@ -136,6 +137,8 @@ export interface EtapaPainelCheckout {
   quantidadeProduzida: number
   quantidadePerda: number
   prioridade: string
+  /** Base de contagem por Tipo de Processo (COLAGEM→Unidade; demais→Tiragem). */
+  contagem: ContagemResolvida
 }
 
 /**
@@ -177,6 +180,9 @@ export async function listarPainelCheckout(
           observacoes: true,
         },
       },
+      // Base de contagem: código do tipo de processo do centro + tiragem do plano.
+      centroProducao: { select: { tipoProcesso: { select: { codigo: true } } } },
+      plano: { select: { tiragem: true } },
     },
     orderBy: [
       { posicaoFila: { sort: 'asc', nulls: 'last' } },
@@ -218,6 +224,15 @@ export async function listarPainelCheckout(
       quantidadeProduzida: Number(etapa.quantidadeProduzida),
       quantidadePerda: Number(etapa.quantidadePerda),
       prioridade: etapa.ordemProducao.prioridade,
+      contagem: resolverPlanejadoDaEtapa(
+        {
+          tipoProcessoCodigo: etapa.centroProducao?.tipoProcesso?.codigo ?? null,
+          quantidadePrevista: Number(etapa.quantidadePrevista) || 0,
+          quantidadeProduzida: Number(etapa.quantidadeProduzida) || 0,
+        },
+        etapa.plano ? { tiragem: etapa.plano.tiragem != null ? Number(etapa.plano.tiragem) : null } : null,
+        { quantidade: Number(etapa.ordemProducao.quantidade) || 0 },
+      ),
     }
   })
 }

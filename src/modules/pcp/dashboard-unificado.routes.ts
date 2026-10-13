@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
+import { baseContagem } from './base-contagem.service'
 
 const querySchema = z.object({
   dataInicio: z.string().optional(),
@@ -185,6 +186,10 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
     // um vira uma chave (id) e um label (descrição) nos indicadores.
     const categorias = tiposProcesso.map(tp => tp.id)
     const labelPorCategoria = new Map(tiposProcesso.map(tp => [tp.id, tp.descricao]))
+    // Base de contagem por categoria (spec base-contagem-por-tipo-processo):
+    // COLAGEM → Unidade (peças); demais → Tiragem (folhas). Usada pelo front
+    // para rotular a unidade de medida de cada Tipo de Processo nos gráficos.
+    const basePorCategoria = new Map(tiposProcesso.map(tp => [tp.id, baseContagem(tp.codigo)]))
 
     // Apontamentos no período, de etapas vinculadas a algum centro da empresa
     const apontamentos = await prisma.apontamentoEtapa.findMany({
@@ -326,7 +331,7 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
       return serie
     }
 
-    const producaoDiaria = categorias.map(cat => ({ centro: labelPorCategoria.get(cat)!, serie: serieDiaria(acumulado.get(cat)!.producaoPorDia) }))
+    const producaoDiaria = categorias.map(cat => ({ centro: labelPorCategoria.get(cat)!, base: basePorCategoria.get(cat)!, serie: serieDiaria(acumulado.get(cat)!.producaoPorDia) }))
 
     return {
       periodo: { dataInicio: dataInicio.toISOString().slice(0, 10), dataFim: dataFim.toISOString().slice(0, 10) },

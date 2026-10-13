@@ -1016,3 +1016,65 @@ cada correção passada), falta criar a rota de leitura de `LogLeituraContador`
 (ex.: `GET /api/pcp/contador/leituras/:id/logs` ou embutir os logs no
 histórico do centro) + o consumo no frontend. Tratar quando o usuário pedir
 rastreabilidade de correções.
+
+---
+
+## 12. Base de Contagem por Tipo de Processo (Tiragem vs Unidade)
+
+Spec: `.kiro/specs/base-contagem-por-tipo-processo/`. Padroniza, em TODAS as
+superfícies que exibem progresso/meta de produção, a **base de contagem**
+derivada do Tipo de Processo do centro.
+
+### Regra (travada)
+- **COLAGEM** (`TipoProcesso.codigo === 'COLAGEM'`) → base **UNIDADE** (peças montadas).
+- **Qualquer outro** tipo (Cortadeira, Impressão, Acabamento, Acoplagem, Corte
+  Vinco, Verniz, …) → base **TIRAGEM** (folhas/passagens).
+
+Acoplagem/Corte Vinco NÃO são códigos próprios de `TipoProcesso` (máquinas assim
+entram como `ACABAMENTO`), então a regra "demais → Tiragem" já os cobre. A função
+só testa "é COLAGEM?".
+
+### Fonte única (backend)
+`src/modules/pcp/base-contagem.service.ts` (funções PURAS, testadas com fast-check
+em `base-contagem.service.test.ts`, 13 testes / 9 Correctness Properties):
+- `baseContagem(codigo) → 'UNIDADE' | 'TIRAGEM'`.
+- `resolverPlanejadoDaEtapa(etapa, plano, op) → { base, planejado, apontado, progresso }`.
+  - base pela regra; plano implícito quando `plano == null` (usa `op.quantidade`);
+    UNIDADE usa `plano.unidade` senão `op.quantidade`; TIRAGEM usa `plano.tiragem`
+    senão fallback de NÃO-REGRESSÃO (`quantidadePrevista>0 ? quantidadePrevista :
+    op.quantidade`); desmembramento (`quantidadePrevista>0`) sobrepõe; `apontado =
+    quantidadeProduzida` **bruto, nunca convertido** (R3); `progresso` 0..100.
+- `exigirEmpresaId(empresaId)` lança `BaseContagemError` (400) se escopo ausente (R14.3).
+
+### Como as superfícies consomem
+Cada rota de backend **anexa o campo derivado `contagem`** ao payload (aditivo —
+os campos legados `quantidade/quantidadeProduzida/percentual/tiragem` continuam).
+O **frontend só renderiza `contagem.*`** — NÃO reimplementa a regra:
+- `GET /pcp/programacao/painel` (etapa-operacional.routes.ts) → `etapa.contagem`.
+- `GET /pcp/quadro-producao` → `etapaAtual.contagem`.
+- `GET /pcp/etapas/:id/apontamentos` → `contagem` (planejado/base da etapa).
+- `GET /pcp/dashboard/indicadores` (dashboard-unificado.routes.ts) → `producaoDiaria[].base`
+  (rótulo de unidade por Tipo de Processo; OEE/Pareto usam o bruto, inalterados).
+- Checkout `listarPainelCheckout` (checkout.service.ts, `GET /checkout/painel`) → `contagem`.
+- Painel de Produção (TV) reusa `GET /programacao/painel`.
+Front: `pcp/programacao/page.tsx` (totalizador + rótulo do modal via `contagem.base`;
+a antiga `unidadeContagem` agora recebe a `base` do payload), `pcp/painel-producao`,
+`pcp/quadro-producao`, e `VisioFab.Checkout/src/app/painel/page.tsx`.
+
+### Decisões (D1/D2)
+- **D1**: Unidade = `OrdemProducao.quantidade` (colagem opera no produto final /
+  plano único). Não há "peças por plano" persistido no schema.
+- **D2**: a base é derivada do Tipo de Processo **ATUAL** (sem persistir a base no
+  apontamento, SEM mudança de schema, SEM migração). O apontamento bruto nunca é
+  alterado. Reclassificar o tipo de um centro é raro/administrativo; se um dia for
+  exigido congelamento histórico por apontamento, persistir base/planejado no
+  `ApontamentoEtapa` (tocaria schema + migrate-prod).
+
+### Multi-tenant
+Toda agregação filtra `empresaId` explícito da OP real (nunca só `prismaScoped` —
+bypass SUPER_ADMIN). O `GET /etapas/:id/apontamentos` resolve a etapa com
+`ordemProducao: { empresaId: user.empresaId }`.
+
+### NÃO toca o apontamento
+`POST /checkout/etapas/:id/apontar` e `POST /pcp/etapas/:id/apontar` permanecem
+inalterados — gravam o dado bruto. A base só muda EXIBIÇÃO/meta/progresso.

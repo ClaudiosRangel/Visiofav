@@ -18,6 +18,7 @@ import {
 } from './etapa-operacional.service'
 import { getPermissoes, verificarPermissaoAcao, PermissoesPorProcesso } from './permissoes-pcp.routes'
 import { codigoDeposito } from '../deposito/deposito.routes'
+import { resolverPlanejadoDaEtapa } from './base-contagem.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -507,7 +508,32 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       tempoParadaTotal: apontamentos.reduce((acc, a) => acc + (a.tempoParadaMinutos || 0), 0),
     }
 
-    return { etapaId: id, apontamentos, totais }
+    // Base de contagem por Tipo de Processo (spec base-contagem-por-tipo-processo).
+    // Filtro empresaId explícito pela OP real (multi-tenant). `contagem` usa o
+    // total produzido acumulado da etapa como apontado.
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+      select: {
+        quantidadePrevista: true,
+        quantidadeProduzida: true,
+        centroProducao: { select: { tipoProcesso: { select: { codigo: true } } } },
+        plano: { select: { tiragem: true } },
+        ordemProducao: { select: { quantidade: true } },
+      },
+    })
+    const contagem = etapa
+      ? resolverPlanejadoDaEtapa(
+          {
+            tipoProcessoCodigo: etapa.centroProducao?.tipoProcesso?.codigo ?? null,
+            quantidadePrevista: Number(etapa.quantidadePrevista) || 0,
+            quantidadeProduzida: Number(etapa.quantidadeProduzida) || 0,
+          },
+          etapa.plano ? { tiragem: etapa.plano.tiragem != null ? Number(etapa.plano.tiragem) : null } : null,
+          { quantidade: Number(etapa.ordemProducao?.quantidade) || 0 },
+        )
+      : null
+
+    return { etapaId: id, apontamentos, totais, contagem }
   })
 
   // =========================================================================
@@ -1456,6 +1482,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             referenciaExterna: true,
           },
         },
+        // Base de contagem (spec base-contagem-por-tipo-processo): precisa do
+        // código do tipo de processo do centro e da tiragem do plano da etapa.
+        centroProducao: { select: { tipoProcesso: { select: { codigo: true } } } },
+        plano: { select: { tiragem: true } },
       },
     })
 
@@ -1602,6 +1632,16 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           quantidade,
           quantidadeProduzida,
           percentual,
+          // Base de contagem por Tipo de Processo (COLAGEM→Unidade; demais→Tiragem).
+          contagem: resolverPlanejadoDaEtapa(
+            {
+              tipoProcessoCodigo: (etapaAtual as any).centroProducao?.tipoProcesso?.codigo ?? null,
+              quantidadePrevista: Number(etapaAtual.quantidadePrevista) || 0,
+              quantidadeProduzida,
+            },
+            (etapaAtual as any).plano ? { tiragem: (etapaAtual as any).plano.tiragem != null ? Number((etapaAtual as any).plano.tiragem) : null } : null,
+            { quantidade },
+          ),
           tempoNaEtapa,
           operadores: operadoresPorEtapa.get(etapaAtual.id) || [],
         }
@@ -2202,6 +2242,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             percentual: (Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade)) > 0
               ? Math.round((Number(e.quantidadeProduzida) / (Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade))) * 100)
               : 0,
+            // Base de contagem por Tipo de Processo (spec base-contagem-por-tipo-processo):
+            // COLAGEM → Unidade (peças); demais → Tiragem (folhas). Fonte única no
+            // backend; o front renderiza `contagem.*` em vez de reimplementar a regra.
+            contagem: resolverPlanejadoDaEtapa(
+              {
+                tipoProcessoCodigo: centro.tipoProcesso?.codigo ?? null,
+                quantidadePrevista: Number(e.quantidadePrevista) || 0,
+                quantidadeProduzida: Number(e.quantidadeProduzida) || 0,
+              },
+              e.plano ? { tiragem: e.plano.tiragem != null ? Number(e.plano.tiragem) : null } : null,
+              { quantidade: Number(e.ordemProducao.quantidade) || 0 },
+            ),
             prioridade: e.ordemProducao.prioridade,
             dataEntrega: e.ordemProducao.dataEntregaPrevista,
             dataEntregaOriginal: e.ordemProducao.dataEntregaOriginal || e.ordemProducao.dataEntregaPrevista,
