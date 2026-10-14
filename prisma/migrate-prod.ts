@@ -2565,6 +2565,17 @@ async function main() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "volume_unidade" DECIMAL(10,6)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "peso_liquido_unidade" DECIMAL(10,3)`)
 
+  // SKU — pesos e paletização (relatório 3, cadastro de SKU). O schema.prisma
+  // declara estas colunas mas o migrate-prod nunca as criava em produção, o
+  // que fazia o PUT /skus/:id quebrar com 500 "column does not exist" ao
+  // salvar peso/lastro/camada/tipo de palete. Idempotente (IF NOT EXISTS).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "peso_liquido" DECIMAL(10,3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "peso_bruto" DECIMAL(10,3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "peso_palete" DECIMAL(10,3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "lastro" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "camada" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sku" ADD COLUMN IF NOT EXISTS "tipo_palete" VARCHAR(30)`)
+
   // DadosLogisticosArmazenagem — pulmão regulador em outro depósito
   await prisma.$executeRawUnsafe(`ALTER TABLE "dados_logisticos_armazenagem" ADD COLUMN IF NOT EXISTS "pulmao_regulador_deposito_id" TEXT`)
 
