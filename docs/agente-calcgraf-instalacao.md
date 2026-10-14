@@ -99,18 +99,24 @@ sqlcmd -S localhost -E -C -Q "SELECT name FROM sys.databases"
 
 ---
 
-## 3. Gerar a API key da Carton Wega no Vizor
+## 3. API key da Carton Wega — JÁ CRIADA E EMBUTIDA
 
-A API key define **em qual empresa** as OPs serão criadas. Como ela é da
-Carton Wega, as OPs caem **só** na Carton Wega (isolamento por empresa).
+A migração do importador **já foi aplicada em produção** (Neon) e uma **API
+key ATIVA da Carton Wega** já foi gerada (empresa
+`75848e24-742e-461d-b913-1642c5b83ae9`, nome "Agente TS PHTech (Calcgraf)").
+Essa chave **já vem pré-preenchida** no campo do agente — não precisa gerar
+outra para instalar.
 
-1. Entrar no Vizor **logado na empresa Carton Wega**, com perfil
-   **ADMIN/SUPER_ADMIN**.
-2. Menu **PCP → Importador Calcgraf → API keys** (rota
-   `/pcp/importador-calcgraf/api-keys`).
-3. Clicar em **Gerar chave**, dar um nome (ex.: "Agente TS PHTech").
-4. **Copiar o token exibido AGORA** — ele só aparece uma vez (o servidor
-   guarda apenas o hash). Se perder, revoga e gera outro.
+> **Nota de segurança:** a chave viaja embutida no instalador (facilita a
+> instalação pelo Pedro). Se o `.exe`/repositório for compartilhado
+> amplamente, convém **revogar e gerar outra** depois pela tela do Vizor
+> (PCP → Importador Calcgraf → API keys). Lá também dá para revogar/criar
+> novas chaves a qualquer momento.
+
+Para gerar/revogar uma chave manualmente (opcional):
+1. Vizor logado na **Carton Wega**, perfil **ADMIN/SUPER_ADMIN**.
+2. Menu **PCP → Importador Calcgraf → API keys**.
+3. **Gerar chave** → copiar o token (só aparece uma vez) → colar no agente.
 
 ---
 
@@ -167,16 +173,23 @@ npm start
 
 ## 5. Configurar o agente (tela de configuração)
 
-Abrir o agente e preencher os 4 campos (persistidos em
-`%APPDATA%/VisioFabAgenteCalcgraf/config.json`; os segredos ficam cifrados via
-DPAPI do Windows):
+Ao abrir o agente pela 1ª vez, **os 4 campos já vêm pré-preenchidos** com os
+defaults da Carton Wega. Só é preciso **conferir/ajustar a connection string**
+(o nome do banco/instância do SQL no servidor real) e clicar em **Salvar
+configuração**. Os valores são persistidos em
+`%APPDATA%/VisioFabAgenteCalcgraf/config.json` (segredos cifrados via DPAPI).
 
-| Campo | O que colocar |
-|-------|---------------|
-| **Connection string do SQL Server** | A string da seção 2 (Opção A ou B), com o banco/instância reais. |
-| **URL da API do Vizor** | `https://api.vizorerp.com.br` (produção). |
-| **API key do agente** | O token copiado na seção 3. |
-| **Intervalo de sincronização (min)** | Ex.: `15`. |
+| Campo | Default embutido | Ação |
+|-------|------------------|------|
+| **Connection string do SQL Server** | `server=localhost;Database=GPrint;Trusted_Connection=yes;TrustServerCertificate=yes;` | **Conferir** o nome do banco (`GPrint`) e a instância (`localhost`) no servidor real — ver seção 2.1. Ajustar se diferente. |
+| **URL da API do Vizor** | `https://api.vizorerp.com.br` | Manter. |
+| **API key do agente** | *(chave da Carton Wega já preenchida)* | Manter (ou trocar se gerou outra). |
+| **Intervalo de sincronização (min)** | `15` | Ajustar se quiser. |
+
+> Se o SQL do servidor NÃO aceitar autenticação Windows (`Trusted_Connection`),
+> troque para usuário SQL de leitura:
+> `server=localhost;Database=GPrint;UID=<usuario>;PWD=<senha>;TrustServerCertificate=yes;`
+> (ver seção 2, Opção B).
 
 ---
 
