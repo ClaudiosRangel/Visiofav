@@ -1,0 +1,757 @@
+/**
+ * Leitor do Calcgraf — SOMENTE LEITURA (Tarefa 9 / Requisitos 1.1, 1.2, 1.4).
+ *
+ * Este módulo abre uma conexão ao SQL Server local do Calcgraf e lê as OPs
+ * candidatas (OpHeader + OpItem + OpItemEstrutura + OpLote), montando o
+ * `OpOrigemDTO` — o MESMO shape consumido pelo backend do Vizor
+ * (`ingestao-op-calcgraf.pure.ts`).
+ *
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  SOMENTE LEITURA — GARANTIA DE SEGURANÇA (Requisito 1.1)                  ║
+ * ║                                                                          ║
+ * ║  O leitor SÓ emite comandos `SELECT`. NÃO existe, em nenhum lugar deste   ║
+ * ║  módulo, qualquer `INSERT`/`UPDATE`/`DELETE`/DDL. Não há método público   ║
+ * ║  de escrita. Toda query passa por `assertSomenteLeitura()`, que rejeita   ║
+ * ║  qualquer comando que não comece por SELECT/WITH/SET (lança erro antes de ║
+ * ║  tocar o banco). Em produção, recomenda-se ainda um usuário SQL com role  ║
+ * ║  `db_datareader` (Requisito 1.2) — a escrita fica impossível por dupla    ║
+ * ║  camada: credencial de leitura + este guardião de comando.               ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * ─────────────────────────── Abstração de conexão ──────────────────────────
+ * A instância do Calcgraf costuma NÃO expor TCP/1433 (só named pipes / shared
+ * memory — ver docs/calcgraf-mapeamento-importacao.md). Por isso há dois modos,
+ * atrás de uma interface comum `ConexaoCalcgrafSomenteLeitura`:
+ *
+ *  1. Driver primário `msnodesqlv8` (ODBC + named pipes; Trusted_Connection ou
+ *     usuário SQL). Resolvido por require dinâmico; tipos via o ambient
+ *     `msnodesqlv8.d.ts` deste projeto (mantém `tsc --noEmit` verde sem instalar).
+ *  2. Fallback por ponte `sqlcmd` + `FOR JSON PATH` (child_process). Já validado
+ *     no levantamento: `sqlcmd -S <server> -E -C -d <db> -y 0 -Q "<query> FOR
+ *     JSON PATH"`. O sqlcmd quebra o JSON em várias linhas por largura de coluna
+ *     — removemos as quebras antes de parsear (documento contíguo).
+ *
+ * A escolha é por `modo` na config de conexão (`'driver' | 'sqlcmd' | 'auto'`).
+ * Em `'auto'`, tenta o driver e, se o require/connect falhar, cai no sqlcmd.
+ */
+
+import { execFile } from 'node:child_process'
+
+// ===========================================================================
+// DTO — ESPELHO do DTO do backend
+// ---------------------------------------------------------------------------
+// Estas interfaces são uma CÓPIA LOCAL de `OpOrigemDTO` (e filhas) definidas em
+// `VisioFab.Wms.Back/src/modules/pcp/importador-calcgraf/ingestao-op-calcgraf.pure.ts`.
+// Os dois projetos são SEPARADOS (agente Electron × backend Fastify) e NÃO
+// compartilham tipos; por isso duplicamos aqui. Ao evoluir o DTO no backend,
+// manter este espelho em sincronia (mesma ordem/nomes de campos → o hash
+// calculado dos dois lados precisa casar para a idempotência funcionar).
+// ===========================================================================
+
+/** Item/estrutura (componente) de uma OP de origem. Espelho do backend. */
+export interface ItemOpOrigemDTO {
+  /** Número/sequência do item dentro da OP (chave estável de ordenação). */
+  item?: number
+  /** Código do item de estoque no Calcgraf (OpItem.CodItemEstoque). */
+  codItemEstoque?: string
+  /** Descrição do componente. */
+  descricao?: string
+  /** Quantidade do componente. */
+  quantidade?: number
+  /** Unidade de medida. */
+  unidadeMedida?: string
+  /** Status do item na origem. */
+  status?: string
+}
+
+/** Etapa/operação do roteiro de uma OP de origem (quando disponível). Espelho do backend. */
+export interface EtapaOpOrigemDTO {
+  /** Sequência da etapa (chave estável de ordenação). */
+  sequencia?: number
+  /** Nome/código do centro de produção ou operação. */
+  centro?: string
+  /** Descrição/detalhe da etapa. */
+  descricao?: string
+  /** Status da etapa na origem. */
+  status?: string
+}
+
+/** Lote/tiragem de uma OP de origem (OpLote). Espelho do backend. */
+export interface LoteOpOrigemDTO {
+  /** Tiragem do lote (OpLote.Tiragem). */
+  tiragem?: number
+  /** Data prometida de entrega (OpLote.DataPrometida, ISO string). */
+  dataPrometida?: string
+  /** Posição na fila de entregas (OpLote.OrdemFilaOp). */
+  ordemFila?: number
+  /** Status do lote na origem (OpLote.Status). */
+  status?: string
+}
+
+/** Payload de uma OP de origem do Calcgraf (shape de UMA OP). Espelho do backend. */
+export interface OpOrigemDTO {
+  /** Número da OP no Calcgraf (OpHeader.Numero) — chave de identidade. */
+  numero: number
+  /** Descrição da OP (OpHeader.Descricao). */
+  descricao: string
+  /** Data de emissão (OpHeader.DataHoraEmissao, ISO string). */
+  dataEmissao?: string
+  /** Nome do produto (via OpItem.CodItemEstoque → cadastro de item). Best-effort. */
+  produtoNome?: string
+  /** Código do produto. Best-effort. */
+  produtoCodigo?: string
+  /** Nome do cliente. Best-effort (depende de vínculo pedido). */
+  clienteNome?: string
+  /** Quantidade (tiragem do lote principal). */
+  quantidade?: number
+  /** Data de entrega (OpLote.DataPrometida do lote principal). */
+  dataEntrega?: string
+  /** Tiragem. */
+  tiragem?: number
+  /** Itens/estrutura (BOM) — fase MVP: mínimo para liberar. */
+  itens?: ItemOpOrigemDTO[]
+  /** Etapas/roteiro — quando disponível. */
+  etapas?: EtapaOpOrigemDTO[]
+  /** Lotes/tiragens (OpLote). */
+  lotes?: LoteOpOrigemDTO[]
+}
+
+// ===========================================================================
+// Guardião de somente-leitura (Requisito 1.1)
+// ===========================================================================
+
+/** Erro específico do leitor do Calcgraf. */
+export class CalcgrafReaderError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CalcgrafReaderError'
+  }
+}
+
+/**
+ * Garante que o SQL é somente-leitura antes de qualquer execução.
+ * Aceita apenas comandos que comecem por SELECT, WITH (CTE de leitura) ou SET
+ * (ex.: `SET NOCOUNT ON`, usado com o sqlcmd). Qualquer outra palavra-chave
+ * (INSERT/UPDATE/DELETE/DROP/ALTER/EXEC/MERGE/TRUNCATE/CREATE...) é rejeitada.
+ */
+export function assertSomenteLeitura(sql: string): void {
+  const limpo = sql
+    .replace(/--[^\n]*/g, ' ') // remove comentários de linha
+    .replace(/\/\*[\s\S]*?\*\//g, ' ') // remove comentários de bloco
+    .trim()
+
+  // Primeira palavra significativa de cada statement separado por ';'.
+  const statements = limpo
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+
+  const PERMITIDOS = /^(select|with|set)\b/i
+  for (const stmt of statements) {
+    if (!PERMITIDOS.test(stmt)) {
+      const primeira = stmt.split(/\s+/)[0] ?? ''
+      throw new CalcgrafReaderError(
+        `Comando SQL não permitido pelo leitor somente-leitura: "${primeira}". ` +
+          'O agente só emite SELECT (Requisito 1.1).',
+      )
+    }
+  }
+}
+
+// ===========================================================================
+// Abstração de conexão SOMENTE-LEITURA
+// ===========================================================================
+
+/** Modo de acesso ao SQL Server. */
+export type ModoConexao = 'driver' | 'sqlcmd' | 'auto'
+
+/** Configuração de conexão do leitor. */
+export interface ConfigConexaoCalcgraf {
+  /**
+   * Modo de acesso:
+   * - `'driver'`: usa `msnodesqlv8` (named pipes/ODBC).
+   * - `'sqlcmd'`: usa a ponte `sqlcmd` + FOR JSON PATH.
+   * - `'auto'` (padrão): tenta o driver; se indisponível, cai no sqlcmd.
+   */
+  modo?: ModoConexao
+  /**
+   * Connection string ODBC para o driver `msnodesqlv8` (modo driver).
+   * Ex. (Trusted): `server=localhost;Database=CalcgrafCartonWega;Trusted_Connection=yes;`
+   * Ex. (usuário SQL leitura): `server=localhost;Database=...;UID=leitor;PWD=...;`
+   */
+  connectionString?: string
+  /** Servidor para o sqlcmd (ex.: `localhost`). Modo sqlcmd. */
+  servidor?: string
+  /** Banco para o sqlcmd (ex.: `CalcgrafCartonWega`). Modo sqlcmd. */
+  database?: string
+  /**
+   * Usar Trusted Connection (`-E`) no sqlcmd (autenticação Windows do serviço).
+   * Default `true`. Quando `false`, informe `usuario`/`senha`.
+   */
+  trustedConnection?: boolean
+  /** Usuário SQL (sqlcmd `-U`), quando não usar Trusted Connection. */
+  usuario?: string
+  /** Senha SQL (sqlcmd `-P`), quando não usar Trusted Connection. */
+  senha?: string
+  /** Caminho do executável `sqlcmd` (default: `sqlcmd` no PATH). */
+  caminhoSqlcmd?: string
+}
+
+/**
+ * Interface comum de uma conexão somente-leitura ao Calcgraf. Expõe APENAS
+ * leitura (`consultar`) e `fechar` — nenhum método de escrita.
+ */
+export interface ConexaoCalcgrafSomenteLeitura {
+  /** Executa um SELECT e retorna as linhas como objetos. SOMENTE LEITURA. */
+  consultar<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
+  /** Fecha a conexão/libera recursos. */
+  fechar(): Promise<void>
+}
+
+// ---------------------------------------------------------------------------
+// Implementação 1 — driver msnodesqlv8 (named pipes / ODBC)
+// ---------------------------------------------------------------------------
+
+/**
+ * Superfície MÍNIMA do driver `msnodesqlv8` que usamos, declarada localmente
+ * para NÃO acoplar o reader aos tipos oficiais do pacote (que variam entre
+ * versões — ex.: `err: Error | undefined` vs `SqlError | null`). O `require`
+ * dinâmico devolve a API crua; tratamos tudo como `unknown` nas bordas e
+ * convertemos para esta forma segura.
+ */
+interface DriverConnectionMinima {
+  query(
+    sql: string,
+    paramsOuCb: unknown[] | ((err: unknown, rows?: unknown[]) => void),
+    cb?: (err: unknown, rows?: unknown[]) => void,
+  ): unknown
+  close(cb?: (err?: unknown) => void): void
+}
+interface DriverMsnodesqlv8Minimo {
+  open(
+    connectionString: string,
+    cb: (err: unknown, conn?: DriverConnectionMinima) => void,
+  ): void
+}
+
+/**
+ * Carrega `msnodesqlv8` sem quebrar quando o pacote não está instalado.
+ * Retorna `null` se indisponível (cai no fallback sqlcmd no modo `'auto'`).
+ */
+function carregarMsnodesqlv8(): DriverMsnodesqlv8Minimo | null {
+  try {
+    // require dinâmico: fora do TS do Calcgraf o binário nativo não existe.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('msnodesqlv8') as DriverMsnodesqlv8Minimo
+  } catch {
+    return null
+  }
+}
+
+/** Extrai uma mensagem de erro de um valor `unknown` vindo das callbacks. */
+function msgErro(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object' && 'message' in err) {
+    return String((err as { message: unknown }).message)
+  }
+  return 'erro desconhecido'
+}
+
+/** Conexão via driver nativo `msnodesqlv8`. */
+class ConexaoDriver implements ConexaoCalcgrafSomenteLeitura {
+  private constructor(private readonly conn: DriverConnectionMinima) {}
+
+  /** Abre a conexão a partir da connection string ODBC. */
+  static abrir(connectionString: string): Promise<ConexaoDriver> {
+    const sql = carregarMsnodesqlv8()
+    if (!sql) {
+      return Promise.reject(
+        new CalcgrafReaderError(
+          'Driver msnodesqlv8 não está instalado. Use o modo sqlcmd ou instale o driver no TS.',
+        ),
+      )
+    }
+    return new Promise<ConexaoDriver>((resolve, reject) => {
+      sql.open(connectionString, (err, conn) => {
+        if (err || !conn) {
+          reject(
+            new CalcgrafReaderError(
+              `Falha ao abrir conexão msnodesqlv8: ${err ? msgErro(err) : 'conexão nula'}`,
+            ),
+          )
+          return
+        }
+        resolve(new ConexaoDriver(conn))
+      })
+    })
+  }
+
+  consultar<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+    assertSomenteLeitura(sql) // Requisito 1.1 — rejeita qualquer escrita.
+    return new Promise<T[]>((resolve, reject) => {
+      const cb = (err: unknown, rows?: unknown[]): void => {
+        if (err) {
+          reject(new CalcgrafReaderError(`Erro na consulta: ${msgErro(err)}`))
+          return
+        }
+        resolve((rows ?? []) as T[])
+      }
+      if (params.length > 0) {
+        this.conn.query(sql, params, cb)
+      } else {
+        this.conn.query(sql, cb)
+      }
+    })
+  }
+
+  fechar(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.conn.close(() => resolve())
+    })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Implementação 2 — ponte sqlcmd + FOR JSON PATH (fallback / modo dev)
+// ---------------------------------------------------------------------------
+
+/**
+ * Conexão via `sqlcmd`. Cada consulta roda um processo `sqlcmd` com
+ * `FOR JSON PATH` e parseia o JSON retornado. Não há "conexão" persistente —
+ * `fechar()` é no-op. Validado no levantamento (docs/calcgraf-mapeamento-importacao.md).
+ */
+class ConexaoSqlcmd implements ConexaoCalcgrafSomenteLeitura {
+  constructor(private readonly cfg: ConfigConexaoCalcgraf) {
+    if (!cfg.servidor || !cfg.database) {
+      throw new CalcgrafReaderError(
+        'Modo sqlcmd exige `servidor` e `database` na configuração de conexão.',
+      )
+    }
+  }
+
+  /**
+   * Monta os argumentos do sqlcmd. Usa execFile (array de args, sem shell) para
+   * evitar injeção de comando: a query vai como um único argumento após `-Q`.
+   */
+  private montarArgs(sqlComJson: string): string[] {
+    const cfg = this.cfg
+    const args: string[] = ['-S', cfg.servidor as string, '-d', cfg.database as string]
+    // Trust do certificado (ODBC Driver 18 exige): `-C`.
+    args.push('-C')
+    // Largura ilimitada de coluna: `-y 0` (evita truncar o JSON).
+    args.push('-y', '0')
+    if (cfg.trustedConnection === false) {
+      if (!cfg.usuario) {
+        throw new CalcgrafReaderError(
+          'sqlcmd sem Trusted Connection exige `usuario` (e `senha`).',
+        )
+      }
+      args.push('-U', cfg.usuario)
+      if (cfg.senha) args.push('-P', cfg.senha)
+    } else {
+      // Autenticação Windows do serviço.
+      args.push('-E')
+    }
+    // SET NOCOUNT ON evita a linha "(N rows affected)" no meio da saída.
+    args.push('-Q', `SET NOCOUNT ON; ${sqlComJson}`)
+    return args
+  }
+
+  consultar<T = Record<string, unknown>>(sql: string, _params: unknown[] = []): Promise<T[]> {
+    assertSomenteLeitura(sql) // Requisito 1.1.
+    // sqlcmd não parametriza como o driver: a query já deve vir pronta (as
+    // queries deste módulo usam só literais numéricos/datas controlados).
+    const sqlComJson = `${sql.trim().replace(/;+$/, '')} FOR JSON PATH`
+    const exe = this.cfg.caminhoSqlcmd ?? 'sqlcmd'
+    const args = this.montarArgs(sqlComJson)
+
+    return new Promise<T[]>((resolve, reject) => {
+      execFile(exe, args, { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          reject(
+            new CalcgrafReaderError(
+              `Falha ao executar sqlcmd: ${err.message}${stderr ? ` | ${stderr}` : ''}`,
+            ),
+          )
+          return
+        }
+        try {
+          resolve(parseJsonDoSqlcmd<T>(stdout))
+        } catch (e) {
+          reject(
+            new CalcgrafReaderError(
+              `Falha ao parsear JSON do sqlcmd: ${(e as Error).message}`,
+            ),
+          )
+        }
+      })
+    })
+  }
+
+  fechar(): Promise<void> {
+    return Promise.resolve()
+  }
+}
+
+/**
+ * Parseia a saída do `sqlcmd ... FOR JSON PATH`. O sqlcmd QUEBRA o documento
+ * JSON em múltiplas linhas por largura de coluna; precisamos reconstituir o
+ * documento contíguo removendo as quebras de linha (como descreve o doc de
+ * mapeamento). Linhas vazias e a cauda "(N rows affected)" são ignoradas.
+ */
+export function parseJsonDoSqlcmd<T = Record<string, unknown>>(saidaBruta: string): T[] {
+  if (!saidaBruta) return []
+  const contiguo = saidaBruta
+    .split(/\r?\n/)
+    // descarta linhas de contagem/afetadas e vazias
+    .filter((l) => l.trim().length > 0 && !/^\(\d+ rows? affected\)/i.test(l.trim()))
+    .join('') // junta sem separador — o JSON foi partido no meio por largura
+    .trim()
+
+  if (!contiguo) return []
+  const parsed = JSON.parse(contiguo) as T[] | T
+  return Array.isArray(parsed) ? parsed : [parsed]
+}
+
+// ---------------------------------------------------------------------------
+// Fábrica de conexão (resolve o modo driver/sqlcmd/auto)
+// ---------------------------------------------------------------------------
+
+/**
+ * Abre uma conexão SOMENTE-LEITURA ao Calcgraf conforme a config.
+ * - `'driver'`: exige `connectionString`.
+ * - `'sqlcmd'`: exige `servidor` + `database`.
+ * - `'auto'` (padrão): tenta o driver (se houver `connectionString` e o pacote
+ *   instalar/conectar); caso contrário, cai para o sqlcmd.
+ */
+export async function abrirConexaoCalcgraf(
+  cfg: ConfigConexaoCalcgraf,
+): Promise<ConexaoCalcgrafSomenteLeitura> {
+  const modo: ModoConexao = cfg.modo ?? 'auto'
+
+  if (modo === 'driver') {
+    if (!cfg.connectionString) {
+      throw new CalcgrafReaderError('Modo driver exige `connectionString`.')
+    }
+    return ConexaoDriver.abrir(cfg.connectionString)
+  }
+
+  if (modo === 'sqlcmd') {
+    return new ConexaoSqlcmd(cfg)
+  }
+
+  // modo 'auto': driver primeiro (se possível), senão sqlcmd.
+  if (cfg.connectionString && carregarMsnodesqlv8()) {
+    try {
+      return await ConexaoDriver.abrir(cfg.connectionString)
+    } catch {
+      // cai para o sqlcmd abaixo
+    }
+  }
+  return new ConexaoSqlcmd(cfg)
+}
+
+// ===========================================================================
+// Queries de OP (SOMENTE SELECT) — colunas conferidas com
+// docs/calcgraf-mapeamento-importacao.md (seção "Tabelas de OP").
+// ===========================================================================
+
+/**
+ * Filtro opcional para não varrer as ~3193 OPs todo ciclo (o hash decide o que
+ * mudou; este filtro só reduz o conjunto candidato).
+ */
+export interface FiltroOps {
+  /** Só OPs com `OpHeader.Numero >= numeroMinimo`. */
+  numeroMinimo?: number
+  /** Só OPs com `OpHeader.Numero <= numeroMaximo`. */
+  numeroMaximo?: number
+  /** Só OPs com `DataHoraEmissao >= dataEmissaoMinima` (ISO `YYYY-MM-DD`). */
+  dataEmissaoMinima?: string
+  /** Limite de OPs retornadas (TOP N). Útil para validação pontual (golden). */
+  limite?: number
+}
+
+// Linhas cruas de cada tabela (só as colunas que lemos).
+interface LinhaOpHeader {
+  Codigo: number
+  Numero: number
+  DataHoraEmissao: string | null
+  Descricao: string | null
+}
+interface LinhaOpItem {
+  CodOpHeader: number
+  CodItemEstoque: number | string | null
+  Item: number | null
+  Status: number | null
+}
+interface LinhaOpItemEstrutura {
+  CodOpHeader: number
+  CodEstrutura: number | string | null
+  Item: number | null
+  CodItemEstoque: number | string | null
+}
+interface LinhaOpLote {
+  CodOpItemEstrutura: number | null
+  Tiragem: number | null
+  DataPrometida: string | null
+  OrdemFilaOp: number | null
+  Status: number | null
+}
+
+/**
+ * Monta o SELECT das OpHeader candidatas. Filtra `Ativo <> 'N'` (ignora
+ * canceladas/inativas na origem) e aplica o filtro opcional por faixa de
+ * Numero / data de emissão. Ordena por Numero para leitura previsível.
+ *
+ * ATENÇÃO: valores do filtro são numéricos/data saneados abaixo (não vêm de
+ * texto livre do usuário) — seguro para interpolar no sqlcmd.
+ */
+export function montarQueryOpHeader(filtro: FiltroOps = {}): string {
+  const where: string[] = [`Ativo <> 'N'`]
+  if (typeof filtro.numeroMinimo === 'number' && Number.isFinite(filtro.numeroMinimo)) {
+    where.push(`Numero >= ${Math.trunc(filtro.numeroMinimo)}`)
+  }
+  if (typeof filtro.numeroMaximo === 'number' && Number.isFinite(filtro.numeroMaximo)) {
+    where.push(`Numero <= ${Math.trunc(filtro.numeroMaximo)}`)
+  }
+  if (filtro.dataEmissaoMinima && /^\d{4}-\d{2}-\d{2}$/.test(filtro.dataEmissaoMinima)) {
+    where.push(`DataHoraEmissao >= '${filtro.dataEmissaoMinima}'`)
+  }
+  const top =
+    typeof filtro.limite === 'number' && filtro.limite > 0
+      ? `TOP ${Math.trunc(filtro.limite)} `
+      : ''
+  return (
+    `SELECT ${top}Codigo, Numero, DataHoraEmissao, Descricao ` +
+    `FROM OpHeader WHERE ${where.join(' AND ')} ORDER BY Numero`
+  )
+}
+
+/** SELECT dos itens (OpItem) de um conjunto de OpHeader.Codigo. */
+export function montarQueryOpItem(codigosHeader: number[]): string {
+  const lista = codigosHeader.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT CodOpHeader, CodItemEstoque, Item, Status ` +
+    `FROM OpItem WHERE CodOpHeader IN (${lista}) ORDER BY CodOpHeader, Item`
+  )
+}
+
+/** SELECT da estrutura (OpItemEstrutura) de um conjunto de OpHeader.Codigo. */
+export function montarQueryOpItemEstrutura(codigosHeader: number[]): string {
+  const lista = codigosHeader.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT CodOpHeader, CodEstrutura, Item, CodItemEstoque ` +
+    `FROM OpItemEstrutura WHERE CodOpHeader IN (${lista}) ORDER BY CodOpHeader, Item`
+  )
+}
+
+/**
+ * SELECT dos lotes (OpLote) ligados à estrutura das OPs. OpLote referencia
+ * `CodOpItemEstrutura` (FK → OpItemEstrutura.Codigo); como lemos a estrutura por
+ * OpHeader, trazemos os lotes via JOIN para saber a qual OpHeader cada lote
+ * pertence.
+ */
+export function montarQueryOpLote(codigosHeader: number[]): string {
+  const lista = codigosHeader.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT e.CodOpHeader AS CodOpHeader, l.Tiragem, l.DataPrometida, ` +
+    `l.OrdemFilaOp, l.Status ` +
+    `FROM OpLote l ` +
+    `INNER JOIN OpItemEstrutura e ON e.Codigo = l.CodOpItemEstrutura ` +
+    `WHERE e.CodOpHeader IN (${lista}) ` +
+    `ORDER BY e.CodOpHeader, l.OrdemFilaOp`
+  )
+}
+
+// Mesma query, mas trazendo CodOpHeader para o SELECT de lotes (versão JOIN acima).
+interface LinhaOpLoteJoin extends LinhaOpLote {
+  CodOpHeader: number
+}
+
+// ---------------------------------------------------------------------------
+// Helpers de normalização de valores vindos do SQL Server
+// ---------------------------------------------------------------------------
+
+/** Converte um valor cru em `number` ou `undefined`. */
+function numOuUndef(v: unknown): number | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : undefined
+}
+
+/** Converte um valor cru em `string` (trim) ou `undefined`. */
+function strOuUndef(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined
+  const s = String(v).trim()
+  return s.length === 0 ? undefined : s
+}
+
+/** Normaliza datas do SQL Server (smalldatetime) para ISO string, se possível. */
+function dataIsoOuUndef(v: unknown): string | undefined {
+  const s = strOuUndef(v)
+  if (!s) return undefined
+  // sqlcmd/driver podem retornar 'YYYY-MM-DD HH:mm:ss' ou já ISO; tentamos Date.
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? s : d.toISOString()
+}
+
+// ===========================================================================
+// Função principal — lê as OPs candidatas e monta os DTOs
+// ===========================================================================
+
+/**
+ * Lê as OPs candidatas do Calcgraf e monta uma lista de `OpOrigemDTO` (header +
+ * itens + estrutura + lotes). SOMENTE LEITURA.
+ *
+ * Estratégia (poucas queries por lote, evita N+1):
+ *  1. Lê OpHeader candidatas (com o filtro).
+ *  2. Lê OpItem, OpItemEstrutura e OpLote de TODAS as OpHeader do lote de uma vez.
+ *  3. Agrupa as filhas por `CodOpHeader` e monta cada DTO.
+ *
+ * Produto/cliente: BEST-EFFORT nesta fase (ver TODO abaixo) — o vínculo exato de
+ * `CodItemEstoque` → nome do produto e do cliente (via pedido) é "risco/pendência"
+ * no design. Entregamos cabeçalho + lotes + itens básicos; `produtoNome`/
+ * `produtoCodigo`/`clienteNome` ficam indefinidos até resolver o de/para.
+ */
+export async function lerOpsCandidatas(
+  conexao: ConexaoCalcgrafSomenteLeitura,
+  filtro: FiltroOps = {},
+): Promise<OpOrigemDTO[]> {
+  // 1) Cabeçalhos candidatos.
+  const headers = await conexao.consultar<LinhaOpHeader>(montarQueryOpHeader(filtro))
+  if (headers.length === 0) return []
+
+  const codigos = headers.map((h) => h.Codigo).filter((c): c is number => typeof c === 'number')
+  if (codigos.length === 0) return []
+
+  // 2) Filhas em lote (3 queries, independentes → paralelas).
+  const [itensRaw, estruturaRaw, lotesRaw] = await Promise.all([
+    conexao.consultar<LinhaOpItem>(montarQueryOpItem(codigos)),
+    conexao.consultar<LinhaOpItemEstrutura>(montarQueryOpItemEstrutura(codigos)),
+    conexao.consultar<LinhaOpLoteJoin>(montarQueryOpLote(codigos)),
+  ])
+
+  // 3) Agrupa as filhas por CodOpHeader.
+  const itensPorHeader = agruparPor(itensRaw, (r) => r.CodOpHeader)
+  const estruturaPorHeader = agruparPor(estruturaRaw, (r) => r.CodOpHeader)
+  const lotesPorHeader = agruparPor(lotesRaw, (r) => r.CodOpHeader)
+
+  const dtos: OpOrigemDTO[] = []
+  for (const h of headers) {
+    const itens = (itensPorHeader.get(h.Codigo) ?? []).map(mapearItem)
+    // A estrutura também é componente da OP; mesclamos no array `itens` do DTO.
+    const estrutura = (estruturaPorHeader.get(h.Codigo) ?? []).map(mapearEstrutura)
+    const lotes = (lotesPorHeader.get(h.Codigo) ?? []).map(mapearLote)
+
+    // Lote principal = o de menor OrdemFilaOp (quando houver), para derivar
+    // quantidade/tiragem/dataEntrega do cabeçalho do DTO.
+    const lotePrincipal = escolherLotePrincipal(lotes)
+
+    const dto: OpOrigemDTO = {
+      numero: h.Numero,
+      descricao: strOuUndef(h.Descricao) ?? '',
+      dataEmissao: dataIsoOuUndef(h.DataHoraEmissao),
+      quantidade: lotePrincipal?.tiragem,
+      tiragem: lotePrincipal?.tiragem,
+      dataEntrega: lotePrincipal?.dataPrometida,
+      itens: [...itens, ...estrutura],
+      lotes,
+      // etapas: roteiro de OP não está no MVP deste reader (OpAreas/roteiro
+      // ficam para fase futura); deixamos ausente.
+    }
+
+    // TODO (vínculo produto/cliente — risco/pendência do design):
+    //  - produtoNome/produtoCodigo: resolver OpItem.CodItemEstoque contra o
+    //    cadastro de item do Calcgraf. Query indicada (quando a tabela/campo de
+    //    nome forem confirmados no backup — provável `ItensEstoque`/`Produtos`):
+    //      SELECT Codigo, Descricao FROM <tabela_item> WHERE Codigo IN (<CodItemEstoque...>)
+    //  - clienteNome: via OpItemxPedidoItem → PedidoItem/PedidoHeader → Nomes/
+    //    NomesxClientes. Deixado comentado por ser o vínculo "risco/pendência".
+    // Enquanto não resolvido, o backend usa a descrição da OP; produto/cliente
+    // ficam indefinidos (best-effort), sem bloquear a ingestão.
+
+    dtos.push(dto)
+  }
+
+  return dtos
+}
+
+/** Agrupa linhas por uma chave numérica, preservando a ordem de entrada. */
+function agruparPor<T>(linhas: T[], chave: (l: T) => number): Map<number, T[]> {
+  const mapa = new Map<number, T[]>()
+  for (const l of linhas) {
+    const k = chave(l)
+    const arr = mapa.get(k)
+    if (arr) arr.push(l)
+    else mapa.set(k, [l])
+  }
+  return mapa
+}
+
+/** Mapeia uma linha de OpItem para ItemOpOrigemDTO. */
+function mapearItem(r: LinhaOpItem): ItemOpOrigemDTO {
+  return {
+    item: numOuUndef(r.Item),
+    codItemEstoque: strOuUndef(r.CodItemEstoque),
+    status: strOuUndef(r.Status),
+  }
+}
+
+/** Mapeia uma linha de OpItemEstrutura para ItemOpOrigemDTO. */
+function mapearEstrutura(r: LinhaOpItemEstrutura): ItemOpOrigemDTO {
+  return {
+    item: numOuUndef(r.Item),
+    codItemEstoque: strOuUndef(r.CodItemEstoque),
+    descricao: strOuUndef(r.CodEstrutura),
+  }
+}
+
+/** Mapeia uma linha de OpLote para LoteOpOrigemDTO. */
+function mapearLote(r: LinhaOpLoteJoin): LoteOpOrigemDTO {
+  return {
+    tiragem: numOuUndef(r.Tiragem),
+    dataPrometida: dataIsoOuUndef(r.DataPrometida),
+    ordemFila: numOuUndef(r.OrdemFilaOp),
+    status: strOuUndef(r.Status),
+  }
+}
+
+/**
+ * Escolhe o lote principal: o de menor `ordemFila` definido; se nenhum tiver
+ * ordem, o primeiro da lista. Retorna `undefined` se não houver lotes.
+ */
+function escolherLotePrincipal(lotes: LoteOpOrigemDTO[]): LoteOpOrigemDTO | undefined {
+  if (lotes.length === 0) return undefined
+  const comOrdem = lotes.filter((l) => typeof l.ordemFila === 'number')
+  if (comOrdem.length > 0) {
+    return comOrdem.reduce((a, b) => ((a.ordemFila as number) <= (b.ordemFila as number) ? a : b))
+  }
+  return lotes[0]
+}
+
+/**
+ * Conveniência: abre a conexão, lê as OPs e fecha. Útil para validação pontual.
+ *
+ * COMO VALIDAR contra o backup local `CalcgrafCartonWega` (quando houver SQL
+ * Server acessível), via sqlcmd (golden: OP 3138/3137):
+ *   const ops = await lerOpsEComFechar(
+ *     { modo: 'sqlcmd', servidor: 'localhost', database: 'CalcgrafCartonWega' },
+ *     { numeroMinimo: 3137, numeroMaximo: 3138 },
+ *   )
+ * Equivale a: sqlcmd -S localhost -E -C -d CalcgrafCartonWega -y 0 \
+ *   -Q "SET NOCOUNT ON; SELECT Codigo, Numero, DataHoraEmissao, Descricao
+ *       FROM OpHeader WHERE Ativo <> 'N' AND Numero >= 3137 AND Numero <= 3138
+ *       ORDER BY Numero FOR JSON PATH"
+ */
+export async function lerOpsEComFechar(
+  cfg: ConfigConexaoCalcgraf,
+  filtro: FiltroOps = {},
+): Promise<OpOrigemDTO[]> {
+  const conexao = await abrirConexaoCalcgraf(cfg)
+  try {
+    return await lerOpsCandidatas(conexao, filtro)
+  } finally {
+    await conexao.fechar()
+  }
+}

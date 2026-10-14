@@ -1,0 +1,211 @@
+<!doctype html>
+<!--
+  Tela funcional do Agente Calcgraf (Tarefa 12).
+
+  Arquitetura segura (Electron): esta tela roda com contextIsolation=true e
+  nodeIntegration=false. Ela NÃO acessa Node/filesystem diretamente — fala com
+  o processo principal somente através de `window.agenteApi`, exposto pelo
+  preload (src/preload.ts) via contextBridge. O renderer é JS puro
+  (src/ui/renderer.js) — não precisa de build.
+
+  Visual simples e claro (cards), coerente com o app Checkout.
+-->
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- CSP: só permite scripts locais; sem conexões externas no renderer. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>VisioFab — Agente Calcgraf</title>
+    <style>
+      :root {
+        --azul: #2563eb;
+        --azul-escuro: #1d4ed8;
+        --verde: #16a34a;
+        --amarelo: #d97706;
+        --vermelho: #dc2626;
+        --borda: #e5e7eb;
+        --fundo: #f3f4f6;
+        --texto: #111827;
+        --suave: #6b7280;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        margin: 0;
+        padding: 24px;
+        background: var(--fundo);
+        color: var(--texto);
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 2px; }
+      .sub { color: var(--suave); margin: 0 0 20px; font-size: 0.9rem; }
+      .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+      .card {
+        background: #fff;
+        border: 1px solid var(--borda);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+      .card h2 { font-size: 1rem; margin: 0 0 14px; }
+      .campo { margin-bottom: 14px; }
+      label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; }
+      input {
+        width: 100%;
+        min-height: 40px;
+        padding: 0 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.95rem;
+      }
+      input:focus { outline: 2px solid var(--azul); border-color: var(--azul); }
+      .acoes { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      button {
+        min-height: 42px;
+        padding: 0 18px;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: default; }
+      .btn-primario { background: var(--azul); color: #fff; }
+      .btn-primario:hover:not(:disabled) { background: var(--azul-escuro); }
+      .btn-secundario { background: #eef2ff; color: var(--azul-escuro); }
+      .status { font-size: 0.85rem; color: var(--suave); }
+      .status.ok { color: var(--verde); }
+      .status.erro { color: var(--vermelho); }
+
+      /* Painel de resultado — cartões de contadores */
+      .contadores {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+      .contador {
+        border: 1px solid var(--borda);
+        border-radius: 10px;
+        padding: 12px;
+        text-align: center;
+        background: #fafafa;
+      }
+      .contador .valor { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+      .contador .rotulo { font-size: 0.72rem; color: var(--suave); margin-top: 2px; }
+      .contador.novas .valor { color: var(--azul); }
+      .contador.alteradas .valor { color: var(--amarelo); }
+      .contador.enviadas .valor { color: var(--verde); }
+      .contador.pendentes .valor { color: var(--amarelo); }
+      .contador.erros .valor { color: var(--vermelho); }
+
+      .erros-lista {
+        margin-top: 12px;
+        padding: 10px 12px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        color: #991b1b;
+        white-space: pre-wrap;
+      }
+      .erros-lista:empty { display: none; }
+
+      /* Log */
+      .log { max-height: 260px; overflow-y: auto; }
+      .log-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--borda);
+        font-size: 0.85rem;
+      }
+      .log-item:last-child { border-bottom: none; }
+      .log-item .quando { color: var(--suave); white-space: nowrap; }
+      .log-item .msg { flex: 1; }
+      .tag {
+        display: inline-block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 999px;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      .tag.manual { background: #e0e7ff; color: #3730a3; }
+      .tag.segundo-plano { background: #dcfce7; color: #166534; }
+      .vazio { color: var(--suave); font-size: 0.85rem; padding: 8px 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Agente Calcgraf</h1>
+    <p class="sub">Leitura das OPs do Calcgraf (somente leitura) e envio para o Vizor.</p>
+
+    <div class="grid">
+      <!-- Card: configuração -->
+      <section class="card">
+        <h2>Configuração</h2>
+        <div class="campo">
+          <label for="connectionString">Connection string do SQL Server (somente leitura)</label>
+          <input id="connectionString" type="password" autocomplete="off"
+            value="server=localhost;Database=GPrint;Trusted_Connection=yes;TrustServerCertificate=yes;"
+            placeholder="server=localhost;Database=GPrint;Trusted_Connection=yes;" />
+          <small style="color:var(--suave);font-size:0.75rem;">
+            Default sugerido p/ o servidor do Calcgraf (autenticação Windows).
+            Ajuste o <b>Database</b>/<b>server</b> se o banco/instância tiver outro nome.
+          </small>
+        </div>
+        <div class="campo">
+          <label for="urlApiVizor">URL da API do Vizor</label>
+          <input id="urlApiVizor" type="text" value="https://api.vizorerp.com.br"
+            placeholder="https://api.vizorerp.com.br" />
+        </div>
+        <div class="campo">
+          <label for="apiKeyAgente">Chave do agente (Carton Wega — já preenchida)</label>
+          <input id="apiKeyAgente" type="password" autocomplete="off"
+            value="4149d0e3a2c4db0946ccaa175d12a3958ca478fa45b71ac9c197f3163c228428"
+            placeholder="cole a chave gerada no Vizor" />
+        </div>
+        <div class="campo">
+          <label for="intervaloSyncMinutos">Intervalo de sincronização (minutos)</label>
+          <input id="intervaloSyncMinutos" type="number" min="1" step="1" value="15" />
+        </div>
+        <div class="acoes">
+          <button id="btnSalvar" class="btn-secundario" type="button">Salvar configuração</button>
+          <span id="statusConfig" class="status"></span>
+        </div>
+      </section>
+
+      <!-- Card: sincronização + resultado -->
+      <section class="card">
+        <h2>Sincronização</h2>
+        <div class="acoes" style="margin-bottom: 16px;">
+          <button id="btnSincronizar" class="btn-primario" type="button">Sincronizar agora</button>
+          <span id="statusSync" class="status"></span>
+        </div>
+
+        <div class="contadores">
+          <div class="contador novas"><div id="cNovas" class="valor">–</div><div class="rotulo">Novas</div></div>
+          <div class="contador alteradas"><div id="cAlteradas" class="valor">–</div><div class="rotulo">Alteradas</div></div>
+          <div class="contador enviadas"><div id="cEnviadas" class="valor">–</div><div class="rotulo">Enviadas</div></div>
+          <div class="contador pendentes"><div id="cPendentes" class="valor">–</div><div class="rotulo">Pendentes</div></div>
+          <div class="contador erros"><div id="cErros" class="valor">–</div><div class="rotulo">Erros</div></div>
+        </div>
+        <div id="errosLista" class="erros-lista"></div>
+      </section>
+
+      <!-- Card: log -->
+      <section class="card">
+        <h2>Log de sincronizações</h2>
+        <div id="log" class="log">
+          <div class="vazio">Nenhum ciclo registrado ainda.</div>
+        </div>
+      </section>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

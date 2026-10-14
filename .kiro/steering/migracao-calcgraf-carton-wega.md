@@ -9,6 +9,27 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Levantamento completo do Calcgraf: #[[file:docs/calcgraf-gprint-levantamento.md]]
 - Plano de ação (blocos/prioridade/calibração): #[[file:docs/calcgraf-plano-de-acao.md]]
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
+- Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
+
+## 🆕 IMPORTADOR DE OP (agente desktop) — spec em andamento (14/10/2026)
+
+Spec `.kiro/specs/importador-op-calcgraf/` (requirements + design PRONTOS;
+requirements-first). Objetivo: **eliminar a importação de PDF de OP** — um
+agente desktop (Electron+TS) instalado no TS do Calcgraf lê o SQL Server LOCAL
+(somente leitura, driver `msnodesqlv8` ou ponte `sqlcmd`), detecta OPs NOVAS e
+ALTERADAS (por **hash de conteúdo** — `OpHeader` NÃO tem coluna de última
+alteração) e envia por HTTPS para `POST /api/pcp/ingest-op-calcgraf` (autenticado
+por `AgenteApiKey` por empresa). O Vizor cria/atualiza `OrdemProducao` casando
+por `referenciaExterna == OpHeader.Numero` + `origemImportacao: 'AGENTE_CALCGRAF'`
+(reusa o caminho do importador de PDF). Se a OP já tem produção, NÃO sobrescreve:
+vira `AlteracaoOpPendente` para revisão. MVP = **só a OP** (cálculos gráficos =
+fase futura). Tabelas de OP do Calcgraf exploradas e documentadas no mapeamento
+(OpHeader/OpItem/OpItemEstrutura/OpLote — 15 tabelas `Op*`). PENDÊNCIAS p/ o
+DevOps (Pedro) antes de implementar: internet liberada no TS p/ api.vizorerp;
+credencial de leitura (Windows auth vs usuário SQL db_datareader); versão do
+Calcgraf em produção (schema dev tem que bater) + backup recente. Schema novo
+(AgenteApiKey, AlteracaoOpPendente, OrdemProducao.hashImportacaoOrigem) segue
+steering database-migrations (schema.prisma + migrate-prod.ts no mesmo commit).
 
 ## ⚠️ ENCODING dos dados exportados do SQL Server (acentos → `�`) — LIÇÃO (03/10/2026)
 

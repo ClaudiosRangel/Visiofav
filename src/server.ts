@@ -183,6 +183,9 @@ import { paletizacaoRoutes } from './modules/pcp/paletizacao.routes'
 import { configuracaoPcpRoutes } from './modules/pcp/configuracao-pcp.routes'
 import { permissoesPcpRoutes } from './modules/pcp/permissoes-pcp.routes'
 import { calculoConsumoGraficoRoutes } from './modules/pcp/calculo-consumo-grafico.routes'
+import { agenteApiKeyRoutes } from './modules/pcp/importador-calcgraf/agente-api-key.routes'
+import { importadorCalcgrafRoutes } from './modules/pcp/importador-calcgraf/importador-calcgraf.routes'
+import { alteracaoOpPendenteRoutes } from './modules/pcp/importador-calcgraf/alteracao-op-pendente.routes'
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
 import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
@@ -503,6 +506,13 @@ async function bootstrap() {
   await app.register(requisicaoCorteRoutes, { prefix: '/api/pcp' })
   await app.register(analiseProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(mapaCustoRoutes, { prefix: '/api/pcp' })
+  await app.register(agenteApiKeyRoutes, { prefix: '/api/pcp' })
+  // Ingestão de OP do agente Calcgraf (hook agenteAuth, credencial de máquina)
+  // → URL final: POST /api/pcp/ingest-op-calcgraf
+  await app.register(importadorCalcgrafRoutes, { prefix: '/api/pcp' })
+  // Revisão de alterações pendentes do Calcgraf (usuário do ERP, authenticate +
+  // moduloGuard PCP) → GET/POST /api/pcp/alteracoes-op-pendentes...
+  await app.register(alteracaoOpPendenteRoutes, { prefix: '/api/pcp' })
   await app.register(analiseGerencialRoutes, { prefix: '/api/pcp' })
   // Histórico/correção de leituras de contador (perfil PCP/supervisor) —
   // spec checkout-contagem-por-contador, tasks 4.1–4.3.

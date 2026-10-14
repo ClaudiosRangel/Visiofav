@@ -5118,6 +5118,52 @@ async function seedMateriaisFromOPs() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD CONSTRAINT "etapa_ordem_producao_plano_id_fkey" FOREIGN KEY ("plano_id") REFERENCES "plano_ordem_producao"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
   } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK etapa→plano skip:', e.message?.substring(0, 80)) }
   console.log('✅ PCP Planos: plano_ordem_producao criada + etapa.plano_id (nullable, SetNull)')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Importador de OP do Calcgraf (agente desktop → Vizor) — Task 1.
+  // Credencial de máquina do agente (agente_api_key), fila de revisão de OPs
+  // alteradas com produção (alteracao_op_pendente) e hash de origem na OP para
+  // idempotência da ingestão. Enums gravados como VARCHAR (padrão do projeto,
+  // sem CREATE TYPE). FKs em try/catch individual (Postgres não tem ADD
+  // CONSTRAINT IF NOT EXISTS). Ver .kiro/specs/importador-op-calcgraf.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "hash_importacao_origem" TEXT`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "agente_api_key" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "nome" VARCHAR(100) NOT NULL,
+    "token_hash" VARCHAR(128) NOT NULL,
+    "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVO',
+    "ultimo_uso_em" TIMESTAMP(3),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "agente_api_key_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agente_api_key_empresa_id_idx" ON "agente_api_key"("empresa_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "alteracao_op_pendente" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "ordem_producao_id" TEXT NOT NULL,
+    "numero_origem" VARCHAR(50) NOT NULL,
+    "hash_origem" TEXT NOT NULL,
+    "payload_json" JSONB NOT NULL,
+    "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolvido_por_id" TEXT,
+    "resolvido_em" TIMESTAMP(3),
+    CONSTRAINT "alteracao_op_pendente_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "alteracao_op_pendente_empresa_id_status_idx" ON "alteracao_op_pendente"("empresa_id","status")`)
+
+  // FKs (Postgres não tem ADD CONSTRAINT IF NOT EXISTS — envolver em try/catch)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "agente_api_key" ADD CONSTRAINT "agente_api_key_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresa"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK agente_api_key→empresa skip:', e.message?.substring(0, 80)) }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "alteracao_op_pendente" ADD CONSTRAINT "alteracao_op_pendente_ordem_producao_id_fkey" FOREIGN KEY ("ordem_producao_id") REFERENCES "ordem_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK alteracao_op_pendente→op skip:', e.message?.substring(0, 80)) }
+  console.log('✅ Importador Calcgraf: agente_api_key, alteracao_op_pendente, ordem_producao.hash_importacao_origem')
 }
 
 main()

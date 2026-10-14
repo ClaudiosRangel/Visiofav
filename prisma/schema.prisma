@@ -81,6 +81,7 @@ model Empresa {
   transferenciasDestino     TransferenciaEstoque[]     @relation("TransferenciaDestino")
   agendaWms                 AgendaWms[]
   apiKeys                   ApiKey[]
+  agentesApiKey             AgenteApiKey[]
   webhooks                  WebhookConfig[]
   fichasOperacionais        FichaOperacional[]
   deparasProdutoFornecedor  DeparaProdutoFornecedor[]
@@ -3328,7 +3329,8 @@ model OrdemProducao {
   motivoCancelamento  String?           @map("motivo_cancelamento") @db.Text
   observacoes         String?           @db.Text
   referenciaExterna   String?           @map("referencia_externa") @db.VarChar(50) // Número da OP no sistema externo
-  origemImportacao    String?           @map("origem_importacao") @db.VarChar(30) // PDF_GPRINT, MANUAL, etc.
+  origemImportacao    String?           @map("origem_importacao") @db.VarChar(30) // PDF_GPRINT, MANUAL, AGENTE_CALCGRAF, etc.
+  hashImportacaoOrigem String?          @map("hash_importacao_origem") // Hash do conteúdo da OP de origem (idempotência do agente Calcgraf)
   pdfData             Bytes?            @map("pdf_data") // PDF binário armazenado no banco
   criadoPorId         String?           @map("criado_por_id")
   criadoEm            DateTime          @default(now()) @map("criado_em")
@@ -3359,10 +3361,47 @@ model OrdemProducao {
   reservas            ReservaProducao[]
   sugestoesCompra     SugestaoCompra[]
   planos              PlanoOrdemProducao[]
+  alteracoesPendentes AlteracaoOpPendente[]
 
   @@unique([empresaId, numero])
   @@index([orcamentoItemId])
   @@map("ordem_producao")
+}
+
+// Importador de OP do Calcgraf (agente desktop → Vizor)
+// Credencial de máquina do agente desktop, por empresa (tenant). O token em
+// claro só é exibido na criação; o banco guarda apenas o hash.
+model AgenteApiKey {
+  id          String    @id @default(uuid())
+  empresaId   String    @map("empresa_id")
+  empresa     Empresa   @relation(fields: [empresaId], references: [id])
+  nome        String    @db.VarChar(100)
+  tokenHash   String    @map("token_hash") @db.VarChar(128)
+  status      String    @default("ATIVO") @db.VarChar(20) // ATIVO, REVOGADO
+  ultimoUsoEm DateTime? @map("ultimo_uso_em")
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+
+  @@index([empresaId])
+  @@map("agente_api_key")
+}
+
+// Fila de revisão: OP alterada no Calcgraf que já tem produção no Vizor
+// (não é sobrescrita automaticamente — exige revisão manual).
+model AlteracaoOpPendente {
+  id              String        @id @default(uuid())
+  empresaId       String        @map("empresa_id")
+  ordemProducaoId String        @map("ordem_producao_id")
+  ordemProducao   OrdemProducao @relation(fields: [ordemProducaoId], references: [id], onDelete: Cascade)
+  numeroOrigem    String        @map("numero_origem") @db.VarChar(50)
+  hashOrigem      String        @map("hash_origem")
+  payloadJson     Json          @map("payload_json")
+  status          String        @default("PENDENTE") @db.VarChar(20) // PENDENTE, APLICADA, DESCARTADA
+  criadoEm        DateTime      @default(now()) @map("criado_em")
+  resolvidoPorId  String?       @map("resolvido_por_id")
+  resolvidoEm     DateTime?     @map("resolvido_em")
+
+  @@index([empresaId, status])
+  @@map("alteracao_op_pendente")
 }
 
 // Multi-item: variações de cor/modelo dentro da mesma OP (ex: 3 cores de caixa)

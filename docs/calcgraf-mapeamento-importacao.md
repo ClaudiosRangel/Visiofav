@@ -88,6 +88,39 @@ MÁQUINAS vem do MAPA (não da tabela de preço). Confirma a "camada 1" do custe
 ### `GerCustoFixoMes` (5) — `CustoFixo, AnoMes, MetaPercRentabilidade, MetaValorRentabilidade, CodEmpresa, Codigo` (custo fixo por competência — Mapa RKW).
 ### `finRateiosCentrosCusto` (37) — rateios entre centros.
 
+### Tabelas de OP (exploradas 14/10/2026 — base do importador-op-calcgraf)
+As OPs vivem em 15 tabelas `Op*`. As principais:
+- **`OpHeader`** (17 cols) — cabeçalho da OP. Colunas: `Codigo` (PK int),
+  `Ativo`, `Serie`, **`Numero`** (int — o NÚMERO DA OP, chave de negócio; ex.
+  3138/3137 nas OPs atuais), `DataHoraEmissao` (smalldatetime), `PriorCliente`,
+  `PriorProduto`, **`FlagExportado`** (smallint — o Calcgraf JÁ marca OP
+  exportada; 0=não), `CodExterno`, `FlagNaoPlanejar`, `FlagDocImpressoPendente`,
+  **`Descricao`** (nvarchar — descrição do produto/OP), `CoefConvUnidCalculo`,
+  `CoefConvUnidProd`, `flagEmissaoCompleta`, `CoefConvUnidMovto`,
+  `AnexoApontamento`.
+  ⚠️ **NÃO há coluna de "data da última alteração"** em OpHeader (só
+  `DataHoraEmissao`). Logo, a detecção de OP ALTERADA não pode depender de um
+  timestamp de update — terá de usar **hash do conteúdo relevante** (header +
+  itens + estrutura + lotes) comparado ao último hash conhecido.
+- **`OpItem`** (6 cols) — `Codigo`, **`CodOpHeader`** (FK → OpHeader.Codigo),
+  **`CodItemEstoque`** (FK → item/produto no estoque), `Ocorrencias`, `Status`
+  (smallint), `Item` (smallint, nº do item).
+- **`OpItemEstrutura`** (5 cols) — `Codigo`, `CodOpHeader`, `CodEstrutura`,
+  `Item`, `CodItemEstoque`.
+- **`OpLote`** (24 cols) — lote/tiragem da OP. Colunas-chave: `Codigo`,
+  **`Tiragem`** (float), `DataMinima`, `DataMaxima`, **`CodOpItemEstrutura`**,
+  **`OrdemFilaOp`** (smallint — ordem na fila), **`DataPrometida`**
+  (smalldatetime — data de entrega), `TipoHora`, `Status` (smallint),
+  `FlagAguardando`, `FlagUrgente`, `PercExcedente` (float), `DataEncerramento`,
+  `Lote` (nvarchar), `QuantModelos`, `CodPcpSetor`, etc.
+- Outras: `OpAreas`, `OpComponente`, `OpForneciveis`, `OpItemxPedidoItem`
+  (vínculo OP↔pedido de venda), `OpParametros` (15 cols), `OpProtocolosFornecidos`,
+  `OpSubItem`, `OpLotexDadosWG`/`OpLoteXDescricaoExterna` (dados Webgraf).
+- **Chaves de identidade p/ o Vizor**: a OP é identificada por `OpHeader.Numero`
+  (vira `OrdemProducao.referenciaExterna` no Vizor). `OpHeader.Codigo` (PK
+  interna) liga as filhas. Produto vem via `OpItem.CodItemEstoque`; tiragem via
+  `OpLote.Tiragem`; data de entrega via `OpLote.DataPrometida`.
+
 ## Próximos passos (ordem)
 1. Instalar `mssql` (npm) no back. Conexão: `server=localhost, user/pwd OU
    trustedConnection via msnodesqlv8, options.trustServerCertificate=true`.
