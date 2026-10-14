@@ -157,6 +157,10 @@ export default function EtapaPage() {
   const [carregandoHistorico, setCarregandoHistorico] = useState(true)
   const [erroHistorico, setErroHistorico] = useState<string | null>(null)
 
+  // Máquina (Centro de Produção) da sessão do terminal — para o rodapé de
+  // contexto fixo (mesma rota usada no painel).
+  const [maquina, setMaquina] = useState<{ codigo: string; descricao: string; tipoProcesso: string | null } | null>(null)
+
   const funcionarioIdentificado = lerFuncionarioIdentificado()
 
   // Proteção básica de rota client-side, mesmo padrão de `painel/page.tsx`.
@@ -235,6 +239,15 @@ export default function EtapaPage() {
     if (!estaAutenticado) return
     buscarHistorico()
   }, [estaAutenticado, buscarHistorico])
+
+  // Busca os dados da máquina (centro) da sessão — não-bloqueante.
+  useEffect(() => {
+    if (!estaAutenticado) return
+    checkoutApiClient
+      .get<{ codigo: string; descricao: string; tipoProcesso: string | null }>('/sessao')
+      .then((r) => setMaquina(r.data))
+      .catch(() => setMaquina(null))
+  }, [estaAutenticado])
 
   async function iniciarOuRetomarEtapa() {
     if (iniciando) return
@@ -622,6 +635,27 @@ export default function EtapaPage() {
         </>
         )
       })()}
+
+      {/* Rodapé fixo de contexto — máquina da sessão + total da OP. Dá ao
+          operador a referência de "onde estou e o que estou produzindo"
+          sempre visível, sem precisar rolar a tela. */}
+      {(maquina || etapa) && (
+        <footer className={styles.rodapeContexto}>
+          {maquina && (
+            <span className={styles.rodapeItem}>
+              <span className={styles.rodapeLabel}>Máquina:</span> {maquina.descricao}
+              {maquina.tipoProcesso ? ` (${maquina.tipoProcesso})` : ''}
+            </span>
+          )}
+          {etapa && (
+            <span className={styles.rodapeItem}>
+              <span className={styles.rodapeLabel}>Total OP:</span>{' '}
+              {etapa.contagem?.planejado ?? etapa.quantidade}{' '}
+              {etapa.contagem ? (etapa.contagem.base === 'UNIDADE' ? 'un' : 'folhas') : etapa.unidade}
+            </span>
+          )}
+        </footer>
+      )}
     </div>
   )
 }
