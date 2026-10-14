@@ -64,6 +64,9 @@ interface EtapaPainelCheckout {
   quantidadeProduzida: number
   quantidadePerda: number
   prioridade: string
+  // Base de contagem por Tipo de Processo (spec base-contagem-por-tipo-processo):
+  // COLAGEM → Unidade (peças); demais → Tiragem (folhas). Vem do backend.
+  contagem?: { base: 'UNIDADE' | 'TIRAGEM'; planejado: number; apontado: number; progresso: number }
 }
 
 /** Shape de cada Operador ativo retornado por `GET /etapas/:id/operadores`. */
@@ -367,8 +370,12 @@ export default function EtapaPage() {
 
             {etapa.produtoNome && <p className={styles.produtoNome}>{etapa.produtoNome}</p>}
             <p className={styles.descricao}>{etapa.descricao}</p>
+            {/* Progresso na BASE DE CONTAGEM do processo (COLAGEM→Unidade;
+                demais→Tiragem). Usa `contagem` (fonte única do backend) com
+                fallback aos campos legados. */}
             <p className={styles.quantidade}>
-              {etapa.quantidadeProduzida} / {etapa.quantidade} {etapa.unidade}
+              {(etapa.contagem?.apontado ?? etapa.quantidadeProduzida)} / {(etapa.contagem?.planejado ?? etapa.quantidade)}{' '}
+              {etapa.contagem ? (etapa.contagem.base === 'UNIDADE' ? 'un' : 'folhas') : etapa.unidade}
             </p>
           </div>
 
