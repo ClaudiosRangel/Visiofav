@@ -514,6 +514,7 @@ model Produto {
   itensDocumentoFiscal          ItemDocumentoFiscal[]
   itensVendaPdv                 ItemVendaPdv[]
   movimentacoesEstoque          MovimentacaoEstoque[]
+  skus                          Sku[]
 
   // Hierarquia Mercadológica — vínculo ao nível folha (Família). Opcional;
   // os níveis superiores são derivados subindo a árvore.
@@ -2574,6 +2575,7 @@ model OsFuncionarioWms {
 model Sku {
   id                 String   @id @default(uuid())
   produtoId          String   @map("produto_id")
+  produto            Produto  @relation(fields: [produtoId], references: [id])
   sequencia          Int
   descricao          String?  @db.VarChar(200)
   codigoBarra        String?  @map("codigo_barra") @db.VarChar(30)
