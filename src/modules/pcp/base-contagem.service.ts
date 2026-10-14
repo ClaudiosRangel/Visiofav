@@ -96,6 +96,44 @@ function naoNegativo(n: number | null | undefined): number {
 }
 
 /**
+ * Deriva a TIRAGEM (folhas/passagens) planejada de uma etapa, na mesma ordem
+ * de prioridade usada no painel de Programação, para que a base TIRAGEM use o
+ * valor correto quando não há tiragem explícita no plano:
+ *   1) tiragem do plano (quando houver, > 0);
+ *   2) tag `[Tiragem]` das observações (ignorando valores < 10, erro de parse);
+ *   3) Quantidade / Montagem (tag `[Montagem]`), arredondado p/ cima;
+ *   4) fallback: a própria quantidade (não-regressão).
+ *
+ * `quantidade` é a quantidade de referência da etapa (quantidadePrevista > 0
+ * em desmembramento, senão a quantidade da OP).
+ */
+export function tiragemDaEtapa(
+  observacoes: string | null | undefined,
+  quantidade: number,
+  tiragemPlano?: number | null,
+): number {
+  const tp = naoNegativo(tiragemPlano)
+  if (tp > 0) return tp
+
+  const obs = observacoes || ''
+  const qtd = naoNegativo(quantidade)
+
+  const matchTiragem = obs.match(/\[Tiragem\]\s*([\d.,]+)/)
+  if (matchTiragem) {
+    const val = parseFloat(matchTiragem[1].replace(/\./g, '').replace(',', '.'))
+    if (Number.isFinite(val) && val >= 10) return val
+  }
+
+  const matchMontagem = obs.match(/\[Montagem\]\s*(\d+)/)
+  if (matchMontagem) {
+    const aproveitamento = parseInt(matchMontagem[1], 10)
+    if (aproveitamento > 0 && qtd > 0) return Math.ceil(qtd / aproveitamento)
+  }
+
+  return qtd
+}
+
+/**
  * Resolve o planejado/progresso de uma etapa na base do seu Tipo de Processo.
  *
  * - base = baseContagem(tipoProcessoCodigo)

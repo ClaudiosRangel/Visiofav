@@ -18,7 +18,7 @@ import {
 } from './etapa-operacional.service'
 import { getPermissoes, verificarPermissaoAcao, PermissoesPorProcesso } from './permissoes-pcp.routes'
 import { codigoDeposito } from '../deposito/deposito.routes'
-import { resolverPlanejadoDaEtapa } from './base-contagem.service'
+import { resolverPlanejadoDaEtapa, tiragemDaEtapa } from './base-contagem.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -518,7 +518,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         quantidadeProduzida: true,
         centroProducao: { select: { tipoProcesso: { select: { codigo: true } } } },
         plano: { select: { tiragem: true } },
-        ordemProducao: { select: { quantidade: true } },
+        ordemProducao: { select: { quantidade: true, observacoes: true } },
       },
     })
     const contagem = etapa
@@ -528,7 +528,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             quantidadePrevista: Number(etapa.quantidadePrevista) || 0,
             quantidadeProduzida: Number(etapa.quantidadeProduzida) || 0,
           },
-          etapa.plano ? { tiragem: etapa.plano.tiragem != null ? Number(etapa.plano.tiragem) : null } : null,
+          {
+            tiragem: tiragemDaEtapa(
+              etapa.ordemProducao?.observacoes,
+              Number(etapa.quantidadePrevista) > 0 ? Number(etapa.quantidadePrevista) : Number(etapa.ordemProducao?.quantidade) || 0,
+              etapa.plano?.tiragem != null ? Number(etapa.plano.tiragem) : null,
+            ),
+          },
           { quantidade: Number(etapa.ordemProducao?.quantidade) || 0 },
         )
       : null
@@ -1639,7 +1645,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               quantidadePrevista: Number(etapaAtual.quantidadePrevista) || 0,
               quantidadeProduzida,
             },
-            (etapaAtual as any).plano ? { tiragem: (etapaAtual as any).plano.tiragem != null ? Number((etapaAtual as any).plano.tiragem) : null } : null,
+            {
+              tiragem: tiragemDaEtapa(
+                op.observacoes,
+                Number(etapaAtual.quantidadePrevista) > 0 ? Number(etapaAtual.quantidadePrevista) : quantidade,
+                (etapaAtual as any).plano?.tiragem != null ? Number((etapaAtual as any).plano.tiragem) : null,
+              ),
+            },
             { quantidade },
           ),
           tempoNaEtapa,
@@ -2251,7 +2263,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
                 quantidadePrevista: Number(e.quantidadePrevista) || 0,
                 quantidadeProduzida: Number(e.quantidadeProduzida) || 0,
               },
-              e.plano ? { tiragem: e.plano.tiragem != null ? Number(e.plano.tiragem) : null } : null,
+              {
+                // Tiragem efetiva: plano → tag [Tiragem] → Qtd/Montagem → Qtd.
+                // (sem plano, deriva das observações — igual ao campo `tiragem` abaixo)
+                tiragem: tiragemDaEtapa(
+                  e.ordemProducao.observacoes,
+                  Number(e.quantidadePrevista) > 0 ? Number(e.quantidadePrevista) : Number(e.ordemProducao.quantidade),
+                  e.plano?.tiragem != null ? Number(e.plano.tiragem) : null,
+                ),
+              },
               { quantidade: Number(e.ordemProducao.quantidade) || 0 },
             ),
             prioridade: e.ordemProducao.prioridade,

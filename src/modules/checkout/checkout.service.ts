@@ -12,7 +12,7 @@ import {
   dataCivilBrasilia,
   type DerivarInicialResultado,
 } from './contador-maquina.service'
-import { resolverPlanejadoDaEtapa, type ContagemResolvida } from '../pcp/base-contagem.service'
+import { resolverPlanejadoDaEtapa, tiragemDaEtapa, type ContagemResolvida } from '../pcp/base-contagem.service'
 
 /**
  * Regras de negócio exclusivas do Checkout de Apontamento (task 10 do spec
@@ -230,7 +230,13 @@ export async function listarPainelCheckout(
           quantidadePrevista: Number(etapa.quantidadePrevista) || 0,
           quantidadeProduzida: Number(etapa.quantidadeProduzida) || 0,
         },
-        etapa.plano ? { tiragem: etapa.plano.tiragem != null ? Number(etapa.plano.tiragem) : null } : null,
+        {
+          tiragem: tiragemDaEtapa(
+            etapa.ordemProducao.observacoes,
+            Number(etapa.quantidadePrevista) > 0 ? Number(etapa.quantidadePrevista) : Number(etapa.ordemProducao.quantidade) || 0,
+            etapa.plano?.tiragem != null ? Number(etapa.plano.tiragem) : null,
+          ),
+        },
         { quantidade: Number(etapa.ordemProducao.quantidade) || 0 },
       ),
     }

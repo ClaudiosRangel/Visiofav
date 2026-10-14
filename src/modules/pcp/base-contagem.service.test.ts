@@ -3,6 +3,7 @@ import fc from 'fast-check'
 import {
   baseContagem,
   resolverPlanejadoDaEtapa,
+  tiragemDaEtapa,
   exigirEmpresaId,
   BaseContagemError,
   type EtapaLike,
@@ -218,6 +219,30 @@ describe('resolverPlanejadoDaEtapa', () => {
       { quantidade: 1540 },
     )
     expect(r.planejado).toBe(1540)
+  })
+
+  it('tiragemDaEtapa: prioriza plano, depois [Tiragem], depois Qtd/Montagem, senão Qtd', () => {
+    // plano tem prioridade
+    expect(tiragemDaEtapa('[Tiragem] 9.625', 38500, 1000)).toBe(1000)
+    // tag [Tiragem] (ignora separador de milhar)
+    expect(tiragemDaEtapa('[Tiragem] 9.625', 38500, null)).toBe(9625)
+    // Qtd / Montagem — caso real OP 3164 (38.500 un, aproveitamento 4 → 9.625)
+    expect(tiragemDaEtapa('[Montagem] 4', 38500, null)).toBe(9625)
+    // sem nada → fallback para a quantidade (não-regressão)
+    expect(tiragemDaEtapa('', 38500, null)).toBe(38500)
+    // [Tiragem] < 10 é ignorado (erro de parse) → cai p/ Montagem/Qtd
+    expect(tiragemDaEtapa('[Tiragem] 5\n[Montagem] 4', 38500, null)).toBe(9625)
+  })
+
+  it('base TIRAGEM usa a tiragem derivada das observações quando não há plano (OP 3164)', () => {
+    const r = resolverPlanejadoDaEtapa(
+      etapa({ tipoProcessoCodigo: 'CORTADEIRA', quantidadeProduzida: 1500 }),
+      { tiragem: tiragemDaEtapa('[Montagem] 4', 38500, null) },
+      { quantidade: 38500 },
+    )
+    expect(r.base).toBe('TIRAGEM')
+    expect(r.planejado).toBe(9625)
+    expect(r.apontado).toBe(1500)
   })
 
   it('progresso é limitado a 100 e calculado corretamente', () => {
