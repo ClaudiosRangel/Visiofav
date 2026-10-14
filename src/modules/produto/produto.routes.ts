@@ -355,8 +355,30 @@ export async function produtoRoutes(app: FastifyInstance) {
       const existente = await prisma.produto.findFirst({ where: { id, empresaId: userForDelete.empresaId } })
       if (!existente) return reply.status(404).send({ message: 'Produto não encontrado' })
     }
-    await prisma.produto.delete({ where: { id } })
-    return reply.status(204).send()
+
+    try {
+      // Registros filhos próprios do produto, sem valor histórico/fiscal, são
+      // removidos junto para permitir a exclusão (o banco não tem ON DELETE
+      // CASCADE para todas as relações). SKU/dados logísticos/config de
+      // conferência são dependências de cadastro, não movimentação.
+      await prisma.$transaction([
+        prisma.sku.deleteMany({ where: { produtoId: id } }),
+        prisma.configConferenciaProduto.deleteMany({ where: { produtoId: id } }),
+        prisma.produto.delete({ where: { id } }),
+      ])
+      return reply.status(204).send()
+    } catch (err: any) {
+      // P2003: FK violada — o produto tem movimentação/vínculo que impede a
+      // exclusão (estoque, pedidos, notas, OPs, etc.). Mensagem clara em vez
+      // de 500 genérico ("Falha ao excluir").
+      if (err?.code === 'P2003') {
+        return reply.status(409).send({
+          message: 'Não é possível excluir: este produto já tem movimentação ou vínculos (estoque, pedidos, notas, produção). Inative-o em vez de excluir.',
+        })
+      }
+      request.log.error({ err }, 'Falha ao excluir produto')
+      return reply.status(500).send({ message: `Falha ao excluir produto: ${err?.message ?? 'erro desconhecido'}` })
+    }
   })
 
   // POST /:id/imagem — Upload de imagem do produto (base64)
