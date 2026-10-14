@@ -1,31 +1,38 @@
-/* Estilos da tela de ação principal + operadores ativos da Etapa —
-   mobile-first, botões de toque grande (mínimo 48x48px de área clicável),
-   mesmo padrão visual de painel.module.css / identificar-operador.module.css. */
+/* Estilos da tela de ação principal + operadores ativos da Etapa.
+   Mesmo padrão visual do painel (cards claros, barra de progresso, status
+   em pílula), botões de toque grande (mínimo 48x48px). */
 
 .container {
   min-height: 100vh;
-  padding: 16px;
-  background-color: #f5f5f5;
+  padding: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+  background-color: #f3f4f6;
 }
 
 .header {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .voltarLink {
   display: inline-flex;
   align-items: center;
-  min-height: 48px;
+  gap: 4px;
+  min-height: 44px;
   font-size: 0.95rem;
   font-weight: 600;
   color: #2563eb;
   text-decoration: none;
 }
 
+.voltarLink:hover {
+  text-decoration: underline;
+}
+
 .infoMessage {
-  margin: 32px 0;
+  margin: 24px 0;
   font-size: 1rem;
-  color: #555555;
+  color: #6b7280;
   text-align: center;
 }
 
@@ -61,16 +68,17 @@
   cursor: pointer;
 }
 
+/* Card de cabeçalho da etapa — identificação + progresso. */
 .infoCard {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 16px;
-  margin-bottom: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
   background-color: #ffffff;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .infoHeader {
@@ -81,34 +89,37 @@
 }
 
 .opNumero {
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  color: #111111;
+  color: #111827;
 }
 
 .status {
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
   font-size: 0.8rem;
   font-weight: 600;
   border-radius: 999px;
-  background-color: #e5e5e5;
-  color: #333333;
+  background-color: #f3f4f6;
+  color: #4b5563;
   white-space: nowrap;
 }
 
 .status-PENDENTE {
-  background-color: #e5e5e5;
-  color: #333333;
+  background-color: #fef3c7;
+  color: #92400e;
 }
 
 .status-EM_ANDAMENTO {
   background-color: #dbeafe;
-  color: #1e40af;
+  color: #1d4ed8;
 }
 
 .status-PAUSADA {
-  background-color: #fef3c7;
-  color: #92400e;
+  background-color: #fed7aa;
+  color: #9a3412;
 }
 
 .status-CONCLUIDA {
@@ -117,30 +128,71 @@
 }
 
 .produtoNome {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #111111;
+  margin: 2px 0 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #111827;
 }
 
 .descricao {
   margin: 0;
   font-size: 0.95rem;
-  color: #444444;
+  color: #6b7280;
 }
 
 .quantidade {
-  margin: 0;
+  margin: 2px 0 0;
   font-size: 0.95rem;
-  color: #555555;
+  color: #4b5563;
+}
+
+/* Barra de progresso (base TIRAGEM = folhas, base UNIDADE = peças) — mesma
+   do painel. */
+.progressoBarraLinha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.progressoTrilho {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  background-color: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressoPreenchido {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-color: #2563eb;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.progressoPreenchidoCompleto {
+  background-color: #16a34a;
+}
+
+.progressoLabel {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #374151;
+  white-space: nowrap;
+  min-width: 44px;
+  text-align: right;
 }
 
 .acaoPrincipal {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 /* Ação principal em destaque (Requirement 5.3, 14.2) — botão grande,
-   ocupando toda a largura disponível, com cor de destaque forte. */
+   largura total, cor de destaque forte. */
 .botaoIniciar {
   width: 100%;
   min-height: 64px;
@@ -151,11 +203,17 @@
   border: none;
   border-radius: 12px;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3);
+}
+
+.botaoIniciar:hover:not(:disabled) {
+  background-color: #15803d;
 }
 
 .botaoIniciar:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .acoesEmAndamento {
@@ -164,8 +222,7 @@
   gap: 12px;
 }
 
-/* Botão "Apontar" com destaque visual maior (ação mais comum) — mesma
-   altura maior e cor de destaque que o botão de iniciar. */
+/* Botão "Apontar" — ação mais comum, destaque azul. */
 .botaoApontar {
   width: 100%;
   min-height: 64px;
@@ -176,6 +233,11 @@
   border: none;
   border-radius: 12px;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
+
+.botaoApontar:hover {
+  background-color: #1d4ed8;
 }
 
 .botaoSecundario {
@@ -183,15 +245,18 @@
   min-height: 48px;
   font-size: 1rem;
   font-weight: 600;
-  color: #333333;
+  color: #374151;
   background-color: #ffffff;
-  border: 1px solid #d4d4d4;
+  border: 1px solid #d1d5db;
   border-radius: 12px;
   cursor: pointer;
 }
 
-/* Botão "Finalizar etapa" — ação de conclusão em destaque (verde forte,
-   mesmo tamanho dos botões principais). Separado visualmente dos demais. */
+.botaoSecundario:hover {
+  background-color: #f9fafb;
+}
+
+/* Botão "Finalizar etapa" — conclusão em destaque (verde escuro). */
 .botaoFinalizar {
   width: 100%;
   min-height: 56px;
@@ -215,7 +280,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  padding: 14px;
   background-color: #fff7ed;
   border: 1px solid #fdba74;
   border-radius: 12px;
@@ -226,23 +291,26 @@
   min-height: 48px;
   padding: 0 12px;
   font-size: 1rem;
-  color: #111111;
+  color: #111827;
   background-color: #ffffff;
-  border: 1px solid #d4d4d4;
+  border: 1px solid #d1d5db;
   border-radius: 8px;
 }
 
 .operadoresSection {
-  padding: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
   background-color: #ffffff;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .operadoresTitulo {
   margin: 0 0 12px;
   font-size: 1.05rem;
-  color: #111111;
+  font-weight: 700;
+  color: #111827;
 }
 
 .operadoresLista {
@@ -258,9 +326,13 @@
   min-height: 48px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 14px;
   font-size: 0.95rem;
-  background-color: #f5f5f5;
+  font-weight: 500;
+  color: #1f2937;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
 }
 
@@ -288,15 +360,12 @@
   font-size: 1rem;
   font-weight: 600;
   color: #b91c1c;
-  background-color: #fee2e2;
+  background-color: #fef2f2;
   border: 1px solid #fecaca;
   border-radius: 8px;
   cursor: pointer;
 }
 
-/* Link secundário dentro de texto corrido — precisa de área de toque
-   própria (Requirement 14.2, mínimo 48x48px), já que por padrão um link
-   inline só teria a altura da linha de texto (~1rem). */
 .identificarLink {
   display: inline-flex;
   align-items: center;
@@ -308,20 +377,20 @@
   text-decoration: none;
 }
 
-/* Histórico de apontamentos (task 27.1) — seção separada visualmente, ao
-   final da tela, exibida sempre que a etapa é encontrada. */
+/* Histórico de apontamentos (task 27.1). */
 .historicoSection {
-  margin-top: 20px;
-  padding: 16px;
+  padding: 20px;
   background-color: #ffffff;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .historicoTitulo {
   margin: 0 0 12px;
   font-size: 1.05rem;
-  color: #111111;
+  font-weight: 700;
+  color: #111827;
 }
 
 .historicoLista {
@@ -337,16 +406,18 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 12px;
-  background-color: #f5f5f5;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
+  padding: 14px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  border-left: 4px solid #cbd5e1;
 }
 
-/* Destaque visual de apontamento retroativo (Requirement 11.5, 16.3). */
+/* Destaque de apontamento retroativo (Requirement 11.5, 16.3). */
 .historicoItemRetroativo {
   background-color: #fff7ed;
   border: 1px solid #fdba74;
+  border-left: 4px solid #f97316;
 }
 
 .historicoItemHeader {
@@ -359,12 +430,12 @@
 .historicoTipo {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #111111;
+  color: #111827;
 }
 
 .historicoHorario {
   font-size: 0.8rem;
-  color: #666666;
+  color: #6b7280;
   white-space: nowrap;
 }
 
@@ -372,14 +443,14 @@
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #333333;
+  color: #374151;
 }
 
 .historicoQuantidade,
 .historicoMotivo {
   margin: 0;
   font-size: 0.9rem;
-  color: #444444;
+  color: #4b5563;
 }
 
 .historicoRetroativoBadge {

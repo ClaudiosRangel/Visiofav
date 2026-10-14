@@ -358,7 +358,13 @@ export default function EtapaPage() {
         </div>
       )}
 
-      {!carregando && !erro && etapa && (
+      {!carregando && !erro && etapa && (() => {
+        const apontado = etapa.contagem?.apontado ?? etapa.quantidadeProduzida
+        const planejado = etapa.contagem?.planejado ?? etapa.quantidade
+        const unidade = etapa.contagem ? (etapa.contagem.base === 'UNIDADE' ? 'un' : 'folhas') : etapa.unidade
+        const progresso = etapa.contagem?.progresso ?? (planejado > 0 ? Math.round((apontado / planejado) * 100) : 0)
+        const completo = progresso >= 100
+        return (
         <>
           <div className={styles.infoCard}>
             <div className={styles.infoHeader}>
@@ -374,9 +380,18 @@ export default function EtapaPage() {
                 demais→Tiragem). Usa `contagem` (fonte única do backend) com
                 fallback aos campos legados. */}
             <p className={styles.quantidade}>
-              {(etapa.contagem?.apontado ?? etapa.quantidadeProduzida)} / {(etapa.contagem?.planejado ?? etapa.quantidade)}{' '}
-              {etapa.contagem ? (etapa.contagem.base === 'UNIDADE' ? 'un' : 'folhas') : etapa.unidade}
+              {apontado} / {planejado} {unidade}
             </p>
+
+            <div className={styles.progressoBarraLinha}>
+              <div className={styles.progressoTrilho}>
+                <div
+                  className={`${styles.progressoPreenchido} ${completo ? styles.progressoPreenchidoCompleto : ''}`}
+                  style={{ width: `${Math.min(100, Math.max(0, progresso))}%` }}
+                />
+              </div>
+              <span className={styles.progressoLabel}>{progresso}%</span>
+            </div>
           </div>
 
           <div className={styles.acaoPrincipal}>
@@ -605,7 +620,8 @@ export default function EtapaPage() {
             )}
           </section>
         </>
-      )}
+        )
+      })()}
     </div>
   )
 }
