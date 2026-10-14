@@ -947,6 +947,33 @@ e é **criada no menu Ordem de Produção**, não mais na Programação.
 Isolamento por `empresaId` explícito. Helper `proximaPosicaoFila(empresaId,
 centroId)` + `STATUS_NA_FILA = ['LIBERADA','EM_PRODUCAO']`.
 
+### 10.7 RC no Checkout (chão de fábrica) — 14/10/2026
+
+A RC também aparece no **Checkout** (app `VisioFab.Checkout`), na fila do centro
+do terminal, igual às etapas de OP. Implementação em `checkout.service.ts` +
+`checkout.routes.ts` (prefixo do checkout, auth do terminal `checkoutAuth`):
+- `GET /checkout/rcs` → `listarRcsDoCheckout(checkoutUser)`: lista as RCs
+  `LIBERADA`/`EM_PRODUCAO` cujo centro da fila **do estágio atual** bate com o
+  `centroProducaoId` da sessão do terminal. O **estágio** (`CORTE`|`GUILHOTINA`)
+  é derivado das datas (mesma regra do painel do PCP: `dataFimCorte` +
+  `guilhotinaDestinoId` + guilhotina sem fim ⇒ GUILHOTINA). Em CORTE a RC está na
+  fila da Cortadeira (`centroProducaoId`); em GUILHOTINA, na fila do
+  `guilhotinaDestinoId`. Cada RC traz `contagem` (base **TIRAGEM** = folhas) para
+  seguir a regra da seção 12, e `numeroExibicao` = `formatarNumeroRc(numero)`
+  (RC-NNN).
+- Ações por estágio (todas via `checkoutAuth`, isolam `empresaId` da RC real):
+  `PATCH /checkout/rcs/:id/iniciar-corte` (→ EM_PRODUCAO, grava `dataInicioCorte`),
+  `/concluir-corte` (recebe `qtdFolhasCortadeira`; vai p/ guilhotina destino OU
+  CONCLUIDA), `/iniciar-guilhotina`, `/concluir-guilhotina` (recebe
+  `qtdFolhasGuilhotina`; → CONCLUIDA). Funções: `iniciarCorteRc`,
+  `concluirCorteRc`, `iniciarGuilhotinaRc`, `concluirGuilhotinaRc`,
+  `buscarRcDoTerminal`, `proximaPosicaoFilaCheckout` em `checkout.service.ts`.
+- **Máquina da sessão**: `GET /checkout/sessao` (`dadosDaSessaoCheckout`) retorna
+  o centro do terminal; o painel do checkout exibe "Máquina: COD - Descrição
+  (Tipo)" no cabeçalho, para o operador saber em qual máquina está apontando.
+- Front: `VisioFab.Checkout/src/app/painel/page.tsx` renderiza os cards de RC com
+  botões por estágio e pede a quantidade de folhas na conclusão.
+
 ---
 
 ## 11. Contagem por Contador de Máquina (Checkout)
