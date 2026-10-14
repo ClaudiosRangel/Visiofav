@@ -605,22 +605,60 @@ export async function verificarSequenciaConcluivel(
 
   const sequenciaOriginalEtapa = sequenciaOriginalDe(etapa)
 
-  const etapasDaOp = await prisma.etapaOrdemProducao.findMany({
-    where: {
-      ordemProducaoId: etapa.ordemProducaoId,
-      sequencia: { lt: etapa.sequencia },
+  // A ORDEM REAL de produção é a ordem dos TIPOS DE PROCESSO (CentroProducao.
+  // tipoProcesso.posicao): Cortadeira (0) → Impressão (1) → Acabamento →
+  // Corte/Vinco → Colagem. A `sequencia` numérica da etapa NÃO reflete essa
+  // ordem (a importação do PDF numera na ordem textual da OS do GPrint, que
+  // lista a Impressão antes dos acabamentos/corte). Por isso o bloqueio compara
+  // pela POSIÇÃO do tipo de processo, não só pela sequência.
+  //
+  // Uma etapa só é bloqueada por etapas ANTERIORES NO FLUXO (posição de tipo de
+  // processo MENOR), do MESMO plano (ou legado/sem plano), ainda não concluídas.
+  // Dentro do mesmo tipo de processo (mesma posição), a ordem é pela sequência.
+  const etapaFull = await prisma.etapaOrdemProducao.findUnique({
+    where: { id: etapa.id },
+    select: {
+      sequencia: true,
+      planoId: true,
+      centroProducao: { select: { tipoProcesso: { select: { posicao: true } } } },
     },
-    select: { id: true, sequencia: true, status: true, quantidadePrevista: true, descricao: true },
+  })
+  const posEtapa = etapaFull?.centroProducao?.tipoProcesso?.posicao ?? 0
+  const planoEtapa = etapaFull?.planoId ?? null
+
+  const todasEtapasDaOp = await prisma.etapaOrdemProducao.findMany({
+    where: { ordemProducaoId: etapa.ordemProducaoId },
+    select: {
+      id: true,
+      sequencia: true,
+      status: true,
+      quantidadePrevista: true,
+      descricao: true,
+      planoId: true,
+      centroProducao: { select: { tipoProcesso: { select: { posicao: true } } } },
+    },
   })
 
-  const etapaBloqueadora = etapasDaOp.find((etapaAnterior) => {
-    if (etapaAnterior.status === 'CONCLUIDA') {
-      return false
-    }
+  const etapaBloqueadora = todasEtapasDaOp.find((etapaAnterior) => {
+    if (etapaAnterior.id === etapa.id) return false
+    if (etapaAnterior.status === 'CONCLUIDA') return false
+
+    // Só considera etapas do MESMO plano (ou ambas sem plano/legado). Planos
+    // distintos (CARTUCHO vs BERÇO, FRENTE vs COSTA) correm independentes.
+    if ((etapaAnterior.planoId ?? null) !== planoEtapa) return false
+
+    const posAnterior = etapaAnterior.centroProducao?.tipoProcesso?.posicao ?? 0
+
+    // Está ANTES no fluxo? (posição de tipo de processo menor) → bloqueia.
+    // Mesma posição (mesmo tipo de processo): usa a sequência como desempate.
+    const anteriorNoFluxo =
+      posAnterior < posEtapa ||
+      (posAnterior === posEtapa && etapaAnterior.sequencia < etapaFull!.sequencia)
+    if (!anteriorNoFluxo) return false
 
     // Requirement 9.3 / Property 4 — etapas irmãs do mesmo desmembramento
-    // (mesma sequência original, ambas resultantes de desmembramento)
-    // nunca bloqueiam a conclusão uma da outra.
+    // (mesma sequência original, ambas resultantes de desmembramento) nunca
+    // bloqueiam a conclusão uma da outra.
     const ambasDesmembradas = Number(etapaAnterior.quantidadePrevista) > 0 && Number(etapa.quantidadePrevista) > 0
     if (ambasDesmembradas && sequenciaOriginalDe(etapaAnterior) === sequenciaOriginalEtapa) {
       return false
