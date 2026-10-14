@@ -1,60 +1,88 @@
-/* Estilos da tela de painel (fila de Etapas) — mobile-first, cards em
-   lista vertical com toque grande (mínimo 48x48px de área clicável),
-   mesmo padrão visual de login-terminal.module.css /
-   identificar-operador.module.css. */
+/* Estilos da tela de painel (fila de Etapas).
+   Layout em cards largos de 2 colunas (desktop/terminal de chão de
+   fábrica): à esquerda os dados da etapa, à direita a barra de progresso
+   com percentual e o status. Mantém áreas de toque grandes (mín. 48px). */
 
 .container {
   min-height: 100vh;
-  padding: 16px;
-  background-color: #f5f5f5;
+  padding: 20px;
+  background-color: #f3f4f6;
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .title {
   margin: 0;
-  font-size: 1.4rem;
-  color: #111111;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.maquinaLinha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.maquinaIcone {
+  font-size: 1rem;
 }
 
 .logoutButton {
-  min-height: 48px;
-  min-width: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
   padding: 0 16px;
   font-size: 0.9rem;
   font-weight: 600;
   color: #b91c1c;
-  background-color: #fee2e2;
+  background-color: #fef2f2;
   border: 1px solid #fecaca;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.logoutButton:hover {
+  background-color: #fee2e2;
 }
 
 .navBar {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .navLink {
   display: inline-flex;
   align-items: center;
-  min-height: 48px;
-  padding: 0 14px;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #1e40af;
-  background-color: #dbeafe;
+  color: #374151;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   text-decoration: none;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.navLink:hover {
+  background-color: #f9fafb;
 }
 
 .operadorBanner {
@@ -64,7 +92,7 @@
   gap: 10px;
   margin-bottom: 16px;
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 0.9rem;
 }
 
@@ -86,9 +114,9 @@
 
 .operadorBannerLink {
   font-weight: 600;
-  color: #1e40af;
+  color: #1d4ed8;
   text-decoration: underline;
-  min-height: 48px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
 }
@@ -96,7 +124,7 @@
 .infoMessage {
   margin: 32px 0;
   font-size: 1rem;
-  color: #555555;
+  color: #6b7280;
   text-align: center;
 }
 
@@ -135,42 +163,79 @@
 .lista {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Card largo em 2 colunas: coluna de info (esquerda) + coluna de
+   progresso/status (direita). Em telas estreitas vira coluna única. */
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: center;
   width: 100%;
   min-height: 48px;
-  padding: 16px;
+  padding: 16px 20px;
   text-align: left;
   background-color: #ffffff;
-  border: 1px solid #e5e5e5;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   cursor: pointer;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.card:hover:not(:disabled) {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .card:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+  cursor: default;
 }
 
-/* Destaque visual de Etapa em alerta de parada prolongada (Requirement
-   13.2, `GET /checkout/supervisor/alertas`) — borda e sombra em laranja/
-   vermelho para chamar atenção do Supervisor na fila. */
+@media (max-width: 640px) {
+  .card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+/* Coluna esquerda: identificação da etapa. */
+.cardInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Coluna direita: status + barra de progresso. */
+.cardProgresso {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardProgressoTopo {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Destaque de Etapa em alerta de parada prolongada. */
 .cardEmAlerta {
   border: 2px solid #dc2626;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
 }
 
 .alertaParada {
-  margin: 4px 0 0;
+  grid-column: 1 / -1;
+  margin: 0;
   padding: 4px 8px;
   font-size: 0.85rem;
   font-weight: 600;
@@ -180,37 +245,33 @@
   width: fit-content;
 }
 
-.cardHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .opNumero {
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  color: #111111;
+  color: #111827;
 }
 
 .status {
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
   font-size: 0.8rem;
   font-weight: 600;
   border-radius: 999px;
-  background-color: #e5e5e5;
-  color: #333333;
+  background-color: #f3f4f6;
+  color: #374151;
   white-space: nowrap;
 }
 
 .status-PENDENTE {
-  background-color: #e5e5e5;
-  color: #333333;
+  background-color: #f3f4f6;
+  color: #4b5563;
 }
 
 .status-EM_ANDAMENTO {
   background-color: #dbeafe;
-  color: #1e40af;
+  color: #1d4ed8;
 }
 
 .status-PAUSADA {
@@ -223,21 +284,102 @@
   color: #166534;
 }
 
+.menuIcone {
+  color: #9ca3af;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .produtoNome {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 600;
-  color: #111111;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .descricao {
   margin: 0;
-  font-size: 0.9rem;
-  color: #444444;
+  font-size: 0.88rem;
+  color: #6b7280;
 }
 
 .quantidade {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #555555;
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Barra de progresso (base TIRAGEM = folhas, base UNIDADE = peças). */
+.progressoBarraLinha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progressoTrilho {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  background-color: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressoPreenchido {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-color: #2563eb;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.progressoPreenchidoCompleto {
+  background-color: #16a34a;
+}
+
+.progressoLabel {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+  white-space: nowrap;
+  min-width: 64px;
+  text-align: right;
+}
+
+/* Botões de ação da RC (iniciar/concluir corte, guilhotina). */
+.rcAcoes {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.rcBotao {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.rcBotaoIniciar {
+  background-color: #2563eb;
+}
+
+.rcBotaoConcluir {
+  background-color: #16a34a;
+}
+
+.rcBotao:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

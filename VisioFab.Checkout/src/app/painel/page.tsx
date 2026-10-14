@@ -241,14 +241,15 @@ export default function PainelPage() {
         <div>
           <h1 className={styles.title}>Fila de Etapas</h1>
           {maquina && (
-            <p style={{ margin: '2px 0 0', fontSize: '0.95rem', fontWeight: 600, color: '#2563eb' }}>
+            <p className={styles.maquinaLinha}>
+              <span className={styles.maquinaIcone} aria-hidden>🖥</span>
               Máquina: {maquina.codigo} — {maquina.descricao}
               {maquina.tipoProcesso ? ` (${maquina.tipoProcesso})` : ''}
             </p>
           )}
         </div>
         <button type="button" className={styles.logoutButton} onClick={encerrarSessao}>
-          Encerrar sessão
+          ✕ Encerrar sessão
         </button>
       </header>
 
@@ -308,29 +309,49 @@ export default function PainelPage() {
             const corteIniciado = Boolean(rc.dataInicioCorte)
             const guilhotinaIniciada = Boolean(rc.dataInicioGuilhotina)
             const proc = processandoRc === rc.id
+            const planejado = rc.contagem?.planejado ?? 0
+            const apontado = rc.contagem?.apontado ?? 0
+            const progresso = rc.contagem?.progresso ?? 0
+            const completo = progresso >= 100
             return (
               <li key={rc.id}>
-                <div className={styles.card} style={{ borderLeft: '4px solid #16a34a', cursor: 'default', textAlign: 'left' }}>
-                  <div className={styles.cardHeader}>
+                <div className={styles.card} style={{ cursor: 'default' }}>
+                  <div className={styles.cardInfo}>
                     <span className={styles.opNumero}>✂ {rc.numeroExibicao}</span>
-                    <span className={`${styles.status}`}>
-                      {rc.estagio === 'CORTE' ? 'Corte' : 'Guilhotina'}
-                    </span>
+                    <p className={styles.produtoNome}>{rc.nomeProduto}</p>
+                    <p className={styles.descricao}>{rc.fabricanteCartao}</p>
+                    <p className={styles.quantidade}>
+                      {apontado} / {planejado} folhas
+                    </p>
                   </div>
-                  <p className={styles.produtoNome}>{rc.nomeProduto}</p>
-                  <p className={styles.descricao}>{rc.fabricanteCartao}</p>
-                  <p className={styles.quantidade}>
-                    {rc.contagem?.apontado ?? 0} / {rc.contagem?.planejado ?? 0} folhas
-                  </p>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                  <div className={styles.cardProgresso}>
+                    <div className={styles.cardProgressoTopo}>
+                      <span className={styles.status}>
+                        {rc.estagio === 'CORTE' ? 'Corte' : 'Guilhotina'}
+                      </span>
+                    </div>
+                    <div className={styles.progressoBarraLinha}>
+                      <div className={styles.progressoTrilho}>
+                        <div
+                          className={`${styles.progressoPreenchido} ${completo ? styles.progressoPreenchidoCompleto : ''}`}
+                          style={{ width: `${Math.min(100, Math.max(0, progresso))}%` }}
+                        />
+                      </div>
+                      <span className={styles.progressoLabel}>
+                        {apontado} / {progresso}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={styles.rcAcoes}>
                     {rc.estagio === 'CORTE' ? (
                       !corteIniciado ? (
-                        <button type="button" className={styles.card} style={{ background: '#2563eb', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => acaoRc(rc.id, 'iniciar-corte')}>
+                        <button type="button" className={`${styles.rcBotao} ${styles.rcBotaoIniciar}`} disabled={proc} onClick={() => acaoRc(rc.id, 'iniciar-corte')}>
                           {proc ? 'Aguarde...' : 'Iniciar corte'}
                         </button>
                       ) : (
-                        <button type="button" className={styles.card} style={{ background: '#16a34a', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => {
+                        <button type="button" className={`${styles.rcBotao} ${styles.rcBotaoConcluir}`} disabled={proc} onClick={() => {
                           const v = window.prompt('Quantidade de folhas cortadas (opcional):', rc.qtdFolhasCortadeira ? String(rc.qtdFolhasCortadeira) : '')
                           const qtd = v && !Number.isNaN(Number(v)) ? Number(v) : undefined
                           acaoRc(rc.id, 'concluir-corte', qtd != null ? { qtdFolhasCortadeira: qtd } : undefined)
@@ -340,11 +361,11 @@ export default function PainelPage() {
                       )
                     ) : (
                       !guilhotinaIniciada ? (
-                        <button type="button" className={styles.card} style={{ background: '#2563eb', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => acaoRc(rc.id, 'iniciar-guilhotina')}>
+                        <button type="button" className={`${styles.rcBotao} ${styles.rcBotaoIniciar}`} disabled={proc} onClick={() => acaoRc(rc.id, 'iniciar-guilhotina')}>
                           {proc ? 'Aguarde...' : 'Iniciar guilhotina'}
                         </button>
                       ) : (
-                        <button type="button" className={styles.card} style={{ background: '#16a34a', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => {
+                        <button type="button" className={`${styles.rcBotao} ${styles.rcBotaoConcluir}`} disabled={proc} onClick={() => {
                           const v = window.prompt('Quantidade de folhas refiladas (opcional):', rc.qtdFolhasGuilhotina ? String(rc.qtdFolhasGuilhotina) : '')
                           const qtd = v && !Number.isNaN(Number(v)) ? Number(v) : undefined
                           acaoRc(rc.id, 'concluir-guilhotina', qtd != null ? { qtdFolhasGuilhotina: qtd } : undefined)
@@ -370,6 +391,11 @@ export default function PainelPage() {
           {etapas.map((etapa) => {
             const navegavel = !STATUS_NAO_NAVEGAVEL.has(etapa.status)
             const alerta = alertasPorEtapaId.get(etapa.id)
+            const apontado = etapa.contagem?.apontado ?? etapa.quantidadeProduzida
+            const planejado = etapa.contagem?.planejado ?? etapa.quantidade
+            const unidade = etapa.contagem ? (etapa.contagem.base === 'UNIDADE' ? 'un' : 'folhas') : etapa.unidade
+            const progresso = etapa.contagem?.progresso ?? (planejado > 0 ? Math.round((apontado / planejado) * 100) : 0)
+            const completo = progresso >= 100
 
             return (
               <li key={etapa.id}>
@@ -379,20 +405,34 @@ export default function PainelPage() {
                   onClick={() => handleSelecionarEtapa(etapa)}
                   disabled={!navegavel}
                 >
-                  <div className={styles.cardHeader}>
+                  <div className={styles.cardInfo}>
                     <span className={styles.opNumero}>OP {etapa.opNumero}</span>
-                    <span className={`${styles.status} ${styles[`status-${etapa.status}`] ?? ''}`}>
-                      {ROTULO_STATUS[etapa.status] ?? etapa.status}
-                    </span>
+                    {etapa.produtoNome && <p className={styles.produtoNome}>{etapa.produtoNome}</p>}
+                    <p className={styles.descricao}>{etapa.descricao}</p>
+                    <p className={styles.quantidade}>
+                      {apontado} / {planejado} {unidade}
+                    </p>
                   </div>
 
-                  {etapa.produtoNome && <p className={styles.produtoNome}>{etapa.produtoNome}</p>}
-
-                  <p className={styles.descricao}>{etapa.descricao}</p>
-
-                  <p className={styles.quantidade}>
-                    {etapa.contagem?.apontado ?? etapa.quantidadeProduzida} / {etapa.contagem?.planejado ?? etapa.quantidade} {etapa.contagem ? (etapa.contagem.base === 'UNIDADE' ? 'un' : 'folhas') : etapa.unidade}
-                  </p>
+                  <div className={styles.cardProgresso}>
+                    <div className={styles.cardProgressoTopo}>
+                      <span className={`${styles.status} ${styles[`status-${etapa.status}`] ?? ''}`}>
+                        {ROTULO_STATUS[etapa.status] ?? etapa.status}
+                      </span>
+                      <span className={styles.menuIcone} aria-hidden>≡</span>
+                    </div>
+                    <div className={styles.progressoBarraLinha}>
+                      <div className={styles.progressoTrilho}>
+                        <div
+                          className={`${styles.progressoPreenchido} ${completo ? styles.progressoPreenchidoCompleto : ''}`}
+                          style={{ width: `${Math.min(100, Math.max(0, progresso))}%` }}
+                        />
+                      </div>
+                      <span className={styles.progressoLabel}>
+                        {apontado} / {progresso}%
+                      </span>
+                    </div>
+                  </div>
 
                   {alerta && (
                     <p className={styles.alertaParada}>
