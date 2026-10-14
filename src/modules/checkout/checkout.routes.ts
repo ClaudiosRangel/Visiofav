@@ -6,6 +6,11 @@ import {
   buscarEtapaDoTerminal,
   listarPainelCheckout,
   dadosDaSessaoCheckout,
+  listarRcsDoCheckout,
+  iniciarCorteRc,
+  concluirCorteRc,
+  iniciarGuilhotinaRc,
+  concluirGuilhotinaRc,
   iniciarSetup,
   finalizarSetup,
   registrarApontamentoProducao,
@@ -134,6 +139,70 @@ export async function checkoutRoutes(app: FastifyInstance) {
     try {
       const sessao = await dadosDaSessaoCheckout(request.checkoutUser)
       return reply.status(200).send(sessao)
+    } catch (err) {
+      if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  // =========================================================================
+  // Requisições de Corte (RC) no checkout da Cortadeira/Guilhotina.
+  // GET /rcs — lista as RCs na fila do centro do terminal (estágio CORTE/GUILHOTINA).
+  // PATCH /rcs/:id/iniciar-corte | /concluir-corte | /iniciar-guilhotina | /concluir-guilhotina
+  // =========================================================================
+  app.get('/rcs', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    try {
+      const rcs = await listarRcsDoCheckout(request.checkoutUser)
+      return reply.status(200).send(rcs)
+    } catch (err) {
+      if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  const rcQtdCorteSchema = z.object({ qtdFolhasCortadeira: z.coerce.number().min(0).optional() })
+  const rcQtdGuilhotinaSchema = z.object({ qtdFolhasGuilhotina: z.coerce.number().min(0).optional() })
+
+  app.patch('/rcs/:id/iniciar-corte', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    try {
+      const rc = await iniciarCorteRc(id, request.checkoutUser)
+      return reply.status(200).send(rc)
+    } catch (err) {
+      if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  app.patch('/rcs/:id/concluir-corte', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const body = rcQtdCorteSchema.parse(request.body ?? {})
+    try {
+      const rc = await concluirCorteRc(id, request.checkoutUser, body)
+      return reply.status(200).send(rc)
+    } catch (err) {
+      if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  app.patch('/rcs/:id/iniciar-guilhotina', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    try {
+      const rc = await iniciarGuilhotinaRc(id, request.checkoutUser)
+      return reply.status(200).send(rc)
+    } catch (err) {
+      if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+  })
+
+  app.patch('/rcs/:id/concluir-guilhotina', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const body = rcQtdGuilhotinaSchema.parse(request.body ?? {})
+    try {
+      const rc = await concluirGuilhotinaRc(id, request.checkoutUser, body)
+      return reply.status(200).send(rc)
     } catch (err) {
       if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
       throw err

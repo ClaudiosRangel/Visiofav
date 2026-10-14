@@ -70,6 +70,22 @@ interface EtapaPainelCheckout {
   contagem?: { base: 'UNIDADE' | 'TIRAGEM'; planejado: number; apontado: number; progresso: number }
 }
 
+/** Requisição de Corte na fila do checkout (GET /checkout/rcs). */
+interface RcCheckout {
+  id: string
+  numeroExibicao: string
+  status: string
+  nomeProduto: string
+  fabricanteCartao: string
+  estagio: 'CORTE' | 'GUILHOTINA'
+  qtdFolhasCortadeira: number | null
+  qtdFolhasGuilhotina: number | null
+  dataInicioCorte: string | null
+  dataFimCorte: string | null
+  dataInicioGuilhotina: string | null
+  contagem?: { base: 'UNIDADE' | 'TIRAGEM'; planejado: number; apontado: number; progresso: number }
+}
+
 /**
  * Shape de cada item retornado por `GET /checkout/supervisor/alertas`,
  * espelhando a interface `EtapaEmAlertaParadaProlongada` de
@@ -115,6 +131,9 @@ export default function PainelPage() {
   // Máquina (Centro de Produção) da sessão do terminal — para o operador
   // saber em qual máquina está logado.
   const [maquina, setMaquina] = useState<{ codigo: string; descricao: string; tipoProcesso: string | null } | null>(null)
+  // Requisições de Corte (RC) na fila deste centro (quando é Cortadeira/Guilhotina).
+  const [rcs, setRcs] = useState<RcCheckout[]>([])
+  const [processandoRc, setProcessandoRc] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -157,6 +176,35 @@ export default function PainelPage() {
       .then((r) => setMaquina(r.data))
       .catch(() => setMaquina(null))
   }, [estaAutenticado])
+
+  // Busca as RCs na fila deste centro (Cortadeira/Guilhotina) — não-bloqueante.
+  const buscarRcs = useCallback(async () => {
+    try {
+      const response = await checkoutApiClient.get<RcCheckout[]>('/rcs')
+      setRcs(response.data)
+    } catch {
+      setRcs([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!estaAutenticado) return
+    buscarRcs()
+  }, [estaAutenticado, buscarRcs])
+
+  // Executa uma ação da RC (iniciar/concluir corte, iniciar/concluir guilhotina).
+  async function acaoRc(rcId: string, acao: string, body?: Record<string, unknown>) {
+    if (processandoRc) return
+    setProcessandoRc(rcId)
+    try {
+      await checkoutApiClient.patch(`/rcs/${rcId}/${acao}`, body ?? {})
+      await buscarRcs()
+    } catch {
+      // silencioso — o card recarrega no próximo refresh
+    } finally {
+      setProcessandoRc(null)
+    }
+  }
 
   const buscarAlertas = useCallback(async () => {
     try {
@@ -252,7 +300,68 @@ export default function PainelPage() {
         </div>
       )}
 
-      {!carregando && !erro && etapas.length === 0 && (
+      {/* Requisições de Corte na fila deste centro — cards com ações de
+          corte/guilhotina (botões conforme o estágio). Destaque visual verde. */}
+      {!carregando && rcs.length > 0 && (
+        <ul className={styles.lista}>
+          {rcs.map((rc) => {
+            const corteIniciado = Boolean(rc.dataInicioCorte)
+            const guilhotinaIniciada = Boolean(rc.dataInicioGuilhotina)
+            const proc = processandoRc === rc.id
+            return (
+              <li key={rc.id}>
+                <div className={styles.card} style={{ borderLeft: '4px solid #16a34a', cursor: 'default', textAlign: 'left' }}>
+                  <div className={styles.cardHeader}>
+                    <span className={styles.opNumero}>✂ {rc.numeroExibicao}</span>
+                    <span className={`${styles.status}`}>
+                      {rc.estagio === 'CORTE' ? 'Corte' : 'Guilhotina'}
+                    </span>
+                  </div>
+                  <p className={styles.produtoNome}>{rc.nomeProduto}</p>
+                  <p className={styles.descricao}>{rc.fabricanteCartao}</p>
+                  <p className={styles.quantidade}>
+                    {rc.contagem?.apontado ?? 0} / {rc.contagem?.planejado ?? 0} folhas
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                    {rc.estagio === 'CORTE' ? (
+                      !corteIniciado ? (
+                        <button type="button" className={styles.card} style={{ background: '#2563eb', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => acaoRc(rc.id, 'iniciar-corte')}>
+                          {proc ? 'Aguarde...' : 'Iniciar corte'}
+                        </button>
+                      ) : (
+                        <button type="button" className={styles.card} style={{ background: '#16a34a', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => {
+                          const v = window.prompt('Quantidade de folhas cortadas (opcional):', rc.qtdFolhasCortadeira ? String(rc.qtdFolhasCortadeira) : '')
+                          const qtd = v && !Number.isNaN(Number(v)) ? Number(v) : undefined
+                          acaoRc(rc.id, 'concluir-corte', qtd != null ? { qtdFolhasCortadeira: qtd } : undefined)
+                        }}>
+                          {proc ? 'Aguarde...' : 'Concluir corte'}
+                        </button>
+                      )
+                    ) : (
+                      !guilhotinaIniciada ? (
+                        <button type="button" className={styles.card} style={{ background: '#2563eb', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => acaoRc(rc.id, 'iniciar-guilhotina')}>
+                          {proc ? 'Aguarde...' : 'Iniciar guilhotina'}
+                        </button>
+                      ) : (
+                        <button type="button" className={styles.card} style={{ background: '#16a34a', color: '#fff', minHeight: 48, cursor: 'pointer' }} disabled={proc} onClick={() => {
+                          const v = window.prompt('Quantidade de folhas refiladas (opcional):', rc.qtdFolhasGuilhotina ? String(rc.qtdFolhasGuilhotina) : '')
+                          const qtd = v && !Number.isNaN(Number(v)) ? Number(v) : undefined
+                          acaoRc(rc.id, 'concluir-guilhotina', qtd != null ? { qtdFolhasGuilhotina: qtd } : undefined)
+                        }}>
+                          {proc ? 'Aguarde...' : 'Concluir guilhotina'}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {!carregando && !erro && etapas.length === 0 && rcs.length === 0 && (
         <p className={styles.infoMessage}>Nenhuma etapa na fila</p>
       )}
 

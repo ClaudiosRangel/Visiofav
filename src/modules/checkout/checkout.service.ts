@@ -159,6 +159,192 @@ export interface EtapaPainelCheckout {
  * da OP/produto, descrição da etapa, status, posição na fila e
  * quantidade produzida/prevista.
  */
+/** Requisição de Corte (RC) exibida no painel do checkout da Cortadeira/Guilhotina. */
+export interface RcPainelCheckout {
+  id: string
+  numero: string           // "2/2026"
+  numeroExibicao: string   // "RC-002"
+  status: string
+  nomeProduto: string
+  fabricanteCartao: string
+  estagio: 'CORTE' | 'GUILHOTINA'
+  qtdFolhasCortadeira: number | null
+  qtdFolhasGuilhotina: number | null
+  dataInicioCorte: Date | null
+  dataFimCorte: Date | null
+  dataInicioGuilhotina: Date | null
+  // Base de contagem (RC = corte → sempre Tiragem/folhas).
+  contagem: ContagemResolvida
+}
+
+/** Formata "NN/AAAA" como "RC-NNN" (mesma regra da lista de OPs). */
+function formatarNumeroRc(numero: string): string {
+  const seq = String(numero || '').split('/')[0].replace(/\D/g, '')
+  return `RC-${seq.padStart(3, '0')}`
+}
+
+/**
+ * Lista as Requisições de Corte (RC) que estão na fila DO CENTRO do terminal.
+ * - Estágio CORTE: a RC aparece no seu `centroProducaoId` (a cortadeira).
+ * - Estágio GUILHOTINA: aparece no `guilhotinaDestinoId` (o refile).
+ * Só RCs LIBERADA/EM_PRODUCAO. Isolamento por empresaId da sessão.
+ * A base de contagem da RC é sempre TIRAGEM (corte conta folhas).
+ */
+export async function listarRcsDoCheckout(
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+): Promise<RcPainelCheckout[]> {
+  const rcs = await prisma.requisicaoCorte.findMany({
+    where: {
+      empresaId: checkoutUser.empresaId,
+      status: { in: ['LIBERADA', 'EM_PRODUCAO'] },
+    },
+    orderBy: [{ posicaoFila: { sort: 'asc', nulls: 'last' } }, { criadoEm: 'asc' }],
+  })
+
+  return rcs
+    .map((rc) => {
+      const r = rc as any
+      const estagio: 'CORTE' | 'GUILHOTINA' =
+        r.dataFimCorte && r.guilhotinaDestinoId && !r.dataFimGuilhotina ? 'GUILHOTINA' : 'CORTE'
+      // Em CORTE a RC pertence à cortadeira (centroProducaoId); em GUILHOTINA,
+      // ao centro guilhotina destino.
+      const centroDaFila = estagio === 'GUILHOTINA' ? r.guilhotinaDestinoId : r.centroProducaoId
+      return { rc, r, estagio, centroDaFila }
+    })
+    .filter(({ centroDaFila }) => centroDaFila === checkoutUser.centroProducaoId)
+    .map(({ rc, r, estagio }) => {
+      // Base TIRAGEM: planejado = folhas (da etapa de corte ou guilhotina).
+      const planejadoFolhas = estagio === 'GUILHOTINA'
+        ? Number(r.qtdFolhasGuilhotina) || Number(r.qtdFolhasCortadeira) || 0
+        : Number(r.qtdFolhasCortadeira) || 0
+      const contagem = resolverPlanejadoDaEtapa(
+        { tipoProcessoCodigo: 'CORTADEIRA', quantidadePrevista: 0, quantidadeProduzida: 0 },
+        { tiragem: planejadoFolhas },
+        { quantidade: planejadoFolhas },
+      )
+      return {
+        id: rc.id,
+        numero: rc.numero,
+        numeroExibicao: formatarNumeroRc(rc.numero),
+        status: rc.status,
+        nomeProduto: rc.nomeProduto,
+        fabricanteCartao: rc.fabricanteCartao,
+        estagio,
+        qtdFolhasCortadeira: r.qtdFolhasCortadeira != null ? Number(r.qtdFolhasCortadeira) : null,
+        qtdFolhasGuilhotina: r.qtdFolhasGuilhotina != null ? Number(r.qtdFolhasGuilhotina) : null,
+        dataInicioCorte: r.dataInicioCorte ?? null,
+        dataFimCorte: r.dataFimCorte ?? null,
+        dataInicioGuilhotina: r.dataInicioGuilhotina ?? null,
+        contagem,
+      }
+    })
+}
+
+/**
+ * Resolve uma RC garantindo que ela pertence à empresa do terminal e que o
+ * centro do terminal é o centro CORRENTE da RC (cortadeira em CORTE, ou
+ * guilhotina destino em GUILHOTINA). Lança CheckoutError 404 caso contrário.
+ */
+async function buscarRcDoTerminal(
+  rcId: string,
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+) {
+  const rc = await prisma.requisicaoCorte.findFirst({
+    where: { id: rcId, empresaId: checkoutUser.empresaId },
+  })
+  if (!rc) throw new CheckoutError(404, 'Requisição de corte não encontrada')
+  const r = rc as any
+  const estagio: 'CORTE' | 'GUILHOTINA' =
+    r.dataFimCorte && r.guilhotinaDestinoId && !r.dataFimGuilhotina ? 'GUILHOTINA' : 'CORTE'
+  const centroDaFila = estagio === 'GUILHOTINA' ? r.guilhotinaDestinoId : r.centroProducaoId
+  if (centroDaFila !== checkoutUser.centroProducaoId) {
+    throw new CheckoutError(404, 'Requisição de corte não pertence à fila deste terminal')
+  }
+  return { rc, estagio }
+}
+
+/** Iniciar o corte da RC no checkout (dataInicioCorte; status EM_PRODUCAO). */
+export async function iniciarCorteRc(rcId: string, checkoutUser: { empresaId: string; centroProducaoId: string }) {
+  await buscarRcDoTerminal(rcId, checkoutUser)
+  return prisma.requisicaoCorte.update({
+    where: { id: rcId },
+    data: { status: 'EM_PRODUCAO', dataInicioCorte: new Date() } as any,
+  })
+}
+
+/**
+ * Concluir o corte da RC. Se houver guilhotina destino, a RC segue para a fila
+ * da guilhotina (continua EM_PRODUCAO, estágio GUILHOTINA pelas datas). Sem
+ * guilhotina destino, encerra como CONCLUIDA. `qtdFolhasCortadeira` opcional
+ * registra a quantidade real cortada (base Tiragem).
+ */
+export async function concluirCorteRc(
+  rcId: string,
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+  dados?: { qtdFolhasCortadeira?: number },
+) {
+  const { rc } = await buscarRcDoTerminal(rcId, checkoutUser)
+  const temGuilhotina = Boolean((rc as any).guilhotinaDestinoId)
+  const posicaoGuilhotina = temGuilhotina
+    ? await proximaPosicaoFilaCheckout(checkoutUser.empresaId, (rc as any).guilhotinaDestinoId)
+    : null
+  return prisma.requisicaoCorte.update({
+    where: { id: rcId },
+    data: {
+      dataFimCorte: new Date(),
+      ...(dados?.qtdFolhasCortadeira != null ? { qtdFolhasCortadeira: dados.qtdFolhasCortadeira } : {}),
+      ...(temGuilhotina
+        ? { status: 'EM_PRODUCAO', posicaoFila: posicaoGuilhotina }
+        : { status: 'CONCLUIDA' }),
+    } as any,
+  })
+}
+
+/** Iniciar o refile na guilhotina (dataInicioGuilhotina). */
+export async function iniciarGuilhotinaRc(rcId: string, checkoutUser: { empresaId: string; centroProducaoId: string }) {
+  await buscarRcDoTerminal(rcId, checkoutUser)
+  return prisma.requisicaoCorte.update({
+    where: { id: rcId },
+    data: { dataInicioGuilhotina: new Date() } as any,
+  })
+}
+
+/** Concluir o refile na guilhotina: RC vira CONCLUIDA. */
+export async function concluirGuilhotinaRc(
+  rcId: string,
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+  dados?: { qtdFolhasGuilhotina?: number },
+) {
+  await buscarRcDoTerminal(rcId, checkoutUser)
+  return prisma.requisicaoCorte.update({
+    where: { id: rcId },
+    data: {
+      dataFimGuilhotina: new Date(),
+      status: 'CONCLUIDA',
+      ...(dados?.qtdFolhasGuilhotina != null ? { qtdFolhasGuilhotina: dados.qtdFolhasGuilhotina } : {}),
+    } as any,
+  })
+}
+
+/** Próxima posição no fim da fila de um centro (RCs + etapas), p/ a guilhotina. */
+async function proximaPosicaoFilaCheckout(empresaId: string, centroProducaoId: string): Promise<number> {
+  const [maxRc, maxEtapa] = await Promise.all([
+    prisma.requisicaoCorte.aggregate({
+      where: { empresaId, status: { in: ['LIBERADA', 'EM_PRODUCAO'] }, guilhotinaDestinoId: centroProducaoId },
+      _max: { posicaoFila: true },
+    }),
+    prisma.etapaOrdemProducao.aggregate({
+      where: {
+        status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+        centroProducaoId,
+        ordemProducao: { empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+      },
+      _max: { posicaoFila: true },
+    }),
+  ])
+  return Math.max(maxRc._max.posicaoFila || 0, maxEtapa._max.posicaoFila || 0) + 1
+}
+
 /**
  * Dados do Centro de Produção (máquina) vinculado à Sessão_Terminal — para o
  * checkout exibir claramente em qual máquina o terminal está logado.
