@@ -112,6 +112,9 @@ export default function PainelPage() {
 
   // Operador identificado — lido de localStorage (mesmo padrão de etapa/[id])
   const [operadorNome, setOperadorNome] = useState<string | null>(null)
+  // Máquina (Centro de Produção) da sessão do terminal — para o operador
+  // saber em qual máquina está logado.
+  const [maquina, setMaquina] = useState<{ codigo: string; descricao: string; tipoProcesso: string | null } | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -146,6 +149,15 @@ export default function PainelPage() {
     buscarPainel()
   }, [estaAutenticado, buscarPainel])
 
+  // Busca os dados da máquina (centro) da sessão — não-bloqueante.
+  useEffect(() => {
+    if (!estaAutenticado) return
+    checkoutApiClient
+      .get<{ codigo: string; descricao: string; tipoProcesso: string | null }>('/sessao')
+      .then((r) => setMaquina(r.data))
+      .catch(() => setMaquina(null))
+  }, [estaAutenticado])
+
   const buscarAlertas = useCallback(async () => {
     try {
       const response = await checkoutApiClient.get<EtapaEmAlertaParadaProlongada[]>(
@@ -178,7 +190,15 @@ export default function PainelPage() {
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Fila de Etapas</h1>
+        <div>
+          <h1 className={styles.title}>Fila de Etapas</h1>
+          {maquina && (
+            <p style={{ margin: '2px 0 0', fontSize: '0.95rem', fontWeight: 600, color: '#2563eb' }}>
+              Máquina: {maquina.codigo} — {maquina.descricao}
+              {maquina.tipoProcesso ? ` (${maquina.tipoProcesso})` : ''}
+            </p>
+          )}
+        </div>
         <button type="button" className={styles.logoutButton} onClick={encerrarSessao}>
           Encerrar sessão
         </button>

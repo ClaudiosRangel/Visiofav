@@ -159,6 +159,34 @@ export interface EtapaPainelCheckout {
  * da OP/produto, descrição da etapa, status, posição na fila e
  * quantidade produzida/prevista.
  */
+/**
+ * Dados do Centro de Produção (máquina) vinculado à Sessão_Terminal — para o
+ * checkout exibir claramente em qual máquina o terminal está logado.
+ * Isolamento por empresaId da sessão.
+ */
+export async function dadosDaSessaoCheckout(
+  checkoutUser: { empresaId: string; centroProducaoId: string },
+): Promise<{ centroId: string; codigo: string; descricao: string; tipoProcesso: string | null }> {
+  const centro = await prisma.centroProducao.findFirst({
+    where: { id: checkoutUser.centroProducaoId, empresaId: checkoutUser.empresaId },
+    select: {
+      id: true,
+      codigo: true,
+      descricao: true,
+      tipoProcesso: { select: { descricao: true } },
+    },
+  })
+  if (!centro) {
+    throw new CheckoutError(404, 'Centro de produção da sessão não encontrado.')
+  }
+  return {
+    centroId: centro.id,
+    codigo: centro.codigo,
+    descricao: centro.descricao,
+    tipoProcesso: centro.tipoProcesso?.descricao ?? null,
+  }
+}
+
 export async function listarPainelCheckout(
   checkoutUser: { empresaId: string; centroProducaoId: string },
 ): Promise<EtapaPainelCheckout[]> {

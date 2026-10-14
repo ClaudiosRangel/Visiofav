@@ -5,6 +5,7 @@ import { iniciarEtapa, EtapaOperacionalError } from '../pcp/etapa-operacional.se
 import {
   buscarEtapaDoTerminal,
   listarPainelCheckout,
+  dadosDaSessaoCheckout,
   iniciarSetup,
   finalizarSetup,
   registrarApontamentoProducao,
@@ -123,6 +124,20 @@ export async function checkoutRoutes(app: FastifyInstance) {
     const etapas = await listarPainelCheckout(request.checkoutUser)
 
     return reply.status(200).send(etapas)
+  })
+
+  // =========================================================================
+  // GET /sessao — Dados do Centro de Produção (máquina) da Sessão_Terminal,
+  // para o checkout exibir em qual máquina o terminal está logado.
+  // =========================================================================
+  app.get('/sessao', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    try {
+      const sessao = await dadosDaSessaoCheckout(request.checkoutUser)
+      return reply.status(200).send(sessao)
+    } catch (err) {
+      if (err instanceof CheckoutError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
   })
 
   // =========================================================================
