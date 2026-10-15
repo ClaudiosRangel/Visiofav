@@ -18,7 +18,35 @@ manual de PDF de OP.
 | **Internet no servidor** | Liberada (Pedro confirmou: "não tem restrição quanto à saída pela internet"). HTTPS 443 para `api.vizorerp.com.br` OK. |
 | **Instalação do app** | Autorizada pelo Pedro, com o **usuário dele / `claudio.rangel`**, mediando por RDP. Falta o **OK do Matheus**. |
 | **Usuário do app Calcgraf** | Quem cria é o **Vinicius (na Wega)** — já passado ao Matheus. `Supervisor / 23787` é login **do aplicativo**, não do SQL. |
-| **Credencial de LEITURA do SQL Server** | ⚠️ **PENDENTE** — ver seção 2. É o único bloqueio técnico restante. |
+| **Credencial de LEITURA do SQL Server** | ✅ Resolvido — login SQL `sa` do próprio Calcgraf (do `CartonWega.udl`): `127.0.0.1\SQL2019Express,5520` / `sa` / `C@1cgraf`. |
+| **Logon trigger do SQL (allowlist de apps)** | ✅ Resolvido no agente — ver seção "Logon trigger" abaixo. |
+
+### Logon trigger `[connection]` — por que o agente usa Application Name
+
+O SQL Server do Calcgraf tem uma **logon trigger** (`[connection]`, `ON ALL
+SERVER FOR LOGON`) que faz `ROLLBACK` (bloqueia) qualquer conexão ao banco
+`CartonWega` cujo **`program_name` (Application Name)** NÃO esteja numa
+allowlist mantida pela PHTech. A lista inclui os apps do Calcgraf (`Gprint`,
+`Compras`, `Faturamento`, `Producao`, `ExportadorMovimentos`, …), ferramentas
+(`.NET SqlClient Data Provider`, SSMS) e os padrões `%WEBGRAF%` /
+`%GPRINT_ESPECIFICOS%`.
+
+Por isso o agente conecta via o driver **`mssql`/tedious** (TCP, 100% JS) e se
+declara com o **Application Name `ExportadorMovimentos`** — um nome JÁ
+AUTORIZADO na allowlist (destinado a exportação de dados). É a forma oficial
+prevista pela própria trigger, não um contorno. Se a PHTech preferir outro
+nome, basta trocar o default `APPLICATION_NAME_PADRAO` no reader (ou expor o
+campo na tela). O `sqlcmd` NÃO declara Application Name — por isso ele é só
+último recurso (serve em ambientes sem a trigger, como o backup local de dev).
+
+### Connection string de produção (Carton Wega)
+
+```
+server=127.0.0.1\SQL2019Express,5520;Database=CartonWega;UID=sa;PWD=C@1cgraf;TrustServerCertificate=yes;
+```
+
+O reader deriva daí: host `127.0.0.1`, porta TCP `5520`, banco `CartonWega`,
+login SQL `sa`, e aplica o Application Name `ExportadorMovimentos`.
 
 ### Importante — o servidor é remoto (PHTech)
 

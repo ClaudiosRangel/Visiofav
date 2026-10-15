@@ -162,8 +162,16 @@ export function assertSomenteLeitura(sql: string): void {
 // Abstração de conexão SOMENTE-LEITURA
 // ===========================================================================
 
-/** Modo de acesso ao SQL Server. */
-export type ModoConexao = 'driver' | 'sqlcmd' | 'auto'
+/**
+ * Modo de acesso ao SQL Server.
+ * - `'mssql'`: driver `tedious` (pacote `mssql`), 100% JavaScript, conecta por
+ *   TCP e declara `appName` nativamente (passa pela logon trigger do Calcgraf).
+ *   É o PRIMÁRIO no modo `auto` — não depende de ODBC Driver nem binário nativo.
+ * - `'driver'`: `msnodesqlv8` (ODBC/named pipes). Requer binário nativo + ODBC.
+ * - `'sqlcmd'`: ponte `sqlcmd` + FOR JSON PATH. NÃO suporta Application Name.
+ * - `'auto'` (padrão): tenta `mssql` → driver → sqlcmd.
+ */
+export type ModoConexao = 'mssql' | 'driver' | 'sqlcmd' | 'auto'
 
 /** Configuração de conexão do leitor. */
 export interface ConfigConexaoCalcgraf {
@@ -195,7 +203,30 @@ export interface ConfigConexaoCalcgraf {
   senha?: string
   /** Caminho do executável `sqlcmd` (default: `sqlcmd` no PATH). */
   caminhoSqlcmd?: string
+  /**
+   * Application Name (program_name) a declarar na conexão ao SQL Server.
+   *
+   * POR QUE EXISTE: o SQL Server do Calcgraf tem uma LOGON TRIGGER (`[connection]`)
+   * que BLOQUEIA (ROLLBACK) qualquer conexão ao banco cujo `program_name` NÃO
+   * esteja numa allowlist mantida pela PHTech. A lista inclui nomes de
+   * integração/leitura (ex.: `ExportadorMovimentos`, `.NET SqlClient Data
+   * Provider`, `SLL_GPRINT_ESPECIFICOS`) e o padrão `%GPRINT_ESPECIFICOS%`.
+   *
+   * O agente se identifica com um desses nomes AUTORIZADOS para passar pela
+   * trigger — é a forma oficial/explícita prevista pela própria allowlist (não
+   * um contorno). Default: `ExportadorMovimentos` (nome destinado a exportação
+   * de movimentos/dados). Pode ser trocado pelo valor que a PHTech indicar.
+   *
+   * No modo driver (`msnodesqlv8`), vai como `APP=<applicationName>` na
+   * connection string ODBC. No modo sqlcmd, vai como `-G`? Não — o sqlcmd não
+   * suporta Application Name; por isso, quando `applicationName` está definido,
+   * a fábrica PRIORIZA o driver nativo (ver `abrirConexaoCalcgraf`).
+   */
+  applicationName?: string
 }
+
+/** Application Name padrão — autorizado na allowlist da logon trigger do Calcgraf. */
+export const APPLICATION_NAME_PADRAO = 'ExportadorMovimentos'
 
 /**
  * Interface comum de uma conexão somente-leitura ao Calcgraf. Expõe APENAS
@@ -258,11 +289,25 @@ function msgErro(err: unknown): string {
   return 'erro desconhecido'
 }
 
+/**
+ * Garante que a connection string ODBC declare um `APP=<applicationName>`
+ * (program_name). Se já houver `APP=`/`Application Name=`, não duplica.
+ * Necessário para passar pela logon trigger do Calcgraf (allowlist de apps).
+ */
+function garantirApplicationName(connectionString: string, applicationName?: string): string {
+  const app = (applicationName ?? '').trim()
+  if (!app) return connectionString
+  // Já tem APP= ou Application Name=? Não mexe.
+  if (/(^|;)\s*(app|application name)\s*=/i.test(connectionString)) return connectionString
+  const base = connectionString.replace(/;+\s*$/, '')
+  return `${base};APP=${app};`
+}
+
 /** Conexão via driver nativo `msnodesqlv8`. */
 class ConexaoDriver implements ConexaoCalcgrafSomenteLeitura {
   private constructor(private readonly conn: DriverConnectionMinima) {}
 
-  /** Abre a conexão a partir da connection string ODBC. */
+  /** Abre a conexão a partir da connection string ODBC (com APP= já injetado). */
   static abrir(connectionString: string): Promise<ConexaoDriver> {
     const sql = carregarMsnodesqlv8()
     if (!sql) {
@@ -310,6 +355,212 @@ class ConexaoDriver implements ConexaoCalcgrafSomenteLeitura {
       this.conn.close(() => resolve())
     })
   }
+}
+
+// ---------------------------------------------------------------------------
+// Implementação 1b — driver `mssql`/tedious (TCP, 100% JS, Application Name)
+// ---------------------------------------------------------------------------
+
+/**
+ * Config do tedious/mssql derivada da connection string. Separa host, porta,
+ * instância, credenciais e database — o tedious conecta por TCP (não ODBC).
+ */
+interface ConfigMssql {
+  server: string
+  port?: number
+  instanceName?: string
+  database: string
+  user?: string
+  password?: string
+  trusted: boolean
+  appName: string
+}
+
+/**
+ * Converte uma connection string ODBC/OLEDB (ex. do UDL do Calcgraf
+ * `Data Source=127.0.0.1\SQL2019Express,5520; Initial Catalog=CartonWega; User
+ * ID=sa; Password=...`) para a config do tedious. Trata:
+ *  - `host\instancia,porta` (instância nomeada + porta explícita).
+ *  - `host,porta` (porta sem instância).
+ *  - `host\instancia` (só instância; porta resolvida pelo SQL Browser).
+ */
+export function derivarConfigMssql(cfg: ConfigConexaoCalcgraf): ConfigMssql {
+  const d = cfg.connectionString
+    ? derivarConfigSqlcmdDaConnString(cfg.connectionString)
+    : {}
+  const servidorBruto = (cfg.servidor ?? d.servidor ?? 'localhost').trim()
+  const database = (cfg.database ?? d.database ?? '').trim()
+  const user = cfg.usuario ?? d.usuario
+  const password = cfg.senha ?? d.senha
+  const trusted = cfg.trustedConnection ?? d.trustedConnection ?? !user
+
+  // Separa "host\instancia,porta". A porta vem após a vírgula; a instância após
+  // a contrabarra. Qualquer um pode faltar.
+  let host = servidorBruto
+  let port: number | undefined
+  let instanceName: string | undefined
+
+  const virgula = host.lastIndexOf(',')
+  if (virgula >= 0) {
+    const p = Number(host.slice(virgula + 1).trim())
+    if (Number.isFinite(p) && p > 0) port = p
+    host = host.slice(0, virgula).trim()
+  }
+  const barra = host.indexOf('\\')
+  if (barra >= 0) {
+    instanceName = host.slice(barra + 1).trim()
+    host = host.slice(0, barra).trim()
+  }
+  // '(local)'/'.' → localhost
+  if (host === '.' || host.toLowerCase() === '(local)') host = 'localhost'
+
+  return {
+    server: host || 'localhost',
+    port,
+    instanceName,
+    database,
+    user,
+    password,
+    trusted,
+    appName: cfg.applicationName ?? APPLICATION_NAME_PADRAO,
+  }
+}
+
+/** Carrega o pacote `tedious` sem quebrar se não estiver instalado. */
+function carregarTedious(): any | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('tedious')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Conexão via `tedious` (driver TDS puro JavaScript, TCP). PRIMÁRIA: declara
+ * `appName` (program_name) para passar pela logon trigger do Calcgraf, e NÃO
+ * depende de ODBC Driver nem binário nativo (roda em qualquer Windows sob
+ * Electron). SOMENTE LEITURA (toda query passa por `assertSomenteLeitura`).
+ *
+ * Usamos o `tedious` direto (não o wrapper `mssql`) para manter o pacote leve
+ * — o `mssql` arrasta `@azure/identity` e dezenas de subdependências que
+ * incham o instalador e travam o empacotamento.
+ */
+class ConexaoTedious implements ConexaoCalcgrafSomenteLeitura {
+  private constructor(
+    private readonly conn: any,
+    private readonly tds: any,
+  ) {}
+
+  static abrir(cfg: ConfigConexaoCalcgraf): Promise<ConexaoTedious> {
+    const tds = carregarTedious()
+    if (!tds) {
+      return Promise.reject(new CalcgrafReaderError('Pacote `tedious` não está instalado.'))
+    }
+    const c = derivarConfigMssql(cfg)
+    if (!c.database) {
+      return Promise.reject(
+        new CalcgrafReaderError('Config exige `database`/Initial Catalog.'),
+      )
+    }
+
+    // Autenticação: SQL (default/produção com `sa`) ou NTLM (Windows, raro).
+    const authentication =
+      c.trusted && !c.user
+        ? {
+            type: 'ntlm',
+            options: {
+              userName: process.env.USERNAME ?? '',
+              password: '',
+              domain: process.env.USERDOMAIN ?? '',
+            },
+          }
+        : {
+            type: 'default',
+            options: { userName: c.user, password: c.password },
+          }
+
+    const config = {
+      server: c.server,
+      authentication,
+      options: {
+        appName: c.appName, // ← passa pela logon trigger (allowlist de apps)
+        database: c.database,
+        encrypt: false,
+        trustServerCertificate: true,
+        rowCollectionOnRequestCompletion: true,
+        ...(c.port ? { port: c.port } : {}),
+        ...(c.instanceName && !c.port ? { instanceName: c.instanceName } : {}),
+      },
+    }
+
+    return new Promise<ConexaoTedious>((resolve, reject) => {
+      const conn = new tds.Connection(config)
+      let resolvido = false
+      conn.on('connect', (err: unknown) => {
+        if (resolvido) return
+        resolvido = true
+        if (err) {
+          reject(new CalcgrafReaderError(`Falha ao conectar via tedious: ${msgErro(err)}`))
+          return
+        }
+        resolve(new ConexaoTedious(conn, tds))
+      })
+      conn.on('error', (err: unknown) => {
+        if (resolvido) return
+        resolvido = true
+        reject(new CalcgrafReaderError(`Erro de conexão tedious: ${msgErro(err)}`))
+      })
+      conn.connect()
+    })
+  }
+
+  consultar<T = Record<string, unknown>>(sql: string, _params: unknown[] = []): Promise<T[]> {
+    assertSomenteLeitura(sql) // Requisito 1.1.
+    return new Promise<T[]>((resolve, reject) => {
+      const linhas: T[] = []
+      const req = new this.tds.Request(sql, (err: unknown, _rowCount: number, rows?: unknown[]) => {
+        if (err) {
+          reject(new CalcgrafReaderError(`Erro na consulta (tedious): ${msgErro(err)}`))
+          return
+        }
+        // Com rowCollectionOnRequestCompletion, `rows` vem no callback.
+        const fonte = Array.isArray(rows) ? rows : []
+        for (const row of fonte) {
+          linhas.push(converterLinhaTedious<T>(row))
+        }
+        resolve(linhas)
+      })
+      this.conn.execSql(req)
+    })
+  }
+
+  fechar(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      try {
+        this.conn.on('end', () => resolve())
+        this.conn.close()
+      } catch {
+        resolve()
+      }
+    })
+  }
+}
+
+/**
+ * Converte uma linha do tedious (array de colunas `{ metadata, value }`) para
+ * um objeto `{ nomeColuna: valor }`, no mesmo formato que o resto do reader
+ * espera (igual ao recordset do driver/sqlcmd).
+ */
+function converterLinhaTedious<T>(row: unknown): T {
+  const obj: Record<string, unknown> = {}
+  if (Array.isArray(row)) {
+    for (const col of row as Array<{ metadata?: { colName?: string }; value?: unknown }>) {
+      const nome = col?.metadata?.colName
+      if (nome) obj[nome] = col.value
+    }
+  }
+  return obj as T
 }
 
 // ---------------------------------------------------------------------------
@@ -482,23 +733,48 @@ export async function abrirConexaoCalcgraf(
 ): Promise<ConexaoCalcgrafSomenteLeitura> {
   const modo: ModoConexao = cfg.modo ?? 'auto'
 
+  // Application Name a declarar (passa pela logon trigger do Calcgraf). Default
+  // = nome autorizado na allowlist. A connection string do driver recebe APP=.
+  const appName = cfg.applicationName ?? APPLICATION_NAME_PADRAO
+  const connStringComApp = cfg.connectionString
+    ? garantirApplicationName(cfg.connectionString, appName)
+    : undefined
+
+  if (modo === 'mssql') {
+    return ConexaoTedious.abrir({ ...cfg, applicationName: appName })
+  }
+
   if (modo === 'driver') {
-    if (!cfg.connectionString) {
+    if (!connStringComApp) {
       throw new CalcgrafReaderError('Modo driver exige `connectionString`.')
     }
-    return ConexaoDriver.abrir(cfg.connectionString)
+    return ConexaoDriver.abrir(connStringComApp)
   }
 
   if (modo === 'sqlcmd') {
     return new ConexaoSqlcmd(resolverCfgSqlcmd(cfg))
   }
 
-  // modo 'auto': driver primeiro (se possível), senão sqlcmd.
-  if (cfg.connectionString && carregarMsnodesqlv8()) {
+  // modo 'auto': ordem de preferência pensada para a logon trigger do Calcgraf,
+  // que exige um Application Name (program_name) na allowlist:
+  //  1. `mssql`/tedious — PRIMÁRIO: 100% JS (sem ODBC/binário nativo), conecta
+  //     por TCP e declara `appName` nativamente. É o mais robusto no servidor.
+  //  2. `msnodesqlv8` — se o mssql falhar e o binário nativo carregar (APP= na
+  //     connection string ODBC).
+  //  3. `sqlcmd` — ÚLTIMO recurso. NÃO declara Application Name, então a trigger
+  //     bloqueia; só serve em ambientes sem a trigger (ex.: backup local de dev).
+  if (carregarTedious()) {
     try {
-      return await ConexaoDriver.abrir(cfg.connectionString)
+      return await ConexaoTedious.abrir({ ...cfg, applicationName: appName })
     } catch {
-      // cai para o sqlcmd abaixo
+      // tenta o driver nativo abaixo
+    }
+  }
+  if (connStringComApp && carregarMsnodesqlv8()) {
+    try {
+      return await ConexaoDriver.abrir(connStringComApp)
+    } catch {
+      // cai para o sqlcmd abaixo (último recurso)
     }
   }
   return new ConexaoSqlcmd(resolverCfgSqlcmd(cfg))

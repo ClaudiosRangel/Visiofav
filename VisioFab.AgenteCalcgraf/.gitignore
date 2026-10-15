@@ -1,5 +1,6 @@
 node_modules/
 dist/
+release/
 
 # Configuração com SEGREDOS (connection string / API key) — nunca versionar.
 config.json

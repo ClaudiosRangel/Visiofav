@@ -12,18 +12,22 @@
     "dev": "electron .",
     "dist": "electron-builder --win"
   },
+  "dependencies": {
+    "tedious": "^18.6.1"
+  },
   "devDependencies": {
     "@types/node": "^20.19.43",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "typescript": "^5.9.3"
   },
-  "optionalDependencies": {
-    "msnodesqlv8": "^4.2.1"
-  },
   "build": {
     "appId": "br.com.vizorerp.agente-calcgraf",
     "productName": "VisioFab Agente Calcgraf",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
     "win": {
       "target": "nsis",
       "signAndEditExecutable": false
