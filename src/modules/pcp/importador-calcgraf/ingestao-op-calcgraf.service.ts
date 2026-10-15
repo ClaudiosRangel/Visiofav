@@ -192,16 +192,40 @@ async function criarEtapas(tx: PrismaTx, ordemProducaoId: string, dto: OpOrigemD
  * Processa UMA OP do payload dentro de uma transação própria. Retorna o
  * resultado por OP. Erros são capturados pelo chamador (`ingerirOpsCalcgraf`)
  * para isolar a falha de uma OP das demais (Property 7 / Req 8.4).
+ *
+ * @param numeroMinimoOp  Corte de recorte: OPs com `numero < numeroMinimoOp`
+ *   são `ignorada` (não importa histórico antigo do Calcgraf). `0`/undefined
+ *   = sem corte. Ver `ingerirOpsCalcgraf`.
  */
-async function processarOp(empresaId: string, dto: OpOrigemDTO): Promise<ResultadoIngestaoOp> {
+async function processarOp(
+  empresaId: string,
+  dto: OpOrigemDTO,
+  numeroMinimoOp = 0,
+): Promise<ResultadoIngestaoOp> {
+  // 0. Recorte por número de OP (Correção B / Opção 1): não trazer OP antiga do
+  //    Calcgraf que está abaixo do corte configurado para a empresa. Evita
+  //    poluir a programação com histórico já encerrado.
+  if (numeroMinimoOp > 0 && Number.isFinite(dto.numero) && dto.numero < numeroMinimoOp) {
+    return {
+      numero: dto.numero,
+      resultado: 'ignorada',
+      mensagem: `OP ${dto.numero} abaixo do corte configurado (${numeroMinimoOp}); não importada.`,
+    }
+  }
+
   // 1. Recalcula o hash no servidor (fonte de verdade). O dto pode carregar um
   //    `hashOrigem` do agente, mas não confiamos nele para a idempotência.
   const hashRecebido = calcularHashOp(dto)
   const referenciaExterna = String(dto.numero)
 
-  // 2. Busca a OP de destino (casada por referenciaExterna + origem).
+  // 2. Busca a OP de destino casando SÓ por referenciaExterna (QUALQUER origem).
+  //    Correção A (Opção 1): o número da OP é a identidade entre os sistemas.
+  //    Assim uma OP já importada por PDF (origem PDF_GPRINT) é RECONHECIDA pelo
+  //    agente — nunca duplicada. Se ela tiver produção, a mudança vira pendente;
+  //    se não tiver, é atualizada e a origem passa a AGENTE_CALCGRAF (unifica a
+  //    fonte daqui pra frente, conforme decisão do usuário).
   const destino = await prisma.ordemProducao.findFirst({
-    where: { empresaId, origemImportacao: ORIGEM_CALCGRAF, referenciaExterna },
+    where: { empresaId, referenciaExterna },
     select: { id: true, status: true, hashImportacaoOrigem: true },
   })
 
@@ -340,6 +364,9 @@ async function atualizarOp(
       dataEntregaPrevista: dataEntrega ?? undefined,
       observacoes: montarObservacoes(dto),
       hashImportacaoOrigem: hashRecebido,
+      // Unifica a fonte: uma OP que antes veio do PDF (PDF_GPRINT) e agora é
+      // mantida pelo agente passa a origem AGENTE_CALCGRAF (decisão Opção 1).
+      origemImportacao: ORIGEM_CALCGRAF,
       // status NÃO é alterado — preserva o roteiro atual.
     },
   })
@@ -442,9 +469,16 @@ export async function ingerirOpsCalcgraf(
 ): Promise<ResultadoIngestaoOp[]> {
   const resultados: ResultadoIngestaoOp[] = []
 
+  // Corte de recorte por empresa (Opção 1 / Correção B): só importa OPs com
+  // numero >= pcp.calcgrafNumeroMinimoOp. Permite ligar o agente sem poluir a
+  // programação com histórico antigo do Calcgraf. Configurável por empresa SEM
+  // reinstalar o agente nem redeployar — basta ajustar o Parametro.
+  // Ausente/zero/invalido = sem corte (importa tudo que o agente enviar).
+  const numeroMinimoOp = await obterCorteNumeroMinimo(empresaId)
+
   for (const dto of ops) {
     try {
-      const r = await processarOp(empresaId, dto)
+      const r = await processarOp(empresaId, dto, numeroMinimoOp)
       resultados.push(r)
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : 'Erro desconhecido ao processar a OP.'
@@ -453,6 +487,28 @@ export async function ingerirOpsCalcgraf(
   }
 
   return resultados
+}
+
+/** Chave do Parametro que guarda o corte de número mínimo de OP por empresa. */
+const PARAM_CORTE_NUMERO_MINIMO = 'pcp.calcgrafNumeroMinimoOp'
+
+/**
+ * Lê o corte de número mínimo de OP configurado para a empresa (tabela
+ * `Parametro`, mesmo padrão de `configuracao-pcp`). Retorna 0 (sem corte)
+ * quando ausente ou inválido.
+ */
+async function obterCorteNumeroMinimo(empresaId: string): Promise<number> {
+  try {
+    const p = await prisma.parametro.findFirst({
+      where: { empresaId, chave: PARAM_CORTE_NUMERO_MINIMO },
+      select: { valor: true },
+    })
+    const n = p?.valor != null ? Number(p.valor) : 0
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0
+  } catch {
+    // Qualquer erro ao ler o parâmetro não deve impedir a ingestão.
+    return 0
+  }
 }
 
 // ---------------------------------------------------------------------------
