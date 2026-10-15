@@ -972,12 +972,14 @@ export async function lerOpsCandidatas(
   const codigos = headers.map((h) => h.Codigo).filter((c): c is number => typeof c === 'number')
   if (codigos.length === 0) return []
 
-  // 2) Filhas em lote (3 queries, independentes → paralelas).
-  const [itensRaw, estruturaRaw, lotesRaw] = await Promise.all([
-    conexao.consultar<LinhaOpItem>(montarQueryOpItem(codigos)),
-    conexao.consultar<LinhaOpItemEstrutura>(montarQueryOpItemEstrutura(codigos)),
-    conexao.consultar<LinhaOpLoteJoin>(montarQueryOpLote(codigos)),
-  ])
+  // 2) Filhas em lote (3 queries). SEQUENCIAIS, não paralelas: o driver
+  //    `tedious` só aceita UMA request por conexão por vez (disparar em
+  //    Promise.all causa "Requests can only be made in the LoggedIn state, not
+  //    the SentClientRequest state"). O custo é 3 idas sequenciais ao banco —
+  //    aceitável, e cada uma já traz todas as filhas do lote de OPs de uma vez.
+  const itensRaw = await conexao.consultar<LinhaOpItem>(montarQueryOpItem(codigos))
+  const estruturaRaw = await conexao.consultar<LinhaOpItemEstrutura>(montarQueryOpItemEstrutura(codigos))
+  const lotesRaw = await conexao.consultar<LinhaOpLoteJoin>(montarQueryOpLote(codigos))
 
   // 3) Agrupa as filhas por CodOpHeader.
   const itensPorHeader = agruparPor(itensRaw, (r) => r.CodOpHeader)
