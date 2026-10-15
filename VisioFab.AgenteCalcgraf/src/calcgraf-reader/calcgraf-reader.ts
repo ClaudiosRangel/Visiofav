@@ -419,11 +419,63 @@ export function parseJsonDoSqlcmd<T = Record<string, unknown>>(saidaBruta: strin
 // ---------------------------------------------------------------------------
 
 /**
+ * Extrai `servidor`/`database`/credenciais de uma connection string ODBC
+ * (ex.: `server=localhost\SQL2019EXPRESS;Database=CartonWega;Trusted_Connection=yes;`).
+ *
+ * POR QUE EXISTE: o fallback `sqlcmd` precisa de `servidor` e `database` em
+ * campos separados (o `sqlcmd -S/-d`), mas o agente só pede UMA connection
+ * string na tela. Quando caímos no sqlcmd (driver nativo ausente/indisponível),
+ * derivamos esses campos da própria connection string — assim o agente funciona
+ * só com a connection string, com ou sem o driver `msnodesqlv8`.
+ *
+ * Chaves ODBC reconhecidas (case-insensitive):
+ *  - servidor:  `server`, `data source`, `addr`, `address`, `network address`
+ *  - database:  `database`, `initial catalog`
+ *  - usuário:   `uid`, `user id`, `user`
+ *  - senha:     `pwd`, `password`
+ *  - trusted:   `trusted_connection`, `integrated security` (yes/sspi/true → Windows auth)
+ */
+export function derivarConfigSqlcmdDaConnString(
+  connectionString: string,
+): Partial<ConfigConexaoCalcgraf> {
+  const pares = new Map<string, string>()
+  for (const parte of connectionString.split(';')) {
+    const idx = parte.indexOf('=')
+    if (idx <= 0) continue
+    const chave = parte.slice(0, idx).trim().toLowerCase()
+    const valor = parte.slice(idx + 1).trim()
+    if (chave) pares.set(chave, valor)
+  }
+
+  const pegar = (...chaves: string[]): string | undefined => {
+    for (const k of chaves) {
+      const v = pares.get(k)
+      if (v !== undefined && v !== '') return v
+    }
+    return undefined
+  }
+
+  const servidor = pegar('server', 'data source', 'addr', 'address', 'network address')
+  const database = pegar('database', 'initial catalog')
+  const usuario = pegar('uid', 'user id', 'user')
+  const senha = pegar('pwd', 'password')
+
+  const trustedRaw = (pegar('trusted_connection', 'integrated security') ?? '').toLowerCase()
+  // Trusted quando explicitamente yes/true/sspi, OU quando não há usuário/senha.
+  const trustedConnection =
+    ['yes', 'true', 'sspi', '1'].includes(trustedRaw) || (!usuario && !senha)
+
+  return { servidor, database, usuario, senha, trustedConnection }
+}
+
+/**
  * Abre uma conexão SOMENTE-LEITURA ao Calcgraf conforme a config.
  * - `'driver'`: exige `connectionString`.
- * - `'sqlcmd'`: exige `servidor` + `database`.
+ * - `'sqlcmd'`: usa `servidor`+`database`; se faltarem mas houver
+ *   `connectionString`, deriva deles.
  * - `'auto'` (padrão): tenta o driver (se houver `connectionString` e o pacote
- *   instalar/conectar); caso contrário, cai para o sqlcmd.
+ *   instalar/conectar); caso contrário, cai para o sqlcmd (derivando os campos
+ *   da connection string quando necessário).
  */
 export async function abrirConexaoCalcgraf(
   cfg: ConfigConexaoCalcgraf,
@@ -438,7 +490,7 @@ export async function abrirConexaoCalcgraf(
   }
 
   if (modo === 'sqlcmd') {
-    return new ConexaoSqlcmd(cfg)
+    return new ConexaoSqlcmd(resolverCfgSqlcmd(cfg))
   }
 
   // modo 'auto': driver primeiro (se possível), senão sqlcmd.
@@ -449,7 +501,26 @@ export async function abrirConexaoCalcgraf(
       // cai para o sqlcmd abaixo
     }
   }
-  return new ConexaoSqlcmd(cfg)
+  return new ConexaoSqlcmd(resolverCfgSqlcmd(cfg))
+}
+
+/**
+ * Garante que a config do sqlcmd tenha `servidor`/`database`: usa os campos
+ * explícitos quando presentes; senão deriva da `connectionString`. Mantém
+ * credenciais/trusted vindos da string quando os campos explícitos faltarem.
+ */
+function resolverCfgSqlcmd(cfg: ConfigConexaoCalcgraf): ConfigConexaoCalcgraf {
+  if (cfg.servidor && cfg.database) return cfg
+  if (!cfg.connectionString) return cfg // deixa o ConexaoSqlcmd lançar o erro claro
+  const derivado = derivarConfigSqlcmdDaConnString(cfg.connectionString)
+  return {
+    ...cfg,
+    servidor: cfg.servidor ?? derivado.servidor,
+    database: cfg.database ?? derivado.database,
+    usuario: cfg.usuario ?? derivado.usuario,
+    senha: cfg.senha ?? derivado.senha,
+    trustedConnection: cfg.trustedConnection ?? derivado.trustedConnection,
+  }
 }
 
 // ===========================================================================
