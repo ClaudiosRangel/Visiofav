@@ -9,6 +9,7 @@ import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-pars
 import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
 import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
 import { reordenarFilaAutomaticamente } from './fila-ordenacao.service'
+import { tiragemDaEtapa } from './base-contagem.service'
 import {
   iniciarEtapa,
   pausarEtapa,
@@ -372,6 +373,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }
 
     const body = z.object({
+      // Base da divisão: QUANTIDADE (unidades da OP, padrão/legado) ou TIRAGEM
+      // (folhas/passagens). Default QUANTIDADE para não quebrar chamadas antigas.
+      base: z.enum(['QUANTIDADE', 'TIRAGEM']).optional().default('QUANTIDADE'),
       partes: z.array(z.object({
         centroProducaoId: z.string().uuid(),
         quantidade: z.number().positive(),
@@ -381,7 +385,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const etapa = await prisma.etapaOrdemProducao.findFirst({
       where: { id },
-      include: { ordemProducao: { select: { empresaId: true, quantidade: true } } },
+      include: {
+        ordemProducao: { select: { empresaId: true, quantidade: true, observacoes: true } },
+        plano: { select: { tiragem: true } },
+      },
     })
 
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
@@ -391,13 +398,28 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Só é possível desmembrar etapas com status PENDENTE' })
     }
 
-    // Valida que a soma das partes = quantidade da OP
-    const somaPartes = body.partes.reduce((acc, p) => acc + p.quantidade, 0)
+    // Total de referência conforme a base escolhida:
+    //  - QUANTIDADE: quantidade da OP (comportamento legado).
+    //  - TIRAGEM: tiragem resolvida da etapa (plano → [Tiragem] → Qtd/Montagem →
+    //    quantidade), mesma fonte da regra de Base de Contagem (não diverge).
     const qtdOp = Number(etapa.ordemProducao.quantidade)
+    const totalReferencia =
+      body.base === 'TIRAGEM'
+        ? tiragemDaEtapa(
+            etapa.ordemProducao.observacoes,
+            Number(etapa.quantidadePrevista) > 0 ? Number(etapa.quantidadePrevista) : qtdOp,
+            etapa.plano?.tiragem != null ? Number(etapa.plano.tiragem) : null,
+          )
+        : qtdOp
 
-    if (Math.abs(somaPartes - qtdOp) > 0.01) {
+    const unidadeLabel = body.base === 'TIRAGEM' ? 'folhas' : 'un'
+
+    // Valida que a soma das partes = total de referência (na base escolhida).
+    const somaPartes = body.partes.reduce((acc, p) => acc + p.quantidade, 0)
+
+    if (Math.abs(somaPartes - totalReferencia) > 0.01) {
       return reply.status(400).send({
-        message: `A soma das partes (${somaPartes}) deve ser igual à quantidade da OP (${qtdOp})`,
+        message: `A soma das partes (${somaPartes}) deve ser igual ao total da etapa (${totalReferencia} ${unidadeLabel}, base ${body.base})`,
       })
     }
 
@@ -415,14 +437,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         select: { codigo: true, descricao: true },
       })
 
+      // Rateio do tempo de operação proporcional à fração da parte sobre o
+      // TOTAL de referência (quantidade OU tiragem, conforme a base escolhida).
+      const fracao = totalReferencia > 0 ? parte.quantidade / totalReferencia : 0
+
       const nova = await prisma.etapaOrdemProducao.create({
         data: {
           ordemProducaoId: etapa.ordemProducaoId,
           sequencia: etapa.sequencia * 10 + i + 1, // ex: seq 3 vira 31, 32
-          descricao: `${etapa.descricao} [${centro?.codigo || 'PARTE'}${i + 1}] (${parte.quantidade} un)`,
+          descricao: `${etapa.descricao} [${centro?.codigo || 'PARTE'}${i + 1}] (${parte.quantidade} ${unidadeLabel})`,
           centroProducaoId: parte.centroProducaoId,
           tempoSetupMinutos: Number(etapa.tempoSetupMinutos),
-          tempoOperacaoCalculado: Math.round(Number(etapa.tempoOperacaoCalculado) * (parte.quantidade / qtdOp) * 100) / 100,
+          tempoOperacaoCalculado: Math.round(Number(etapa.tempoOperacaoCalculado) * fracao * 100) / 100,
           tempoEsperaMinutos: Number(etapa.tempoEsperaMinutos),
           quantidadePrevista: parte.quantidade,
           status: 'PENDENTE',
@@ -433,14 +459,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       novasEtapas.push(nova)
     }
 
-    // Log de auditoria — desmembramento
+    // Log de auditoria — desmembramento (registra a base para rastreabilidade)
     await prisma.logOrdemProducao.create({
       data: {
         ordemProducaoId: etapa.ordemProducaoId,
         statusAnterior: etapa.status,
         statusNovo: etapa.status,
         usuarioId: user.id,
-        observacao: `Etapa "${etapa.descricao}" desmembrada em ${novasEtapas.length} partes: ${novasEtapas.map(e => `${Number(e.quantidadePrevista)} un`).join(', ')}`,
+        observacao: `Etapa "${etapa.descricao}" desmembrada (base ${body.base}) em ${novasEtapas.length} partes: ${novasEtapas.map(e => `${Number(e.quantidadePrevista)} ${unidadeLabel}`).join(', ')}`,
       },
     })
 
