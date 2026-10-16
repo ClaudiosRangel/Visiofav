@@ -33,6 +33,15 @@ header `x-agente-key`). O Vizor casa a OP por `referenciaExterna == OpHeader.Num
 **atualiza** (e unifica origem p/ `AGENTE_CALCGRAF`); com produção → vira
 `AlteracaoOpPendente` (revisão manual em PCP → Importador Calcgraf → Pendentes).
 
+### ⚠️ INCIDENTE 15–16/10/2026 (ler no HANDOFF) — agente antigo zerou 61 OPs
+A sync com o agente FASE 1 (sem roteiro) apagou etapas/variações de 61 OPs que
+já tinham roteiro de PDF (substituição total com payload vazio). **Reparadas 60**
+via reextração do PDF salvo; falta a **ref 3138** (sem PDF → agente fase 2).
+**LIÇÃO:** a identidade da OP é a `referencia_externa` (nº do Calcgraf), NÃO o
+`numero` interno (não batem). Cinto de segurança commitado (`3c5919927`):
+`atualizarOp` não zera roteiro quando o payload vem sem etapas. **Manter o agente
+PARADO até deployar o backend + instalar o agente fase 2.** Detalhes no HANDOFF §1.1.
+
 ### ✅ FASE 2 — ROTEIRO/VARIAÇÕES/MATERIAIS (15/10/2026, implementada local)
 Spec `.kiro/specs/importador-op-calcgraf-roteiro/` (10/10). O agente agora traz
 o roteiro completo do CÁLCULO (`CalculoHeader` de maior `Codigo`): etapas

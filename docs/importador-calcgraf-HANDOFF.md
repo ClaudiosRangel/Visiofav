@@ -59,6 +59,38 @@ trocar o `.exe` no servidor da PHTech (janela de RDP).
 
 ---
 
+## 1.1 INCIDENTE 15–16/10/2026 — sync do agente ANTIGO zerou o roteiro de 61 OPs
+
+**O que aconteceu:** a sincronização de 15/10 rodou com o agente **da fase 1**
+(ainda instalado no servidor, sem roteiro no payload). O `atualizarOp` fazia
+*substituição total* e, como o payload vinha **sem etapas**, apagou as etapas/
+variações de **61 OPs** que já tinham roteiro (vindo de importação de PDF),
+deixando-as com 0 etapas e fora da programação (ex.: a "OP #3164" da tela).
+
+**Diagnóstico-chave (LIÇÃO):** a identidade visível na tela e entre os sistemas
+é a **`referencia_externa`** (= número do Calcgraf / `OpHeader.Numero`), **NÃO**
+o `numero` interno (sequencial próprio do Vizor). Eles **não batem** nesta base
+(ex.: ref 3164 = numero interno 3171; ref 3152 = interno 3164; OPs nascidas do
+agente usam internos na faixa 10xxx). O backend de ingestão SEMPRE casou certo
+(por `referencia_externa`); o problema foi o conteúdo vazio, não a identidade.
+**Qualquer reparo/consulta de OP deve usar `referencia_externa`, nunca `numero`.**
+
+**Reparo executado (16/10):** recriadas etapas + materiais de **60 das 61 OPs**
+a partir do **PDF salvo no banco** (`pdf_data`), reusando o parser real
+(`parseGprintPdf`) + a regra de resolver/criar `CentroProducao` por `descricao`.
+Script temporário (removido). Restou **1 OP: ref 3138** (interno 10013) — nasceu
+do agente (origem `AGENTE_CALCGRAF`), **nunca teve PDF**; será recuperada quando
+o **agente fase 2** sincronizar (traz o roteiro do Calcgraf, não depende de PDF).
+
+**Cinto de segurança (commit `3c5919927`):** `atualizarOp` agora **só substitui
+etapas/variações/itens quando o payload REALMENTE traz etapas**. Payload sem
+etapas → preserva o roteiro e atualiza só o cabeçalho. Impede a regressão mesmo
+se um agente antigo rodar. +2 testes (service 12/12).
+
+**Pendências do incidente:** (a) recuperar ref 3138 via agente fase 2; (b) subir
+o backend (Render) — o cinto já está commitado — e trocar o agente no servidor
+pela versão fase 2; **até lá manter o agente PARADO** (o antigo reincidiria).
+
 ## 2. CREDENCIAIS E ACESSOS (CRÍTICO — guardar)
 
 ### Connection string do SQL do Calcgraf (produção, no servidor da PHTech)
