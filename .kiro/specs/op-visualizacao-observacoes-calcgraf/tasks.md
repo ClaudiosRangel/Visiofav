@@ -67,8 +67,11 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
   indisponível/incerto no backup: `EstSaldos` vazio + sem de-para
   suporte→item). A regra atual (texto "encomendado") CONTINUA funcionando como
   está — nenhuma regressão (Req 4.3 já garante o fallback). Reabrir quando
-  tivermos o saldo real confiável. _Requisitos: 4.1, 4.2 (bloqueado); 4.3, 4.4
-  (já atendidos pelo comportamento atual)_
+  tivermos o saldo real confiável. **Guia de diagnóstico pronto para rodar no
+  Calcgraf de PRODUÇÃO (somente leitura):**
+  `docs/calcgraf-diagnostico-estoque-bobina.md` — mapeia OP → suporte →
+  CodItemEstoque → EstSaldos + a necessidade em kg. Com isso o Bloco 4 destrava.
+  _Requisitos: 4.1, 4.2 (bloqueado); 4.3, 4.4 (já atendidos pelo comportamento atual)_
 
 - [-] 5. Validação contra backup — PARCIAL. Blocos 1/2 validados por testes
   unitários + diagnostics. A validação ponta a ponta de estoque (5.1) depende do
