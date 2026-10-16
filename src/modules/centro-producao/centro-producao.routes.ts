@@ -332,4 +332,52 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
 
     return ativado
   })
+
+  /**
+   * PATCH /api/centros-producao/:id/disponibilidade-programacao
+   * Liga/desliga o `disponivelProgramacao` do centro — a mesma flag do toggle
+   * "Disponível na Programação" do cadastro. Pensado para o menu de contexto
+   * (botão direito) do painel de Programação: o admin desliga um centro VAZIO
+   * para tirá-lo do painel.
+   *
+   * REGRA DE SEGURANÇA: só permite DESLIGAR quando o centro NÃO tem etapas
+   * ativas na fila (PENDENTE/EM_ANDAMENTO/PAUSADA). Isso evita "sumir" com um
+   * centro que tem OPs programadas — alinhado ao pedido ("só para os vazios").
+   * Religar (`disponivel: true`) é sempre permitido.
+   */
+  app.patch('/:id/disponibilidade-programacao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const { disponivel } = z.object({ disponivel: z.boolean() }).parse(request.body)
+
+    const centro = await prisma.centroProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+    })
+    if (!centro) {
+      return reply.status(404).send({ message: 'Centro de produção não encontrado' })
+    }
+
+    // Ao DESLIGAR, exige fila vazia (nenhuma etapa ativa no centro).
+    if (!disponivel) {
+      const etapasAtivas = await prisma.etapaOrdemProducao.count({
+        where: {
+          centroProducaoId: id,
+          status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+          ordemProducao: { empresaId: user.empresaId },
+        },
+      })
+      if (etapasAtivas > 0) {
+        return reply.status(409).send({
+          message: `Não é possível desligar: o centro tem ${etapasAtivas} etapa(s) na fila. Esvazie a fila antes de indisponibilizar.`,
+        })
+      }
+    }
+
+    const atualizado = await prisma.centroProducao.update({
+      where: { id },
+      data: { disponivelProgramacao: disponivel },
+    })
+
+    return atualizado
+  })
 }
