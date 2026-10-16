@@ -1,0 +1,7 @@
+{
+  "specType": "feature",
+  "workflowType": "design-first",
+  "designArtifacts": ["high-level", "low-level"],
+  "featureName": "importador-calcgraf-paridade-pdf",
+  "createdAt": "2026-10-16"
+}

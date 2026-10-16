@@ -41,6 +41,7 @@ import {
   calcularHashOp,
   classificarIngestao,
 } from './ingestao-op-calcgraf.pure'
+import { resolverOuCriarCentro } from './op-montagem.service'
 
 /** Origem de importação gravada nas OPs criadas por este agente. */
 const ORIGEM_CALCGRAF = 'AGENTE_CALCGRAF'
@@ -143,97 +144,12 @@ function tipoMaterialDeDescricao(descricao?: string): string | undefined {
 type PrismaTx = Prisma.TransactionClient
 
 // ---------------------------------------------------------------------------
-// Resolução/criação de Centro de Produção (Fase 2 — paridade com o PDF)
-//
-// Espelha a regra de `importacao-op/importacao-op.routes.ts`: toda etapa precisa
-// de um `CentroProducao` (senão fica invisível no painel de Programação). A
-// resolução reusa por `descricao` (case-insensitive); se não existir, cria com
-// código sanitizado único + `tipoProcessoId` inferido do tipo da etapa.
+// Resolução/criação de Centro de Produção — delega ao MOTOR UNIFICADO
+// (`op-montagem.service.ts`), que agora PRIORIZA o de-para (DeParaImportacao)
+// antes de reusar por nome ou criar. Isso corrige o problema de "centro irreal":
+// o agente passa a reaproveitar o cadastro real igual ao importador de PDF.
+// (spec importador-calcgraf-paridade-pdf, Tarefa 1.)
 // ---------------------------------------------------------------------------
-
-/**
- * Infere o `tipoProcessoId` a partir do tipo da etapa do Calcgraf. Ordem:
- * (1) código mapeado do tipo (`I`→IMPRESSAO; demais→ACABAMENTO); (2) fallback
- * para o primeiro Tipo de Processo ATIVO da empresa. Lança erro claro se a
- * empresa não tiver nenhum Tipo de Processo (mesmo comportamento do PDF).
- */
-async function inferirTipoProcesso(
-  tx: PrismaTx,
-  empresaId: string,
-  tipoEtapa?: string,
-): Promise<string> {
-  // 'I' = impressão; qualquer outro ('A'/undefined) cai em acabamento.
-  const codigoInferido = (tipoEtapa ?? '').toUpperCase() === 'I' ? 'IMPRESSAO' : 'ACABAMENTO'
-  const porCodigo = await tx.tipoProcesso.findFirst({
-    where: { empresaId, codigo: codigoInferido },
-    select: { id: true },
-  })
-  if (porCodigo) return porCodigo.id
-
-  const qualquer = await tx.tipoProcesso.findFirst({
-    where: { empresaId, status: true },
-    orderBy: { posicao: 'asc' },
-    select: { id: true },
-  })
-  if (qualquer) return qualquer.id
-
-  throw new Error(
-    'Nenhum Tipo de Processo cadastrado para esta empresa. Cadastre em PCP → Cadastros → Tipo de Processo antes de importar OPs do Calcgraf.',
-  )
-}
-
-/**
- * Resolve (reusa) OU cria o `CentroProducao` para o nome de centro de uma etapa.
- * Reuso por `descricao` case-insensitive (menor `codigo` = determinístico);
- * criação com código sanitizado único + `tipoProcessoId` inferido. Isolamento
- * por `empresaId` da OP real.
- */
-async function resolverOuCriarCentro(
-  tx: PrismaTx,
-  empresaId: string,
-  nomeCentro: string,
-  tipoEtapa?: string,
-): Promise<string> {
-  const existente = await tx.centroProducao.findFirst({
-    where: { empresaId, descricao: { equals: nomeCentro, mode: 'insensitive' } },
-    select: { id: true },
-    orderBy: { codigo: 'asc' },
-  })
-  if (existente) return existente.id
-
-  let codigoBase = nomeCentro
-    .substring(0, 20)
-    .toUpperCase()
-    .replace(/\s+/g, '_')
-    .replace(/[^A-Z0-9_]/g, '')
-  if (!codigoBase) codigoBase = `CENTRO_${Date.now() % 100000}`
-
-  // Garante unicidade do código adicionando sufixo numérico se necessário.
-  let codigoFinal = codigoBase
-  let tentativa = 0
-  while (tentativa < 10) {
-    const jaExiste = await tx.centroProducao.findFirst({
-      where: { empresaId, codigo: codigoFinal },
-      select: { id: true },
-    })
-    if (!jaExiste) break
-    tentativa++
-    codigoFinal = `${codigoBase.substring(0, 17)}_${tentativa}`
-  }
-
-  const tipoProcessoId = await inferirTipoProcesso(tx, empresaId, tipoEtapa)
-  const novo = await tx.centroProducao.create({
-    data: {
-      empresaId,
-      codigo: codigoFinal,
-      descricao: nomeCentro.substring(0, 100),
-      tipo: 'MAQUINA',
-      tipoProcessoId,
-    },
-    select: { id: true },
-  })
-  return novo.id
-}
 
 /**
  * Cria os `ItemOrdemProducao` a partir dos itens do DTO (quando houver). MVP:
@@ -277,9 +193,11 @@ async function criarEtapas(
   for (const etapa of etapas) {
     const nomeCentro = (etapa.centro && etapa.centro.trim()) || (etapa.descricao && etapa.descricao.trim()) || ''
     const descricao = (etapa.descricao && etapa.descricao.trim()) || nomeCentro || `Etapa ${seq}`
-    const centroId = nomeCentro
-      ? await resolverOuCriarCentro(tx, empresaId, nomeCentro, etapa.tipo)
+    // Motor unificado: de-para (centroCodigo) → reuso por nome → criar.
+    const resCentro = nomeCentro
+      ? await resolverOuCriarCentro(tx, empresaId, { centroCodigo: etapa.centroCodigo, nomeCentro, tipoEtapa: etapa.tipo })
       : null
+    const centroId = resCentro?.centroId ?? null
 
     // posicaoFila = append no final da fila do centro (quando há centro).
     let posicaoFila: number | null = null

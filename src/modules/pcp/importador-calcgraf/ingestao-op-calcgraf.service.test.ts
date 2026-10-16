@@ -294,6 +294,11 @@ vi.mock('../../../lib/prisma', () => {
           .sort((a, b) => a.posicao - b.posicao)[0] ?? null,
       ),
     },
+    // De-para de importação: no fake não há vínculos (retorna null), então o
+    // motor de centro cai no reuso por nome/criação — igual ao testado antes.
+    deParaImportacao: {
+      findFirst: vi.fn(async () => null),
+    },
     apontamentoEtapa: {
       // where: { etapaOrdemProducao: { ordemProducaoId } } — resolve via etapas do fake.
       count: vi.fn(async ({ where }: { where: { etapaOrdemProducao?: { ordemProducaoId?: string } } }) => {

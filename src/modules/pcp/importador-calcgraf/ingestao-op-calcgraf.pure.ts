@@ -56,6 +56,13 @@ export interface EtapaOpOrigemDTO {
   setupMinutos?: number
   /** Tempo de operação/produção em minutos (tiragem / producaoHora * 60). */
   operacaoMinutos?: number
+  /**
+   * Código do centro de produção no Calcgraf (para o de-para no backend —
+   * resolve o centro REAL antes de reusar por nome/criar). Aditivo/opcional:
+   * quando ausente, o backend reusa por nome (comportamento atual).
+   * Spec importador-calcgraf-paridade-pdf.
+   */
+  centroCodigo?: string
 }
 
 /** Variação/plano (componente) de uma OP de origem — Fase 2 (CalculoPlanos). */
