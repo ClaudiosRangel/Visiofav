@@ -18,11 +18,44 @@ sincronizou OPs reais da Carton Wega no Vizor de produção (Neon). 1ª sync rea
 67 OPs origem `AGENTE_CALCGRAF` (faixa 3103–3174), 15 `AlteracaoOpPendente`
 (OPs com produção), 3 duplicatas (corrida manual×automático) JÁ removidas.
 
-**O que FALTA (fase 2, decidida com o usuário — Opção B):** trazer ETAPAS
-(roteiro), VARIAÇÕES e materiais COMPLETOS. Hoje as OPs importadas vêm com
-cabeçalho + materiais básicos + entregas, mas **sem etapas** (0/64) e **sem
-variações** (0/64). Mapeamento de como fazer: `docs/calcgraf-mapeamento-roteiro-op.md`
-(validado contra OP 3000 + varredura das 3193 OPs do backup).
+### ✅ FASE 2 (roteiro/variações/materiais) — IMPLEMENTADA (15/10/2026, LOCAL)
+
+Spec `.kiro/specs/importador-op-calcgraf-roteiro/` (10/10 tasks). O agente agora
+traz, por OP, o ROTEIRO COMPLETO a partir do CÁLCULO (resolvido por
+`OpItemEstrutura.Codigo = CalculoHeader.CodOpItemEstrutura`, maior `Codigo`):
+- **Etapas** (`CalculoAtividades`) com centro resolvido/criado + tempos
+  (setup = quantAcertos*tempoPorAcerto+tempoPrimeiroAcerto; operação =
+  tiragem/producaoHora*60).
+- **Variações** (`CalculoPlanos`) → `VariacaoOrdemProducao`.
+- **Materiais**: papel/suporte + mat. acabamento (`CalculoMatAcabamento`) →
+  `ItemOrdemProducao`; **tintas** (`CalculoTintas`) → texto na tag `[Cores]`
+  (decisão do usuário: tintas NÃO viram item).
+- **Centro**: resolve por `descricao` (case-insensitive) OU cria (regra do
+  importador de PDF; `tipoProcessoId` inferido do tipo da etapa).
+
+**Decisões do usuário (firmadas):** (1) centro inexistente → CRIAR; (2) tintas →
+texto `[Cores]`; (3) mat. acabamento → entra como item. **SEM mudança de schema
+Prisma** (models já existiam).
+
+**Arquivos tocados:**
+- Backend: `ingestao-op-calcgraf.pure.ts` (DTO + hash cobrem etapas/variações/
+  tintas), `ingestao-op-calcgraf.service.ts` (`resolverOuCriarCentro`,
+  `inferirTipoProcesso`, `criarEtapas` com tempos/centro, `criarVariacoes`, tag
+  `[Cores]`), + testes `.pure.test.ts` (29/29) e `.service.test.ts` (10/10,
+  golden OP 3000).
+- Agente: `calcgraf-reader/calcgraf-roteiro.ts` (puras: tempos/montagem) +
+  `.test.ts` (`node:test`, 7/7), `calcgraf-reader.ts` (queries do roteiro +
+  `lerRoteiroEmLote`, SEQUENCIAL/somente-leitura, DTO espelhado).
+
+**VALIDAÇÃO ponta a ponta** (backup local via sqlcmd): OP 3000 = 4 etapas
+(bate com o golden), faixa 3120–3138 com 3 a 22 etapas, 0 OP sem etapas na
+amostra. **Correções de coluna** descobertas e aplicadas: `CalculoPlanos` sem
+`Ordem` (ordena por `codPlano`); `CalculoMatAcabamento` sem `quantidade`; nome
+do material em `Itc.Descritivo` (não `Itc.Nome`). Ver doc de mapeamento.
+
+**FALTA:** reempacotar o agente (`npm run dist` → `release/...Setup.exe`),
+deployar o BACKEND primeiro (DTO aditivo = compatível com agente antigo), e
+trocar o `.exe` no servidor da PHTech (janela de RDP).
 
 ---
 

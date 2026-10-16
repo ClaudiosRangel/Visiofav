@@ -37,6 +37,7 @@ import {
   OpOrigemDTO,
   OpDestinoResumo,
   ResultadoIngestao,
+  VariacaoOpOrigemDTO,
   calcularHashOp,
   classificarIngestao,
 } from './ingestao-op-calcgraf.pure'
@@ -102,6 +103,11 @@ function montarObservacoes(dto: OpOrigemDTO): string | undefined {
   if (dto.tiragem != null && Number.isFinite(dto.tiragem)) {
     linhas.push(`[Tiragem] ${dto.tiragem}`)
   }
+  // Fase 2 (decisão 2): tintas/cores vão como TEXTO na observação (tag [Cores]),
+  // não viram ItemOrdemProducao. Mesmo padrão de tags do importador de PDF.
+  if (dto.tintasTexto && dto.tintasTexto.trim()) {
+    linhas.push(`[Cores] ${dto.tintasTexto.trim()}`)
+  }
   return linhas.length > 0 ? linhas.join('\n') : undefined
 }
 
@@ -136,6 +142,99 @@ function tipoMaterialDeDescricao(descricao?: string): string | undefined {
 
 type PrismaTx = Prisma.TransactionClient
 
+// ---------------------------------------------------------------------------
+// Resolução/criação de Centro de Produção (Fase 2 — paridade com o PDF)
+//
+// Espelha a regra de `importacao-op/importacao-op.routes.ts`: toda etapa precisa
+// de um `CentroProducao` (senão fica invisível no painel de Programação). A
+// resolução reusa por `descricao` (case-insensitive); se não existir, cria com
+// código sanitizado único + `tipoProcessoId` inferido do tipo da etapa.
+// ---------------------------------------------------------------------------
+
+/**
+ * Infere o `tipoProcessoId` a partir do tipo da etapa do Calcgraf. Ordem:
+ * (1) código mapeado do tipo (`I`→IMPRESSAO; demais→ACABAMENTO); (2) fallback
+ * para o primeiro Tipo de Processo ATIVO da empresa. Lança erro claro se a
+ * empresa não tiver nenhum Tipo de Processo (mesmo comportamento do PDF).
+ */
+async function inferirTipoProcesso(
+  tx: PrismaTx,
+  empresaId: string,
+  tipoEtapa?: string,
+): Promise<string> {
+  // 'I' = impressão; qualquer outro ('A'/undefined) cai em acabamento.
+  const codigoInferido = (tipoEtapa ?? '').toUpperCase() === 'I' ? 'IMPRESSAO' : 'ACABAMENTO'
+  const porCodigo = await tx.tipoProcesso.findFirst({
+    where: { empresaId, codigo: codigoInferido },
+    select: { id: true },
+  })
+  if (porCodigo) return porCodigo.id
+
+  const qualquer = await tx.tipoProcesso.findFirst({
+    where: { empresaId, status: true },
+    orderBy: { posicao: 'asc' },
+    select: { id: true },
+  })
+  if (qualquer) return qualquer.id
+
+  throw new Error(
+    'Nenhum Tipo de Processo cadastrado para esta empresa. Cadastre em PCP → Cadastros → Tipo de Processo antes de importar OPs do Calcgraf.',
+  )
+}
+
+/**
+ * Resolve (reusa) OU cria o `CentroProducao` para o nome de centro de uma etapa.
+ * Reuso por `descricao` case-insensitive (menor `codigo` = determinístico);
+ * criação com código sanitizado único + `tipoProcessoId` inferido. Isolamento
+ * por `empresaId` da OP real.
+ */
+async function resolverOuCriarCentro(
+  tx: PrismaTx,
+  empresaId: string,
+  nomeCentro: string,
+  tipoEtapa?: string,
+): Promise<string> {
+  const existente = await tx.centroProducao.findFirst({
+    where: { empresaId, descricao: { equals: nomeCentro, mode: 'insensitive' } },
+    select: { id: true },
+    orderBy: { codigo: 'asc' },
+  })
+  if (existente) return existente.id
+
+  let codigoBase = nomeCentro
+    .substring(0, 20)
+    .toUpperCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '')
+  if (!codigoBase) codigoBase = `CENTRO_${Date.now() % 100000}`
+
+  // Garante unicidade do código adicionando sufixo numérico se necessário.
+  let codigoFinal = codigoBase
+  let tentativa = 0
+  while (tentativa < 10) {
+    const jaExiste = await tx.centroProducao.findFirst({
+      where: { empresaId, codigo: codigoFinal },
+      select: { id: true },
+    })
+    if (!jaExiste) break
+    tentativa++
+    codigoFinal = `${codigoBase.substring(0, 17)}_${tentativa}`
+  }
+
+  const tipoProcessoId = await inferirTipoProcesso(tx, empresaId, tipoEtapa)
+  const novo = await tx.centroProducao.create({
+    data: {
+      empresaId,
+      codigo: codigoFinal,
+      descricao: nomeCentro.substring(0, 100),
+      tipo: 'MAQUINA',
+      tipoProcessoId,
+    },
+    select: { id: true },
+  })
+  return novo.id
+}
+
 /**
  * Cria os `ItemOrdemProducao` a partir dos itens do DTO (quando houver). MVP:
  * grava descrição/quantidade/unidade/tipo; vínculo formal de produto fica para
@@ -161,23 +260,84 @@ async function criarItens(tx: PrismaTx, ordemProducaoId: string, empresaId: stri
 }
 
 /**
- * Cria as `EtapaOrdemProducao` a partir das etapas do DTO (quando houver). MVP:
- * grava sequência/descrição/status PENDENTE, sem resolver centro de produção
- * (a resolução/criação de centro por nome, como no importador de PDF, fica para
- * uma evolução — a etapa sem centro ainda documenta o roteiro). O operador pode
- * atribuir a máquina depois no painel.
+ * Cria as `EtapaOrdemProducao` a partir das etapas do DTO (Fase 2). Resolve OU
+ * cria o `CentroProducao` por nome (paridade com o importador de PDF) e grava os
+ * tempos (`tempoSetupMinutos`/`tempoOperacaoCalculado`) e `tempoEsperaMinutos=0`.
+ * Define `posicaoFila` (append na fila do centro) para a etapa aparecer no
+ * painel de Programação. Toda etapa fica com um centro — nunca invisível.
  */
-async function criarEtapas(tx: PrismaTx, ordemProducaoId: string, dto: OpOrigemDTO) {
+async function criarEtapas(
+  tx: PrismaTx,
+  ordemProducaoId: string,
+  empresaId: string,
+  dto: OpOrigemDTO,
+) {
   const etapas = dto.etapas ?? []
   let seq = 1
   for (const etapa of etapas) {
-    const descricao = (etapa.descricao && etapa.descricao.trim()) || (etapa.centro && etapa.centro.trim()) || `Etapa ${seq}`
+    const nomeCentro = (etapa.centro && etapa.centro.trim()) || (etapa.descricao && etapa.descricao.trim()) || ''
+    const descricao = (etapa.descricao && etapa.descricao.trim()) || nomeCentro || `Etapa ${seq}`
+    const centroId = nomeCentro
+      ? await resolverOuCriarCentro(tx, empresaId, nomeCentro, etapa.tipo)
+      : null
+
+    // posicaoFila = append no final da fila do centro (quando há centro).
+    let posicaoFila: number | null = null
+    if (centroId) {
+      const agg = await tx.etapaOrdemProducao.aggregate({
+        where: { centroProducaoId: centroId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+        _max: { posicaoFila: true },
+      })
+      posicaoFila = (agg._max.posicaoFila ?? 0) + 1
+    }
+
     await tx.etapaOrdemProducao.create({
       data: {
         ordemProducaoId,
         sequencia: etapa.sequencia != null && Number.isFinite(etapa.sequencia) ? etapa.sequencia : seq,
         descricao: descricao.substring(0, 200),
+        centroProducaoId: centroId ?? undefined,
+        tempoSetupMinutos: etapa.setupMinutos != null && Number.isFinite(etapa.setupMinutos) ? etapa.setupMinutos : 0,
+        tempoOperacaoCalculado: etapa.operacaoMinutos != null && Number.isFinite(etapa.operacaoMinutos) ? etapa.operacaoMinutos : 0,
+        tempoEsperaMinutos: 0,
+        posicaoFila: posicaoFila ?? undefined,
         status: 'PENDENTE',
+      },
+    })
+    seq++
+  }
+}
+
+/**
+ * Monta o texto de observação de uma variação/plano (gramatura/dimensão/
+ * aproveitamento), guardado em `VariacaoOrdemProducao.observacao`.
+ */
+function montarObsVariacao(v: VariacaoOpOrigemDTO): string | undefined {
+  const partes: string[] = []
+  if (v.suporte && v.suporte.trim()) partes.push(`Papel: ${v.suporte.trim()}`)
+  if (v.gramatura != null && Number.isFinite(v.gramatura)) partes.push(`${v.gramatura}g`)
+  if (v.dimensao && v.dimensao.trim()) partes.push(v.dimensao.trim())
+  if (v.aproveitamento != null && Number.isFinite(v.aproveitamento)) partes.push(`aprov=${v.aproveitamento}`)
+  return partes.length > 0 ? partes.join(' | ') : undefined
+}
+
+/**
+ * Cria as `VariacaoOrdemProducao` a partir dos planos do DTO (Fase 2 —
+ * CalculoPlanos). Plano único/sem planos → nada a criar (aba Variações vazia,
+ * comportamento esperado). Escopo pela `ordemProducaoId` da OP real.
+ */
+async function criarVariacoes(tx: PrismaTx, ordemProducaoId: string, dto: OpOrigemDTO) {
+  const variacoes = dto.variacoes ?? []
+  let seq = 1
+  for (const v of variacoes) {
+    await tx.variacaoOrdemProducao.create({
+      data: {
+        ordemProducaoId,
+        codigoProduto: ((v.codigoPlano && v.codigoPlano.trim()) || `P${seq}`).substring(0, 60),
+        descricao: ((v.nome && v.nome.trim()) || `Plano ${seq}`).substring(0, 200),
+        quantidade: v.quantidade != null && Number.isFinite(v.quantidade) ? v.quantidade : 0,
+        observacao: montarObsVariacao(v),
+        sequencia: v.sequencia != null && Number.isFinite(v.sequencia) ? v.sequencia : seq,
       },
     })
     seq++
@@ -315,7 +475,8 @@ async function criarOp(tx: PrismaTx, empresaId: string, dto: OpOrigemDTO, hashRe
   })
 
   await criarItens(tx, op.id, empresaId, dto)
-  await criarEtapas(tx, op.id, dto)
+  await criarEtapas(tx, op.id, empresaId, dto)
+  await criarVariacoes(tx, op.id, dto)
 
   await tx.logOrdemProducao.create({
     data: {
@@ -371,10 +532,11 @@ async function atualizarOp(
     },
   })
 
-  // Substituição total de itens/etapas a partir do novo conteúdo (a OP não tem
-  // produção; essa é a condição que permite a sobrescrita automática).
+  // Substituição total de itens/etapas/variações a partir do novo conteúdo (a
+  // OP não tem produção; essa é a condição que permite a sobrescrita automática).
   await tx.itemOrdemProducao.deleteMany({ where: { ordemProducaoId } })
   await tx.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId } })
+  await tx.variacaoOrdemProducao.deleteMany({ where: { ordemProducaoId } })
 
   // Recria itens preservando vínculo de produto por descrição quando possível.
   const itens = dto.itens ?? []
@@ -396,7 +558,8 @@ async function atualizarOp(
     })
   }
 
-  await criarEtapas(tx, ordemProducaoId, dto)
+  await criarEtapas(tx, ordemProducaoId, empresaId, dto)
+  await criarVariacoes(tx, ordemProducaoId, dto)
 
   await tx.logOrdemProducao.create({
     data: {

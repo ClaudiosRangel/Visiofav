@@ -33,6 +33,18 @@ header `x-agente-key`). O Vizor casa a OP por `referenciaExterna == OpHeader.Num
 **atualiza** (e unifica origem p/ `AGENTE_CALCGRAF`); com produção → vira
 `AlteracaoOpPendente` (revisão manual em PCP → Importador Calcgraf → Pendentes).
 
+### ✅ FASE 2 — ROTEIRO/VARIAÇÕES/MATERIAIS (15/10/2026, implementada local)
+Spec `.kiro/specs/importador-op-calcgraf-roteiro/` (10/10). O agente agora traz
+o roteiro completo do CÁLCULO (`CalculoHeader` de maior `Codigo`): etapas
+(`CalculoAtividades`, com centro+tempos), variações (`CalculoPlanos`), papel +
+mat. acabamento (`CalculoMatAcabamento`) como itens, e tintas (`CalculoTintas`)
+como texto na tag `[Cores]`. Backend cria o `CentroProducao` quando não existe
+(regra do PDF). SEM mudança de schema. Testes: 29 (pure) + 10 (service) + 7
+(agente). Validado contra o backup (OP 3000 = 4 etapas). **Correções de coluna:**
+`CalculoPlanos` sem `Ordem`; `CalculoMatAcabamento` sem quantidade; nome do
+material em `Itc.Descritivo`. Falta reempacotar/instalar no servidor. Detalhes
+no HANDOFF.
+
 ### Descobertas CRÍTICAS da instalação (não reinvestigar)
 - **SQL do Calcgraf**: instância `SQL2019Express` na porta TCP **5520** (não 1433),
   banco **`CartonWega`** (com W). Login do próprio Calcgraf: `sa` / `C@1cgraf`

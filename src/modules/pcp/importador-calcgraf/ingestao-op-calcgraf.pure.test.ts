@@ -8,6 +8,7 @@ import {
   type ItemOpOrigemDTO,
   type EtapaOpOrigemDTO,
   type LoteOpOrigemDTO,
+  type VariacaoOpOrigemDTO,
   type OpDestinoResumo,
   type ResultadoIngestao,
 } from './ingestao-op-calcgraf.pure'
@@ -63,6 +64,24 @@ const etapaGen: fc.Arbitrary<EtapaOpOrigemDTO> = fc.record(
     centro: textoNaoVazio,
     descricao: textoNaoVazio,
     status: fc.constantFrom('PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDA'),
+    // Fase 2
+    tipo: fc.constantFrom('I', 'A'),
+    setupMinutos: numeroFinito,
+    operacaoMinutos: numeroFinito,
+  },
+  { requiredKeys: [] },
+)
+
+const variacaoGen: fc.Arbitrary<VariacaoOpOrigemDTO> = fc.record(
+  {
+    sequencia: fc.integer({ min: 1, max: 20 }),
+    codigoPlano: textoNaoVazio,
+    nome: textoNaoVazio,
+    quantidade: fc.integer({ min: 1, max: 5_000_000 }),
+    suporte: textoNaoVazio,
+    gramatura: fc.integer({ min: 50, max: 600 }),
+    dimensao: fc.constantFrom('185x1150', '600x910', '780x480'),
+    aproveitamento: fc.integer({ min: 1, max: 20 }),
   },
   { requiredKeys: [] },
 )
@@ -91,6 +110,9 @@ const opGen: fc.Arbitrary<OpOrigemDTO> = fc.record(
     itens: fc.array(itemGen, { maxLength: 6 }),
     etapas: fc.array(etapaGen, { maxLength: 6 }),
     lotes: fc.array(loteGen, { maxLength: 4 }),
+    // Fase 2
+    variacoes: fc.array(variacaoGen, { maxLength: 4 }),
+    tintasTexto: fc.option(textoNaoVazio, { nil: undefined }),
   },
   { requiredKeys: ['numero', 'descricao'] },
 )
@@ -140,6 +162,7 @@ describe('calcularHashOp — Property 1 (determinístico / ordem-insensível)', 
           itens: embaralharCom(op.itens ?? [], seed),
           etapas: embaralharCom(op.etapas ?? [], seed * 7 + 1),
           lotes: embaralharCom(op.lotes ?? [], seed * 13 + 3),
+          variacoes: embaralharCom(op.variacoes ?? [], seed * 17 + 5),
         }
         expect(calcularHashOp(embaralhada)).toBe(calcularHashOp(op))
       }),
@@ -224,6 +247,85 @@ describe('calcularHashOp — sensível a conteúdo', () => {
     const a: OpOrigemDTO = { numero: 10, descricao: '  Caixa  ', quantidade: 1 }
     const b: OpOrigemDTO = { numero: 10, descricao: 'Caixa', quantidade: 1.0 }
     expect(calcularHashOp(a)).toBe(calcularHashOp(b))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fase 2 — hash sensível ao roteiro (tempos de etapa, variações, tintas)
+// ---------------------------------------------------------------------------
+
+describe('calcularHashOp — Fase 2 (roteiro: tempos, variações, tintas)', () => {
+  // Validates: Requirements 6.1, 6.3
+  it('alterar setupMinutos de uma etapa muda o hash', () => {
+    fc.assert(
+      fc.property(opGen, (op) => {
+        fc.pre((op.etapas ?? []).length > 0)
+        const etapas = [...(op.etapas ?? [])]
+        const base = etapas[0].setupMinutos ?? 0
+        etapas[0] = { ...etapas[0], setupMinutos: base + 9999.5 }
+        const alterada: OpOrigemDTO = { ...op, etapas }
+        expect(calcularHashOp(alterada)).not.toBe(calcularHashOp(op))
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  // Validates: Requirements 6.1, 6.3
+  it('alterar operacaoMinutos de uma etapa muda o hash', () => {
+    fc.assert(
+      fc.property(opGen, (op) => {
+        fc.pre((op.etapas ?? []).length > 0)
+        const etapas = [...(op.etapas ?? [])]
+        const base = etapas[0].operacaoMinutos ?? 0
+        etapas[0] = { ...etapas[0], operacaoMinutos: base + 7777.25 }
+        const alterada: OpOrigemDTO = { ...op, etapas }
+        expect(calcularHashOp(alterada)).not.toBe(calcularHashOp(op))
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  // Validates: Requirements 6.1, 6.3
+  it('acrescentar uma variação muda o hash', () => {
+    fc.assert(
+      fc.property(opGen, (op) => {
+        const nova: VariacaoOpOrigemDTO = {
+          sequencia: 999,
+          codigoPlano: 'PLANO-UNICO-NOVO',
+          nome: 'plano adicional unico',
+          quantidade: 123456,
+          suporte: 'suporte adicional unico',
+        }
+        const alterada: OpOrigemDTO = { ...op, variacoes: [...(op.variacoes ?? []), nova] }
+        expect(calcularHashOp(alterada)).not.toBe(calcularHashOp(op))
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  // Validates: Requirements 6.1, 6.3
+  it('alterar o texto de tintas (tintasTexto) muda o hash', () => {
+    fc.assert(
+      fc.property(opGen, textoNaoVazio, (op, novoTexto) => {
+        fc.pre((op.tintasTexto ?? '').trim() !== novoTexto.trim())
+        const alterada: OpOrigemDTO = { ...op, tintasTexto: novoTexto }
+        expect(calcularHashOp(alterada)).not.toBe(calcularHashOp(op))
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  // Validates: Requirements 6.5 (OPs da fase 1 — sem roteiro — mudam de hash)
+  it('exemplo concreto: adicionar etapas/variações a uma OP sem roteiro muda o hash', () => {
+    const fase1: OpOrigemDTO = { numero: 3155, descricao: 'Caixa Panetone' }
+    const fase2: OpOrigemDTO = {
+      numero: 3155,
+      descricao: 'Caixa Panetone',
+      etapas: [{ sequencia: 1, centro: 'Heidelberg CD', descricao: 'Impressão', tipo: 'I', setupMinutos: 125, operacaoMinutos: 190 }],
+      variacoes: [{ sequencia: 1, nome: 'Impressos', quantidade: 39600 }],
+      tintasTexto: 'ESCALA CMYK (70%), METALICA 871C (20%)',
+    }
+    expect(calcularHashOp(fase2)).not.toBe(calcularHashOp(fase1))
   })
 })
 

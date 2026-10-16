@@ -83,6 +83,40 @@ interface FakeEtapa {
   id: string
   ordemProducaoId: string
   status: string
+  descricao?: string
+  centroProducaoId?: string | null
+  tempoSetupMinutos?: number
+  tempoOperacaoCalculado?: number
+  tempoEsperaMinutos?: number
+  sequencia?: number
+  posicaoFila?: number | null
+}
+
+interface FakeVariacao {
+  id: string
+  ordemProducaoId: string
+  codigoProduto: string
+  descricao: string
+  quantidade: number
+  sequencia: number
+  observacao?: string | null
+}
+
+interface FakeCentro {
+  id: string
+  empresaId: string
+  codigo: string
+  descricao: string
+  tipo: string
+  tipoProcessoId: string
+}
+
+interface FakeTipoProcesso {
+  id: string
+  empresaId: string
+  codigo: string
+  status: boolean
+  posicao: number
 }
 
 /** Estado do "banco" fake, resetado a cada teste. */
@@ -91,6 +125,9 @@ const db = {
   pendentes: [] as FakePendente[],
   itens: [] as FakeItem[],
   etapas: [] as FakeEtapa[],
+  variacoes: [] as FakeVariacao[],
+  centros: [] as FakeCentro[],
+  tiposProcesso: [] as FakeTipoProcesso[],
   apontEtapa: [] as { etapaOrdemProducaoId: string }[],
   apontProd: [] as { ordemProducaoId: string }[],
   logs: [] as unknown[],
@@ -177,6 +214,13 @@ vi.mock('../../../lib/prisma', () => {
           id: novoId('etapa'),
           ordemProducaoId: data.ordemProducaoId as string,
           status: data.status as string,
+          descricao: data.descricao as string,
+          centroProducaoId: (data.centroProducaoId as string) ?? null,
+          tempoSetupMinutos: Number(data.tempoSetupMinutos ?? 0),
+          tempoOperacaoCalculado: Number(data.tempoOperacaoCalculado ?? 0),
+          tempoEsperaMinutos: Number(data.tempoEsperaMinutos ?? 0),
+          sequencia: data.sequencia as number,
+          posicaoFila: (data.posicaoFila as number) ?? null,
         }
         db.etapas.push(etapa)
         return etapa
@@ -184,11 +228,71 @@ vi.mock('../../../lib/prisma', () => {
       count: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
         db.etapas.filter((e) => casa(e as unknown as Record<string, unknown>, where)).length,
       ),
+      aggregate: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const casam = db.etapas.filter((e) => casa(e as unknown as Record<string, unknown>, where))
+        const max = casam.reduce((m, e) => Math.max(m, e.posicaoFila ?? 0), 0)
+        return { _max: { posicaoFila: casam.length > 0 ? max : null } }
+      }),
       deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         const antes = db.etapas.length
         db.etapas = db.etapas.filter((e) => !casa(e as unknown as Record<string, unknown>, where))
         return { count: antes - db.etapas.length }
       }),
+    },
+    variacaoOrdemProducao: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const v: FakeVariacao = {
+          id: novoId('var'),
+          ordemProducaoId: data.ordemProducaoId as string,
+          codigoProduto: data.codigoProduto as string,
+          descricao: data.descricao as string,
+          quantidade: Number(data.quantidade ?? 0),
+          sequencia: data.sequencia as number,
+          observacao: (data.observacao as string) ?? null,
+        }
+        db.variacoes.push(v)
+        return v
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const antes = db.variacoes.length
+        db.variacoes = db.variacoes.filter((v) => !casa(v as unknown as Record<string, unknown>, where))
+        return { count: antes - db.variacoes.length }
+      }),
+    },
+    centroProducao: {
+      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        // Suporta where.descricao = { equals, mode } (case-insensitive).
+        const w = { ...where }
+        const descCond = w.descricao as { equals?: string; mode?: string } | string | undefined
+        delete (w as Record<string, unknown>).descricao
+        let casam = db.centros.filter((c) => casa(c as unknown as Record<string, unknown>, w))
+        if (descCond && typeof descCond === 'object' && 'equals' in descCond) {
+          const alvo = (descCond.equals ?? '').toLowerCase()
+          casam = casam.filter((c) => c.descricao.toLowerCase() === alvo)
+        } else if (typeof descCond === 'string') {
+          casam = casam.filter((c) => c.descricao === descCond)
+        }
+        return casam.sort((a, b) => a.codigo.localeCompare(b.codigo))[0] ?? null
+      }),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const c: FakeCentro = {
+          id: novoId('centro'),
+          empresaId: data.empresaId as string,
+          codigo: data.codigo as string,
+          descricao: data.descricao as string,
+          tipo: data.tipo as string,
+          tipoProcessoId: data.tipoProcessoId as string,
+        }
+        db.centros.push(c)
+        return c
+      }),
+    },
+    tipoProcesso: {
+      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+        db.tiposProcesso
+          .filter((t) => casa(t as unknown as Record<string, unknown>, where))
+          .sort((a, b) => a.posicao - b.posicao)[0] ?? null,
+      ),
     },
     apontamentoEtapa: {
       // where: { etapaOrdemProducao: { ordemProducaoId } } — resolve via etapas do fake.
@@ -278,10 +382,18 @@ beforeEach(() => {
   db.pendentes = []
   db.itens = []
   db.etapas = []
+  db.variacoes = []
+  db.centros = []
+  db.tiposProcesso = []
   db.apontEtapa = []
   db.apontProd = []
   db.logs = []
   db.seq = 0
+  // Tipos de Processo padrão da empresa A (necessário para criar centros).
+  db.tiposProcesso.push(
+    { id: 'tp-impressao', empresaId: EMPRESA_A, codigo: 'IMPRESSAO', status: true, posicao: 1 },
+    { id: 'tp-acabamento', empresaId: EMPRESA_A, codigo: 'ACABAMENTO', status: true, posicao: 2 },
+  )
   vi.clearAllMocks()
 })
 
@@ -410,5 +522,91 @@ describe('ingerirOpsCalcgraf — isolamento multi-tenant (Property 5 / Req 6.2)'
     // A da empresa B foi atualizada.
     const opB = opsDaEmpresa(EMPRESA_B, '4200')[0]
     expect(opB.quantidade).toBe(7777)
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Fase 2 — golden OP 3000 (etapas com centro/tempos + variação + tintas texto)
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('ingerirOpsCalcgraf — Fase 2: roteiro completo (golden OP 3000)', () => {
+  /** DTO espelhando a OP 3000 do mapeamento (4 etapas, 1 plano, 2 tintas). */
+  function op3000(): OpOrigemDTO {
+    return op(3000, {
+      quantidade: 100000,
+      tiragem: 100000,
+      etapas: [
+        { sequencia: 0, tipo: 'I', centro: 'Roland RZU 2cores', descricao: 'Offset Plana Roland RZU 2cores', setupMinutos: 60, operacaoMinutos: 3000 },
+        { sequencia: 1, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Cortadeira (Grande)', setupMinutos: 15, operacaoMinutos: 2000 },
+        { sequencia: 2, tipo: 'A', centro: 'Guilhotina de envol', descricao: 'Guilhotina de envol', setupMinutos: 0, operacaoMinutos: 3000 },
+        { sequencia: 3, tipo: 'A', centro: 'Plastificadora maior', descricao: 'Laminação maior Plastificadora maior', setupMinutos: 0, operacaoMinutos: 7500 },
+      ],
+      variacoes: [
+        { sequencia: 1, codigoPlano: '1', nome: 'Impressos', quantidade: 100000, suporte: 'Stora Enzo Bobina 322', gramatura: 322, dimensao: '185x1150', aproveitamento: 3 },
+      ],
+      itens: [
+        { codItemEstoque: 'SUP-8', descricao: 'Stora Enzo Bobina 322', quantidade: 2555.22, unidadeMedida: 'KG' },
+        { codItemEstoque: 'MAT-14', descricao: 'BOPP Brilho', quantidade: 10, unidadeMedida: 'KG' },
+      ],
+      tintasTexto: 'AMARELO 123C (85%), VERDE CW0138 (15%)',
+    })
+  }
+
+  it('cria a OP 3000 com 4 etapas (centro resolvido/criado + tempos), 1 variação e tag [Cores]', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [op3000()])
+    expect(r).toEqual([{ numero: 3000, resultado: 'criada' }])
+
+    const criada = opsDaEmpresa(EMPRESA_A, '3000')[0]
+    expect(criada).toBeTruthy()
+
+    // 4 etapas, cada uma com centro (resolvido/criado) e tempos.
+    const etapas = db.etapas.filter((e) => e.ordemProducaoId === criada.id)
+    expect(etapas).toHaveLength(4)
+    for (const e of etapas) {
+      expect(e.centroProducaoId).toBeTruthy() // nenhuma etapa sem centro
+      expect(e.status).toBe('PENDENTE')
+    }
+    // Primeira etapa (impressão): setup 60, operação 3000.
+    const impressao = etapas.find((e) => e.descricao?.includes('Offset'))
+    expect(impressao?.tempoSetupMinutos).toBe(60)
+    expect(impressao?.tempoOperacaoCalculado).toBe(3000)
+
+    // Centros criados: a impressão vira tipo IMPRESSAO; acabamentos → ACABAMENTO.
+    const centroImpressao = db.centros.find((c) => c.descricao === 'Roland RZU 2cores')
+    expect(centroImpressao?.tipoProcessoId).toBe('tp-impressao')
+    const centroCortadeira = db.centros.find((c) => c.descricao === 'Cortadeira (Grande)')
+    expect(centroCortadeira?.tipoProcessoId).toBe('tp-acabamento')
+
+    // 1 variação "Impressos".
+    const variacoes = db.variacoes.filter((v) => v.ordemProducaoId === criada.id)
+    expect(variacoes).toHaveLength(1)
+    expect(variacoes[0].descricao).toBe('Impressos')
+
+    // 2 itens de material (papel + acabamento).
+    const itens = db.itens.filter((i) => i.ordemProducaoId === criada.id)
+    expect(itens).toHaveLength(2)
+
+    // Tintas foram para a observação como tag [Cores] (NÃO viraram item).
+    expect(criada.observacoes).toContain('[Cores] AMARELO 123C (85%), VERDE CW0138 (15%)')
+  })
+
+  it('reusa o MESMO centro quando duas etapas têm o mesmo nome (não duplica)', async () => {
+    const dto = op(3002, {
+      etapas: [
+        { sequencia: 1, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Corte 1', setupMinutos: 10, operacaoMinutos: 100 },
+        { sequencia: 2, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Corte 2', setupMinutos: 5, operacaoMinutos: 50 },
+      ],
+    })
+    await ingerirOpsCalcgraf(EMPRESA_A, [dto])
+    const centrosCortadeira = db.centros.filter((c) => c.descricao === 'Cortadeira (Grande)')
+    expect(centrosCortadeira).toHaveLength(1) // reusou, não duplicou
+  })
+
+  it('OP sem cálculo (sem etapas/variações) continua sendo criada (comportamento fase 1)', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [op(3003)]) // sem etapas/variacoes
+    expect(r).toEqual([{ numero: 3003, resultado: 'criada' }])
+    const criada = opsDaEmpresa(EMPRESA_A, '3003')[0]
+    expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(0)
+    expect(db.variacoes.filter((v) => v.ordemProducaoId === criada.id)).toHaveLength(0)
   })
 })

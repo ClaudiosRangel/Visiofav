@@ -54,13 +54,17 @@ A    2   37     19     1        800      1        0          0      100000   →
 
 ## VARIAÇÕES / PLANOS — `CalculoPlanos`
 
-Fonte: `CalculoPlanos WHERE Codigo = <calc>` ordenado por `Ordem`. Cada plano é
-uma variação/componente (ex.: TAMPA/CAIXA, ou frente/costa). Para a 3000 há 1
-plano "Impressos".
+Fonte: `CalculoPlanos WHERE Codigo = <calc>`. Cada plano é uma variação/
+componente (ex.: TAMPA/CAIXA, ou frente/costa). Para a 3000 há 1 plano
+"Impressos".
 
 Colunas: `codPlano, nomePlano, codSuporte, gramatura, dimensao1, dimensao2,
-aproveitamento, tiragem, quantModelos, CodItemEstoque`.
-Golden 3000: `1|Impressos|suporte 8|322g|185x1150|aprov=3|tir=100000|1`.
+aproveitamento, tiragem, quantModelos`.
+Golden 3000: `1|Impressos|Stora Enzo Bobina|322g|185x1150|aprov=3|tir=100000`.
+
+> **CORREÇÃO (validação 15/10/2026):** `CalculoPlanos` **NÃO tem coluna
+> `Ordem`** (nem `CodItemEstoque`). Ordenar por `codPlano`. Nome do papel vem
+> de `Suportes.Nome` (JOIN por `codSuporte = Suportes.Codigo`).
 
 ## MATERIAIS — tintas + papel + mat. acabamento (do cálculo)
 
@@ -72,6 +76,13 @@ Golden 3000: `1|Impressos|suporte 8|322g|185x1150|aprov=3|tir=100000|1`.
 - **Mat. acabamento**: `CalculoMatAcabamento WHERE Codigo=<calc>` → `CodMaterial`,
   `codAtvAcabamento` (liga à etapa de acabamento). Golden 3000: `14|37` (material
   da laminação = BOPP Brilho do PDF).
+
+  > **CORREÇÃO (validação 15/10/2026):** `CalculoMatAcabamento` **NÃO tem
+  > coluna de quantidade** (só `CodMaterial`, `codAtvAcabamento`,
+  > `codPlanoAcabado`, params de acabamento). O nome do material vem de
+  > **`Itc.Descritivo`** (JOIN `Itc.Codigo = CodMaterial`) — a tabela `Itc`
+  > **NÃO tem coluna `Nome`**; o campo de nome é `Descritivo`. Tintas:
+  > `CalculoTintas` tem `Codigo, codTinta, areaTinta, ComplementoNome` (ok).
 
 ## ENTREGAS — `OpLote` (JÁ IMPLEMENTADO)
 

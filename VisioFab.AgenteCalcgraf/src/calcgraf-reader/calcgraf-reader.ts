@@ -36,6 +36,14 @@
  */
 
 import { execFile } from 'node:child_process'
+import {
+  montarEtapaDTO,
+  montarVariacaoDTO,
+  montarTextoTintas,
+  type AtividadeRow,
+  type PlanoRow,
+  type TintaRow,
+} from './calcgraf-roteiro'
 
 // ===========================================================================
 // DTO — ESPELHO do DTO do backend
@@ -74,6 +82,33 @@ export interface EtapaOpOrigemDTO {
   descricao?: string
   /** Status da etapa na origem. */
   status?: string
+  // ── Fase 2 (roteiro completo) — aditivos/opcionais (espelho do backend) ──
+  /** Tipo da operação no Calcgraf: 'I' (impressão) | 'A' (acabamento). */
+  tipo?: string
+  /** Tempo de setup/acerto em minutos. */
+  setupMinutos?: number
+  /** Tempo de operação/produção em minutos. */
+  operacaoMinutos?: number
+}
+
+/** Variação/plano (componente) de uma OP de origem — Fase 2 (CalculoPlanos). Espelho do backend. */
+export interface VariacaoOpOrigemDTO {
+  /** Sequência/ordem do plano (CalculoPlanos.Ordem). */
+  sequencia?: number
+  /** Código do plano (CalculoPlanos.codPlano). */
+  codigoPlano?: string
+  /** Nome do plano (CalculoPlanos.nomePlano). */
+  nome?: string
+  /** Quantidade/tiragem do plano. */
+  quantidade?: number
+  /** Nome do papel/suporte resolvido. */
+  suporte?: string
+  /** Gramatura do papel do plano. */
+  gramatura?: number
+  /** Dimensão do plano ("dimensao1 x dimensao2"). */
+  dimensao?: string
+  /** Aproveitamento. */
+  aproveitamento?: number
 }
 
 /** Lote/tiragem de uma OP de origem (OpLote). Espelho do backend. */
@@ -114,6 +149,11 @@ export interface OpOrigemDTO {
   etapas?: EtapaOpOrigemDTO[]
   /** Lotes/tiragens (OpLote). */
   lotes?: LoteOpOrigemDTO[]
+  // ── Fase 2 (roteiro completo) — aditivos/opcionais (espelho do backend) ──
+  /** Variações/planos do cálculo (CalculoPlanos). */
+  variacoes?: VariacaoOpOrigemDTO[]
+  /** Tintas/cores resumidas como texto (tag [Cores]). */
+  tintasTexto?: string
 }
 
 // ===========================================================================
@@ -916,6 +956,125 @@ interface LinhaOpLoteJoin extends LinhaOpLote {
   CodOpHeader: number
 }
 
+// ===========================================================================
+// Queries de ROTEIRO (Fase 2) — resolve o CÁLCULO que originou a OP e lê
+// etapas/variações/tintas. Caminho validado: OpItemEstrutura.Codigo =
+// CalculoHeader.CodOpItemEstrutura (maior Codigo = recálculo mais recente).
+// Ver docs/calcgraf-mapeamento-roteiro-op.md. SOMENTE SELECT.
+// ===========================================================================
+
+/**
+ * SELECT que resolve, por OpHeader.Codigo, o `CalculoHeader.Codigo` MAIS RECENTE
+ * (maior Codigo = recálculo). Agrupa por OpHeader para 1 cálculo por OP.
+ */
+export function montarQueryCalculoDaOp(codigosHeader: number[]): string {
+  const lista = codigosHeader.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT e.CodOpHeader AS CodOpHeader, MAX(ch.Codigo) AS CalcCodigo ` +
+    `FROM OpItemEstrutura e ` +
+    `INNER JOIN CalculoHeader ch ON ch.CodOpItemEstrutura = e.Codigo ` +
+    `WHERE e.CodOpHeader IN (${lista}) ` +
+    `GROUP BY e.CodOpHeader`
+  )
+}
+
+/** SELECT das etapas (CalculoAtividades) de um conjunto de cálculos, com nomes. */
+export function montarQueryCalculoAtividades(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT a.Codigo AS CalcCodigo, a.tipo, a.itemSeq1, a.itemSeq2, ` +
+    `atv.Nome AS atividadeNome, cp.Nome AS centroNome, ` +
+    `a.quantAcertos, a.tempoPorAcerto, a.tempoPrimeiroAcerto, a.producaoHora, a.tiragem ` +
+    `FROM CalculoAtividades a ` +
+    `LEFT JOIN Atividades atv ON atv.Codigo = a.codAtividade ` +
+    `LEFT JOIN CentrosProducao cp ON cp.Codigo = a.codCentroCusto ` +
+    `WHERE a.Codigo IN (${lista}) ` +
+    `ORDER BY a.Codigo, a.itemSeq1, a.itemSeq2`
+  )
+}
+
+/** SELECT dos planos/variações (CalculoPlanos) de um conjunto de cálculos, com suporte. */
+export function montarQueryCalculoPlanos(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  // Nome do suporte (papel) resolvido via cadastro de suporte (Suportes.Nome).
+  // CalculoPlanos não tem coluna "Ordem"; ordenamos por codPlano.
+  return (
+    `SELECT p.Codigo AS CalcCodigo, p.codPlano AS Ordem, p.codPlano, p.nomePlano, ` +
+    `s.Nome AS suporteNome, p.gramatura, p.dimensao1, p.dimensao2, ` +
+    `p.aproveitamento, p.tiragem ` +
+    `FROM CalculoPlanos p ` +
+    `LEFT JOIN Suportes s ON s.Codigo = p.codSuporte ` +
+    `WHERE p.Codigo IN (${lista}) ` +
+    `ORDER BY p.Codigo, p.codPlano`
+  )
+}
+
+/** SELECT das tintas (CalculoTintas) de um conjunto de cálculos. */
+export function montarQueryCalculoTintas(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT Codigo AS CalcCodigo, codTinta, areaTinta, ComplementoNome ` +
+    `FROM CalculoTintas WHERE Codigo IN (${lista}) ORDER BY Codigo`
+  )
+}
+
+/** SELECT dos materiais de acabamento (CalculoMatAcabamento) de um conjunto de cálculos. */
+export function montarQueryCalculoMatAcabamento(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  // Nome do material resolvido via cadastro Itc (coluna Descritivo).
+  // CalculoMatAcabamento não tem coluna de quantidade (só params de acabamento).
+  return (
+    `SELECT m.Codigo AS CalcCodigo, m.CodMaterial, m.codAtvAcabamento, ` +
+    `i.Descritivo AS materialNome ` +
+    `FROM CalculoMatAcabamento m ` +
+    `LEFT JOIN Itc i ON i.Codigo = m.CodMaterial ` +
+    `WHERE m.Codigo IN (${lista}) ORDER BY m.Codigo`
+  )
+}
+
+// Linhas cruas do roteiro.
+interface LinhaCalcDaOp {
+  CodOpHeader: number
+  CalcCodigo: number | null
+}
+interface LinhaAtividade {
+  CalcCodigo: number
+  tipo?: string
+  itemSeq1?: number
+  itemSeq2?: number
+  atividadeNome?: string
+  centroNome?: string
+  quantAcertos?: number
+  tempoPorAcerto?: number
+  tempoPrimeiroAcerto?: number
+  producaoHora?: number
+  tiragem?: number
+}
+interface LinhaPlano {
+  CalcCodigo: number
+  Ordem?: number
+  codPlano?: string | number
+  nomePlano?: string
+  suporteNome?: string
+  gramatura?: number
+  dimensao1?: number
+  dimensao2?: number
+  aproveitamento?: number
+  tiragem?: number
+}
+interface LinhaTinta {
+  CalcCodigo: number
+  codTinta?: string | number
+  areaTinta?: number
+  ComplementoNome?: string
+}
+interface LinhaMatAcab {
+  CalcCodigo: number
+  CodMaterial?: string | number
+  codAtvAcabamento?: string | number
+  materialNome?: string
+}
+
 // ---------------------------------------------------------------------------
 // Helpers de normalização de valores vindos do SQL Server
 // ---------------------------------------------------------------------------
@@ -986,6 +1145,10 @@ export async function lerOpsCandidatas(
   const estruturaPorHeader = agruparPor(estruturaRaw, (r) => r.CodOpHeader)
   const lotesPorHeader = agruparPor(lotesRaw, (r) => r.CodOpHeader)
 
+  // 3b) ROTEIRO (Fase 2): resolve o cálculo mais recente de cada OP e lê
+  //     etapas/variações/tintas/mat.acabamento em lote. SEQUENCIAL (tedious).
+  const roteiro = await lerRoteiroEmLote(conexao, codigos)
+
   const dtos: OpOrigemDTO[] = []
   for (const h of headers) {
     const itens = (itensPorHeader.get(h.Codigo) ?? []).map(mapearItem)
@@ -997,6 +1160,10 @@ export async function lerOpsCandidatas(
     // quantidade/tiragem/dataEntrega do cabeçalho do DTO.
     const lotePrincipal = escolherLotePrincipal(lotes)
 
+    // Roteiro resolvido desta OP (undefined quando a OP não tem cálculo — ~1,2%
+    // das OPs, avulsas; mantém comportamento da fase 1, sem etapas).
+    const r = roteiro.get(h.Codigo)
+
     const dto: OpOrigemDTO = {
       numero: h.Numero,
       descricao: strOuUndef(h.Descricao) ?? '',
@@ -1004,10 +1171,13 @@ export async function lerOpsCandidatas(
       quantidade: lotePrincipal?.tiragem,
       tiragem: lotePrincipal?.tiragem,
       dataEntrega: lotePrincipal?.dataPrometida,
-      itens: [...itens, ...estrutura],
+      // Materiais de acabamento (do cálculo) entram como itens, junto do
+      // papel/estrutura; tintas vão em `tintasTexto` (tag [Cores] no backend).
+      itens: [...itens, ...estrutura, ...(r?.materiais ?? [])],
       lotes,
-      // etapas: roteiro de OP não está no MVP deste reader (OpAreas/roteiro
-      // ficam para fase futura); deixamos ausente.
+      etapas: r?.etapas,
+      variacoes: r?.variacoes,
+      tintasTexto: r?.tintasTexto,
     }
 
     // TODO (vínculo produto/cliente — risco/pendência do design):
@@ -1024,6 +1194,68 @@ export async function lerOpsCandidatas(
   }
 
   return dtos
+}
+
+/** Roteiro resolvido de UMA OP (Fase 2). */
+interface RoteiroOp {
+  etapas: EtapaOpOrigemDTO[]
+  variacoes: VariacaoOpOrigemDTO[]
+  materiais: ItemOpOrigemDTO[]
+  tintasTexto?: string
+}
+
+/**
+ * Resolve o cálculo mais recente de cada OP e lê etapas/variações/tintas/
+ * mat.acabamento em LOTE (poucas queries, SEQUENCIAIS — tedious). Retorna um
+ * mapa `OpHeader.Codigo → RoteiroOp`. OPs sem cálculo não entram no mapa (o
+ * chamador trata como fase 1, sem etapas).
+ */
+async function lerRoteiroEmLote(
+  conexao: ConexaoCalcgrafSomenteLeitura,
+  codigosHeader: number[],
+): Promise<Map<number, RoteiroOp>> {
+  const resultado = new Map<number, RoteiroOp>()
+
+  // 1) OpHeader.Codigo → CalculoHeader.Codigo (maior = recálculo).
+  const calcRows = await conexao.consultar<LinhaCalcDaOp>(montarQueryCalculoDaOp(codigosHeader))
+  const calcPorHeader = new Map<number, number>()
+  for (const row of calcRows) {
+    const calc = numOuUndef(row.CalcCodigo)
+    if (calc != null && row.CodOpHeader != null) calcPorHeader.set(row.CodOpHeader, calc)
+  }
+  const codigosCalculo = Array.from(new Set(calcPorHeader.values()))
+  if (codigosCalculo.length === 0) return resultado
+
+  // 2) Lê as filhas do cálculo em lote (4 queries SEQUENCIAIS).
+  const atividadesRaw = await conexao.consultar<LinhaAtividade>(montarQueryCalculoAtividades(codigosCalculo))
+  const planosRaw = await conexao.consultar<LinhaPlano>(montarQueryCalculoPlanos(codigosCalculo))
+  const tintasRaw = await conexao.consultar<LinhaTinta>(montarQueryCalculoTintas(codigosCalculo))
+  const matRaw = await conexao.consultar<LinhaMatAcab>(montarQueryCalculoMatAcabamento(codigosCalculo))
+
+  // 3) Agrupa por CalcCodigo.
+  const atividadesPorCalc = agruparPor(atividadesRaw, (r) => r.CalcCodigo)
+  const planosPorCalc = agruparPor(planosRaw, (r) => r.CalcCodigo)
+  const tintasPorCalc = agruparPor(tintasRaw, (r) => r.CalcCodigo)
+  const matPorCalc = agruparPor(matRaw, (r) => r.CalcCodigo)
+
+  // 4) Monta o RoteiroOp por OpHeader usando as funções puras.
+  for (const [codHeader, calc] of calcPorHeader) {
+    const etapas = (atividadesPorCalc.get(calc) ?? []).map((a, i) =>
+      montarEtapaDTO(a as AtividadeRow, i),
+    )
+    const variacoes = (planosPorCalc.get(calc) ?? []).map((p, i) =>
+      montarVariacaoDTO(p as PlanoRow, i),
+    )
+    const tintasTexto = montarTextoTintas((tintasPorCalc.get(calc) ?? []) as TintaRow[]) || undefined
+    const materiais: ItemOpOrigemDTO[] = (matPorCalc.get(calc) ?? []).map((m) => ({
+      codItemEstoque: strOuUndef(m.CodMaterial),
+      descricao: strOuUndef(m.materialNome) ?? strOuUndef(m.CodMaterial),
+      unidadeMedida: 'KG',
+    }))
+    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto })
+  }
+
+  return resultado
 }
 
 /** Agrupa linhas por uma chave numérica, preservando a ordem de entrada. */

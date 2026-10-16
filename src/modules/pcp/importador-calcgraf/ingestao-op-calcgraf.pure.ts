@@ -49,6 +49,33 @@ export interface EtapaOpOrigemDTO {
   descricao?: string
   /** Status da etapa na origem. */
   status?: string
+  // ── Fase 2 (roteiro completo) — campos aditivos/opcionais ──
+  /** Tipo da operação no Calcgraf: 'I' (impressão) | 'A' (acabamento). */
+  tipo?: string
+  /** Tempo de setup/acerto em minutos (quantAcertos*tempoPorAcerto + tempoPrimeiroAcerto). */
+  setupMinutos?: number
+  /** Tempo de operação/produção em minutos (tiragem / producaoHora * 60). */
+  operacaoMinutos?: number
+}
+
+/** Variação/plano (componente) de uma OP de origem — Fase 2 (CalculoPlanos). */
+export interface VariacaoOpOrigemDTO {
+  /** Sequência/ordem do plano (CalculoPlanos.Ordem). Chave estável de ordenação. */
+  sequencia?: number
+  /** Código do plano (CalculoPlanos.codPlano). */
+  codigoPlano?: string
+  /** Nome do plano (CalculoPlanos.nomePlano — ex.: "Impressos", "TAMPA"). */
+  nome?: string
+  /** Quantidade/tiragem do plano. */
+  quantidade?: number
+  /** Nome do papel/suporte resolvido (de codSuporte). */
+  suporte?: string
+  /** Gramatura do papel do plano. */
+  gramatura?: number
+  /** Dimensão do plano ("dimensao1 x dimensao2"). */
+  dimensao?: string
+  /** Aproveitamento (peças por folha/puxada). */
+  aproveitamento?: number
 }
 
 /** Lote/tiragem de uma OP de origem (OpLote). */
@@ -89,6 +116,11 @@ export interface OpOrigemDTO {
   etapas?: EtapaOpOrigemDTO[]
   /** Lotes/tiragens (OpLote). */
   lotes?: LoteOpOrigemDTO[]
+  // ── Fase 2 (roteiro completo) — campos aditivos/opcionais ──
+  /** Variações/planos do cálculo (CalculoPlanos). */
+  variacoes?: VariacaoOpOrigemDTO[]
+  /** Tintas/cores resumidas como texto (ex.: "AMARELO 123C (85%), VERDE CW0138 (15%)"). */
+  tintasTexto?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +172,24 @@ function normalizarEtapa(etapa: EtapaOpOrigemDTO): Record<string, unknown> {
     centro: normalizarEscalar(etapa.centro),
     descricao: normalizarEscalar(etapa.descricao),
     status: normalizarEscalar(etapa.status),
+    // Fase 2: tempos/tipo entram no hash para detectar mudança de roteiro.
+    tipo: normalizarEscalar(etapa.tipo),
+    setupMinutos: normalizarEscalar(etapa.setupMinutos),
+    operacaoMinutos: normalizarEscalar(etapa.operacaoMinutos),
+  }
+}
+
+/** Normaliza uma variação/plano para a forma canônica — Fase 2. */
+function normalizarVariacao(v: VariacaoOpOrigemDTO): Record<string, unknown> {
+  return {
+    sequencia: normalizarEscalar(v.sequencia),
+    codigoPlano: normalizarEscalar(v.codigoPlano),
+    nome: normalizarEscalar(v.nome),
+    quantidade: normalizarEscalar(v.quantidade),
+    suporte: normalizarEscalar(v.suporte),
+    gramatura: normalizarEscalar(v.gramatura),
+    dimensao: normalizarEscalar(v.dimensao),
+    aproveitamento: normalizarEscalar(v.aproveitamento),
   }
 }
 
@@ -189,6 +239,7 @@ export function normalizarOpParaHash(dto: OpOrigemDTO): string {
   const itensNorm = ordenarEstavel((dto.itens ?? []).map(normalizarItem))
   const etapasNorm = ordenarEstavel((dto.etapas ?? []).map(normalizarEtapa))
   const lotesNorm = ordenarEstavel((dto.lotes ?? []).map(normalizarLote))
+  const variacoesNorm = ordenarEstavel((dto.variacoes ?? []).map(normalizarVariacao))
 
   // Objeto canônico com chaves em ordem fixa e previsível.
   const canonico = {
@@ -204,6 +255,9 @@ export function normalizarOpParaHash(dto: OpOrigemDTO): string {
     itens: itensNorm,
     etapas: etapasNorm,
     lotes: lotesNorm,
+    // Fase 2: variações e tintas (texto) entram no hash.
+    variacoes: variacoesNorm,
+    tintasTexto: normalizarEscalar(dto.tintasTexto),
   }
 
   return JSON.stringify(canonico)
