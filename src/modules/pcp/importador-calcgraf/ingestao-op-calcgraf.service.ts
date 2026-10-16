@@ -47,6 +47,16 @@ import { resolverOuCriarCentro, resolverCliente, montarEntregas } from './op-mon
 const ORIGEM_CALCGRAF = 'AGENTE_CALCGRAF'
 
 /**
+ * Opções das transações por OP. O pooler do Neon derruba transações
+ * interativas longas ("Transaction not found ... obtained before
+ * disconnecting"). OPs com muitas etapas/planos fazem várias queries na mesma
+ * transação; damos folga: `timeout` 20s (tempo total da transação) e `maxWait`
+ * 10s (espera para obter conexão do pool). Combinado com o fim do N+1 de
+ * `aggregate` em `criarEtapas`, mantém a transação curta e estável.
+ */
+const TX_OPCOES = { timeout: 20_000, maxWait: 10_000 } as const
+
+/**
  * Status inicial de uma OP criada pelo agente. Mesmo status inicial que o
  * importador de PDF usa (`PLANEJADA`), de forma que a OP já apareça liberável
  * no menu Ordens de Produção seguindo o fluxo normal
@@ -199,6 +209,12 @@ async function criarEtapas(
 ) {
   const etapas = dto.etapas ?? []
   let seq = 1
+  // Cache do MAX(posicaoFila) por centro (em memória). Evita o N+1 de
+  // `aggregate` por etapa DENTRO da transação — que, numa OP com muitas etapas
+  // (ex.: 21 na OS 3133), estourava o tempo de vida da transação no pooler do
+  // Neon ("Transaction not found ... obtained before disconnecting"). Fazemos
+  // 1 aggregate por centro (na 1ª vez que ele aparece) e incrementamos local.
+  const posicaoAtualPorCentro = new Map<string, number>()
   for (const etapa of etapas) {
     const nomeCentro = (etapa.centro && etapa.centro.trim()) || (etapa.descricao && etapa.descricao.trim()) || ''
     const descricao = (etapa.descricao && etapa.descricao.trim()) || nomeCentro || `Etapa ${seq}`
@@ -211,11 +227,16 @@ async function criarEtapas(
     // posicaoFila = append no final da fila do centro (quando há centro).
     let posicaoFila: number | null = null
     if (centroId) {
-      const agg = await tx.etapaOrdemProducao.aggregate({
-        where: { centroProducaoId: centroId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
-        _max: { posicaoFila: true },
-      })
-      posicaoFila = (agg._max.posicaoFila ?? 0) + 1
+      let base = posicaoAtualPorCentro.get(centroId)
+      if (base == null) {
+        const agg = await tx.etapaOrdemProducao.aggregate({
+          where: { centroProducaoId: centroId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+          _max: { posicaoFila: true },
+        })
+        base = agg._max.posicaoFila ?? 0
+      }
+      posicaoFila = base + 1
+      posicaoAtualPorCentro.set(centroId, posicaoFila)
     }
 
     await tx.etapaOrdemProducao.create({
@@ -391,19 +412,19 @@ async function processarOp(
     case 'criada':
       await prisma.$transaction(async (tx) => {
         await criarOp(tx, empresaId, dto, hashRecebido)
-      })
+      }, TX_OPCOES)
       return { numero: dto.numero, resultado: 'criada' }
 
     case 'atualizada':
       await prisma.$transaction(async (tx) => {
         await atualizarOp(tx, empresaId, destino!.id, destino!.status, dto, hashRecebido)
-      })
+      }, TX_OPCOES)
       return { numero: dto.numero, resultado: 'atualizada' }
 
     case 'pendente':
       await prisma.$transaction(async (tx) => {
         await registrarPendente(tx, empresaId, destino!.id, dto, hashRecebido)
-      })
+      }, TX_OPCOES)
       return {
         numero: dto.numero,
         resultado: 'pendente',
