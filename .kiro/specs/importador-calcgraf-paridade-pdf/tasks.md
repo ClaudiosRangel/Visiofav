@@ -111,10 +111,13 @@ idempotência real. Sem mudança de schema por padrão.
     script.
   - _Requisitos: 9.4_
 
-- [ ] 8. Frontend — nomenclatura "Verso" (ajuste de labels)
-  - [ ] 8.1 No front (`VisioFab.Wms.Front`), trocar textos exibidos "COSTA" →
-    "VERSO" nos badges/labels de plano FACE (sem mudar o valor técnico `FACE`).
-    Validar `get_diagnostics` do(s) arquivo(s) tocado(s).
+- [x] 8. Frontend — nomenclatura "Verso" (ajuste de labels)
+  - [x] 8.1 BACK: importador de PDF grava o nome exibido "(VERSO)" (era
+    "(COSTA)") no plano de retiração; chave de vínculo interna 'COSTA' mantida.
+    FRONT (`VisioFab.Wms.Front`): helper `rotuloPlano()` normaliza "(COSTA)"→
+    "(VERSO)" na exibição dos badges do painel de Programação (2 pontos),
+    cobrindo o legado sem tocar dados. Valor técnico `FACE` inalterado.
+    get_diagnostics limpo nos dois arquivos.
   - _Requisitos: 6.3_
 
 - [ ] 9. Empacotar agente v0.3.0 e preparar implantação

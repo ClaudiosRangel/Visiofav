@@ -452,7 +452,10 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           const costa = await prisma.planoOrdemProducao.create({
             data: {
               ordemProducaoId: op.id, empresaId: user.empresaId,
-              nome: `${planoOp.nome} (COSTA)`, tipo: 'FACE',
+              // Nome EXIBIDO padronizado como "VERSO" (T8). O valor técnico
+              // segue tipo='FACE'; a chave de vínculo interna continua 'COSTA'
+              // (atribuída pelo parser às etapas; não é exibida ao usuário).
+              nome: `${planoOp.nome} (VERSO)`, tipo: 'FACE',
               formato: planoOp.formato ?? undefined, cores: planoOp.coresCosta ?? undefined,
               tiragem: planoOp.tiragem ?? undefined, montagem: planoOp.montagem ?? undefined,
               faceDeId: frente.id, sequencia: seqPlano++, ...mat,
@@ -460,7 +463,8 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           })
           // Vínculo das etapas: o parser marca as etapas de impressão com
           // planoNome 'FRENTE'/'COSTA' e as demais com 'FRENTE' (default).
-          // Também mantém a chave pelo nome original do plano por segurança.
+          // Essas são CHAVES INTERNAS de correspondência (não exibidas); por
+          // isso 'COSTA' é mantido aqui mesmo com o nome exibido sendo "VERSO".
           planoIdPorNome.set('FRENTE', frente.id)
           planoIdPorNome.set('COSTA', costa.id)
           planoIdPorNome.set(planoOp.nome, frente.id)

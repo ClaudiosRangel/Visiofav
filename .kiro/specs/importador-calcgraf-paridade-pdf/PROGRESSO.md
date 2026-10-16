@@ -57,7 +57,15 @@ programação (cintos S1–S4). "Costa" exibida como "Verso".
   pedido = avulsas) = sem cliente/entrega (não quebra). Também mapeado o tipo de
   etapa **'M' (verniz na impressora) → VERNIZ** no backend
   (`op-montagem.service.ts`). Script `_tmp-validar-backup.mjs` REMOVIDO.
-- [ ] **T8** — front: "COSTA" → "VERSO" nos labels (valor técnico FACE mantido).
+- [x] **T8 FEITO** — nomenclatura "VERSO" (valor técnico `tipo='FACE'` mantido):
+  - BACK (PDF): `importacao-op.routes.ts` grava o nome EXIBIDO do plano de
+    retiração como "... (VERSO)" (antes "(COSTA)"). A chave interna de vínculo
+    das etapas segue 'COSTA' (atribuída pelo parser; não exibida). O agente
+    Calcgraf (T5) já gravava "(VERSO)".
+  - FRONT (`VisioFab.Wms.Front`, repo separado): helper `rotuloPlano()` no painel
+    de Programação troca "(COSTA)"→"(VERSO)" na EXIBIÇÃO (badges + title),
+    cobrindo OPs ANTIGAS já gravadas com "(COSTA)" sem tocar o dado. 2 pontos
+    (Modelo 1 e 2 do painel). get_diagnostics limpo. **COMMIT PENDENTE (2 repos).**
 - [ ] **T9** — empacotar agente v0.3.0; selo de versão; doc de deploy.
 - [ ] **T10** — deploy monitorado + reparo retroativo opcional; commit/push; atualizar HANDOFF/steering.
 
