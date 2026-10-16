@@ -33,10 +33,48 @@ function formatMinutos(min: unknown): string {
 }
 
 /** Extrai tags [Chave] das observações (padrão do módulo PCP) */
-function extrairTag(obs: string | null, tag: string): string | null {
+export function extrairTag(obs: string | null, tag: string): string | null {
   if (!obs) return null
   const m = obs.match(new RegExp(`\\[${tag}\\]\\s*(.+?)(?:\\n|$)`))
   return m ? m[1].trim() : null
+}
+
+/**
+ * Tags que já são exibidas em OUTRAS seções do relatório (cabeçalho/atributos)
+ * e, portanto, NÃO devem se repetir na seção "OBSERVAÇÕES".
+ */
+const TAGS_EM_OUTRAS_SECOES = ['Cliente', 'Produto', 'Formato', 'Cores', 'Matriz', 'TipoOp', 'Tiragem', 'Acond']
+
+/**
+ * Monta as linhas da seção "OBSERVAÇÕES" para consulta visual (paridade com o
+ * PDF do Calcgraf). Inclui:
+ *  - cada `[Bobina] ...` (com estoque/encomendado) como uma linha legível;
+ *  - qualquer linha de texto livre que não seja uma tag já exibida em outra
+ *    seção (cabeçalho/atributos).
+ * Retorna [] quando não há nada a exibir.
+ */
+export function extrairObservacoesParaExibicao(obs: string | null): string[] {
+  if (!obs) return []
+  const linhas: string[] = []
+  for (const bruta of obs.split('\n')) {
+    const linha = bruta.trim()
+    if (!linha) continue
+    const tagMatch = linha.match(/^\[([^\]]+)\]\s*(.*)$/)
+    if (tagMatch) {
+      const chave = tagMatch[1].trim()
+      if (chave === 'Bobina') {
+        linhas.push(`Bobina: ${tagMatch[2].trim()}`)
+      } else if (!TAGS_EM_OUTRAS_SECOES.includes(chave)) {
+        // Tag desconhecida/aditiva — mostra como "Chave: valor" para não perder.
+        linhas.push(`${chave}: ${tagMatch[2].trim()}`)
+      }
+      // tags já exibidas em outras seções: ignoradas aqui (não duplicar).
+    } else {
+      // Texto livre (observação geral/produção).
+      linhas.push(linha)
+    }
+  }
+  return linhas
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -108,6 +146,12 @@ export async function gerarOpPdf(opId: string, empresaId: string): Promise<Buffe
         select: { descricao: true, quantidade: true, cor: true },
         orderBy: { sequencia: 'asc' },
       },
+      // Planos/componentes (TAMPA/CAIXA/BOLSA ou FRENTE/VERSO) — usados pelas OPs
+      // sincronizadas do Calcgraf e pelas de PDF multi-plano/retiração.
+      planos: {
+        select: { nome: true, tipo: true, cores: true, formato: true, tiragem: true },
+        orderBy: { sequencia: 'asc' },
+      },
       programacoesEntrega: {
         select: { dataEntrega: true, quantidade: true, status: true },
         orderBy: { dataEntrega: 'asc' },
@@ -154,6 +198,13 @@ export async function gerarOpPdf(opId: string, empresaId: string): Promise<Buffe
   const cores = extrairTag(op.observacoes, 'Cores')
   const matriz = extrairTag(op.observacoes, 'Matriz')
   const tipoOp = extrairTag(op.observacoes, 'TipoOp')
+  const acondicionamento = extrairTag(op.observacoes, 'Acond')
+
+  // Linhas de observação para a seção "OBSERVAÇÕES" do relatório: as bobinas
+  // ([Bobina] ... em estoque/encomendado) e qualquer linha de texto livre que
+  // NÃO seja uma tag já exibida em outras seções do cabeçalho. Preserva a
+  // consulta visual de TODAS as observações (paridade com o PDF do Calcgraf).
+  const linhasObs = extrairObservacoesParaExibicao(op.observacoes)
 
   // ─── Montar PDF ─────────────────────────────────────────────────────────
 
@@ -226,8 +277,9 @@ export async function gerarOpPdf(opId: string, empresaId: string): Promise<Buffe
     y += 30
   }
 
-  if (op.referenciaExterna) {
-    boxDados('Referência Externa', op.referenciaExterna, left, colW - 10, y)
+  if (op.referenciaExterna || acondicionamento) {
+    boxDados('Referência Externa', op.referenciaExterna || '—', left, colW - 10, y)
+    if (acondicionamento) boxDados('Acondicionamento', acondicionamento, left + colW, colW - 10, y)
     y += 30
   }
 
@@ -297,8 +349,37 @@ export async function gerarOpPdf(opId: string, empresaId: string): Promise<Buffe
     y += 8
   }
 
-  // ═══ VARIAÇÕES ═══
-  if (op.variacoes.length > 0) {
+  // ═══ PLANOS / COMPONENTES ═══ (TAMPA/CAIXA/BOLSA ou FRENTE/VERSO)
+  if (op.planos.length > 0) {
+    checarQuebra(50)
+    y = desenharTitulo('PLANOS / COMPONENTES', y)
+    doc.fillColor(COR_ESCURA).fontSize(8).font('Helvetica-Bold')
+    doc.text('Plano', left + 5, y, { width: pageWidth * 0.34 })
+    doc.text('Tipo', left + pageWidth * 0.34, y, { width: pageWidth * 0.16 })
+    doc.text('Formato', left + pageWidth * 0.5, y, { width: pageWidth * 0.2 })
+    doc.text('Cores', left + pageWidth * 0.7, y, { width: pageWidth * 0.15 })
+    doc.text('Tiragem', left + pageWidth * 0.85, y, { width: pageWidth * 0.15, align: 'right' })
+    y += 14
+    doc.moveTo(left, y).lineTo(left + pageWidth, y).strokeColor(COR_LINHA).stroke()
+    y += 3
+    for (const p of op.planos) {
+      checarQuebra(16)
+      // Nome exibido padroniza "VERSO" (nunca "COSTA").
+      const nomeExib = (p.nome || '').replace(/\(COSTA\)/gi, '(VERSO)')
+      const tipoExib = p.tipo === 'FACE' ? 'Face' : 'Componente'
+      doc.fillColor(COR_ESCURA).fontSize(8).font('Helvetica')
+      doc.text(nomeExib, left + 5, y, { width: pageWidth * 0.34, ellipsis: true })
+      doc.text(tipoExib, left + pageWidth * 0.34, y, { width: pageWidth * 0.16 })
+      doc.text(p.formato || '—', left + pageWidth * 0.5, y, { width: pageWidth * 0.2, ellipsis: true })
+      doc.text(p.cores || '—', left + pageWidth * 0.7, y, { width: pageWidth * 0.15 })
+      doc.text(p.tiragem != null ? formatNum(p.tiragem) : '—', left + pageWidth * 0.85, y, { width: pageWidth * 0.15, align: 'right' })
+      y += 14
+    }
+    y += 8
+  }
+
+  // ═══ VARIAÇÕES ═══ (legado — só exibe quando não há planos)
+  if (op.planos.length === 0 && op.variacoes.length > 0) {
     checarQuebra(50)
     y = desenharTitulo('VARIAÇÕES', y)
     doc.fillColor(COR_ESCURA).fontSize(8).font('Helvetica-Bold')
@@ -337,6 +418,21 @@ export async function gerarOpPdf(opId: string, empresaId: string): Promise<Buffe
       doc.text(formatNum(p.quantidade), left + pageWidth * 0.4, y, { width: pageWidth * 0.3, align: 'right' })
       doc.text(p.status, left + pageWidth * 0.7, y, { width: pageWidth * 0.3, align: 'right' })
       y += 14
+    }
+    y += 8
+  }
+
+  // ═══ OBSERVAÇÕES (consulta visual — paridade com o PDF do Calcgraf) ═══
+  if (linhasObs.length > 0) {
+    checarQuebra(40)
+    y = desenharTitulo('OBSERVAÇÕES', y)
+    doc.fillColor(COR_ESCURA).fontSize(8).font('Helvetica')
+    for (const linha of linhasObs) {
+      // Altura aproximada do texto para quebra de página (linhas longas quebram).
+      const alturaTexto = doc.heightOfString(`• ${linha}`, { width: pageWidth - 10 })
+      checarQuebra(alturaTexto + 4)
+      doc.text(`• ${linha}`, left + 5, y, { width: pageWidth - 10 })
+      y += alturaTexto + 2
     }
     y += 8
   }
