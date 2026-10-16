@@ -97,6 +97,37 @@ export interface LoteOpOrigemDTO {
   status?: string
 }
 
+/** Entrega parcial programada de uma OP de origem — paridade PDF (T4). */
+export interface EntregaOpOrigemDTO {
+  /** Data da entrega (ISO string). */
+  data?: string
+  /** Quantidade dessa entrega parcial. */
+  quantidade?: number
+}
+
+/** Plano/componente de uma OP de origem — paridade PDF (T4). Substitui, no
+ *  destino, o uso de `VariacaoOrdemProducao` por `PlanoOrdemProducao`. */
+export interface PlanoOpOrigemDTO {
+  /** Nome do plano/componente (ex.: "TAMPA", "CAIXA", "Impressos"). */
+  nome: string
+  /** 'COMPONENTE' (padrão) | 'FACE' (frente/verso de retiração). */
+  tipo?: string
+  formato?: string
+  cores?: string
+  tiragem?: number
+  montagem?: string
+  material?: string
+  gramatura?: number
+  aproveitamento?: number
+  matriz?: string
+  /** `true` → gera 2 FACES (FRENTE/VERSO) na confirmação. */
+  retiracao?: boolean
+  coresFrente?: string
+  coresVerso?: string
+  /** Ordem/sequência do plano. */
+  sequencia?: number
+}
+
 /** Payload de uma OP de origem do Calcgraf (shape de UMA OP). */
 export interface OpOrigemDTO {
   /** Número da OP no Calcgraf (OpHeader.Numero) — chave de identidade. */
@@ -128,6 +159,21 @@ export interface OpOrigemDTO {
   variacoes?: VariacaoOpOrigemDTO[]
   /** Tintas/cores resumidas como texto (ex.: "AMARELO 123C (85%), VERDE CW0138 (15%)"). */
   tintasTexto?: string
+  // ── Paridade PDF (T4) — todos aditivos/opcionais; ausência = preserva ──
+  /** Código do cliente no Calcgraf (para de-para CLIENTE). */
+  clienteCodigo?: string
+  /** CNPJ/CPF do cliente (chave de vínculo com o cadastro). */
+  clienteDoc?: string
+  /** Programação de entrega: TODAS as datas parciais (não só a 1ª). */
+  programacaoEntrega?: EntregaOpOrigemDTO[]
+  /** Planos/componentes + retiração (frente/verso). */
+  planos?: PlanoOpOrigemDTO[]
+  /** Matriz/faca (tag [Matriz]). */
+  matriz?: string
+  /** Formato (tag [Formato]). */
+  formato?: string
+  /** Bobinas (tags [Bobina]). */
+  bobinasTexto?: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +229,7 @@ function normalizarEtapa(etapa: EtapaOpOrigemDTO): Record<string, unknown> {
     tipo: normalizarEscalar(etapa.tipo),
     setupMinutos: normalizarEscalar(etapa.setupMinutos),
     operacaoMinutos: normalizarEscalar(etapa.operacaoMinutos),
+    centroCodigo: normalizarEscalar(etapa.centroCodigo),
   }
 }
 
@@ -197,6 +244,34 @@ function normalizarVariacao(v: VariacaoOpOrigemDTO): Record<string, unknown> {
     gramatura: normalizarEscalar(v.gramatura),
     dimensao: normalizarEscalar(v.dimensao),
     aproveitamento: normalizarEscalar(v.aproveitamento),
+  }
+}
+
+/** Normaliza uma entrega parcial para a forma canônica — paridade PDF (T4). */
+function normalizarEntrega(e: EntregaOpOrigemDTO): Record<string, unknown> {
+  return {
+    data: normalizarEscalar(e.data),
+    quantidade: normalizarEscalar(e.quantidade),
+  }
+}
+
+/** Normaliza um plano (paridade PDF) para a forma canônica — T4. */
+function normalizarPlano(p: PlanoOpOrigemDTO): Record<string, unknown> {
+  return {
+    nome: normalizarEscalar(p.nome),
+    tipo: normalizarEscalar(p.tipo),
+    formato: normalizarEscalar(p.formato),
+    cores: normalizarEscalar(p.cores),
+    tiragem: normalizarEscalar(p.tiragem),
+    montagem: normalizarEscalar(p.montagem),
+    material: normalizarEscalar(p.material),
+    gramatura: normalizarEscalar(p.gramatura),
+    aproveitamento: normalizarEscalar(p.aproveitamento),
+    matriz: normalizarEscalar(p.matriz),
+    retiracao: normalizarEscalar(p.retiracao),
+    coresFrente: normalizarEscalar(p.coresFrente),
+    coresVerso: normalizarEscalar(p.coresVerso),
+    sequencia: normalizarEscalar(p.sequencia),
   }
 }
 
@@ -247,6 +322,12 @@ export function normalizarOpParaHash(dto: OpOrigemDTO): string {
   const etapasNorm = ordenarEstavel((dto.etapas ?? []).map(normalizarEtapa))
   const lotesNorm = ordenarEstavel((dto.lotes ?? []).map(normalizarLote))
   const variacoesNorm = ordenarEstavel((dto.variacoes ?? []).map(normalizarVariacao))
+  const entregasNorm = ordenarEstavel((dto.programacaoEntrega ?? []).map(normalizarEntrega))
+  const planosNorm = ordenarEstavel((dto.planos ?? []).map(normalizarPlano))
+  const bobinasNorm = [...(dto.bobinasTexto ?? [])]
+    .map((b) => normalizarEscalar(b))
+    .filter((b) => b !== null)
+    .sort((a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0))
 
   // Objeto canônico com chaves em ordem fixa e previsível.
   const canonico = {
@@ -265,6 +346,14 @@ export function normalizarOpParaHash(dto: OpOrigemDTO): string {
     // Fase 2: variações e tintas (texto) entram no hash.
     variacoes: variacoesNorm,
     tintasTexto: normalizarEscalar(dto.tintasTexto),
+    // Paridade PDF (T4): cliente (doc/código), entregas, planos, tags.
+    clienteCodigo: normalizarEscalar(dto.clienteCodigo),
+    clienteDoc: normalizarEscalar(dto.clienteDoc),
+    programacaoEntrega: entregasNorm,
+    planos: planosNorm,
+    matriz: normalizarEscalar(dto.matriz),
+    formato: normalizarEscalar(dto.formato),
+    bobinasTexto: bobinasNorm,
   }
 
   return JSON.stringify(canonico)

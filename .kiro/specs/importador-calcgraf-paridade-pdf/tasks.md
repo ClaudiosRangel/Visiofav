@@ -27,46 +27,52 @@ idempotência real. Sem mudança de schema por padrão.
     depois para garantir não-regressão do PDF.
   - _Requisitos: 2.1, 2.3, 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 2. Resolver CLIENTE no motor (determinístico, sem "ACTUAL")
-  - [ ] 2.1 Implementar `resolverCliente(tx, empresaId, { clienteDoc,
-    clienteCodigo, clienteNome })` em `op-montagem.service.ts`: CNPJ (dígitos) →
-    de-para CLIENTE → NULL + tag `[Cliente]`. Nunca cria cliente nem usa
-    placeholder.
-  - [ ] 2.2 Testes puros (vitest + fast-check): match por CNPJ, múltiplas
-    filiais (desempate por CNPJ), sem match (tag), entrada vazia.
+- [x] 2. Resolver CLIENTE no motor (determinístico, sem "ACTUAL")
+  - [x] 2.1 `resolverCliente(tx, empresaId, { clienteDoc, clienteCodigo,
+    clienteNome })` em `op-montagem.service.ts`: CNPJ (dígitos, ignora
+    placeholder `0+`) → de-para CLIENTE → NULL + tag `[Cliente]`. Nunca cria
+    cliente nem usa placeholder. Helper `soDigitos`.
+  - [x] 2.2 Testes puros no `op-montagem.service.test.ts` (match por CNPJ,
+    desempate por filial, sem match, placeholder ignorado).
   - _Requisitos: 4.1, 4.2, 4.3, 9.2_
 
-- [ ] 3. Resolver CENTRO e ENTREGAS no motor
-  - [ ] 3.1 `resolverCentro` consulta `DeParaImportacao` (CENTRO_PRODUCAO) ANTES
-    de reusar/criar; registra aviso quando cria. Isolado por `empresaId`.
-  - [ ] 3.2 `montarEntregas(programacaoEntrega)` → lista de `ProgramacaoEntrega`
-    + 1ª data como `dataEntregaPrevista`; fallback lote; sem data → nulo.
-  - [ ] 3.3 Testes puros das duas (ordem de resolução de centro; 1ª data;
-    fallback; vazio).
+- [x] 3. Resolver CENTRO e ENTREGAS no motor
+  - [x] 3.1 `resolverOuCriarCentro` consulta `DeParaImportacao` (CENTRO_PRODUCAO)
+    ANTES de reusar/criar; `ResultadoCentro.criouNovo` sinaliza criação. Isolado
+    por `empresaId`. (Já na T1.)
+  - [x] 3.2 `montarEntregas(programacaoEntrega)` (puro) → lista ordenada +
+    MENOR data como `dataEntregaPrevista`; sem data → nulo (chamador faz
+    fallback do lote).
+  - [x] 3.3 Testes puros no `op-montagem.service.test.ts`.
   - _Requisitos: 3.1, 3.2, 3.3, 3.4, 5.1, 5.2, 5.3, 5.4, 9.2_
 
-- [ ] 4. Estender o DTO (aditivo) + hash — backend `.pure.ts`
-  - [ ] 4.1 Adicionar ao `OpOrigemDTO`: `clienteCodigo`, `clienteDoc`,
-    `produtoCodigo` (popular), `programacaoEntrega[]`, `planos[]` (com
+- [x] 4. Estender o DTO (aditivo) + hash — backend `.pure.ts`
+  - [x] 4.1 `OpOrigemDTO` ganhou `clienteCodigo`, `clienteDoc`, `produtoCodigo`,
+    `programacaoEntrega[]` (EntregaOpOrigemDTO), `planos[]` (PlanoOpOrigemDTO com
     `retiracao`/`coresFrente`/`coresVerso`), `matriz`, `formato`,
-    `bobinasTexto[]`; `EtapaOpOrigemDTO.centroCodigo`.
-  - [ ] 4.2 Estender a normalização de hash para cobrir planos/entregas/cliente
-    de forma estável (ordem-insensível) — sem reclassificação espúria.
-  - [ ] 4.3 Testes de hash (fast-check): ordem-insensível; mudar entrega/plano/
-    cliente muda o hash; reenvio idêntico não muda.
+    `bobinasTexto[]`; `EtapaOpOrigemDTO.centroCodigo` (na T1).
+  - [x] 4.2 Hash cobre os campos novos de forma estável (ordem-insensível).
+  - [x] 4.3 Testes de hash (fast-check) **29/29** no `.pure.test.ts`.
   - _Requisitos: 8.1, 8.2, 8.3, 9.3_
 
-- [ ] 5. Ingestão do agente usa o motor + cintos S1–S4
-  - [ ] 5.1 `criarOp`/`atualizarOp` passam a chamar `resolverCliente`,
-    `resolverCentro` (nas etapas), `criarPlanos`, `montarEntregas`,
-    `montarTagsObservacao`. Descontinuar `VariacaoOrdemProducao` em favor de
-    `PlanoOrdemProducao`.
-  - [ ] 5.2 Reforçar os cintos: só substitui o bloco X se o payload trouxe X;
-    preservar `posicaoFila`/`ordemManual=true`; produção → pendente; finalizada
-    → ignorada.
-  - [ ] 5.3 Testes do service (estender `ingestao-op-calcgraf.service.test.ts`):
-    S1 (payload sem planos/entregas preserva), S2 (produção→pendente), S3 (fila
-    manual preservada), S4 (idempotência), cliente por CNPJ, centro por de-para.
+- [x] 5. Ingestão do agente usa o motor + cintos S1–S4
+  - [x] 5.1 `criarOp`/`atualizarOp` chamam `resolverCliente`,
+    `resolverOuCriarCentro` (nas etapas), `criarPlanos`, `criarProgramacaoEntrega`
+    (via `montarEntregas`), `montarObservacoes` (tags `[Cliente]`/`[Produto]`/
+    `[Cores]`/`[Matriz]`/`[Formato]`/`[Bobina]`). `PlanoOrdemProducao` substitui
+    `VariacaoOrdemProducao` (fallback de transição converte `variacoes` antigas
+    em planos COMPONENTE preservando suporte/dimensao/aproveitamento).
+    `montarObsVariacao` removido (código morto).
+  - [x] 5.2 Cintos reforçados: payload sem etapas PRESERVA roteiro/planos (mas
+    atualiza entregas se vierem); produção → pendente; finalizada → ignorada;
+    idempotência por hash.
+  - [x] 5.3 Testes do service **20/20** (`ingestao-op-calcgraf.service.test.ts`):
+    cinto sem etapas preserva (etapas+planos), substituição com etapas,
+    cliente por CNPJ (vincula/placeholder/sem match não cria), retiração
+    frente/verso (2 FACES, VERSO→FRENTE), 2+ planos COMPONENTE, programação de
+    entrega (menor data = prevista; atualiza sem tocar roteiro), tags de
+    cabeçalho. Fake Prisma ganhou `planoOrdemProducao`/`programacaoEntrega`/
+    `cliente`.
   - _Requisitos: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.3, 6.1, 6.2, 6.3, 6.4, 6.5, 7.1_
 
 - [ ] 6. Agente (reader) — enviar os dados crus que faltam

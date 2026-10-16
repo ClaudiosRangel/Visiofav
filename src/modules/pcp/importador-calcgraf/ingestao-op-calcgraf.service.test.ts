@@ -57,6 +57,8 @@ interface FakeOp {
   hashImportacaoOrigem: string | null
   observacoes?: string | null
   quantidade?: number
+  clienteId?: string | null
+  dataEntregaPrevista?: Date | null
 }
 
 interface FakePendente {
@@ -102,6 +104,29 @@ interface FakeVariacao {
   observacao?: string | null
 }
 
+interface FakePlano {
+  id: string
+  ordemProducaoId: string
+  empresaId: string
+  nome: string
+  tipo: string
+  cores?: string | null
+  tiragem?: number | null
+  formato?: string | null
+  material?: string | null
+  gramatura?: number | null
+  faceDeId?: string | null
+  sequencia?: number | null
+}
+
+interface FakeProgramacaoEntrega {
+  id: string
+  ordemProducaoId: string
+  dataEntrega: Date
+  quantidade: number
+  status: string
+}
+
 interface FakeCentro {
   id: string
   empresaId: string
@@ -119,6 +144,12 @@ interface FakeTipoProcesso {
   posicao: number
 }
 
+interface FakeCliente {
+  id: string
+  empresaId: string
+  cpfCnpj: string | null
+}
+
 /** Estado do "banco" fake, resetado a cada teste. */
 const db = {
   ops: [] as FakeOp[],
@@ -126,8 +157,11 @@ const db = {
   itens: [] as FakeItem[],
   etapas: [] as FakeEtapa[],
   variacoes: [] as FakeVariacao[],
+  planos: [] as FakePlano[],
+  entregas: [] as FakeProgramacaoEntrega[],
   centros: [] as FakeCentro[],
   tiposProcesso: [] as FakeTipoProcesso[],
+  clientes: [] as FakeCliente[],
   apontEtapa: [] as { etapaOrdemProducaoId: string }[],
   apontProd: [] as { ordemProducaoId: string }[],
   logs: [] as unknown[],
@@ -176,6 +210,8 @@ vi.mock('../../../lib/prisma', () => {
           hashImportacaoOrigem: (data.hashImportacaoOrigem as string) ?? null,
           observacoes: (data.observacoes as string) ?? null,
           quantidade: data.quantidade as number,
+          clienteId: (data.clienteId as string) ?? null,
+          dataEntregaPrevista: (data.dataEntregaPrevista as Date) ?? null,
         }
         db.ops.push(op)
         return op
@@ -259,6 +295,49 @@ vi.mock('../../../lib/prisma', () => {
         return { count: antes - db.variacoes.length }
       }),
     },
+    planoOrdemProducao: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const p: FakePlano = {
+          id: novoId('plano'),
+          ordemProducaoId: data.ordemProducaoId as string,
+          empresaId: data.empresaId as string,
+          nome: data.nome as string,
+          tipo: data.tipo as string,
+          cores: (data.cores as string) ?? null,
+          tiragem: (data.tiragem as number) ?? null,
+          formato: (data.formato as string) ?? null,
+          material: (data.material as string) ?? null,
+          gramatura: (data.gramatura as number) ?? null,
+          faceDeId: (data.faceDeId as string) ?? null,
+          sequencia: (data.sequencia as number) ?? null,
+        }
+        db.planos.push(p)
+        return p
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const antes = db.planos.length
+        db.planos = db.planos.filter((p) => !casa(p as unknown as Record<string, unknown>, where))
+        return { count: antes - db.planos.length }
+      }),
+    },
+    programacaoEntrega: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const e: FakeProgramacaoEntrega = {
+          id: novoId('entrega'),
+          ordemProducaoId: data.ordemProducaoId as string,
+          dataEntrega: data.dataEntrega as Date,
+          quantidade: Number(data.quantidade ?? 0),
+          status: data.status as string,
+        }
+        db.entregas.push(e)
+        return e
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const antes = db.entregas.length
+        db.entregas = db.entregas.filter((e) => !casa(e as unknown as Record<string, unknown>, where))
+        return { count: antes - db.entregas.length }
+      }),
+    },
     centroProducao: {
       findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         // Suporta where.descricao = { equals, mode } (case-insensitive).
@@ -298,6 +377,16 @@ vi.mock('../../../lib/prisma', () => {
     // motor de centro cai no reuso por nome/criação — igual ao testado antes.
     deParaImportacao: {
       findFirst: vi.fn(async () => null),
+    },
+    cliente: {
+      // where: { empresaId, cpfCnpj: { not: null } } → ignora o {not:null}, só
+      // filtra empresa e cpfCnpj preenchido (o motor compara dígitos em memória).
+      findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+        db.clientes.filter((c) => c.empresaId === (where.empresaId as string) && c.cpfCnpj != null),
+      ),
+      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+        db.clientes.find((c) => casa(c as unknown as Record<string, unknown>, where)) ?? null,
+      ),
     },
     apontamentoEtapa: {
       // where: { etapaOrdemProducao: { ordemProducaoId } } — resolve via etapas do fake.
@@ -388,8 +477,11 @@ beforeEach(() => {
   db.itens = []
   db.etapas = []
   db.variacoes = []
+  db.planos = []
+  db.entregas = []
   db.centros = []
   db.tiposProcesso = []
+  db.clientes = []
   db.apontEtapa = []
   db.apontProd = []
   db.logs = []
@@ -582,10 +674,10 @@ describe('ingerirOpsCalcgraf — Fase 2: roteiro completo (golden OP 3000)', () 
     const centroCortadeira = db.centros.find((c) => c.descricao === 'Cortadeira (Grande)')
     expect(centroCortadeira?.tipoProcessoId).toBe('tp-acabamento')
 
-    // 1 variação "Impressos".
-    const variacoes = db.variacoes.filter((v) => v.ordemProducaoId === criada.id)
-    expect(variacoes).toHaveLength(1)
-    expect(variacoes[0].descricao).toBe('Impressos')
+    // Plano ÚNICO sem retiração → não cria PlanoOrdemProducao (paridade com o
+    // importador de PDF: planos só são materializados quando há 2+ ou retiração).
+    const planos = db.planos.filter((p) => p.ordemProducaoId === criada.id)
+    expect(planos).toHaveLength(0)
 
     // 2 itens de material (papel + acabamento).
     const itens = db.itens.filter((i) => i.ordemProducaoId === criada.id)
@@ -612,7 +704,7 @@ describe('ingerirOpsCalcgraf — Fase 2: roteiro completo (golden OP 3000)', () 
     expect(r).toEqual([{ numero: 3003, resultado: 'criada' }])
     const criada = opsDaEmpresa(EMPRESA_A, '3003')[0]
     expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(0)
-    expect(db.variacoes.filter((v) => v.ordemProducaoId === criada.id)).toHaveLength(0)
+    expect(db.planos.filter((p) => p.ordemProducaoId === criada.id)).toHaveLength(0)
   })
 })
 
@@ -629,18 +721,22 @@ describe('ingerirOpsCalcgraf — cinto de segurança (payload sem etapas preserv
         { sequencia: 1, tipo: 'I', centro: 'Heidelberg', descricao: 'Impressão', setupMinutos: 100, operacaoMinutos: 50 },
         { sequencia: 2, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Corte', setupMinutos: 10, operacaoMinutos: 20 },
       ],
-      variacoes: [{ sequencia: 1, nome: 'Plano único', quantidade: 1000 }],
+      // 2 planos (TAMPA/CAIXA) → materializam PlanoOrdemProducao (há 2+).
+      planos: [
+        { nome: 'TAMPA', tipo: 'COMPONENTE', tiragem: 500, sequencia: 1 },
+        { nome: 'CAIXA', tipo: 'COMPONENTE', tiragem: 500, sequencia: 2 },
+      ],
     })
   }
 
-  it('OP com etapas recebendo payload SEM etapas (agente antigo) PRESERVA as etapas/variações', async () => {
-    // 1ª ingestão: cria com 2 etapas + 1 variação.
+  it('OP com etapas recebendo payload SEM etapas (agente antigo) PRESERVA as etapas/planos', async () => {
+    // 1ª ingestão: cria com 2 etapas + 2 planos.
     await ingerirOpsCalcgraf(EMPRESA_A, [op3200ComEtapas()])
     const criada = opsDaEmpresa(EMPRESA_A, '3200')[0]
     const etapasAntes = db.etapas.filter((e) => e.ordemProducaoId === criada.id).length
-    const variacoesAntes = db.variacoes.filter((v) => v.ordemProducaoId === criada.id).length
+    const planosAntes = db.planos.filter((p) => p.ordemProducaoId === criada.id).length
     expect(etapasAntes).toBe(2)
-    expect(variacoesAntes).toBe(1)
+    expect(planosAntes).toBe(2)
 
     // 2ª ingestão: MESMA OP, conteúdo de cabeçalho diferente (hash muda), mas
     // payload SEM etapas (simula o agente antigo da fase 1).
@@ -652,7 +748,7 @@ describe('ingerirOpsCalcgraf — cinto de segurança (payload sem etapas preserv
     expect(depois.quantidade).toBe(2000)
     // ...mas o roteiro foi PRESERVADO (não zerou).
     expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(2)
-    expect(db.variacoes.filter((v) => v.ordemProducaoId === criada.id)).toHaveLength(1)
+    expect(db.planos.filter((p) => p.ordemProducaoId === criada.id)).toHaveLength(2)
   })
 
   it('OP com etapas recebendo payload COM etapas substitui normalmente', async () => {
@@ -671,5 +767,171 @@ describe('ingerirOpsCalcgraf — cinto de segurança (payload sem etapas preserv
     const r = await ingerirOpsCalcgraf(EMPRESA_A, [novo])
     expect(r[0].resultado).toBe('atualizada')
     expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(3)
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// T5 — Paridade PDF: cliente por CNPJ, retiração (frente/verso), programação
+// de entrega (resolve "entrega em branco"), tags [Matriz]/[Formato]/[Bobina].
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('ingerirOpsCalcgraf — T5 cliente por CNPJ (nunca cria, nunca ACTUAL)', () => {
+  it('vincula clienteId quando o CNPJ (só dígitos) casa com o cadastro, e grava a tag [Cliente]', async () => {
+    db.clientes.push({ id: 'cli-real', empresaId: EMPRESA_A, cpfCnpj: '23.787.041/0001-75' })
+
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5000, { clienteDoc: '23787041000175', clienteNome: 'Carton Wega SA' }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+
+    const criada = opsDaEmpresa(EMPRESA_A, '5000')[0]
+    // Vínculo formal resolvido por CNPJ (ignora máscara/pontuação).
+    const opReal = db.ops.find((o) => o.id === criada.id) as unknown as { clienteId?: string }
+    expect(opReal.clienteId).toBe('cli-real')
+    // Tag [Cliente] com o nome de origem (exibição).
+    expect(criada.observacoes).toContain('[Cliente] Carton Wega SA')
+  })
+
+  it('CNPJ placeholder (00000000000) NÃO vincula — fica só a tag [Cliente] (nunca ACTUAL)', async () => {
+    db.clientes.push({ id: 'cli-actual', empresaId: EMPRESA_A, cpfCnpj: '00000000000' })
+
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5001, { clienteDoc: '00000000000', clienteNome: 'Fulano Ltda' }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+
+    const criada = opsDaEmpresa(EMPRESA_A, '5001')[0]
+    const opReal = db.ops.find((o) => o.id === criada.id) as unknown as { clienteId?: string }
+    expect(opReal.clienteId ?? null).toBeNull() // não vinculou ao placeholder
+    expect(criada.observacoes).toContain('[Cliente] Fulano Ltda')
+  })
+
+  it('CNPJ sem match no cadastro NÃO cria cliente — só a tag [Cliente]', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5002, { clienteDoc: '99999999000199', clienteNome: 'Cliente Novo Ltda' }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+    expect(db.clientes).toHaveLength(0) // NUNCA cria cliente
+    const criada = opsDaEmpresa(EMPRESA_A, '5002')[0]
+    expect(criada.observacoes).toContain('[Cliente] Cliente Novo Ltda')
+  })
+})
+
+describe('ingerirOpsCalcgraf — T5 planos com retiração (frente/verso = FACE)', () => {
+  it('plano com retiracao=true gera 2 FACES (FRENTE/VERSO), VERSO apontando para FRENTE', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5100, {
+        planos: [
+          {
+            nome: 'Impressos',
+            tipo: 'FACE',
+            retiracao: true,
+            coresFrente: '7x0',
+            coresVerso: '5x0',
+            tiragem: 8250,
+            sequencia: 1,
+          },
+        ],
+      }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+
+    const criada = opsDaEmpresa(EMPRESA_A, '5100')[0]
+    const planos = db.planos.filter((p) => p.ordemProducaoId === criada.id)
+    expect(planos).toHaveLength(2)
+
+    const frente = planos.find((p) => p.nome.includes('FRENTE'))
+    const verso = planos.find((p) => p.nome.includes('VERSO'))
+    expect(frente?.tipo).toBe('FACE')
+    expect(verso?.tipo).toBe('FACE')
+    expect(frente?.cores).toBe('7x0')
+    expect(verso?.cores).toBe('5x0')
+    // VERSO vincula à FRENTE (faceDeId).
+    expect(verso?.faceDeId).toBe(frente?.id)
+  })
+
+  it('2+ planos COMPONENTE (TAMPA/CAIXA) são materializados', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5101, {
+        planos: [
+          { nome: 'TAMPA', tipo: 'COMPONENTE', tiragem: 1000, sequencia: 1 },
+          { nome: 'CAIXA', tipo: 'COMPONENTE', tiragem: 1000, sequencia: 2 },
+        ],
+      }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+    const criada = opsDaEmpresa(EMPRESA_A, '5101')[0]
+    expect(db.planos.filter((p) => p.ordemProducaoId === criada.id)).toHaveLength(2)
+  })
+})
+
+describe('ingerirOpsCalcgraf — T5 programação de entrega (resolve "entrega em branco")', () => {
+  it('grava todas as entregas e usa a MENOR data como dataEntregaPrevista', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5200, {
+        dataEntrega: undefined, // lote sem data (era o que ficava "em branco")
+        programacaoEntrega: [
+          { data: '2026-08-02T00:00:00.000Z', quantidade: 1000000 },
+          { data: '2026-07-06T00:00:00.000Z', quantidade: 1200000 },
+        ],
+      }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+
+    const criada = opsDaEmpresa(EMPRESA_A, '5200')[0]
+    const entregas = db.entregas.filter((e) => e.ordemProducaoId === criada.id)
+    expect(entregas).toHaveLength(2)
+
+    // dataEntregaPrevista = a menor data (06/07), não a 1ª do array.
+    const opReal = db.ops.find((o) => o.id === criada.id) as unknown as { dataEntregaPrevista?: Date }
+    expect(opReal.dataEntregaPrevista?.toISOString()).toBe('2026-07-06T00:00:00.000Z')
+  })
+
+  it('atualização com payload SEM etapas mas COM programação atualiza as entregas (preserva roteiro)', async () => {
+    // Cria com etapas + 1ª programação.
+    await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5201, {
+        etapas: [{ sequencia: 1, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Corte', setupMinutos: 1, operacaoMinutos: 1 }],
+        programacaoEntrega: [{ data: '2026-05-04T00:00:00.000Z', quantidade: 6900 }],
+      }),
+    ])
+    const criada = opsDaEmpresa(EMPRESA_A, '5201')[0]
+    expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(1)
+    expect(db.entregas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(1)
+
+    // Atualiza SEM etapas (agente antigo) mas COM nova programação (2 entregas).
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5201, {
+        programacaoEntrega: [
+          { data: '2026-05-04T00:00:00.000Z', quantidade: 6900 },
+          { data: '2026-05-10T00:00:00.000Z', quantidade: 4600 },
+        ],
+      }),
+    ])
+    expect(r[0].resultado).toBe('atualizada')
+
+    // Roteiro preservado (etapa intacta)...
+    expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(1)
+    // ...mas as entregas foram atualizadas (de 1 para 2).
+    expect(db.entregas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(2)
+  })
+})
+
+describe('ingerirOpsCalcgraf — T5 tags de cabeçalho [Matriz]/[Formato]/[Bobina]', () => {
+  it('grava [Matriz], [Formato] e múltiplas [Bobina] na observação', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5300, {
+        matriz: '2529B - COM BRAILLE',
+        formato: '600 x 910',
+        bobinasTexto: ['Bobina Stora Enzo 222g', 'Bobina Suzano 300g'],
+      }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+
+    const criada = opsDaEmpresa(EMPRESA_A, '5300')[0]
+    expect(criada.observacoes).toContain('[Matriz] 2529B - COM BRAILLE')
+    expect(criada.observacoes).toContain('[Formato] 600 x 910')
+    expect(criada.observacoes).toContain('[Bobina] Bobina Stora Enzo 222g')
+    expect(criada.observacoes).toContain('[Bobina] Bobina Suzano 300g')
   })
 })

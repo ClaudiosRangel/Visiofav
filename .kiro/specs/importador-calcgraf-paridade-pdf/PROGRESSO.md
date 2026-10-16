@@ -24,8 +24,9 @@ programação (cintos S1–S4). "Costa" exibida como "Verso".
     para janela de teste dedicada; PDF segue estável e intocado.
 - [x] **T2** — `resolverCliente` no motor (CNPJ dígitos → de-para CLIENTE → tag; nunca cria/ACTUAL) + `soDigitos`. Testes `op-montagem.service.test.ts` (8). **COMMIT PENDENTE junto T3.**
 - [x] **T3** — `montarEntregas` (todas as datas válidas, ordenadas → 1ª = prevista; vazio→null fallback do chamador) no motor + testes (4). Total motor: 12/12.
-- [ ] **T4** — DTO aditivo (clienteCodigo/clienteDoc/produtoCodigo/programacaoEntrega[]/planos[]/matriz/formato/bobinasTexto) + hash cobre novos + testes.
-- [ ] **T5** — ingestão do agente usa resolverCliente/montarEntregas/criarPlanos + cintos S1–S4 reforçados; descontinuar VariacaoOrdemProducao em favor de PlanoOrdemProducao; testes.
+- [x] **T4** — DTO aditivo (clienteCodigo/clienteDoc/produtoCodigo/programacaoEntrega[]/planos[]/matriz/formato/bobinasTexto) + hash cobre novos + testes (pure 29/29). **COMMIT PENDENTE junto T5.**
+- [x] **T5** — ingestão do agente usa resolverCliente/montarEntregas/criarPlanos + cintos reforçados; `PlanoOrdemProducao` substitui `VariacaoOrdemProducao` (fallback de transição converte `variacoes` antigas em planos COMPONENTE, preservando suporte/dimensao/aproveitamento); `montarObsVariacao` removido (código morto). Novas tags `[Matriz]`/`[Formato]`/`[Bobina]` em `montarObservacoes`. Nova `criarProgramacaoEntrega` (resolve "entrega em branco" usando a MENOR data). `atualizarOp`: sem etapas preserva roteiro MAS atualiza entregas se vierem. Testes service **20/20** (fake Prisma ganhou models `planoOrdemProducao`, `programacaoEntrega`, `cliente`). Motor+hash **48/48**. get_diagnostics limpo. **COMMIT PENDENTE.**
+  - Regra de plano (paridade PDF): materializa `PlanoOrdemProducao` só com 2+ planos OU retiração (frente/verso = 2 FACES, VERSO.faceDeId→FRENTE); plano único sem retiração = legado (não cria).
 - [ ] **T6** — agente (reader) envia os dados crus novos (SEQUENCIAL/SELECT); funções puras testadas.
 - [ ] **T7** — validar contra backup (golden 3000, multi-plano 3154, retiração, entregas múltiplas); remover scripts.
 - [ ] **T8** — front: "COSTA" → "VERSO" nos labels (valor técnico FACE mantido).

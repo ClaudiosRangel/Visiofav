@@ -37,11 +37,11 @@ import {
   OpOrigemDTO,
   OpDestinoResumo,
   ResultadoIngestao,
-  VariacaoOpOrigemDTO,
+  PlanoOpOrigemDTO,
   calcularHashOp,
   classificarIngestao,
 } from './ingestao-op-calcgraf.pure'
-import { resolverOuCriarCentro } from './op-montagem.service'
+import { resolverOuCriarCentro, resolverCliente, montarEntregas } from './op-montagem.service'
 
 /** Origem de importação gravada nas OPs criadas por este agente. */
 const ORIGEM_CALCGRAF = 'AGENTE_CALCGRAF'
@@ -91,10 +91,13 @@ export interface ResultadoIngestaoOp {
  * a fonte do dado real exibido na tela. Também inclui tags de contexto úteis
  * (tiragem, data de emissão) quando disponíveis.
  */
-function montarObservacoes(dto: OpOrigemDTO): string | undefined {
+function montarObservacoes(dto: OpOrigemDTO, tagCliente?: string | null): string | undefined {
   const linhas: string[] = []
-  if (dto.clienteNome && dto.clienteNome.trim()) {
-    linhas.push(`[Cliente] ${dto.clienteNome.trim()}`)
+  // Tag [Cliente]: usa o nome resolvido pelo motor (tagCliente) quando passado;
+  // senão o clienteNome do DTO. É só EXIBIÇÃO — o vínculo real é clienteId.
+  const nomeCliente = (tagCliente ?? dto.clienteNome ?? '').trim()
+  if (nomeCliente) {
+    linhas.push(`[Cliente] ${nomeCliente}`)
   }
   // Produto: prioriza o nome; cai para a descrição da OP como texto do produto.
   const produto = (dto.produtoNome && dto.produtoNome.trim()) || (dto.descricao && dto.descricao.trim())
@@ -108,6 +111,12 @@ function montarObservacoes(dto: OpOrigemDTO): string | undefined {
   // não viram ItemOrdemProducao. Mesmo padrão de tags do importador de PDF.
   if (dto.tintasTexto && dto.tintasTexto.trim()) {
     linhas.push(`[Cores] ${dto.tintasTexto.trim()}`)
+  }
+  // Paridade PDF (T5): tags adicionais de cabeçalho.
+  if (dto.matriz && dto.matriz.trim()) linhas.push(`[Matriz] ${dto.matriz.trim()}`)
+  if (dto.formato && dto.formato.trim()) linhas.push(`[Formato] ${dto.formato.trim()}`)
+  for (const b of dto.bobinasTexto ?? []) {
+    if (b && b.trim()) linhas.push(`[Bobina] ${b.trim()}`)
   }
   return linhas.length > 0 ? linhas.join('\n') : undefined
 }
@@ -227,39 +236,85 @@ async function criarEtapas(
 }
 
 /**
- * Monta o texto de observação de uma variação/plano (gramatura/dimensão/
- * aproveitamento), guardado em `VariacaoOrdemProducao.observacao`.
+ * Cria `PlanoOrdemProducao` a partir dos planos do DTO (paridade PDF — T5).
+ * Substitui o antigo `VariacaoOrdemProducao`, unificando com o importador de
+ * PDF. Regra:
+ *  - cria planos quando há 2+ planos OU 1 plano com retiração (frente/verso);
+ *  - retiração → 2 FACES (FRENTE/VERSO), VERSO.faceDeId → FRENTE;
+ *  - nomenclatura exibida "VERSO" (valor técnico tipo='FACE');
+ *  - OP de plano único (sem retiração) → não cria plano (legado).
+ * Fallback de transição: se o DTO só traz `variacoes` (agente antigo), elas
+ * são convertidas em planos COMPONENTE simples (não perder dado).
+ * Retorna `true` se criou algo (para o chamador saber se tocou o bloco).
  */
-function montarObsVariacao(v: VariacaoOpOrigemDTO): string | undefined {
-  const partes: string[] = []
-  if (v.suporte && v.suporte.trim()) partes.push(`Papel: ${v.suporte.trim()}`)
-  if (v.gramatura != null && Number.isFinite(v.gramatura)) partes.push(`${v.gramatura}g`)
-  if (v.dimensao && v.dimensao.trim()) partes.push(v.dimensao.trim())
-  if (v.aproveitamento != null && Number.isFinite(v.aproveitamento)) partes.push(`aprov=${v.aproveitamento}`)
-  return partes.length > 0 ? partes.join(' | ') : undefined
+async function criarPlanos(tx: PrismaTx, ordemProducaoId: string, empresaId: string, dto: OpOrigemDTO): Promise<boolean> {
+  // Normaliza a fonte: `planos` (novo) tem prioridade; senão converte `variacoes`.
+  const planos: PlanoOpOrigemDTO[] = (dto.planos && dto.planos.length > 0)
+    ? dto.planos
+    : (dto.variacoes ?? []).map((v, i) => ({
+        // Fallback de transição (agente antigo só envia `variacoes`): preserva
+        // o máximo de dado do plano — suporte→material, dimensao→formato.
+        nome: (v.nome && v.nome.trim()) || `Plano ${i + 1}`,
+        tipo: 'COMPONENTE',
+        tiragem: v.quantidade,
+        gramatura: v.gramatura,
+        material: v.suporte,
+        formato: v.dimensao,
+        aproveitamento: v.aproveitamento,
+        sequencia: v.sequencia ?? i + 1,
+      }))
+
+  const temRetiracao = planos.some((p) => p.retiracao)
+  const deveCriar = planos.length >= 2 || temRetiracao
+  if (!deveCriar) return false
+
+  let seq = 1
+  for (const p of planos) {
+    const base = {
+      ordemProducaoId,
+      empresaId,
+      formato: p.formato ?? undefined,
+      tiragem: p.tiragem != null && Number.isFinite(p.tiragem) ? p.tiragem : undefined,
+      montagem: p.montagem ?? undefined,
+      material: p.material ?? undefined,
+      gramatura: p.gramatura != null && Number.isFinite(p.gramatura) ? p.gramatura : undefined,
+      aproveitamento: p.aproveitamento ?? undefined,
+      matriz: p.matriz ?? undefined,
+    }
+    if (p.retiracao) {
+      const frente = await tx.planoOrdemProducao.create({
+        data: { ...base, nome: `${p.nome} (FRENTE)`, tipo: 'FACE', cores: p.coresFrente ?? p.cores ?? undefined, sequencia: seq++ } as any,
+      })
+      await tx.planoOrdemProducao.create({
+        data: { ...base, nome: `${p.nome} (VERSO)`, tipo: 'FACE', cores: p.coresVerso ?? undefined, faceDeId: frente.id, sequencia: seq++ } as any,
+      })
+    } else {
+      await tx.planoOrdemProducao.create({
+        data: { ...base, nome: p.nome.substring(0, 60), tipo: (p.tipo === 'FACE' ? 'FACE' : 'COMPONENTE'), cores: p.cores ?? undefined, sequencia: p.sequencia ?? seq++ } as any,
+      })
+    }
+  }
+  return true
 }
 
 /**
- * Cria as `VariacaoOrdemProducao` a partir dos planos do DTO (Fase 2 —
- * CalculoPlanos). Plano único/sem planos → nada a criar (aba Variações vazia,
- * comportamento esperado). Escopo pela `ordemProducaoId` da OP real.
+ * Cria `ProgramacaoEntrega` para cada data da programação (paridade PDF — T5).
+ * Retorna a 1ª data (menor) para usar como `dataEntregaPrevista` (ou null →
+ * fallback do chamador). Reusa `montarEntregas` (motor, puro).
  */
-async function criarVariacoes(tx: PrismaTx, ordemProducaoId: string, dto: OpOrigemDTO) {
-  const variacoes = dto.variacoes ?? []
-  let seq = 1
-  for (const v of variacoes) {
-    await tx.variacaoOrdemProducao.create({
+async function criarProgramacaoEntrega(tx: PrismaTx, ordemProducaoId: string, dto: OpOrigemDTO): Promise<Date | null> {
+  const { entregas, dataPrevista } = montarEntregas(dto.programacaoEntrega)
+  for (const e of entregas) {
+    await tx.programacaoEntrega.create({
       data: {
         ordemProducaoId,
-        codigoProduto: ((v.codigoPlano && v.codigoPlano.trim()) || `P${seq}`).substring(0, 60),
-        descricao: ((v.nome && v.nome.trim()) || `Plano ${seq}`).substring(0, 200),
-        quantidade: v.quantidade != null && Number.isFinite(v.quantidade) ? v.quantidade : 0,
-        observacao: montarObsVariacao(v),
-        sequencia: v.sequencia != null && Number.isFinite(v.sequencia) ? v.sequencia : seq,
+        dataEntrega: e.dataEntrega,
+        quantidade: e.quantidade,
+        status: 'PENDENTE',
       },
     })
-    seq++
   }
+  return dataPrevista
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +427,16 @@ async function criarOp(tx: PrismaTx, empresaId: string, dto: OpOrigemDTO, hashRe
   })
   const proximoNumero = (ultimaOp?.numero ?? 0) + 1
 
-  const dataEntrega = parseData(dto.dataEntrega)
+  // Cliente resolvido pelo motor (CNPJ → de-para → tag). Determinístico.
+  const cli = await resolverCliente(tx, empresaId, {
+    clienteDoc: dto.clienteDoc,
+    clienteCodigo: dto.clienteCodigo,
+    clienteNome: dto.clienteNome,
+  })
+
+  // Data de entrega: 1ª da programação (se veio) → senão a data do lote.
+  const dataLote = parseData(dto.dataEntrega)
+  const dataEntrega = montarEntregas(dto.programacaoEntrega).dataPrevista ?? dataLote
 
   const op = await tx.ordemProducao.create({
     data: {
@@ -383,9 +447,10 @@ async function criarOp(tx: PrismaTx, empresaId: string, dto: OpOrigemDTO, hashRe
       status: STATUS_INICIAL,
       prioridade: 'NORMAL',
       dataEmissao: parseData(dto.dataEmissao) ?? new Date(),
-      dataEntregaPrevista: dataEntrega,
-      dataEntregaOriginal: dataEntrega,
-      observacoes: montarObservacoes(dto),
+      dataEntregaPrevista: dataEntrega ?? undefined,
+      dataEntregaOriginal: dataEntrega ?? undefined,
+      observacoes: montarObservacoes(dto, cli.tagCliente),
+      clienteId: cli.clienteId ?? undefined,
       referenciaExterna: String(dto.numero),
       origemImportacao: ORIGEM_CALCGRAF,
       hashImportacaoOrigem: hashRecebido,
@@ -394,7 +459,8 @@ async function criarOp(tx: PrismaTx, empresaId: string, dto: OpOrigemDTO, hashRe
 
   await criarItens(tx, op.id, empresaId, dto)
   await criarEtapas(tx, op.id, empresaId, dto)
-  await criarVariacoes(tx, op.id, dto)
+  await criarPlanos(tx, op.id, empresaId, dto)
+  await criarProgramacaoEntrega(tx, op.id, dto)
 
   await tx.logOrdemProducao.create({
     data: {
@@ -423,6 +489,13 @@ async function atualizarOp(
 ) {
   const dataEntrega = parseData(dto.dataEntrega)
 
+  // Resolve o cliente pelo motor (CNPJ → de-para → tag). Determinístico.
+  const cli = await resolverCliente(tx, empresaId, {
+    clienteDoc: dto.clienteDoc,
+    clienteCodigo: dto.clienteCodigo,
+    clienteNome: dto.clienteNome,
+  })
+
   // Preserva vínculos manuais de produto já feitos por descrição (de-para),
   // no mesmo espírito da reextração de PDF.
   const itensExistentes = await tx.itemOrdemProducao.findMany({
@@ -440,8 +513,13 @@ async function atualizarOp(
     where: { id: ordemProducaoId },
     data: {
       quantidade: resolverQuantidade(dto),
-      dataEntregaPrevista: dataEntrega ?? undefined,
-      observacoes: montarObservacoes(dto),
+      // Data: 1ª da programação (se veio) → senão a data do lote → senão
+      // preserva a existente (não zera). Resolve "entrega em branco".
+      dataEntregaPrevista: montarEntregas(dto.programacaoEntrega).dataPrevista ?? dataEntrega ?? undefined,
+      observacoes: montarObservacoes(dto, cli.tagCliente),
+      // Vínculo de cliente resolvido pelo motor (CNPJ/de-para). Só sobrescreve
+      // quando resolveu um clienteId (senão preserva o vínculo atual).
+      clienteId: cli.clienteId ?? undefined,
       hashImportacaoOrigem: hashRecebido,
       // Unifica a fonte: uma OP que antes veio do PDF (PDF_GPRINT) e agora é
       // mantida pelo agente passa a origem AGENTE_CALCGRAF (decisão Opção 1).
@@ -451,32 +529,38 @@ async function atualizarOp(
   })
 
   // ─────────────────────────────────────────────────────────────────────────
-  // CINTO DE SEGURANÇA (incidente 15/10/2026): NÃO destruir o roteiro quando o
-  // payload chega SEM etapas. Um agente ANTIGO (fase 1, sem roteiro) ou um PDF
-  // sem etapas parseadas enviava `etapas = []`, e a substituição total apagava
-  // as etapas/variações que a OP já tinha (vindas de PDF/reparo), zerando a OP
-  // e tirando-a da programação. Regra: só substituímos etapas/variações/itens
-  // quando o payload REALMENTE traz etapas. Sem etapas no payload, preservamos
-  // o roteiro e os materiais já existentes (atualiza só o cabeçalho acima).
+  // CINTO DE SEGURANÇA (incidente 15/10/2026, reforçado T5): NÃO destruir o
+  // roteiro quando o payload chega SEM etapas. Regra: só substituímos
+  // etapas/itens/planos quando o payload REALMENTE traz etapas. Sem etapas,
+  // preservamos tudo (atualiza só o cabeçalho acima). Programação de entrega
+  // só é substituída quando o payload traz programação (S1).
   const payloadTemEtapas = (dto.etapas ?? []).length > 0
   if (!payloadTemEtapas) {
+    // Mesmo sem etapas, se o payload trouxe programação de entrega, atualiza-a
+    // (não é "roteiro"; é cabeçalho de entrega — e resolve o entrega em branco).
+    if ((dto.programacaoEntrega ?? []).length > 0) {
+      await tx.programacaoEntrega.deleteMany({ where: { ordemProducaoId } })
+      await criarProgramacaoEntrega(tx, ordemProducaoId, dto)
+    }
     await tx.logOrdemProducao.create({
       data: {
         ordemProducaoId,
         statusAnterior: statusAtual,
         statusNovo: statusAtual,
         usuarioId: USUARIO_AGENTE,
-        observacao: `OP atualizada via agente Calcgraf (cabeçalho) — roteiro/materiais PRESERVADOS porque o payload veio sem etapas. Referência externa: ${dto.numero}`,
+        observacao: `OP atualizada via agente Calcgraf (cabeçalho${(dto.programacaoEntrega ?? []).length > 0 ? ' + entregas' : ''}) — roteiro/materiais PRESERVADOS porque o payload veio sem etapas. Referência externa: ${dto.numero}`,
       },
     })
     return
   }
 
-  // Substituição total de itens/etapas/variações a partir do novo conteúdo (a
-  // OP não tem produção; essa é a condição que permite a sobrescrita automática).
+  // Substituição total de itens/etapas/planos/entregas a partir do novo conteúdo
+  // (a OP não tem produção; essa é a condição que permite a sobrescrita).
   await tx.itemOrdemProducao.deleteMany({ where: { ordemProducaoId } })
   await tx.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId } })
   await tx.variacaoOrdemProducao.deleteMany({ where: { ordemProducaoId } })
+  await tx.planoOrdemProducao.deleteMany({ where: { ordemProducaoId } })
+  await tx.programacaoEntrega.deleteMany({ where: { ordemProducaoId } })
 
   // Recria itens preservando vínculo de produto por descrição quando possível.
   const itens = dto.itens ?? []
@@ -499,7 +583,8 @@ async function atualizarOp(
   }
 
   await criarEtapas(tx, ordemProducaoId, empresaId, dto)
-  await criarVariacoes(tx, ordemProducaoId, dto)
+  await criarPlanos(tx, ordemProducaoId, empresaId, dto)
+  await criarProgramacaoEntrega(tx, ordemProducaoId, dto)
 
   await tx.logOrdemProducao.create({
     data: {

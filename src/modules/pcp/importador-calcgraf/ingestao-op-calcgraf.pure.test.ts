@@ -330,6 +330,56 @@ describe('calcularHashOp — Fase 2 (roteiro: tempos, variações, tintas)', () 
 })
 
 // ---------------------------------------------------------------------------
+// Paridade PDF (T4) — hash cobre cliente(doc), entregas, planos, centroCodigo
+// ---------------------------------------------------------------------------
+
+describe('calcularHashOp — Paridade PDF (T4): novos campos', () => {
+  const base: OpOrigemDTO = { numero: 3176, descricao: 'Cartucho Aluminio' }
+
+  it('mudar clienteDoc (CNPJ) muda o hash', () => {
+    const a: OpOrigemDTO = { ...base, clienteDoc: '07358761000169' }
+    const b: OpOrigemDTO = { ...base, clienteDoc: '10709542000191' }
+    expect(calcularHashOp(a)).not.toBe(calcularHashOp(b))
+  })
+
+  it('adicionar programação de entrega muda o hash', () => {
+    const a: OpOrigemDTO = { ...base }
+    const b: OpOrigemDTO = { ...base, programacaoEntrega: [{ data: '2026-11-13', quantidade: 4000 }] }
+    expect(calcularHashOp(a)).not.toBe(calcularHashOp(b))
+  })
+
+  it('programação de entrega é ordem-insensível (mesmo hash)', () => {
+    const a: OpOrigemDTO = { ...base, programacaoEntrega: [{ data: '2026-11-13', quantidade: 4000 }, { data: '2026-10-20', quantidade: 2000 }] }
+    const b: OpOrigemDTO = { ...base, programacaoEntrega: [{ data: '2026-10-20', quantidade: 2000 }, { data: '2026-11-13', quantidade: 4000 }] }
+    expect(calcularHashOp(a)).toBe(calcularHashOp(b))
+  })
+
+  it('adicionar plano (frente/verso) muda o hash', () => {
+    const a: OpOrigemDTO = { ...base }
+    const b: OpOrigemDTO = { ...base, planos: [{ nome: 'CAIXA', tipo: 'FACE', retiracao: true }] }
+    expect(calcularHashOp(a)).not.toBe(calcularHashOp(b))
+  })
+
+  it('planos é ordem-insensível (mesmo hash)', () => {
+    const a: OpOrigemDTO = { ...base, planos: [{ nome: 'TAMPA' }, { nome: 'CAIXA' }] }
+    const b: OpOrigemDTO = { ...base, planos: [{ nome: 'CAIXA' }, { nome: 'TAMPA' }] }
+    expect(calcularHashOp(a)).toBe(calcularHashOp(b))
+  })
+
+  it('mudar centroCodigo de uma etapa muda o hash', () => {
+    const a: OpOrigemDTO = { ...base, etapas: [{ sequencia: 1, centro: 'KBA', centroCodigo: '19' }] }
+    const b: OpOrigemDTO = { ...base, etapas: [{ sequencia: 1, centro: 'KBA', centroCodigo: '4' }] }
+    expect(calcularHashOp(a)).not.toBe(calcularHashOp(b))
+  })
+
+  it('matriz/formato/bobina mudam o hash', () => {
+    expect(calcularHashOp({ ...base, matriz: '2468B' })).not.toBe(calcularHashOp(base))
+    expect(calcularHashOp({ ...base, formato: '780 x 480' })).not.toBe(calcularHashOp(base))
+    expect(calcularHashOp({ ...base, bobinasTexto: ['Bobina X'] })).not.toBe(calcularHashOp(base))
+  })
+})
+
+// ---------------------------------------------------------------------------
 // classificarIngestao — tabela-verdade (determinística)
 // ---------------------------------------------------------------------------
 
