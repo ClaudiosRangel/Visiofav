@@ -28,14 +28,15 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
     duplicam, tag aditiva vira "Chave: valor", vazio→[]).
   - _Requisitos: 2.1, 2.2, 2.3, 3.1, 6.1_
 
-- [ ] 2. Decisão do "Visualizar" no front (`VisioFab.Wms.Front`)
-  - [ ] 2.1 Na tela de detalhe (`pcp/ordens-producao/[id]/page.tsx`): o botão
-    olho abre `op-pdf/:id?token=` quando a OP tem PDF; senão
-    `/ordens-producao/:id/pdf-gerado?token=`. Usar o `pdf-status` já existente.
-  - [ ] 2.2 Na lista (`pcp/ordens-producao/page.tsx`): mesma decisão (hoje só
-    abre quando há PDF — passar a abrir o gerado quando não há).
-  - [ ] 2.3 Melhorar a exibição inline das observações por tag na tela de
-    detalhe. `get_diagnostics` limpo nos arquivos tocados.
+- [x] 2. Decisão do "Visualizar" no front (`VisioFab.Wms.Front`)
+  - [x] 2.1 Tela de detalhe (`[id]/page.tsx`): consulta `pdf-status` no load →
+    `temPdf`. "Ver PDF Original" aparece quando `temPdf` (qualquer origem, não só
+    PDF_GPRINT); "Imprimir OP" (relatório Vizor) continua sempre disponível.
+  - [x] 2.2 Lista (`ordens-producao/page.tsx`): o ícone PDF abre o PDF original
+    quando existe; quando NÃO existe, abre o **relatório gerado pelo Vizor**
+    (`/pdf-gerado`) em vez de só o upload. Upload fica no ícone próprio.
+  - [x] 2.3 get_diagnostics limpo nos dois arquivos. (Exibição inline por tag
+    fica melhor coberta pelo relatório gerado — Bloco 1.)
   - _Requisitos: 1.1, 1.2, 1.3, 2.1, 2.4_
 
 - [ ] 3. Observações confiáveis — backend ingestão + reader
