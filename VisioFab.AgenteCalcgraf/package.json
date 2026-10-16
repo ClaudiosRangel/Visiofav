@@ -1,6 +1,6 @@
 {
   "name": "visiofab-agente-calcgraf",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Agente desktop (Electron + TypeScript) que lê o SQL Server do Calcgraf (somente leitura), detecta OPs novas/alteradas e as envia para a API do Vizor.",
   "author": "VisioFab",
