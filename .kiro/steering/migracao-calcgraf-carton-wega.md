@@ -11,23 +11,59 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
-## 🆕 IMPORTADOR DE OP (agente desktop) — spec em andamento (14/10/2026)
+## ✅ IMPORTADOR DE OP (agente desktop) — FUNCIONANDO EM PRODUÇÃO (16/10/2026)
 
-Spec `.kiro/specs/importador-op-calcgraf/` (requirements + design PRONTOS;
-requirements-first). Objetivo: **eliminar a importação de PDF de OP** — um
-agente desktop (Electron+TS) instalado no TS do Calcgraf lê o SQL Server LOCAL
-(somente leitura, driver `msnodesqlv8` ou ponte `sqlcmd`), detecta OPs NOVAS e
-ALTERADAS (por **hash de conteúdo** — `OpHeader` NÃO tem coluna de última
-alteração) e envia por HTTPS para `POST /api/pcp/ingest-op-calcgraf` (autenticado
-por `AgenteApiKey` por empresa). O Vizor cria/atualiza `OrdemProducao` casando
-por `referenciaExterna == OpHeader.Numero` + `origemImportacao: 'AGENTE_CALCGRAF'`
-(reusa o caminho do importador de PDF). Se a OP já tem produção, NÃO sobrescreve:
-vira `AlteracaoOpPendente` para revisão. MVP = **só a OP** (cálculos gráficos =
-fase futura). Tabelas de OP do Calcgraf exploradas e documentadas no mapeamento
-(OpHeader/OpItem/OpItemEstrutura/OpLote — 15 tabelas `Op*`). PENDÊNCIAS p/ o
-DevOps (Pedro) antes de implementar: internet liberada no TS p/ api.vizorerp;
-credencial de leitura (Windows auth vs usuário SQL db_datareader); versão do
-Calcgraf em produção (schema dev tem que bater) + backup recente. Schema novo
+Spec `.kiro/specs/importador-op-calcgraf/` (16/16 tasks concluídas). Objetivo
+ALCANÇADO: **eliminar a importação de PDF de OP**. O agente desktop (Electron+TS)
+está INSTALADO no servidor da PHTech (via RDP/AnyDesk, usuário `claudio.rangel`/
+Administrator) e **sincronizou OPs reais** da Carton Wega no Vizor de produção.
+Guia completo: #[[file:docs/agente-calcgraf-instalacao.md]].
+
+### Como funciona (resumo)
+Agente lê o SQL do Calcgraf (SOMENTE SELECT), detecta OPs novas/alteradas por
+**hash de conteúdo** (`OpHeader` não tem coluna de alteração) e envia por HTTPS
+para `POST /api/pcp/ingest-op-calcgraf` (auth por `AgenteApiKey` por empresa, via
+header `x-agente-key`). O Vizor casa a OP por `referenciaExterna == OpHeader.Numero`
+(QUALQUER origem — reconhece OPs já vindas de PDF, nunca duplica): sem produção →
+**atualiza** (e unifica origem p/ `AGENTE_CALCGRAF`); com produção → vira
+`AlteracaoOpPendente` (revisão manual em PCP → Importador Calcgraf → Pendentes).
+
+### Descobertas CRÍTICAS da instalação (não reinvestigar)
+- **SQL do Calcgraf**: instância `SQL2019Express` na porta TCP **5520** (não 1433),
+  banco **`CartonWega`** (com W). Login do próprio Calcgraf: `sa` / `C@1cgraf`
+  (lido do `C:\CALCGRAF\GPRINT\UDL\CartonVega.udl`). Connection string do agente:
+  `server=127.0.0.1\SQL2019Express,5520;Database=CartonWega;UID=sa;PWD=C@1cgraf;TrustServerCertificate=yes;`
+- **LOGON TRIGGER `[connection]`** (`ON ALL SERVER FOR LOGON`): bloqueia (ROLLBACK)
+  conexões ao `CartonWega` cujo `program_name` (Application Name) NÃO esteja numa
+  **allowlist** da PHTech (`Gprint`,`Compras`,`Faturamento`,`Producao`,
+  `ExportadorMovimentos`,`.NET SqlClient Data Provider`,… + `%WEBGRAF%`/
+  `%GPRINT_ESPECIFICOS%`). Por isso o agente declara Application Name
+  **`ExportadorMovimentos`** (já autorizado) — `APPLICATION_NAME_PADRAO` no reader.
+- **Driver = `tedious`** (puro JS, TCP), NÃO `msnodesqlv8` (nativo falhava no
+  empacotamento e no servidor sem ODBC). O `tedious` conecta por TCP:5520 e
+  declara `appName` nativamente. `msnodesqlv8` foi REMOVIDO.
+- **Empacotamento**: `electron-builder` com **`asar: false`** (o asar travava o
+  build com os muitos arquivos do tedious) + saída em `release/` (não `dist/`).
+  Gera `release/VisioFab Agente Calcgraf Setup 0.1.0.exe` (~166 MB).
+- **Queries SEQUENCIAIS** (não `Promise.all`): o tedious só aceita 1 request por
+  conexão. E **lock global** no `main.ts` serializa sync manual + automática
+  (sem ele, 3 OPs duplicaram por corrida na 1ª execução — já limpas).
+
+### Estado em produção (Carton Wega, empresa 75848e24-...)
+1ª sincronização real OK: 67 OPs `AGENTE_CALCGRAF` (faixa 3103–3174, respeitando
+o corte), 15 `AlteracaoOpPendente` (OPs com produção, p/ revisão), 0 duplicatas
+após limpeza. **Corte** `pcp.calcgrafNumeroMinimoOp = 3100` (Parametro da empresa;
+OPs < 3100 são ignoradas — ajustável sem redeploy/reinstalar).
+
+### API key da Carton Wega (gerada, embutida no agente)
+Empresa `75848e24-742e-461d-b913-1642c5b83ae9`, key "Agente TS PHTech (Calcgraf)".
+O token em claro ficou embutido no `index.html` do agente (pedido do usuário p/
+instalação). Se o repo/.exe circular, revogar e gerar outra em PCP → Importador
+Calcgraf → API keys.
+
+<!-- Histórico original da spec (requirements-first, 14/10/2026) abaixo. -->
+Tabelas de OP exploradas no mapeamento (OpHeader/OpItem/OpItemEstrutura/OpLote).
+Schema novo
 (AgenteApiKey, AlteracaoOpPendente, OrdemProducao.hashImportacaoOrigem) segue
 steering database-migrations (schema.prisma + migrate-prod.ts no mesmo commit).
 
