@@ -22,8 +22,8 @@ programação (cintos S1–S4). "Costa" exibida como "Verso".
   `EtapaOpOrigemDTO.centroCodigo`. Testes: service 12/12, pure 29/29. **COMMIT PENDENTE.**
   - ADIADO (cautela): plugar o motor no PDF (`importacao-op.routes.ts`) — fica
     para janela de teste dedicada; PDF segue estável e intocado.
-- [ ] **T2** — `resolverCliente` no motor (CNPJ dígitos → de-para CLIENTE → tag; nunca cria/ACTUAL) + testes puros.
-- [ ] **T3** — `montarEntregas` (todas as datas → ProgramacaoEntrega + 1ª data) no motor + testes.
+- [x] **T2** — `resolverCliente` no motor (CNPJ dígitos → de-para CLIENTE → tag; nunca cria/ACTUAL) + `soDigitos`. Testes `op-montagem.service.test.ts` (8). **COMMIT PENDENTE junto T3.**
+- [x] **T3** — `montarEntregas` (todas as datas válidas, ordenadas → 1ª = prevista; vazio→null fallback do chamador) no motor + testes (4). Total motor: 12/12.
 - [ ] **T4** — DTO aditivo (clienteCodigo/clienteDoc/produtoCodigo/programacaoEntrega[]/planos[]/matriz/formato/bobinasTexto) + hash cobre novos + testes.
 - [ ] **T5** — ingestão do agente usa resolverCliente/montarEntregas/criarPlanos + cintos S1–S4 reforçados; descontinuar VariacaoOrdemProducao em favor de PlanoOrdemProducao; testes.
 - [ ] **T6** — agente (reader) envia os dados crus novos (SEQUENCIAL/SELECT); funções puras testadas.

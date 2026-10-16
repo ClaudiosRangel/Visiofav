@@ -187,3 +187,137 @@ export async function resolverOuCriarCentro(
   })
   return { centroId: novo.id, origem: 'CRIADO', criouNovo: true }
 }
+
+// ===========================================================================
+// Resolução de CLIENTE (determinística — nunca cria, nunca usa "ACTUAL")
+// ===========================================================================
+
+type PrismaClienteLike = Prisma.TransactionClient | {
+  cliente: any
+  deParaImportacao: any
+}
+
+/** Só dígitos de um CNPJ/CPF (chave de match com o cadastro). */
+export function soDigitos(doc: string | null | undefined): string {
+  return (doc ?? '').replace(/\D/g, '')
+}
+
+export interface ResultadoCliente {
+  /** Id do cliente do cadastro, ou null (sem match confiável). */
+  clienteId: string | null
+  /** Nome a gravar na tag `[Cliente]` das observações (sempre o nome de origem). */
+  tagCliente: string | null
+  /** Como foi resolvido (auditoria). */
+  origem: 'CNPJ' | 'DE_PARA' | 'SEM_MATCH'
+}
+
+/**
+ * Resolve o cliente de uma OP de forma DETERMINÍSTICA, priorizando o cadastro
+ * real e NUNCA adivinhando:
+ *
+ *   1) por CNPJ (só dígitos) no cadastro `Cliente` — chave mais confiável;
+ *      múltiplas filiais com CNPJs distintos ⇒ o CNPJ exato já desempata.
+ *   2) por `DeParaImportacao` (CLIENTE, codigoExterno = `clienteCodigo`).
+ *   3) SEM MATCH → `clienteId = null` + tag `[Cliente] <nome>` (texto confiável).
+ *
+ * NUNCA cria cliente. NUNCA vincula a placeholder "ACTUAL". A tag preserva o
+ * nome de origem para exibição mesmo quando não há vínculo formal.
+ *
+ * Isolamento por `empresaId`.
+ */
+export async function resolverCliente(
+  tx: PrismaClienteLike,
+  empresaId: string,
+  params: { clienteDoc?: string | null; clienteCodigo?: string | null; clienteNome?: string | null },
+): Promise<ResultadoCliente> {
+  const nome = (params.clienteNome ?? '').trim() || null
+  const docDigitos = soDigitos(params.clienteDoc)
+  const codigo = (params.clienteCodigo ?? '').trim()
+
+  // 1) Por CNPJ (dígitos). CNPJ de placeholder (ex.: "00000000000") é ignorado.
+  if (docDigitos && !/^0+$/.test(docDigitos)) {
+    const clientes = await tx.cliente.findMany({
+      where: { empresaId, cpfCnpj: { not: null } },
+      select: { id: true, cpfCnpj: true },
+    })
+    const alvo = (clientes as Array<{ id: string; cpfCnpj: string | null }>)
+      .find((c) => soDigitos(c.cpfCnpj) === docDigitos)
+    if (alvo) return { clienteId: alvo.id, tagCliente: nome, origem: 'CNPJ' }
+  }
+
+  // 2) Por de-para de código do Calcgraf → cliente.
+  if (codigo) {
+    const dePara = await tx.deParaImportacao.findFirst({
+      where: {
+        empresaId,
+        sistemaOrigem: 'GPRINT',
+        tipoEntidade: 'CLIENTE',
+        codigoExterno: codigo,
+      },
+      select: { entidadeInternaId: true },
+    })
+    if (dePara?.entidadeInternaId) {
+      const cliente = await tx.cliente.findFirst({
+        where: { id: dePara.entidadeInternaId, empresaId },
+        select: { id: true },
+      })
+      if (cliente) return { clienteId: cliente.id, tagCliente: nome, origem: 'DE_PARA' }
+    }
+  }
+
+  // 3) Sem match: só a tag com o nome de origem (nunca cria, nunca ACTUAL).
+  return { clienteId: null, tagCliente: nome, origem: 'SEM_MATCH' }
+}
+
+// ===========================================================================
+// Programação de entrega (todas as datas) — resolve o "entrega em branco"
+// ===========================================================================
+
+/** Uma entrega parcial de origem (data ISO + quantidade). */
+export interface EntradaEntrega {
+  data?: string | null
+  quantidade?: number | null
+}
+
+/** Entrega normalizada para gravar em `ProgramacaoEntrega`. */
+export interface EntregaMontada {
+  dataEntrega: Date
+  quantidade: number
+}
+
+export interface ResultadoEntregas {
+  /** Entregas válidas (data parseável), ordenadas por data crescente. */
+  entregas: EntregaMontada[]
+  /** 1ª data (menor) para `dataEntregaPrevista`; null se nenhuma válida. */
+  dataPrevista: Date | null
+}
+
+/** Converte uma data ISO/`YYYY-MM-DD` para Date, ou null se inválida. */
+function parseDataIso(valor?: string | null): Date | null {
+  if (!valor) return null
+  const d = new Date(valor)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * Monta as entregas a partir de TODAS as datas de programação de entrega do
+ * Calcgraf (não só a 1ª). Função PURA (sem Prisma): o chamador grava as
+ * `ProgramacaoEntrega` e usa `dataPrevista` como `dataEntregaPrevista`.
+ *
+ * - Ignora entradas com data inválida (sem inventar data).
+ * - Ordena por data crescente; `dataPrevista` = menor data.
+ * - Lista vazia/sem datas válidas → `dataPrevista = null` (o chamador decide o
+ *   fallback: data do lote principal). Resolve o "entrega em branco" quando a
+ *   OP tem programação mas o lote não traz data.
+ */
+export function montarEntregas(programacao?: EntradaEntrega[] | null): ResultadoEntregas {
+  const entregas: EntregaMontada[] = []
+  for (const p of programacao ?? []) {
+    const data = parseDataIso(p?.data)
+    if (!data) continue
+    const q = typeof p?.quantidade === 'number' && Number.isFinite(p.quantidade) ? p.quantidade : 0
+    entregas.push({ dataEntrega: data, quantidade: q })
+  }
+  entregas.sort((a, b) => a.dataEntrega.getTime() - b.dataEntrega.getTime())
+  return { entregas, dataPrevista: entregas.length > 0 ? entregas[0].dataEntrega : null }
+}
