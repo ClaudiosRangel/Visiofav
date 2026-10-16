@@ -40,6 +40,7 @@ import {
   montarEtapaDTO,
   montarVariacaoDTO,
   montarTextoTintas,
+  montarProgramacaoDeLotes,
   type AtividadeRow,
   type PlanoRow,
   type TintaRow,
@@ -89,6 +90,42 @@ export interface EtapaOpOrigemDTO {
   setupMinutos?: number
   /** Tempo de operação/produção em minutos. */
   operacaoMinutos?: number
+  /**
+   * Código do centro de produção no Calcgraf (CentrosProducao.Codigo) — para o
+   * de-para no backend resolver o centro REAL antes de reusar por nome/criar.
+   * Aditivo/opcional (paridade PDF — T6). Espelho do backend.
+   */
+  centroCodigo?: string
+}
+
+/** Entrega parcial programada de uma OP de origem — paridade PDF (T6). Espelho do backend. */
+export interface EntregaOpOrigemDTO {
+  /** Data da entrega (ISO string). */
+  data?: string
+  /** Quantidade dessa entrega parcial. */
+  quantidade?: number
+}
+
+/** Plano/componente de uma OP de origem — paridade PDF (T6). Espelho do backend. */
+export interface PlanoOpOrigemDTO {
+  /** Nome do plano/componente (ex.: "TAMPA", "CAIXA", "Impressos"). */
+  nome: string
+  /** 'COMPONENTE' (padrão) | 'FACE' (frente/verso de retiração). */
+  tipo?: string
+  formato?: string
+  cores?: string
+  tiragem?: number
+  montagem?: string
+  material?: string
+  gramatura?: number
+  aproveitamento?: number
+  matriz?: string
+  /** `true` → gera 2 FACES (FRENTE/VERSO) no backend. */
+  retiracao?: boolean
+  coresFrente?: string
+  coresVerso?: string
+  /** Ordem/sequência do plano. */
+  sequencia?: number
 }
 
 /** Variação/plano (componente) de uma OP de origem — Fase 2 (CalculoPlanos). Espelho do backend. */
@@ -154,6 +191,21 @@ export interface OpOrigemDTO {
   variacoes?: VariacaoOpOrigemDTO[]
   /** Tintas/cores resumidas como texto (tag [Cores]). */
   tintasTexto?: string
+  // ── Paridade PDF (T6) — aditivos/opcionais; ausência = backend preserva ──
+  /** Código do cliente no Calcgraf (para de-para CLIENTE no backend). */
+  clienteCodigo?: string
+  /** CNPJ/CPF do cliente (chave de vínculo com o cadastro — match por dígitos). */
+  clienteDoc?: string
+  /** Programação de entrega: TODAS as datas parciais (não só a 1ª). */
+  programacaoEntrega?: EntregaOpOrigemDTO[]
+  /** Planos/componentes + retiração (frente/verso). */
+  planos?: PlanoOpOrigemDTO[]
+  /** Matriz/faca (tag [Matriz]). */
+  matriz?: string
+  /** Formato (tag [Formato]). */
+  formato?: string
+  /** Bobinas (tags [Bobina]). */
+  bobinasTexto?: string[]
 }
 
 // ===========================================================================
@@ -1016,7 +1068,7 @@ export function montarQueryCalculoAtividades(codigosCalculo: number[]): string {
   const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
   return (
     `SELECT a.Codigo AS CalcCodigo, a.tipo, a.itemSeq1, a.itemSeq2, ` +
-    `atv.Nome AS atividadeNome, cp.Nome AS centroNome, ` +
+    `atv.Nome AS atividadeNome, cp.Nome AS centroNome, a.codCentroCusto AS centroCodigo, ` +
     `a.quantAcertos, a.tempoPorAcerto, a.tempoPrimeiroAcerto, a.producaoHora, a.tiragem ` +
     `FROM CalculoAtividades a ` +
     `LEFT JOIN Atividades atv ON atv.Codigo = a.codAtividade ` +
@@ -1077,6 +1129,7 @@ interface LinhaAtividade {
   itemSeq2?: number
   atividadeNome?: string
   centroNome?: string
+  centroCodigo?: number | string
   quantAcertos?: number
   tempoPorAcerto?: number
   tempoPrimeiroAcerto?: number
@@ -1217,9 +1270,16 @@ export async function lerOpsCandidatas(
       descricao: strOuUndef(h.Descricao) ?? '',
       dataEmissao: dataIsoOuUndef(h.DataHoraEmissao),
       clienteNome: cli?.nome,
+      // CNPJ/CPF do cliente (match por dígitos no backend → vínculo com o
+      // cadastro Cliente; resolve o "ACTUAL"). Já lido no passo 3c.
+      clienteDoc: cli?.doc,
       quantidade: lotePrincipal?.tiragem,
       tiragem: lotePrincipal?.tiragem,
       dataEntrega: lotePrincipal?.dataPrometida,
+      // Programação de entrega: TODAS as datas dos lotes (não só a 1ª). Resolve
+      // o "entrega em branco" quando o lote principal não tem data mas há
+      // lotes com data. Função pura (testável).
+      programacaoEntrega: montarProgramacaoDeLotes(lotes),
       // Materiais de acabamento (do cálculo) entram como itens, junto do
       // papel/estrutura; tintas vão em `tintasTexto` (tag [Cores] no backend).
       itens: [...itens, ...estrutura, ...(r?.materiais ?? [])],

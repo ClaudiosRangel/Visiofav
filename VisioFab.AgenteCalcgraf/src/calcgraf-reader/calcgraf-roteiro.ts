@@ -20,6 +20,7 @@ export interface AtividadeRow {
   itemSeq2?: number
   atividadeNome?: string // Atividades.Nome
   centroNome?: string // CentrosProducao.Nome
+  centroCodigo?: number | string // CentrosProducao.Codigo (CalculoAtividades.codCentroCusto)
   quantAcertos?: number
   tempoPorAcerto?: number
   tempoPrimeiroAcerto?: number
@@ -58,6 +59,8 @@ export interface EtapaDTO {
   tipo?: string
   setupMinutos?: number
   operacaoMinutos?: number
+  /** Código do centro no Calcgraf (de-para no backend). Paridade PDF — T6. */
+  centroCodigo?: string
 }
 
 export interface VariacaoDTO {
@@ -134,6 +137,11 @@ export function montarEtapaDTO(r: AtividadeRow, indice: number): EtapaDTO {
     tipo: (r.tipo ?? '').trim() || undefined,
     setupMinutos: calcularSetupMin(r),
     operacaoMinutos: calcularOperacaoMin(r),
+    // Código do centro (de-para no backend): só emite quando presente/≠0.
+    centroCodigo:
+      r.centroCodigo != null && String(r.centroCodigo).trim() !== '' && num(r.centroCodigo) !== 0
+        ? String(r.centroCodigo).trim()
+        : undefined,
   }
 }
 
@@ -152,6 +160,51 @@ export function montarVariacaoDTO(r: PlanoRow, indice: number): VariacaoDTO {
     dimensao,
     aproveitamento: r.aproveitamento != null ? num(r.aproveitamento) : undefined,
   }
+}
+
+// ===========================================================================
+// Programação de entrega (todas as datas dos lotes) — paridade PDF (T6)
+// ===========================================================================
+
+/** Lote de origem (OpLote) do qual derivamos a programação de entrega. */
+export interface LoteParaEntrega {
+  tiragem?: number
+  dataPrometida?: string
+  ordemFila?: number
+}
+
+/** Entrega parcial montada (espelho de EntregaOpOrigemDTO do backend). */
+export interface EntregaDTO {
+  data?: string
+  quantidade?: number
+}
+
+/**
+ * Monta a programação de entrega a partir dos lotes (OpLote): TODAS as datas,
+ * não só a 1ª. Ignora lotes SEM data (não inventa data). Ordena por `ordemFila`
+ * (quando houver) e depois por data crescente, para leitura previsível. O
+ * backend (`montarEntregas`) ainda reordena por data e escolhe a MENOR como
+ * `dataEntregaPrevista` — aqui só reunimos os pares (data, quantidade).
+ *
+ * Retorna `undefined` quando não há nenhuma data válida (o backend então usa o
+ * fallback do lote principal). Função PURA (testável sem conexão).
+ */
+export function montarProgramacaoDeLotes(lotes: LoteParaEntrega[]): EntregaDTO[] | undefined {
+  const entregas: EntregaDTO[] = []
+  for (const l of lotes) {
+    const data = (l.dataPrometida ?? '').trim()
+    if (!data) continue // sem data → não vira entrega (não inventa)
+    entregas.push({ data, quantidade: l.tiragem != null ? num(l.tiragem) : undefined })
+  }
+  if (entregas.length === 0) return undefined
+  // Ordena por data crescente (estável; o backend reordena de qualquer modo).
+  entregas.sort((a, b) => {
+    const ta = new Date(a.data as string).getTime()
+    const tb = new Date(b.data as string).getTime()
+    if (Number.isNaN(ta) || Number.isNaN(tb)) return 0
+    return ta - tb
+  })
+  return entregas
 }
 
 /**

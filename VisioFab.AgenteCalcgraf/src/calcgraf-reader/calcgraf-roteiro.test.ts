@@ -14,6 +14,7 @@ import {
   montarNomeEtapa,
   montarEtapaDTO,
   montarTextoTintas,
+  montarProgramacaoDeLotes,
 } from './calcgraf-roteiro'
 
 test('calcularSetupMin = quantAcertos*tempoPorAcerto + tempoPrimeiroAcerto', () => {
@@ -78,4 +79,50 @@ test('montarTextoTintas (golden OP 3000 — 2 tintas) normaliza o Pantone', () =
 
 test('montarTextoTintas vazio → string vazia', () => {
   assert.equal(montarTextoTintas([]), '')
+})
+
+// ── T6: centroCodigo na etapa (de-para no backend) ──
+
+test('montarEtapaDTO emite centroCodigo quando presente (de-para)', () => {
+  const dto = montarEtapaDTO(
+    { tipo: 'A', centroNome: 'Cortadeira (Grande)', atividadeNome: 'Corte', centroCodigo: 42 },
+    0,
+  )
+  assert.equal(dto.centroCodigo, '42')
+})
+
+test('montarEtapaDTO NÃO emite centroCodigo quando ausente/zero', () => {
+  assert.equal(montarEtapaDTO({ centroNome: 'X', centroCodigo: 0 }, 0).centroCodigo, undefined)
+  assert.equal(montarEtapaDTO({ centroNome: 'X' }, 0).centroCodigo, undefined)
+  assert.equal(montarEtapaDTO({ centroNome: 'X', centroCodigo: '' }, 0).centroCodigo, undefined)
+})
+
+// ── T6: programação de entrega a partir dos lotes ──
+
+test('montarProgramacaoDeLotes reúne todas as datas e ordena crescente', () => {
+  const r = montarProgramacaoDeLotes([
+    { tiragem: 1000000, dataPrometida: '2026-08-02T00:00:00.000Z', ordemFila: 2 },
+    { tiragem: 1200000, dataPrometida: '2026-07-06T00:00:00.000Z', ordemFila: 1 },
+  ])
+  assert.ok(r)
+  assert.equal(r?.length, 2)
+  // Ordenado por data crescente: 06/07 antes de 02/08.
+  assert.equal(r?.[0].data, '2026-07-06T00:00:00.000Z')
+  assert.equal(r?.[0].quantidade, 1200000)
+  assert.equal(r?.[1].data, '2026-08-02T00:00:00.000Z')
+})
+
+test('montarProgramacaoDeLotes ignora lotes SEM data (não inventa)', () => {
+  const r = montarProgramacaoDeLotes([
+    { tiragem: 500, dataPrometida: '2026-05-04T00:00:00.000Z' },
+    { tiragem: 500 }, // sem data → ignorado
+    { tiragem: 500, dataPrometida: '' }, // vazia → ignorado
+  ])
+  assert.equal(r?.length, 1)
+  assert.equal(r?.[0].data, '2026-05-04T00:00:00.000Z')
+})
+
+test('montarProgramacaoDeLotes sem nenhuma data válida → undefined (fallback do backend)', () => {
+  assert.equal(montarProgramacaoDeLotes([]), undefined)
+  assert.equal(montarProgramacaoDeLotes([{ tiragem: 100 }]), undefined)
 })

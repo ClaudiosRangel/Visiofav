@@ -75,14 +75,18 @@ idempotência real. Sem mudança de schema por padrão.
     `cliente`.
   - _Requisitos: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.3, 6.1, 6.2, 6.3, 6.4, 6.5, 7.1_
 
-- [ ] 6. Agente (reader) — enviar os dados crus que faltam
-  - [ ] 6.1 Reader lê e envia: `programacaoEntrega[]` (todas as datas),
-    `planos[]` + retiração (de `CalculoPlanos`/cores NxM), `centroCodigo` por
-    etapa, `clienteCodigo`/`clienteDoc` (pedido→Nomes), `matriz`/`formato`/
-    `bobinasTexto`. Espelhar o DTO (ordem/nomes idênticos).
-  - [ ] 6.2 Tudo SEQUENCIAL e SOMENTE SELECT (restrições do tedious/trigger).
-  - [ ] 6.3 Funções puras de montagem do reader testadas (`node:test`) contra o
-    golden OP 3000 + um caso com retiração + um com entregas múltiplas.
+- [~] 6. Agente (reader) — enviar os dados crus que faltam
+  - [x] 6.1a Reader JÁ envia (T6a): `clienteDoc` (CNPJ via pedido→Nomes.CNPJCPF),
+    `programacaoEntrega[]` (TODAS as datas dos lotes, `montarProgramacaoDeLotes`
+    puro), `centroCodigo` por etapa (`CalculoAtividades.codCentroCusto`). DTO
+    espelhado (mesma ordem/nomes do backend). SEQUENCIAL + SELECT (tedious).
+  - [ ] 6.1b (ADIADO p/ T7) `planos[]` + retiração (cores NxM), `clienteCodigo`,
+    `matriz`/`formato`/`bobinasTexto` — exigem inspecionar as colunas reais no
+    backup antes de escrever a query (evitar quebra no servidor).
+  - [x] 6.2 Tudo SEQUENCIAL e SOMENTE SELECT (restrições do tedious/trigger).
+  - [x] 6.3 Funções puras testadas (`node:test` **12/12**): golden OP 3000,
+    `centroCodigo` (presente/ausente/zero), `montarProgramacaoDeLotes`
+    (ordena/ignora sem data/vazio→undefined).
   - _Requisitos: 4.4, 5.1, 6.1, 6.2, 7.2, 8.1, 8.2_
 
 - [ ] 7. Validação ponta a ponta contra o backup local

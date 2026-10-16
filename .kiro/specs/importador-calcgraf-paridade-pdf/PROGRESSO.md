@@ -27,7 +27,21 @@ programação (cintos S1–S4). "Costa" exibida como "Verso".
 - [x] **T4** — DTO aditivo (clienteCodigo/clienteDoc/produtoCodigo/programacaoEntrega[]/planos[]/matriz/formato/bobinasTexto) + hash cobre novos + testes (pure 29/29). **COMMIT PENDENTE junto T5.**
 - [x] **T5** — ingestão do agente usa resolverCliente/montarEntregas/criarPlanos + cintos reforçados; `PlanoOrdemProducao` substitui `VariacaoOrdemProducao` (fallback de transição converte `variacoes` antigas em planos COMPONENTE, preservando suporte/dimensao/aproveitamento); `montarObsVariacao` removido (código morto). Novas tags `[Matriz]`/`[Formato]`/`[Bobina]` em `montarObservacoes`. Nova `criarProgramacaoEntrega` (resolve "entrega em branco" usando a MENOR data). `atualizarOp`: sem etapas preserva roteiro MAS atualiza entregas se vierem. Testes service **20/20** (fake Prisma ganhou models `planoOrdemProducao`, `programacaoEntrega`, `cliente`). Motor+hash **48/48**. get_diagnostics limpo. **COMMIT PENDENTE.**
   - Regra de plano (paridade PDF): materializa `PlanoOrdemProducao` só com 2+ planos OU retiração (frente/verso = 2 FACES, VERSO.faceDeId→FRENTE); plano único sem retiração = legado (não cria).
-- [ ] **T6** — agente (reader) envia os dados crus novos (SEQUENCIAL/SELECT); funções puras testadas.
+- [~] **T6** — agente (reader) envia os dados crus novos (SEQUENCIAL/SELECT).
+  - [x] **T6a FEITO**: reader espelha o DTO novo e já ENVIA: `clienteDoc` (CNPJ
+    do cliente via pedido→Nomes.CNPJCPF — já era lido, agora vai no DTO, resolve
+    o "ACTUAL"); `programacaoEntrega[]` (TODAS as datas dos lotes OpLote, não só
+    a 1ª — resolve "entrega em branco") via `montarProgramacaoDeLotes` (puro);
+    `centroCodigo` por etapa (`CalculoAtividades.codCentroCusto` → de-para de
+    centro no backend). Build do agente OK; testes `node:test` **12/12**
+    (`calcgraf-roteiro.test.ts`, +5 novos). get_diagnostics limpo.
+  - [ ] **T6b ADIADO para a T7 (validação contra backup)**: `planos[]` +
+    retiração (frente/verso), `clienteCodigo`, `matriz`/`formato`/`bobinasTexto`.
+    Motivo: dependem de descobrir as COLUNAS REAIS no backup `CalcgrafCartonWega`
+    (cores NxM p/ retiração; de onde vêm matriz/formato/bobina) — escrever a
+    query sem inspecionar o schema real arriscaria quebrar no servidor. Será
+    feito na T7, inspecionando o schema antes. O backend JÁ aceita esses campos
+    (aditivos); a ausência preserva (cinto S1). **COMMIT PENDENTE (T6a).**
 - [ ] **T7** — validar contra backup (golden 3000, multi-plano 3154, retiração, entregas múltiplas); remover scripts.
 - [ ] **T8** — front: "COSTA" → "VERSO" nos labels (valor técnico FACE mantido).
 - [ ] **T9** — empacotar agente v0.3.0; selo de versão; doc de deploy.
