@@ -13,6 +13,11 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 
 ## ✅ IMPORTADOR DE OP (agente desktop) — FUNCIONANDO EM PRODUÇÃO (16/10/2026)
 
+> 📄 **AO RETOMAR ESTE TEMA, LEIA PRIMEIRO:** `docs/importador-calcgraf-HANDOFF.md`
+> (handoff consolidado: connection string do servidor, credenciais, logon
+> trigger, arquitetura tedious/asar, regras de ingestão e a FASE 2 — trazer
+> etapas/variações/materiais via `docs/calcgraf-mapeamento-roteiro-op.md`).
+
 Spec `.kiro/specs/importador-op-calcgraf/` (16/16 tasks concluídas). Objetivo
 ALCANÇADO: **eliminar a importação de PDF de OP**. O agente desktop (Electron+TS)
 está INSTALADO no servidor da PHTech (via RDP/AnyDesk, usuário `claudio.rangel`/
