@@ -490,6 +490,7 @@ beforeEach(() => {
   db.tiposProcesso.push(
     { id: 'tp-impressao', empresaId: EMPRESA_A, codigo: 'IMPRESSAO', status: true, posicao: 1 },
     { id: 'tp-acabamento', empresaId: EMPRESA_A, codigo: 'ACABAMENTO', status: true, posicao: 2 },
+    { id: 'tp-verniz', empresaId: EMPRESA_A, codigo: 'VERNIZ', status: true, posicao: 3 },
   )
   vi.clearAllMocks()
 })
@@ -685,6 +686,17 @@ describe('ingerirOpsCalcgraf — Fase 2: roteiro completo (golden OP 3000)', () 
 
     // Tintas foram para a observação como tag [Cores] (NÃO viraram item).
     expect(criada.observacoes).toContain('[Cores] AMARELO 123C (85%), VERDE CW0138 (15%)')
+  })
+
+  it('etapa tipo "M" (verniz na impressora) cria centro com TipoProcesso VERNIZ', async () => {
+    // Descoberto na validação T7: o Calcgraf usa tipo 'M' para verniz aplicado
+    // na própria impressora (ex.: "Verniz Heidelberg CD" na OP 3133).
+    const dto = op(3004, {
+      etapas: [{ sequencia: 1, tipo: 'M', centro: 'Verniz Heidelberg CD', descricao: 'Verniz', setupMinutos: 0, operacaoMinutos: 0 }],
+    })
+    await ingerirOpsCalcgraf(EMPRESA_A, [dto])
+    const centroVerniz = db.centros.find((c) => c.descricao === 'Verniz Heidelberg CD')
+    expect(centroVerniz?.tipoProcessoId).toBe('tp-verniz')
   })
 
   it('reusa o MESMO centro quando duas etapas têm o mesmo nome (não duplica)', async () => {

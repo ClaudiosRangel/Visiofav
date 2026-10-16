@@ -35,14 +35,28 @@ programação (cintos S1–S4). "Costa" exibida como "Verso".
     `centroCodigo` por etapa (`CalculoAtividades.codCentroCusto` → de-para de
     centro no backend). Build do agente OK; testes `node:test` **12/12**
     (`calcgraf-roteiro.test.ts`, +5 novos). get_diagnostics limpo.
-  - [ ] **T6b ADIADO para a T7 (validação contra backup)**: `planos[]` +
-    retiração (frente/verso), `clienteCodigo`, `matriz`/`formato`/`bobinasTexto`.
-    Motivo: dependem de descobrir as COLUNAS REAIS no backup `CalcgrafCartonWega`
-    (cores NxM p/ retiração; de onde vêm matriz/formato/bobina) — escrever a
-    query sem inspecionar o schema real arriscaria quebrar no servidor. Será
-    feito na T7, inspecionando o schema antes. O backend JÁ aceita esses campos
-    (aditivos); a ausência preserva (cinto S1). **COMMIT PENDENTE (T6a).**
-- [ ] **T7** — validar contra backup (golden 3000, multi-plano 3154, retiração, entregas múltiplas); remover scripts.
+  - [x] **T6b FEITO** (com a validação T7): `planos[]` + cores/retiração +
+    `formato`. Fonte das cores = `CalculoAtvImpressao` (`coresF`/`coresV`/
+    `tiraRetira`) por `processoCodPlano` (2 linhas/plano → MAX). Cores exibidas
+    "FxV"; retiração = `coresV>0` OU `tiraRetira` → tipo FACE + coresFrente/
+    coresVerso (backend cria 2 FACES). `montarPlanosDTO` só materializa com 2+
+    planos OU retiração (plano único = legado). `formato` do cabeçalho = 1º
+    plano. Funções puras `agregarCoresPorPlano`/`montarPlanosDTO`. Testes
+    `node:test` **16/16**.
+    - PENDENTE menor (baixo valor): `clienteCodigo` (de-para), `matriz` (CodFaca,
+      quase sempre 0 no backup), `bobinasTexto`. Não bloqueiam; backend aceita
+      ausência.
+- [x] **T7 FEITO** — validado ponta a ponta contra o backup local via o reader
+  (modo sqlcmd), OPs 3000/3133/3137/3138/3130/3131. **DESCOBERTA CRÍTICA**: a
+  data de entrega NÃO está em `OpLote.DataPrometida` (quase sempre NULL — por
+  isso "entrega em branco"); vem do PEDIDO em **`PedidoItemEntrega`** (data +
+  quantidade por parcela), via OpItem→OpItemxPedidoItem→PedidoItem→
+  PedidoItemEntrega. Nova query `montarQueryProgramacaoEntrega`; o reader passou
+  a montar `programacaoEntrega`/`dataEntrega` daí (fallback para lotes). Validado:
+  3130/3131 = 3 parcelas (05/10, 19/10, 03/11); 3133/3000 = 1; 3137/3138 (sem
+  pedido = avulsas) = sem cliente/entrega (não quebra). Também mapeado o tipo de
+  etapa **'M' (verniz na impressora) → VERNIZ** no backend
+  (`op-montagem.service.ts`). Script `_tmp-validar-backup.mjs` REMOVIDO.
 - [ ] **T8** — front: "COSTA" → "VERSO" nos labels (valor técnico FACE mantido).
 - [ ] **T9** — empacotar agente v0.3.0; selo de versão; doc de deploy.
 - [ ] **T10** — deploy monitorado + reparo retroativo opcional; commit/push; atualizar HANDOFF/steering.

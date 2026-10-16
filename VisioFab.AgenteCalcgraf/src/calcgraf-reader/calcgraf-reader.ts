@@ -41,9 +41,13 @@ import {
   montarVariacaoDTO,
   montarTextoTintas,
   montarProgramacaoDeLotes,
+  agregarCoresPorPlano,
+  montarPlanosDTO,
   type AtividadeRow,
   type PlanoRow,
   type TintaRow,
+  type CoresPlanoRow,
+  type PlanoDTO,
 } from './calcgraf-roteiro'
 
 // ===========================================================================
@@ -1041,6 +1045,34 @@ interface LinhaClienteOp {
   clienteDoc?: string | null
 }
 
+/**
+ * SELECT da PROGRAMAÇÃO DE ENTREGA de cada OP. Descoberto na validação T7: a
+ * data de entrega NÃO está em `OpLote.DataPrometida` (quase sempre NULL) — vem
+ * do PEDIDO, em `PedidoItemEntrega` (data + quantidade por parcela), via a
+ * mesma cadeia do cliente: OpItem → OpItemxPedidoItem → PedidoItem →
+ * PedidoItemEntrega. Valida contra o backup: 3130/3131 têm 3 parcelas
+ * (05/10, 19/10, 03/11); 3133 tem 1 (05/10). SOMENTE SELECT.
+ */
+export function montarQueryProgramacaoEntrega(codigosHeader: number[]): string {
+  const lista = codigosHeader.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT h.Codigo AS CodOpHeader, pie.DataEntrega, pie.Quantidade ` +
+    `FROM OpHeader h ` +
+    `JOIN OpItem oi ON oi.CodOpHeader = h.Codigo ` +
+    `JOIN OpItemxPedidoItem ox ON ox.CodOpItem = oi.Codigo ` +
+    `JOIN PedidoItem pi ON pi.Codigo = ox.CodPedidoItem ` +
+    `JOIN PedidoItemEntrega pie ON pie.CodPedidoItem = pi.Codigo ` +
+    `WHERE h.Codigo IN (${lista}) ` +
+    `ORDER BY h.Codigo, pie.DataEntrega`
+  )
+}
+
+interface LinhaProgEntrega {
+  CodOpHeader: number
+  DataEntrega?: string | null
+  Quantidade?: number | null
+}
+
 // ===========================================================================
 // Queries de ROTEIRO (Fase 2) — resolve o CÁLCULO que originou a OP e lê
 // etapas/variações/tintas. Caminho validado: OpItemEstrutura.Codigo =
@@ -1091,6 +1123,20 @@ export function montarQueryCalculoPlanos(codigosCalculo: number[]): string {
     `LEFT JOIN Suportes s ON s.Codigo = p.codSuporte ` +
     `WHERE p.Codigo IN (${lista}) ` +
     `ORDER BY p.Codigo, p.codPlano`
+  )
+}
+
+/**
+ * SELECT das cores por plano (CalculoAtvImpressao) de um conjunto de cálculos.
+ * Há normalmente 2 linhas por plano (chapas/vias); o agente agrega por
+ * `processoCodPlano` pegando o MAX de coresF/coresV (função pura). Validado no
+ * backup: OP 3000 plano 1 = 2x0; OP 3133 planos 15/17 = 4x0.
+ */
+export function montarQueryCalculoCores(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT Codigo AS CalcCodigo, processoCodPlano AS codPlano, coresF, coresV, tiraRetira ` +
+    `FROM CalculoAtvImpressao WHERE Codigo IN (${lista}) ORDER BY Codigo, processoCodPlano`
   )
 }
 
@@ -1153,6 +1199,13 @@ interface LinhaTinta {
   codTinta?: string | number
   areaTinta?: number
   ComplementoNome?: string
+}
+interface LinhaCores {
+  CalcCodigo: number
+  codPlano?: string | number
+  coresF?: number
+  coresV?: number
+  tiraRetira?: number
 }
 interface LinhaMatAcab {
   CalcCodigo: number
@@ -1248,6 +1301,15 @@ export async function lerOpsCandidatas(
     }
   }
 
+  // 3d) PROGRAMAÇÃO DE ENTREGA (via pedido — PedidoItemEntrega). SEQUENCIAL.
+  //     Fonte correta da data de entrega (OpLote.DataPrometida é NULL — T7).
+  //     Agrupa por OpHeader as parcelas (data + quantidade).
+  const progRows = await conexao.consultar<LinhaProgEntrega>(montarQueryProgramacaoEntrega(codigos))
+  const progPorHeader = agruparPor(
+    progRows.filter((p) => p.CodOpHeader != null),
+    (p) => p.CodOpHeader,
+  )
+
   const dtos: OpOrigemDTO[] = []
   for (const h of headers) {
     const itens = (itensPorHeader.get(h.Codigo) ?? []).map(mapearItem)
@@ -1265,6 +1327,21 @@ export async function lerOpsCandidatas(
 
     const cli = clientePorHeader.get(h.Codigo)
 
+    // Programação de entrega: TODAS as parcelas do PEDIDO (PedidoItemEntrega) —
+    // fonte correta (OpLote.DataPrometida é NULL na prática — descoberto na T7).
+    // `montarProgramacaoDeLotes` reusa a lógica (data+quantidade, ordena, ignora
+    // sem data). Fallback: se não houver parcela de pedido, tenta os lotes.
+    const parcelas = (progPorHeader.get(h.Codigo) ?? []).map((p) => ({
+      dataPrometida: dataIsoOuUndef(p.DataEntrega),
+      tiragem: numOuUndef(p.Quantidade),
+    }))
+    const programacaoEntrega =
+      montarProgramacaoDeLotes(parcelas) ?? montarProgramacaoDeLotes(lotes)
+    // Data de entrega do cabeçalho = menor data da programação (quando houver).
+    const dataEntregaCab = programacaoEntrega && programacaoEntrega.length > 0
+      ? programacaoEntrega[0].data
+      : lotePrincipal?.dataPrometida
+
     const dto: OpOrigemDTO = {
       numero: h.Numero,
       descricao: strOuUndef(h.Descricao) ?? '',
@@ -1275,11 +1352,9 @@ export async function lerOpsCandidatas(
       clienteDoc: cli?.doc,
       quantidade: lotePrincipal?.tiragem,
       tiragem: lotePrincipal?.tiragem,
-      dataEntrega: lotePrincipal?.dataPrometida,
-      // Programação de entrega: TODAS as datas dos lotes (não só a 1ª). Resolve
-      // o "entrega em branco" quando o lote principal não tem data mas há
-      // lotes com data. Função pura (testável).
-      programacaoEntrega: montarProgramacaoDeLotes(lotes),
+      dataEntrega: dataEntregaCab,
+      // Programação de entrega: parcelas do pedido (ou lotes como fallback).
+      programacaoEntrega,
       // Materiais de acabamento (do cálculo) entram como itens, junto do
       // papel/estrutura; tintas vão em `tintasTexto` (tag [Cores] no backend).
       itens: [...itens, ...estrutura, ...(r?.materiais ?? [])],
@@ -1287,6 +1362,10 @@ export async function lerOpsCandidatas(
       etapas: r?.etapas,
       variacoes: r?.variacoes,
       tintasTexto: r?.tintasTexto,
+      // Planos/componentes + frente/verso (T6b). undefined p/ plano único.
+      planos: r?.planos,
+      // Tag [Formato] do cabeçalho = formato do 1º plano (quando houver).
+      formato: r?.planos && r.planos.length > 0 ? r.planos[0].formato : undefined,
     }
 
     // CLIENTE: resolvido via pedido (OpItem → OpItemxPedidoItem → PedidoItem →
@@ -1308,6 +1387,8 @@ interface RoteiroOp {
   variacoes: VariacaoOpOrigemDTO[]
   materiais: ItemOpOrigemDTO[]
   tintasTexto?: string
+  /** Planos/componentes + retiração (paridade PDF — T6b); undefined = plano único. */
+  planos?: PlanoDTO[]
 }
 
 /**
@@ -1332,17 +1413,19 @@ async function lerRoteiroEmLote(
   const codigosCalculo = Array.from(new Set(calcPorHeader.values()))
   if (codigosCalculo.length === 0) return resultado
 
-  // 2) Lê as filhas do cálculo em lote (4 queries SEQUENCIAIS).
+  // 2) Lê as filhas do cálculo em lote (5 queries SEQUENCIAIS — tedious).
   const atividadesRaw = await conexao.consultar<LinhaAtividade>(montarQueryCalculoAtividades(codigosCalculo))
   const planosRaw = await conexao.consultar<LinhaPlano>(montarQueryCalculoPlanos(codigosCalculo))
   const tintasRaw = await conexao.consultar<LinhaTinta>(montarQueryCalculoTintas(codigosCalculo))
   const matRaw = await conexao.consultar<LinhaMatAcab>(montarQueryCalculoMatAcabamento(codigosCalculo))
+  const coresRaw = await conexao.consultar<LinhaCores>(montarQueryCalculoCores(codigosCalculo))
 
   // 3) Agrupa por CalcCodigo.
   const atividadesPorCalc = agruparPor(atividadesRaw, (r) => r.CalcCodigo)
   const planosPorCalc = agruparPor(planosRaw, (r) => r.CalcCodigo)
   const tintasPorCalc = agruparPor(tintasRaw, (r) => r.CalcCodigo)
   const matPorCalc = agruparPor(matRaw, (r) => r.CalcCodigo)
+  const coresPorCalc = agruparPor(coresRaw, (r) => r.CalcCodigo)
 
   // 4) Monta o RoteiroOp por OpHeader usando as funções puras.
   for (const [codHeader, calc] of calcPorHeader) {
@@ -1358,7 +1441,12 @@ async function lerRoteiroEmLote(
       descricao: strOuUndef(m.materialNome) ?? strOuUndef(m.CodMaterial),
       unidadeMedida: 'KG',
     }))
-    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto })
+    // Planos/componentes + retiração (T6b): cores agregadas de CalculoAtvImpressao
+    // por codPlano. `montarPlanosDTO` só materializa com 2+ planos OU retiração
+    // (paridade PDF; plano único = legado → undefined, backend não cria plano).
+    const coresPorPlano = agregarCoresPorPlano((coresPorCalc.get(calc) ?? []) as CoresPlanoRow[])
+    const planos = montarPlanosDTO((planosPorCalc.get(calc) ?? []) as PlanoRow[], coresPorPlano)
+    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto, planos })
   }
 
   return resultado

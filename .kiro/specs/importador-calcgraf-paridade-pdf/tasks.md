@@ -80,14 +80,27 @@ idempotência real. Sem mudança de schema por padrão.
     `programacaoEntrega[]` (TODAS as datas dos lotes, `montarProgramacaoDeLotes`
     puro), `centroCodigo` por etapa (`CalculoAtividades.codCentroCusto`). DTO
     espelhado (mesma ordem/nomes do backend). SEQUENCIAL + SELECT (tedious).
-  - [ ] 6.1b (ADIADO p/ T7) `planos[]` + retiração (cores NxM), `clienteCodigo`,
-    `matriz`/`formato`/`bobinasTexto` — exigem inspecionar as colunas reais no
-    backup antes de escrever a query (evitar quebra no servidor).
+  - [x] 6.1b FEITO (na T7): `planos[]` + cores/retiração + `formato` (de
+    `CalculoAtvImpressao.coresF/coresV/tiraRetira` por `processoCodPlano`).
+    `programacaoEntrega` migrada para a fonte CORRETA `PedidoItemEntrega` (a
+    data NÃO está no OpLote). Pendente menor: `clienteCodigo`, `matriz`
+    (CodFaca), `bobinasTexto` — baixo valor, não bloqueiam.
   - [x] 6.2 Tudo SEQUENCIAL e SOMENTE SELECT (restrições do tedious/trigger).
-  - [x] 6.3 Funções puras testadas (`node:test` **12/12**): golden OP 3000,
-    `centroCodigo` (presente/ausente/zero), `montarProgramacaoDeLotes`
-    (ordena/ignora sem data/vazio→undefined).
+  - [x] 6.3 Funções puras testadas (`node:test` **16/16**): golden OP 3000,
+    `centroCodigo`, `montarProgramacaoDeLotes`, `agregarCoresPorPlano`,
+    `montarPlanosDTO` (plano único→undefined, multi-plano OP 3133, retiração).
   - _Requisitos: 4.4, 5.1, 6.1, 6.2, 7.2, 8.1, 8.2_
+
+- [x] 7. Validação ponta a ponta contra o backup local
+  - [x] 7.1 Validado via reader (sqlcmd) contra `CalcgrafCartonWega`: OPs
+    3000 (1 plano, 4 etapas, cliente MORLAN+CNPJ, entrega 25/08), 3133
+    (5 planos multi-componente, cliente MARBRAN+CNPJ, entrega 05/10, 21 etapas),
+    3130/3131 (3 parcelas de entrega cada). centro por centroCodigo, cliente por
+    CNPJ, planos/cores/formato, datas — todos conferidos. Script `_tmp-` removido.
+  - [x] 7.2 OP sem pedido (3137/3138 = avulsas) → sem cliente/entrega, NÃO quebra
+    (fallbacks graciosos). DESCOBERTA: data de entrega vem de `PedidoItemEntrega`
+    (não OpLote); tipo de etapa 'M' = verniz → mapeado no backend.
+  - _Requisitos: 9.4_
 
 - [ ] 7. Validação ponta a ponta contra o backup local
   - [ ] 7.1 Script `_tmp-` (removido após uso): rodar o reader contra

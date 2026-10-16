@@ -44,6 +44,10 @@ const CODIGO_PROCESSO_POR_TIPO: Record<string, string> = {
   // Vocabulário do Calcgraf (letra única)
   I: 'IMPRESSAO',
   A: 'ACABAMENTO',
+  // 'M' no Calcgraf = verniz aplicado na própria impressora (ex.: "Verniz
+  // Heidelberg CD" na OP 3133). Mapeia para VERNIZ; se a empresa não tiver o
+  // TipoProcesso VERNIZ, o fallback cai em ACABAMENTO (inferirTipoProcessoId).
+  M: 'VERNIZ',
 }
 
 /** Resultado da resolução de centro, com rastro do que aconteceu (auditoria). */

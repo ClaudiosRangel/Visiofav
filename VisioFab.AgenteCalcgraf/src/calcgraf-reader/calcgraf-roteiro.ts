@@ -48,6 +48,22 @@ export interface TintaRow {
   ComplementoNome?: string // nome Pantone (ex.: "AMARELO - 123C")
 }
 
+/**
+ * Cores por plano, agregadas de `CalculoAtvImpressao` (coresF/coresV) por
+ * `processoCodPlano`. Validado no backup: OP 3000 plano 1 = 2x0; OP 3133
+ * planos 15/17 = 4x0. Retiração (frente/verso) = `coresV > 0` OU `tiraRetira=1`.
+ */
+export interface CoresPlanoRow {
+  /** `CalculoAtvImpressao.processoCodPlano` → casa com `CalculoPlanos.codPlano`. */
+  codPlano?: string | number
+  /** Cores da frente (máx entre as linhas do plano). */
+  coresF?: number
+  /** Cores do verso (máx entre as linhas do plano). */
+  coresV?: number
+  /** Flag de retiração (tira-retira) da impressão. */
+  tiraRetira?: number
+}
+
 // ===========================================================================
 // DTO (espelho do backend — subconjunto montado aqui)
 // ===========================================================================
@@ -72,6 +88,22 @@ export interface VariacaoDTO {
   gramatura?: number
   dimensao?: string
   aproveitamento?: number
+}
+
+/** Plano/componente (espelho de PlanoOpOrigemDTO do backend) — paridade PDF (T6b). */
+export interface PlanoDTO {
+  nome: string
+  tipo?: string
+  formato?: string
+  cores?: string
+  tiragem?: number
+  material?: string
+  gramatura?: number
+  aproveitamento?: number
+  retiracao?: boolean
+  coresFrente?: string
+  coresVerso?: string
+  sequencia?: number
 }
 
 // ===========================================================================
@@ -205,6 +237,82 @@ export function montarProgramacaoDeLotes(lotes: LoteParaEntrega[]): EntregaDTO[]
     return ta - tb
   })
   return entregas
+}
+
+// ===========================================================================
+// Planos/componentes + retiração (frente/verso) — paridade PDF (T6b)
+// ===========================================================================
+
+/**
+ * Agrega as cores por plano a partir das linhas de `CalculoAtvImpressao`
+ * (há normalmente 2 linhas por plano — chapas/vias). Para cada `codPlano`,
+ * pega o MAX de `coresF`/`coresV` e OR do `tiraRetira`. Retorna um mapa
+ * `codPlano(string) → { coresF, coresV, tiraRetira }`. Função PURA.
+ */
+export function agregarCoresPorPlano(
+  linhas: CoresPlanoRow[],
+): Map<string, { coresF: number; coresV: number; tiraRetira: boolean }> {
+  const mapa = new Map<string, { coresF: number; coresV: number; tiraRetira: boolean }>()
+  for (const l of linhas) {
+    if (l.codPlano == null) continue
+    const chave = String(l.codPlano)
+    const atual = mapa.get(chave) ?? { coresF: 0, coresV: 0, tiraRetira: false }
+    atual.coresF = Math.max(atual.coresF, num(l.coresF))
+    atual.coresV = Math.max(atual.coresV, num(l.coresV))
+    if (num(l.tiraRetira) > 0) atual.tiraRetira = true
+    mapa.set(chave, atual)
+  }
+  return mapa
+}
+
+/**
+ * Monta os `PlanoDTO` a partir dos planos (`CalculoPlanos`) + cores agregadas
+ * (`CalculoAtvImpressao`). Regras (paridade com o importador de PDF):
+ *  - cores exibidas = "coresF x coresV" (ex.: "2x0", "7x5");
+ *  - RETIRAÇÃO quando `coresV > 0` OU `tiraRetira` → marca `retiracao=true`,
+ *    `coresFrente`/`coresVerso` separados (o backend cria 2 FACES);
+ *  - tipo 'FACE' quando retiração; senão 'COMPONENTE';
+ *  - formato = "dimensao1 x dimensao2" do plano.
+ *
+ * Retorna `undefined` quando NÃO deve materializar planos (0 ou 1 plano SEM
+ * retiração) — paridade com o PDF (plano único = legado; o backend não cria
+ * `PlanoOrdemProducao`). Função PURA.
+ */
+export function montarPlanosDTO(
+  planos: PlanoRow[],
+  coresPorPlano: Map<string, { coresF: number; coresV: number; tiraRetira: boolean }>,
+): PlanoDTO[] | undefined {
+  if (planos.length === 0) return undefined
+
+  const dtos: PlanoDTO[] = planos.map((p, i) => {
+    const codPlano = p.codPlano != null ? String(p.codPlano) : ''
+    const cores = coresPorPlano.get(codPlano)
+    const coresF = cores?.coresF ?? 0
+    const coresV = cores?.coresV ?? 0
+    const retiracao = coresV > 0 || !!cores?.tiraRetira
+    const d1 = num(p.dimensao1)
+    const d2 = num(p.dimensao2)
+    const formato = d1 > 0 || d2 > 0 ? `${d1}x${d2}` : undefined
+    return {
+      nome: (p.nomePlano ?? '').trim() || `Plano ${i + 1}`,
+      tipo: retiracao ? 'FACE' : 'COMPONENTE',
+      formato,
+      cores: `${coresF}x${coresV}`,
+      tiragem: p.tiragem != null ? num(p.tiragem) : undefined,
+      material: (p.suporteNome ?? '').trim() || undefined,
+      gramatura: p.gramatura != null ? num(p.gramatura) : undefined,
+      aproveitamento: p.aproveitamento != null ? num(p.aproveitamento) : undefined,
+      retiracao: retiracao || undefined,
+      coresFrente: retiracao ? `${coresF}x0` : undefined,
+      coresVerso: retiracao ? `${coresV}x0` : undefined,
+      sequencia: p.Ordem != null ? num(p.Ordem) : i + 1,
+    }
+  })
+
+  // Paridade PDF: só materializa com 2+ planos OU algum com retiração.
+  const temRetiracao = dtos.some((d) => d.retiracao)
+  if (dtos.length < 2 && !temRetiracao) return undefined
+  return dtos
 }
 
 /**
