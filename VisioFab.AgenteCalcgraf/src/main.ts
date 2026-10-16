@@ -24,7 +24,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { lerConfig, salvarConfig, obterDiretorioConfig } from './config/config'
 import type { ConfigAgente } from './config/config'
 import { EstadoLocal } from './state-store/state-store'
-import { sincronizarAgora, iniciarSegundoPlano } from './scheduler/scheduler'
+import { sincronizarAgora } from './scheduler/scheduler'
 import type { SyncDeps, ResumoSync, HandleSegundoPlano } from './scheduler/scheduler'
 import type { ConfigSender } from './sender/sender'
 import type { ConfigConexaoCalcgraf } from './calcgraf-reader/calcgraf-reader'
@@ -36,6 +36,15 @@ let janela: BrowserWindow | null = null
 
 /** Handle do loop de segundo plano (para parar no shutdown). */
 let handleSegundoPlano: HandleSegundoPlano | null = null
+
+/**
+ * Lock GLOBAL de sincronização: garante que NUNCA rodem dois ciclos ao mesmo
+ * tempo (manual via botão + automático do segundo plano). Sem isso, um clique
+ * "Sincronizar agora" durante um ciclo automático processava a mesma OP em
+ * paralelo e criava OPs DUPLICADAS (o match por referência não via a criação
+ * concorrente). Promise encadeada = serialização simples e segura.
+ */
+let cadeiaSincronizacao: Promise<ResumoSync> = Promise.resolve(null as unknown as ResumoSync)
 
 /** Buffer de log em memória (mais recentes primeiro). Limitado a MAX_LOG. */
 const bufferLog: EntradaLog[] = []
@@ -135,6 +144,21 @@ function registrarResumo(origem: EntradaLog['origem'], resumo: ResumoSync): void
  * negócio. Segredos: `lerConfig` devolve decifrado (a UI reexibe/edita);
  * `salvarConfig` persiste cifrado (o main é o único a tocar DPAPI/disco).
  */
+/**
+ * Executa um ciclo de sincronização SERIALIZADO pelo lock global: encadeia na
+ * `cadeiaSincronizacao` para que manual e automático nunca rodem em paralelo
+ * (evita OPs duplicadas por corrida). Registra o resumo com a `origem` dada.
+ */
+function sincronizarSerializado(estado: EstadoLocal, origem: EntradaLog['origem']): Promise<ResumoSync> {
+  cadeiaSincronizacao = cadeiaSincronizacao.then(async () => {
+    const config = lerConfig()
+    const resumo = await sincronizarAgora(montarDeps(config, estado))
+    registrarResumo(origem, resumo)
+    return resumo
+  })
+  return cadeiaSincronizacao
+}
+
 function registrarHandlersIpc(estado: EstadoLocal): void {
   ipcMain.handle(CANAIS.lerConfig, () => {
     return lerConfig()
@@ -148,10 +172,8 @@ function registrarHandlersIpc(estado: EstadoLocal): void {
   })
 
   ipcMain.handle(CANAIS.sincronizarAgora, async () => {
-    const config = lerConfig()
-    const resumo = await sincronizarAgora(montarDeps(config, estado))
-    registrarResumo('manual', resumo)
-    return resumo
+    // Serializado pelo lock global (nunca em paralelo com o ciclo automático).
+    return sincronizarSerializado(estado, 'manual')
   })
 
   ipcMain.handle(CANAIS.lerLog, () => {
@@ -178,11 +200,38 @@ function reiniciarSegundoPlano(estado: EstadoLocal): void {
     console.warn('[main] segundo plano não iniciado — configuração incompleta.')
     return
   }
-  handleSegundoPlano = iniciarSegundoPlano(
-    montarDeps(config, estado),
-    config.intervaloSyncMinutos,
-    (resumo) => registrarResumo('segundo-plano', resumo),
-  )
+
+  // Loop próprio em cima do LOCK GLOBAL (`sincronizarSerializado`): cada tick
+  // enfileira um ciclo que NUNCA roda em paralelo com o manual nem com outro
+  // tick (resolve a corrida que duplicava OPs). Usa setTimeout recursivo para
+  // não sobrepor: o próximo tick só agenda após o ciclo terminar.
+  const intervaloMs = Math.max(1, config.intervaloSyncMinutos) * 60_000
+  let parado = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const tick = async (): Promise<void> => {
+    if (parado) return
+    try {
+      await sincronizarSerializado(estado, 'segundo-plano')
+    } catch (e) {
+      console.error('[main] erro no ciclo de segundo plano:', e instanceof Error ? e.message : String(e))
+    } finally {
+      if (!parado) timer = setTimeout(() => void tick(), intervaloMs)
+    }
+  }
+
+  // Primeiro ciclo imediato (como o scheduler fazia).
+  void tick()
+
+  handleSegundoPlano = {
+    parar(): void {
+      parado = true
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------
