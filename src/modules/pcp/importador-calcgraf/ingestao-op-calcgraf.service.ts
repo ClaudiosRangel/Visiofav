@@ -532,6 +532,28 @@ async function atualizarOp(
     },
   })
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CINTO DE SEGURANÇA (incidente 15/10/2026): NÃO destruir o roteiro quando o
+  // payload chega SEM etapas. Um agente ANTIGO (fase 1, sem roteiro) ou um PDF
+  // sem etapas parseadas enviava `etapas = []`, e a substituição total apagava
+  // as etapas/variações que a OP já tinha (vindas de PDF/reparo), zerando a OP
+  // e tirando-a da programação. Regra: só substituímos etapas/variações/itens
+  // quando o payload REALMENTE traz etapas. Sem etapas no payload, preservamos
+  // o roteiro e os materiais já existentes (atualiza só o cabeçalho acima).
+  const payloadTemEtapas = (dto.etapas ?? []).length > 0
+  if (!payloadTemEtapas) {
+    await tx.logOrdemProducao.create({
+      data: {
+        ordemProducaoId,
+        statusAnterior: statusAtual,
+        statusNovo: statusAtual,
+        usuarioId: USUARIO_AGENTE,
+        observacao: `OP atualizada via agente Calcgraf (cabeçalho) — roteiro/materiais PRESERVADOS porque o payload veio sem etapas. Referência externa: ${dto.numero}`,
+      },
+    })
+    return
+  }
+
   // Substituição total de itens/etapas/variações a partir do novo conteúdo (a
   // OP não tem produção; essa é a condição que permite a sobrescrita automática).
   await tx.itemOrdemProducao.deleteMany({ where: { ordemProducaoId } })

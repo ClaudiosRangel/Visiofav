@@ -610,3 +610,61 @@ describe('ingerirOpsCalcgraf — Fase 2: roteiro completo (golden OP 3000)', () 
     expect(db.variacoes.filter((v) => v.ordemProducaoId === criada.id)).toHaveLength(0)
   })
 })
+
+// ───────────────────────────────────────────────────────────────────────────
+// CINTO DE SEGURANÇA (incidente 15/10/2026): atualizar com payload SEM etapas
+// NÃO pode zerar o roteiro já existente.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('ingerirOpsCalcgraf — cinto de segurança (payload sem etapas preserva roteiro)', () => {
+  function op3200ComEtapas(): OpOrigemDTO {
+    return op(3200, {
+      quantidade: 1000,
+      etapas: [
+        { sequencia: 1, tipo: 'I', centro: 'Heidelberg', descricao: 'Impressão', setupMinutos: 100, operacaoMinutos: 50 },
+        { sequencia: 2, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Corte', setupMinutos: 10, operacaoMinutos: 20 },
+      ],
+      variacoes: [{ sequencia: 1, nome: 'Plano único', quantidade: 1000 }],
+    })
+  }
+
+  it('OP com etapas recebendo payload SEM etapas (agente antigo) PRESERVA as etapas/variações', async () => {
+    // 1ª ingestão: cria com 2 etapas + 1 variação.
+    await ingerirOpsCalcgraf(EMPRESA_A, [op3200ComEtapas()])
+    const criada = opsDaEmpresa(EMPRESA_A, '3200')[0]
+    const etapasAntes = db.etapas.filter((e) => e.ordemProducaoId === criada.id).length
+    const variacoesAntes = db.variacoes.filter((v) => v.ordemProducaoId === criada.id).length
+    expect(etapasAntes).toBe(2)
+    expect(variacoesAntes).toBe(1)
+
+    // 2ª ingestão: MESMA OP, conteúdo de cabeçalho diferente (hash muda), mas
+    // payload SEM etapas (simula o agente antigo da fase 1).
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [op(3200, { quantidade: 2000 })])
+    expect(r[0].resultado).toBe('atualizada')
+
+    // Cabeçalho atualizado...
+    const depois = opsDaEmpresa(EMPRESA_A, '3200')[0]
+    expect(depois.quantidade).toBe(2000)
+    // ...mas o roteiro foi PRESERVADO (não zerou).
+    expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(2)
+    expect(db.variacoes.filter((v) => v.ordemProducaoId === criada.id)).toHaveLength(1)
+  })
+
+  it('OP com etapas recebendo payload COM etapas substitui normalmente', async () => {
+    await ingerirOpsCalcgraf(EMPRESA_A, [op3200ComEtapas()])
+    const criada = opsDaEmpresa(EMPRESA_A, '3200')[0]
+
+    // Novo payload COM 3 etapas → substitui (de 2 para 3).
+    const novo = op(3200, {
+      quantidade: 1000,
+      etapas: [
+        { sequencia: 1, tipo: 'I', centro: 'Heidelberg', descricao: 'Impressão', setupMinutos: 100, operacaoMinutos: 50 },
+        { sequencia: 2, tipo: 'A', centro: 'Cortadeira (Grande)', descricao: 'Corte', setupMinutos: 10, operacaoMinutos: 20 },
+        { sequencia: 3, tipo: 'A', centro: 'Verniz', descricao: 'Verniz', setupMinutos: 5, operacaoMinutos: 15 },
+      ],
+    })
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [novo])
+    expect(r[0].resultado).toBe('atualizada')
+    expect(db.etapas.filter((e) => e.ordemProducaoId === criada.id)).toHaveLength(3)
+  })
+})
