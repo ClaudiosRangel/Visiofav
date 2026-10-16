@@ -39,46 +39,45 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
     fica melhor coberta pelo relatório gerado — Bloco 1.)
   - _Requisitos: 1.1, 1.2, 1.3, 2.1, 2.4_
 
-- [ ] 3. Observações confiáveis — backend ingestão + reader
-  - [ ] 3.1 Reader do agente: trazer `ConteudoAcond`
-    (`CalculoProdutosConjuntos`) → DTO aditivo `acondicionamento`; e derivar
-    tipo de serviço (regra documentada) → `tipoOp`. Funções puras testadas
-    (`node:test`).
-  - [ ] 3.2 Backend ingestão (`ingestao-op-calcgraf.service.ts`): gravar
-    `[Acond]`/`[TipoOp]` em `observacoes` (aditivo; hash cobre). Preserva cintos.
-  - [ ] 3.3 Testes do service (vitest) das novas tags; não-regressão.
-  - _Requisitos: 3.1, 3.2, 3.3, 3.4, 5.2, 5.3_
+> **DESCOBERTA (investigação no backup `CalcgrafCartonWega`) — re-escopo dos
+> blocos 3–6:** as observações "soltas" do PDF (acondicionamento, tipo de
+> serviço) e o status de estoque das bobinas NÃO têm fonte de campo confiável
+> acessível no backup:
+> - `CalculoProdutosConjuntos` está vazio (acondicionamento não vem daí).
+> - `CalculoHeader` não tem campo de tipo de serviço (Novo/Repetição) — é
+>   derivado pelo GPrint na geração do PDF.
+> - **`EstSaldos` está VAZIO no backup** (nenhum `SaldoFisico > 0`) e não há
+>   de-para direto `Suporte → CodItemEstoque`. Reconstruir "em estoque vs.
+>   encomendado" sem isso produziria dado ERRADO numa regra CRÍTICA.
+>
+> Decisão (alinhada ao usuário: "primordial que a regra seja por campo
+> confiável, para não quebrar"): **NÃO implementar o Bloco 4 agora** (risco de
+> corromper a regra do cartão com dado incerto). Mantém-se o texto atual
+> (fallback) — zero regressão. Blocos 3/4 ficam BLOQUEADOS por dado
+> indisponível no backup; destravar exige acesso ao saldo real do Calcgraf de
+> PRODUÇÃO (query no servidor PHTech) ou o de-para suporte→item.
 
-- [ ] 4. Regra "Aguardando Cartão" por `EstSaldos` (dado confiável)
-  - [ ] 4.1 Reader do agente: por bobina/suporte da OP, consultar `EstSaldos`
-    (SaldoFisico por `CodItem`), classificar `ESTOQUE`/`A_COMPRAR` + kg. Função
-    pura `classificarBobina(saldoFisico, necessidadeKg)` testada (Property 4).
-  - [ ] 4.2 DTO aditivo `bobinas: [{ descricao, kg, status, codItem }]`.
-  - [ ] 4.3 Backend ingestão: gravar as bobinas em `observacoes` NO MESMO
-    formato que a regra já entende (`[Bobina] <desc> em estoque|encomendado
-    (N kg)`), de modo que `analisarMaterial`/`temMaterialEncomendado` em
-    `etapa-operacional.routes.ts` funcionem SEM alteração.
-  - [ ] 4.4 Teste de não-regressão (vitest): OP com texto antigo → mesmo
-    resultado de `analisarMaterial`; OP nova via EstSaldos → retenção/parcial
-    correta (Property 3).
-  - _Requisitos: 4.1, 4.2, 4.3, 4.4, 5.3_
+- [-] 3. Observações confiáveis — BLOQUEADO (sem fonte de campo confiável no
+  backup para acondicionamento/tipo de serviço). O relatório Vizor (Bloco 1) já
+  exibe TODAS as observações que o agente trouxer; o enriquecimento na origem
+  fica para quando houver campo confiável. Não implementado para não inventar
+  dado. _Requisitos: 3.2, 3.3 (parcial — exibição coberta pelo Bloco 1)_
 
-- [ ] 5. Validação ponta a ponta contra o backup local
-  - [ ] 5.1 Script `_tmp-` (removido após uso): rodar o reader contra
-    `CalcgrafCartonWega` para a OP 3.166 (2 bobinas em estoque) + uma OP com
-    encomenda; conferir status/kg, acondicionamento, tipoOp e o relatório gerado
-    com as observações.
-  - [ ] 5.2 Conferir isolamento multi-tenant (relatório/ingestão por empresa) —
-    Property 5. Remover o script.
-  - _Requisitos: 4.1, 5.5, 6.1_
+- [-] 4. Regra "Aguardando Cartão" por `EstSaldos` — BLOQUEADO (dado
+  indisponível/incerto no backup: `EstSaldos` vazio + sem de-para
+  suporte→item). A regra atual (texto "encomendado") CONTINUA funcionando como
+  está — nenhuma regressão (Req 4.3 já garante o fallback). Reabrir quando
+  tivermos o saldo real confiável. _Requisitos: 4.1, 4.2 (bloqueado); 4.3, 4.4
+  (já atendidos pelo comportamento atual)_
 
-- [ ] 6. Empacotar agente e implantar
-  - [ ] 6.1 Bump do agente para v0.4.0; selo de versão; `npm run build` +
-    `npm run dist`; doc de deploy (backend primeiro → validar → trocar agente).
-  - [ ] 6.2 Commit/push (back e front separados); se tocar schema (não previsto),
-    `migrate-prod.ts` idempotente no mesmo commit, testado 2× (Req 5.4).
-  - [ ] 6.3 Deploy monitorado + atualizar HANDOFF/steering.
-  - _Requisitos: 5.1, 5.4_
+- [-] 5. Validação contra backup — PARCIAL. Blocos 1/2 validados por testes
+  unitários + diagnostics. A validação ponta a ponta de estoque (5.1) depende do
+  Bloco 4 (bloqueado). _Requisitos: 6.1 (relatório isolado por empresa — já no
+  Bloco 1)_
+
+- [-] 6. Empacotar agente — NÃO NECESSÁRIO nesta leva. Blocos 1 e 2 entregam a
+  visualização completa SEM mexer no agente. Reempacotar só quando os blocos 3/4
+  forem destravados (dado confiável). _Requisitos: 5.1_
 
 ## Task Dependency Graph
 
