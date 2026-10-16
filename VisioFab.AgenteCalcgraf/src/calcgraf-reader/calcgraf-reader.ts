@@ -956,6 +956,39 @@ interface LinhaOpLoteJoin extends LinhaOpLote {
   CodOpHeader: number
 }
 
+/**
+ * SELECT do CLIENTE de cada OP. No Calcgraf o cliente NÃO está em OpHeader nem
+ * (confiavelmente) em CalculoHeader.CodNome (quase sempre NULL) — vem do PEDIDO
+ * associado ao item da OP:
+ *   OpItem → OpItemxPedidoItem → PedidoItem → PedidoHeader.CodNome → Nomes.
+ * Pegamos o nome via COALESCE(RazaoSocial, NomePrincipal) e o CNPJ/CPF. Usamos
+ * MIN(h.Numero como chave) + MAX nos nomes para 1 cliente por OP (o normal; se
+ * houver mais de um pedido por OP, pega um determinístico). Validado no backup
+ * (3130/3131 = BELGO BEKAERT; 3133 = MARBRAN/SOL & NEVE).
+ */
+export function montarQueryClienteDaOp(codigosHeader: number[]): string {
+  const lista = codigosHeader.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT h.Codigo AS CodOpHeader, ` +
+    `MAX(COALESCE(NULLIF(LTRIM(RTRIM(n.RazaoSocial)), ''), n.NomePrincipal)) AS clienteNome, ` +
+    `MAX(n.CNPJCPF) AS clienteDoc ` +
+    `FROM OpHeader h ` +
+    `JOIN OpItem oi ON oi.CodOpHeader = h.Codigo ` +
+    `JOIN OpItemxPedidoItem ox ON ox.CodOpItem = oi.Codigo ` +
+    `JOIN PedidoItem pi ON pi.Codigo = ox.CodPedidoItem ` +
+    `JOIN PedidoHeader ph ON ph.Codigo = pi.CodPedidoHeader ` +
+    `JOIN Nomes n ON n.Codigo = ph.CodNome ` +
+    `WHERE h.Codigo IN (${lista}) ` +
+    `GROUP BY h.Codigo`
+  )
+}
+
+interface LinhaClienteOp {
+  CodOpHeader: number
+  clienteNome?: string | null
+  clienteDoc?: string | null
+}
+
 // ===========================================================================
 // Queries de ROTEIRO (Fase 2) — resolve o CÁLCULO que originou a OP e lê
 // etapas/variações/tintas. Caminho validado: OpItemEstrutura.Codigo =
@@ -1149,6 +1182,19 @@ export async function lerOpsCandidatas(
   //     etapas/variações/tintas/mat.acabamento em lote. SEQUENCIAL (tedious).
   const roteiro = await lerRoteiroEmLote(conexao, codigos)
 
+  // 3c) CLIENTE (via pedido): nome + doc por OpHeader. SEQUENCIAL. Best-effort —
+  //     OP sem pedido associado fica sem cliente (não quebra).
+  const clienteRows = await conexao.consultar<LinhaClienteOp>(montarQueryClienteDaOp(codigos))
+  const clientePorHeader = new Map<number, { nome?: string; doc?: string }>()
+  for (const c of clienteRows) {
+    if (c.CodOpHeader != null) {
+      clientePorHeader.set(c.CodOpHeader, {
+        nome: strOuUndef(c.clienteNome),
+        doc: strOuUndef(c.clienteDoc),
+      })
+    }
+  }
+
   const dtos: OpOrigemDTO[] = []
   for (const h of headers) {
     const itens = (itensPorHeader.get(h.Codigo) ?? []).map(mapearItem)
@@ -1164,10 +1210,13 @@ export async function lerOpsCandidatas(
     // das OPs, avulsas; mantém comportamento da fase 1, sem etapas).
     const r = roteiro.get(h.Codigo)
 
+    const cli = clientePorHeader.get(h.Codigo)
+
     const dto: OpOrigemDTO = {
       numero: h.Numero,
       descricao: strOuUndef(h.Descricao) ?? '',
       dataEmissao: dataIsoOuUndef(h.DataHoraEmissao),
+      clienteNome: cli?.nome,
       quantidade: lotePrincipal?.tiragem,
       tiragem: lotePrincipal?.tiragem,
       dataEntrega: lotePrincipal?.dataPrometida,
@@ -1180,15 +1229,12 @@ export async function lerOpsCandidatas(
       tintasTexto: r?.tintasTexto,
     }
 
-    // TODO (vínculo produto/cliente — risco/pendência do design):
-    //  - produtoNome/produtoCodigo: resolver OpItem.CodItemEstoque contra o
-    //    cadastro de item do Calcgraf. Query indicada (quando a tabela/campo de
-    //    nome forem confirmados no backup — provável `ItensEstoque`/`Produtos`):
-    //      SELECT Codigo, Descricao FROM <tabela_item> WHERE Codigo IN (<CodItemEstoque...>)
-    //  - clienteNome: via OpItemxPedidoItem → PedidoItem/PedidoHeader → Nomes/
-    //    NomesxClientes. Deixado comentado por ser o vínculo "risco/pendência".
-    // Enquanto não resolvido, o backend usa a descrição da OP; produto/cliente
-    // ficam indefinidos (best-effort), sem bloquear a ingestão.
+    // CLIENTE: resolvido via pedido (OpItem → OpItemxPedidoItem → PedidoItem →
+    // PedidoHeader.CodNome → Nomes) — ver `montarQueryClienteDaOp` / passo 3c.
+    // `clienteNome` já foi preenchido acima a partir de `clientePorHeader`.
+    // TODO (produto): produtoNome/produtoCodigo ainda best-effort — resolver
+    // OpItem.CodItemEstoque contra o cadastro de item do Calcgraf numa evolução
+    // futura (não bloqueia a ingestão; o backend usa a descrição da OP).
 
     dtos.push(dto)
   }
