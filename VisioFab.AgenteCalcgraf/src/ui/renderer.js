@@ -166,6 +166,19 @@ async function carregarLog() {
   }
 }
 
+/** Carrega e exibe a versão/fase do agente no cabeçalho (prova visual da versão). */
+async function carregarVersao() {
+  try {
+    const info = await api.lerVersao()
+    const badge = $('versaoBadge')
+    if (badge) badge.textContent = 'v' + (info.versao || '?')
+    const fase = $('faseInfo')
+    if (fase) fase.textContent = info.trazRoteiro ? '✓ ' + info.fase : info.fase
+  } catch (e) {
+    // silencioso
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -212,6 +225,7 @@ window.addEventListener('DOMContentLoaded', () => {
     carregarLog()
   })
 
+  carregarVersao()
   carregarConfig()
   carregarLog()
 })

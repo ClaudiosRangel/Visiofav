@@ -32,6 +32,7 @@ import type { AgenteApi, EntradaLog } from './ipc-canais'
 // ---------------------------------------------------------------------------
 
 const api: AgenteApi = {
+  lerVersao: () => ipcRenderer.invoke(CANAIS.lerVersao),
   lerConfig: () => ipcRenderer.invoke(CANAIS.lerConfig),
   salvarConfig: (parcial) => ipcRenderer.invoke(CANAIS.salvarConfig, parcial),
   sincronizarAgora: () => ipcRenderer.invoke(CANAIS.sincronizarAgora),

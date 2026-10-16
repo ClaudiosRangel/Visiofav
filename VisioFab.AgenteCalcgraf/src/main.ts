@@ -29,7 +29,17 @@ import type { SyncDeps, ResumoSync, HandleSegundoPlano } from './scheduler/sched
 import type { ConfigSender } from './sender/sender'
 import type { ConfigConexaoCalcgraf } from './calcgraf-reader/calcgraf-reader'
 import { CANAIS } from './ipc-canais'
-import type { EntradaLog } from './ipc-canais'
+import type { EntradaLog, InfoVersao } from './ipc-canais'
+
+/**
+ * Identificação deste build para a UI. `trazRoteiro: true` marca que esta é a
+ * FASE 2 (envia etapas/variações do Calcgraf). Em um build fase 1 isso seria
+ * false — é o jeito à prova de dúvida de saber qual versão está instalada.
+ */
+const INFO_VERSAO: Omit<InfoVersao, 'versao'> = {
+  fase: 'Fase 2 — Roteiro completo (etapas/variações)',
+  trazRoteiro: true,
+}
 
 /** Referência à janela principal (evita coleta pelo GC). */
 let janela: BrowserWindow | null = null
@@ -160,6 +170,11 @@ function sincronizarSerializado(estado: EstadoLocal, origem: EntradaLog['origem'
 }
 
 function registrarHandlersIpc(estado: EstadoLocal): void {
+  ipcMain.handle(CANAIS.lerVersao, (): InfoVersao => {
+    const versao = typeof app.getVersion === 'function' ? app.getVersion() : '0.0.0'
+    return { versao, ...INFO_VERSAO }
+  })
+
   ipcMain.handle(CANAIS.lerConfig, () => {
     return lerConfig()
   })

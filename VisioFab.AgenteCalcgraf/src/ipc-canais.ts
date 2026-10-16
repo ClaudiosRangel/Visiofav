@@ -27,9 +27,21 @@ export const CANAIS = {
   salvarConfig: 'agente:salvarConfig',
   sincronizarAgora: 'agente:sincronizarAgora',
   lerLog: 'agente:lerLog',
+  /** Retorna a versão/identificação do agente (para a UI exibir). */
+  lerVersao: 'agente:lerVersao',
   /** Evento push: o main envia um ResumoSync a cada ciclo de segundo plano. */
   eventoResumo: 'agente:resumo',
 } as const
+
+/** Identificação do agente exibida na UI (versão + fase/capacidades). */
+export interface InfoVersao {
+  /** Versão do app (package.json). */
+  versao: string
+  /** Rótulo da fase/capacidade (ex.: "Fase 2 — Roteiro completo"). */
+  fase: string
+  /** `true` se este build traz o roteiro (etapas/variações) do Calcgraf. */
+  trazRoteiro: boolean
+}
 
 /**
  * Entrada do log em memória/arquivo exposta à UI. Cada ciclo de sincronização
@@ -49,6 +61,8 @@ export interface EntradaLog {
  * o renderer importa este tipo para ter autocomplete e checagem.
  */
 export interface AgenteApi {
+  /** Lê a versão/identificação do agente (para a UI exibir no cabeçalho). */
+  lerVersao(): Promise<InfoVersao>
   /** Lê a config atual (segredos já decifrados pelo main). */
   lerConfig(): Promise<ConfigAgente>
   /** Salva um subconjunto da config (o main cifra os segredos em repouso). */
