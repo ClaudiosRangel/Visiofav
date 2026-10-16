@@ -33,11 +33,18 @@ import type { EntradaLog, InfoVersao } from './ipc-canais'
 
 /**
  * Identificação deste build para a UI. `trazRoteiro: true` marca que esta é a
- * FASE 2 (envia etapas/variações do Calcgraf). Em um build fase 1 isso seria
+ * FASE 2+ (envia etapas/variações do Calcgraf). Em um build fase 1 isso seria
  * false — é o jeito à prova de dúvida de saber qual versão está instalada.
+ *
+ * v0.3.0 (paridade PDF — spec importador-calcgraf-paridade-pdf): além do
+ * roteiro, o reader passou a enviar os dados que faltavam para igualar o
+ * importador de PDF — CNPJ do cliente (vínculo por documento, acaba o
+ * "ACTUAL"), programação de entrega (via PedidoItemEntrega — resolve a
+ * "entrega em branco"), código do centro por etapa (de-para → centro real,
+ * não cria máquina irreal) e planos/componentes com cores e frente/verso.
  */
 const INFO_VERSAO: Omit<InfoVersao, 'versao'> = {
-  fase: 'Fase 2 — Roteiro completo (etapas/variações)',
+  fase: 'Fase 2+ — Paridade PDF (cliente/entrega/centro/planos)',
   trazRoteiro: true,
 }
 

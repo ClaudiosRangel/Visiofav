@@ -58,6 +58,51 @@ que abrir a porta do SQL para fora — caminho burocrático e desnecessário).
 
 ---
 
+## 0.1 Atualização para o v0.3.0 (paridade com o importador de PDF)
+
+O agente **v0.3.0** (spec `importador-calcgraf-paridade-pdf`) passa a enviar os
+dados que faltavam para igualar o importador de PDF. A regra de negócio fica no
+BACKEND (o agente é "burro"); por isso a ordem de deploy é **backend primeiro**.
+
+### O que muda no v0.3.0 (vs v0.2.1)
+- **CNPJ do cliente** (`clienteDoc`): o backend vincula a OP ao cadastro de
+  Cliente por CNPJ (só dígitos). Acaba o cliente placeholder "ACTUAL".
+- **Programação de entrega**: lida de `PedidoItemEntrega` (todas as parcelas) —
+  resolve a "data de entrega em branco" (o `OpLote.DataPrometida` é NULL na
+  prática). A menor data vira a `dataEntregaPrevista`.
+- **Código do centro por etapa** (`centroCodigo`): o backend resolve o centro
+  REAL via de-para (`DeParaImportacao`) antes de reusar por nome/criar — para de
+  criar "máquina irreal".
+- **Planos/componentes + frente/verso**: multi-plano (TAMPA/CAIXA/BOLSA) e
+  retiração (cores NxM de `CalculoAtvImpressao`) viram `PlanoOrdemProducao`.
+  Nomenclatura exibida: "VERSO" (valor técnico `FACE`).
+- Selo na UI: **"Fase 2+ — Paridade PDF (cliente/entrega/centro/planos)"**.
+
+### Ordem de deploy (OBRIGATÓRIA — backend antes do agente)
+1. **Deploy do backend no Render** (`VisioFab.Wms.Back`, branch `main`): as
+   regras novas (cliente por CNPJ, planos, programação de entrega, tipo 'M'→
+   VERNIZ, cinto de segurança) precisam estar em produção ANTES. Os campos são
+   ADITIVOS — um backend novo com agente antigo continua funcionando; um agente
+   novo com backend antigo só não aproveita os campos (não quebra).
+2. **Validar** no Vizor que o backend novo subiu (ex.: importar/alterar 1 OP e
+   conferir cliente/entrega/planos).
+3. **Trocar o agente no servidor PHTech (uma vez, via RDP)**:
+   - Instalador: `release/VisioFab Agente Calcgraf Setup 0.3.0.exe` (~166 MB).
+   - Fechar o agente atual (bandeja), rodar o Setup 0.3.0, reabrir.
+   - Conferir na UI o selo **0.3.0 · Fase 2+ — Paridade PDF**.
+4. **Monitorar a 1ª sincronização** (ver seção de monitoramento / T10): contagem
+   criadas/atualizadas/pendentes; nenhuma perda de etapa/fila (cinto S1 ativo:
+   payload sem etapas NÃO zera o roteiro).
+
+### Rede de segurança já embutida (não repetir o incidente das 61 OPs)
+- O backend **só substitui roteiro/planos quando o payload traz etapas** (cinto
+  S1). Payload sem etapas preserva tudo (atualiza só cabeçalho/entregas).
+- OP com produção → vira `AlteracaoOpPendente` (revisão manual), nunca é
+  sobrescrita (cinto S2).
+- Identidade da OP = `referencia_externa` (nº Calcgraf). Idempotência por hash.
+
+---
+
 ## 1. Pré-requisitos no servidor (via RDP)
 
 1. Entrar no servidor por RDP (`sistemas.phtech.net.br:1551`, usuário

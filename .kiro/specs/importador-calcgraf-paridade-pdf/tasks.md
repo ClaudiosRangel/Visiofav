@@ -120,11 +120,13 @@ idempotência real. Sem mudança de schema por padrão.
     get_diagnostics limpo nos dois arquivos.
   - _Requisitos: 6.3_
 
-- [ ] 9. Empacotar agente v0.3.0 e preparar implantação
-  - [ ] 9.1 Bump para `0.3.0`; `npm run build` + `npm run dist`; conferir o
-    instalador em `release/`. Atualizar o selo de versão/fase na UI do agente.
-  - [ ] 9.2 Documentar a ordem de deploy: backend primeiro (retrocompatível) →
-    validação → trocar agente no servidor (uma vez) → monitorar 1ª sync.
+- [x] 9. Empacotar agente v0.3.0 e preparar implantação
+  - [x] 9.1 Bump `0.2.1`→`0.3.0`; `npm run build` + `npm run dist` OK →
+    `release/VisioFab Agente Calcgraf Setup 0.3.0.exe` (~165,71 MB). Selo na UI
+    atualizado: "Fase 2+ — Paridade PDF (cliente/entrega/centro/planos)".
+  - [x] 9.2 Ordem de deploy documentada em `docs/agente-calcgraf-instalacao.md`
+    §0.1 (backend primeiro → validar → trocar agente no servidor uma vez →
+    monitorar 1ª sync) + rede de segurança (cintos S1/S2, idempotência).
   - _Requisitos: 9.5_
 
 - [ ] 10. Deploy monitorado + reparo retroativo opcional

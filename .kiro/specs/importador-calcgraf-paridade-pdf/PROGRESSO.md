@@ -66,7 +66,12 @@ programação (cintos S1–S4). "Costa" exibida como "Verso".
     de Programação troca "(COSTA)"→"(VERSO)" na EXIBIÇÃO (badges + title),
     cobrindo OPs ANTIGAS já gravadas com "(COSTA)" sem tocar o dado. 2 pontos
     (Modelo 1 e 2 do painel). get_diagnostics limpo. **COMMIT PENDENTE (2 repos).**
-- [ ] **T9** — empacotar agente v0.3.0; selo de versão; doc de deploy.
+- [x] **T9 FEITO** — agente empacotado **v0.3.0**: `package.json` bump 0.2.1→
+  0.3.0; selo na UI = **"Fase 2+ — Paridade PDF (cliente/entrega/centro/planos)"**
+  (`main.ts` INFO_VERSAO); build (tsc) + `npm run dist` OK → instalador
+  `release/VisioFab Agente Calcgraf Setup 0.3.0.exe` (~165,71 MB). Doc de deploy
+  (ordem backend-primeiro + rede de segurança) em
+  `docs/agente-calcgraf-instalacao.md` §0.1. (release/ não é versionado.)
 - [ ] **T10** — deploy monitorado + reparo retroativo opcional; commit/push; atualizar HANDOFF/steering.
 
 ## ARQUIVOS JÁ TOCADOS (T1)
