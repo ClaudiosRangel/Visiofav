@@ -63,35 +63,41 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
 > traz como `observacaoTexto`; o backend grava em `observacoes` (a regra do
 > cartão passa a funcionar nas OPs sincronizadas, igual às de PDF).
 
-- [ ] 3. Agente lê a observação da OP de `TabelaMemos` e envia ao Vizor
-  - [ ] 3.1 Reader (`calcgraf-reader.ts`): nova query (SELECT) em `TabelaMemos`
-    por `NomeTabela='CalculoOp'` + `Codigo IN (<CalcCodigos>)` → `Memo` (ntext).
-    Reusa o CalcCodigo já resolvido para o roteiro (lote, sequencial — tedious).
-    DTO aditivo `observacaoTexto?: string`. Função pura de limpeza/normalização
-    testada (`node:test`).
-  - [ ] 3.2 Backend ingestão (`ingestao-op-calcgraf.service.ts`): anexar
-    `observacaoTexto` ao campo `observacoes` da OP (preservando as tags já
-    montadas `[Cliente]`/`[Produto]`/etc.). Aditivo; hash cobre. Cintos
-    preservados. Multi-tenant por `empresaId` da OP.
-  - [ ] 3.3 Testes do service (vitest): observação anexada; não-regressão.
+- [x] 3. Agente lê a observação da OP de `TabelaMemos` e envia ao Vizor
+  - [x] 3.1 Reader (`calcgraf-reader.ts`): query `montarQueryObservacaoOp` em
+    `TabelaMemos` por `NomeTabela='CalculoOp'` + `Codigo IN (<CalcCodigos>)` →
+    `CAST(Memo AS nvarchar(max))`. Reusa o CalcCodigo já resolvido para o
+    roteiro (6ª query SEQUENCIAL do `lerRoteiroEmLote`, tedious). DTO aditivo
+    `observacaoTexto?: string`; propagado em `lerOpsCandidatas`. Testes
+    (`node:test`, `calcgraf-observacao.test.ts`): 3/3; suíte do reader 19/19.
+  - [x] 3.2 Backend ingestão (`ingestao-op-calcgraf.service.ts`):
+    `montarObservacoes` anexa `observacaoTexto` ao campo `observacoes`
+    (preservando `[Cliente]`/`[Produto]`/etc.). DTO `.pure.ts` ganhou
+    `observacaoTexto` e o hash passou a cobri-lo. Cintos preservados.
+    Multi-tenant por `empresaId` da OP.
+  - [x] 3.3 Testes do service (vitest): observação anexada + regra detecta +
+    não-regressão (sem observacaoTexto = observacoes inalterado). Suíte
+    service+pure **64/64**.
   - _Requisitos: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 4. Regra "Aguardando Cartão" nas OPs sincronizadas (via observação)
-  - [ ] 4.1 Com a `observacaoTexto` do Calcgraf gravada em `observacoes` (Task 3),
-    a regra existente de `etapa-operacional.routes.ts` (`temMaterialEncomendado`
-    / `analisarMaterial`, que lê "em estoque/encomendado (N kg)") passa a
-    funcionar nas OPs do agente SEM alteração na regra.
-  - [ ] 4.2 Validar o formato: o memo do Calcgraf usa "em estoque ( N kg )" com
-    espaços variáveis. Conferir que o regex da regra casa; se não, normalizar o
-    texto no backend (ingestão) para o formato que a regra entende — sem mudar
-    a regra. Teste de não-regressão.
+- [x] 4. Regra "Aguardando Cartão" nas OPs sincronizadas (via observação)
+  - [x] 4.1 Com a `observacaoTexto` gravada em `observacoes` (Task 3), a regra
+    existente de `etapa-operacional.routes.ts` (`temMaterialEncomendado` /
+    `analisarMaterial`) passa a funcionar nas OPs do agente SEM alteração na
+    regra.
+  - [x] 4.2 Formato validado: o memo usa "em estoque ( N kg )" com espaços
+    variáveis. `normalizarObservacaoCartao` (backend, exportada e testada)
+    compacta `( N kg )` → `(N kg)` — o único formato que o regex da regra casa.
+    A regra NÃO foi alterada. Testes de casamento + idempotência inclusos.
   - _Requisitos: 4.1, 4.3, 4.4_
 
-- [ ] 5. Validação ponta a ponta contra o backup local
-  - [ ] 5.1 Script `_tmp-` (removido após uso): rodar o reader contra
-    `CalcgrafCartonWega` para OPs com observação (ex.: cálculos 15196/15193) e
-    conferir que `observacaoTexto` sai correto e que a regra do cartão detecta.
-  - [ ] 5.2 Remover o script. _Requisitos: 4.1_
+- [x] 5. Validação ponta a ponta contra o backup local
+  - [x] 5.1 Script `_tmp-valida-obs.mjs` (removido após uso) rodou contra
+    `CalcgrafCartonWega` nos cálculos 15196/15193/15189. Confirmado: 15193
+    "( 23,40 kg )" NÃO casava bruto (0) e casa após normalizar (1); 15189 e
+    15196 (já compactos) casam antes e depois. Comprova a necessidade e a
+    corretude da normalização.
+  - [x] 5.2 Script removido. _Requisitos: 4.1_
 
 - [ ] 6. Empacotar agente v0.4.0 e implantar
   - [ ] 6.1 Bump v0.4.0; selo; build + dist; doc de deploy (backend primeiro →

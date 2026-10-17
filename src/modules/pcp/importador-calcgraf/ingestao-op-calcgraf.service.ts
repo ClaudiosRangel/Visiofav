@@ -128,7 +128,42 @@ function montarObservacoes(dto: OpOrigemDTO, tagCliente?: string | null): string
   for (const b of dto.bobinasTexto ?? []) {
     if (b && b.trim()) linhas.push(`[Bobina] ${b.trim()}`)
   }
+  // Observação textual do Calcgraf (memo TabelaMemos). Anexada ao final,
+  // preservando as tags acima. Normalizada para o formato que a regra
+  // "Aguardando Cartão" entende (ver `normalizarObservacaoCartao`): a regra lê
+  // "... em estoque|encomendado ( N kg )" para decidir a retenção — o memo do
+  // Calcgraf usa espaços variáveis dentro dos parênteses. Normalizamos SÓ o
+  // espaçamento desse padrão; o texto em si é preservado para exibição.
+  const obsTexto = normalizarObservacaoCartao(dto.observacaoTexto)
+  if (obsTexto) {
+    linhas.push(obsTexto)
+  }
   return linhas.length > 0 ? linhas.join('\n') : undefined
+}
+
+/**
+ * Normaliza o texto de observação do Calcgraf (memo) para que a regra
+ * "Aguardando Cartão" (`etapa-operacional.routes.ts` → `analisarMaterial`)
+ * reconheça as bobinas. Essa regra casa com o padrão:
+ *
+ *   /(?:em estoque|encomendad[oa])\s*\(([\d.,]+)\s*kg\)/i
+ *
+ * Ou seja: `(` IMEDIATAMENTE antes do número e `)` logo após `kg` (sem espaço
+ * interno). O memo do Calcgraf costuma vir com espaços variáveis — ex.:
+ * "em estoque ( 13.793,0 kg )". Aqui apenas COMPACTAMOS o espaçamento desse
+ * trecho (`( N kg )` → `(N kg)`), sem alterar o restante do texto. Idempotente
+ * e seguro: se o padrão não aparecer, o texto volta inalterado.
+ *
+ * Importante: NÃO mudamos a regra — só adaptamos o dado de entrada ao formato
+ * que a regra já espera (steering: regra do cartão é primordial, não quebrar).
+ */
+export function normalizarObservacaoCartao(texto?: string): string | undefined {
+  if (!texto) return undefined
+  const t = texto.trim()
+  if (!t) return undefined
+  // Compacta "( <num> kg )" (com quaisquer espaços) para "(<num> kg)".
+  // Mantém o número e a unidade; só remove os espaços adjacentes aos parênteses.
+  return t.replace(/\(\s*([\d.,]+)\s*kg\s*\)/gi, '($1 kg)')
 }
 
 /** Resolve a quantidade da OP a partir do DTO (quantidade → tiragem → 0). */

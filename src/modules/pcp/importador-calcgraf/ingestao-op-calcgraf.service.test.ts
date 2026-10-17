@@ -438,7 +438,7 @@ vi.mock('../../../lib/prisma', () => {
   return { prisma: prismaMock }
 })
 
-import { ingerirOpsCalcgraf } from './ingestao-op-calcgraf.service'
+import { ingerirOpsCalcgraf, normalizarObservacaoCartao } from './ingestao-op-calcgraf.service'
 import type { OpOrigemDTO } from './ingestao-op-calcgraf.pure'
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -945,5 +945,87 @@ describe('ingerirOpsCalcgraf — T5 tags de cabeçalho [Matriz]/[Formato]/[Bobin
     expect(criada.observacoes).toContain('[Formato] 600 x 910')
     expect(criada.observacoes).toContain('[Bobina] Bobina Stora Enzo 222g')
     expect(criada.observacoes).toContain('[Bobina] Bobina Suzano 300g')
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Bloco 3 (spec op-visualizacao-observacoes-calcgraf) — observação textual
+// (memo TabelaMemos) é anexada a `observacoes`, fazendo a regra do cartão
+// funcionar nas OPs sincronizadas. Normalização do espaçamento "( N kg )".
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('normalizarObservacaoCartao — adapta o memo ao formato da regra do cartão', () => {
+  it('compacta "( N kg )" (espaços variáveis) para "(N kg)" sem alterar o resto', () => {
+    const entrada = 'Bobina Stora Enzo 222g em estoque ( 13.793,0 kg )\nMontagem 21'
+    const saida = normalizarObservacaoCartao(entrada)
+    expect(saida).toBe('Bobina Stora Enzo 222g em estoque (13.793,0 kg)\nMontagem 21')
+  })
+
+  it('casa com o regex da regra (analisarMaterial) após a normalização', () => {
+    const regraRegex = /(?:\[Bobina\]\s*)?([^\n[]*?)\s*(?:em estoque|encomendad[oa])\s*\(([\d.,]+)\s*kg\)/gi
+    const bruto = 'Bobina X encomendado ( 2.200,5 kg )'
+    // Antes de normalizar NÃO casa (espaço após "(" e antes de ")").
+    expect(Array.from(bruto.matchAll(regraRegex))).toHaveLength(0)
+    const norm = normalizarObservacaoCartao(bruto)!
+    const m = Array.from(norm.matchAll(regraRegex))
+    expect(m).toHaveLength(1)
+    expect(m[0][2]).toBe('2.200,5') // kg capturado corretamente
+  })
+
+  it('texto vazio/ausente → undefined', () => {
+    expect(normalizarObservacaoCartao(undefined)).toBeUndefined()
+    expect(normalizarObservacaoCartao('   ')).toBeUndefined()
+  })
+
+  it('é idempotente (aplicar 2× não muda)', () => {
+    const uma = normalizarObservacaoCartao('em estoque ( 10 kg )')!
+    const duas = normalizarObservacaoCartao(uma)!
+    expect(duas).toBe(uma)
+  })
+})
+
+describe('ingerirOpsCalcgraf — Bloco 3: observação textual anexada a observacoes', () => {
+  it('anexa a observacaoTexto do Calcgraf ao campo observacoes (preservando as tags)', async () => {
+    const r = await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5400, {
+        clienteNome: 'Carton Wega SA',
+        produtoNome: 'Caixa X',
+        observacaoTexto: 'Serviço Repetição\nBobina Stora Enzo 222g em estoque ( 13.793,0 kg )\n600 x 910 - Montagem 21',
+      }),
+    ])
+    expect(r[0].resultado).toBe('criada')
+
+    const criada = opsDaEmpresa(EMPRESA_A, '5400')[0]
+    // Tags de cabeçalho preservadas.
+    expect(criada.observacoes).toContain('[Cliente] Carton Wega SA')
+    expect(criada.observacoes).toContain('[Produto] Caixa X')
+    // Texto do memo anexado, com o "( N kg )" normalizado para a regra.
+    expect(criada.observacoes).toContain('Serviço Repetição')
+    expect(criada.observacoes).toContain('em estoque (13.793,0 kg)')
+  })
+
+  it('a regra "Aguardando Cartão" detecta "encomendado" quando o memo é anexado', async () => {
+    await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5401, {
+        observacaoTexto: 'Bobina Suzano 300g encomendado ( 5.000,0 kg )',
+      }),
+    ])
+    const criada = opsDaEmpresa(EMPRESA_A, '5401')[0]
+    // temMaterialEncomendado usa /encomendad/i em observacoes → precisa casar.
+    expect(/encomendad/i.test(criada.observacoes ?? '')).toBe(true)
+    // E o regex de bobinas (com kg entre parênteses) também casa (normalizado).
+    const regraRegex = /(?:\[Bobina\]\s*)?([^\n[]*?)\s*(?:em estoque|encomendad[oa])\s*\(([\d.,]+)\s*kg\)/gi
+    expect(Array.from((criada.observacoes ?? '').matchAll(regraRegex))).toHaveLength(1)
+  })
+
+  it('sem observacaoTexto → observacoes inalterado (não-regressão)', async () => {
+    await ingerirOpsCalcgraf(EMPRESA_A, [
+      op(5402, { clienteNome: 'Cliente Y', produtoNome: 'Prod Y' }),
+    ])
+    const criada = opsDaEmpresa(EMPRESA_A, '5402')[0]
+    expect(criada.observacoes).toContain('[Cliente] Cliente Y')
+    expect(criada.observacoes).toContain('[Produto] Prod Y')
+    // Nenhuma linha de bobina/estoque sem fonte.
+    expect(/em estoque|encomendad/i.test(criada.observacoes ?? '')).toBe(false)
   })
 })

@@ -42,9 +42,15 @@ import type { EntradaLog, InfoVersao } from './ipc-canais'
  * "ACTUAL"), programação de entrega (via PedidoItemEntrega — resolve a
  * "entrega em branco"), código do centro por etapa (de-para → centro real,
  * não cria máquina irreal) e planos/componentes com cores e frente/verso.
+ *
+ * v0.4.0 (observações — spec op-visualizacao-observacoes-calcgraf): o reader
+ * passou a trazer a OBSERVAÇÃO textual da OP (campo memo `TabelaMemos`,
+ * NomeTabela='CalculoOp') — Serviço Novo/Repetição + bobinas "em estoque/
+ * encomendado (N kg)" + LXL + Montagem. Com isso a regra "Aguardando Cartão"
+ * passa a funcionar também nas OPs sincronizadas (antes só nas de PDF).
  */
 const INFO_VERSAO: Omit<InfoVersao, 'versao'> = {
-  fase: 'Fase 2+ — Paridade PDF (cliente/entrega/centro/planos)',
+  fase: 'Fase 2+ — Paridade PDF + Observações da OP',
   trazRoteiro: true,
 }
 

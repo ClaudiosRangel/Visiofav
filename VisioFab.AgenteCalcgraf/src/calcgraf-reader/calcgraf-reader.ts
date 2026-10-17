@@ -195,6 +195,15 @@ export interface OpOrigemDTO {
   variacoes?: VariacaoOpOrigemDTO[]
   /** Tintas/cores resumidas como texto (tag [Cores]). */
   tintasTexto?: string
+  /**
+   * Observação textual da OP (campo memo do Calcgraf — `TabelaMemos`,
+   * NomeTabela='CalculoOp'). Contém "Serviço Novo/Repetição", bobinas
+   * "em estoque/encomendado (N kg)", LXL, Montagem e instruções — mesmo texto
+   * do PDF. O backend anexa isto a `OrdemProducao.observacoes`, o que faz a
+   * regra "Aguardando Cartão" (lê "em estoque/encomendado") funcionar também nas
+   * OPs sincronizadas. Aditivo. Spec op-visualizacao-observacoes-calcgraf.
+   */
+  observacaoTexto?: string
   // ── Paridade PDF (T6) — aditivos/opcionais; ausência = backend preserva ──
   /** Código do cliente no Calcgraf (para de-para CLIENTE no backend). */
   clienteCodigo?: string
@@ -1095,6 +1104,23 @@ export function montarQueryCalculoDaOp(codigosHeader: number[]): string {
   )
 }
 
+/**
+ * SELECT da OBSERVAÇÃO textual da OP (campo memo). O texto que aparece na tela
+ * "Observações por Áreas" do Calcgraf e no PDF (Serviço Novo/Repetição +
+ * bobinas em estoque/encomendado + LXL + Montagem + instruções) vive na tabela
+ * genérica `TabelaMemos`, com `NomeTabela='CalculoOp'` e `Codigo=<CalcCodigo>`.
+ * O campo `Memo` é `ntext`; convertemos para `nvarchar(max)` no SELECT para o
+ * driver trazer como string. Uma linha por cálculo. SOMENTE SELECT.
+ */
+export function montarQueryObservacaoOp(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT Codigo AS CalcCodigo, CAST(Memo AS nvarchar(max)) AS memo ` +
+    `FROM TabelaMemos ` +
+    `WHERE NomeTabela = 'CalculoOp' AND Codigo IN (${lista})`
+  )
+}
+
 /** SELECT das etapas (CalculoAtividades) de um conjunto de cálculos, com nomes. */
 export function montarQueryCalculoAtividades(codigosCalculo: number[]): string {
   const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
@@ -1167,6 +1193,10 @@ export function montarQueryCalculoMatAcabamento(codigosCalculo: number[]): strin
 interface LinhaCalcDaOp {
   CodOpHeader: number
   CalcCodigo: number | null
+}
+interface LinhaObsOp {
+  CalcCodigo: number
+  memo?: string | null
 }
 interface LinhaAtividade {
   CalcCodigo: number
@@ -1362,6 +1392,10 @@ export async function lerOpsCandidatas(
       etapas: r?.etapas,
       variacoes: r?.variacoes,
       tintasTexto: r?.tintasTexto,
+      // Observação textual da OP (memo TabelaMemos). O backend anexa a
+      // `observacoes` → faz a regra "Aguardando Cartão" funcionar nas OPs do
+      // agente (lê "em estoque/encomendado"). Aditivo.
+      observacaoTexto: r?.observacaoTexto,
       // Planos/componentes + frente/verso (T6b). undefined p/ plano único.
       planos: r?.planos,
       // Tag [Formato] do cabeçalho = formato do 1º plano (quando houver).
@@ -1389,6 +1423,8 @@ interface RoteiroOp {
   tintasTexto?: string
   /** Planos/componentes + retiração (paridade PDF — T6b); undefined = plano único. */
   planos?: PlanoDTO[]
+  /** Observação textual da OP (memo de TabelaMemos). */
+  observacaoTexto?: string
 }
 
 /**
@@ -1413,12 +1449,19 @@ async function lerRoteiroEmLote(
   const codigosCalculo = Array.from(new Set(calcPorHeader.values()))
   if (codigosCalculo.length === 0) return resultado
 
-  // 2) Lê as filhas do cálculo em lote (5 queries SEQUENCIAIS — tedious).
+  // 2) Lê as filhas do cálculo em lote (6 queries SEQUENCIAIS — tedious).
   const atividadesRaw = await conexao.consultar<LinhaAtividade>(montarQueryCalculoAtividades(codigosCalculo))
   const planosRaw = await conexao.consultar<LinhaPlano>(montarQueryCalculoPlanos(codigosCalculo))
   const tintasRaw = await conexao.consultar<LinhaTinta>(montarQueryCalculoTintas(codigosCalculo))
   const matRaw = await conexao.consultar<LinhaMatAcab>(montarQueryCalculoMatAcabamento(codigosCalculo))
   const coresRaw = await conexao.consultar<LinhaCores>(montarQueryCalculoCores(codigosCalculo))
+  // Observação textual (memo) por cálculo — TabelaMemos (NomeTabela='CalculoOp').
+  const obsRaw = await conexao.consultar<LinhaObsOp>(montarQueryObservacaoOp(codigosCalculo))
+  const obsPorCalc = new Map<number, string>()
+  for (const row of obsRaw) {
+    const texto = strOuUndef(row.memo)
+    if (row.CalcCodigo != null && texto) obsPorCalc.set(row.CalcCodigo, texto)
+  }
 
   // 3) Agrupa por CalcCodigo.
   const atividadesPorCalc = agruparPor(atividadesRaw, (r) => r.CalcCodigo)
@@ -1446,7 +1489,8 @@ async function lerRoteiroEmLote(
     // (paridade PDF; plano único = legado → undefined, backend não cria plano).
     const coresPorPlano = agregarCoresPorPlano((coresPorCalc.get(calc) ?? []) as CoresPlanoRow[])
     const planos = montarPlanosDTO((planosPorCalc.get(calc) ?? []) as PlanoRow[], coresPorPlano)
-    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto, planos })
+    const observacaoTexto = obsPorCalc.get(calc)
+    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto, planos, observacaoTexto })
   }
 
   return resultado

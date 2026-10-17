@@ -159,6 +159,15 @@ export interface OpOrigemDTO {
   variacoes?: VariacaoOpOrigemDTO[]
   /** Tintas/cores resumidas como texto (ex.: "AMARELO 123C (85%), VERDE CW0138 (15%)"). */
   tintasTexto?: string
+  /**
+   * Observação textual da OP (campo memo do Calcgraf — `TabelaMemos`,
+   * NomeTabela='CalculoOp'). Contém "Serviço Novo/Repetição", bobinas
+   * "em estoque/encomendado (N kg)", LXL, Montagem e instruções — mesmo texto
+   * do PDF. É anexada a `OrdemProducao.observacoes`, o que faz a regra
+   * "Aguardando Cartão" (lê "em estoque/encomendado") funcionar também nas OPs
+   * sincronizadas. Aditivo. Spec op-visualizacao-observacoes-calcgraf.
+   */
+  observacaoTexto?: string
   // ── Paridade PDF (T4) — todos aditivos/opcionais; ausência = preserva ──
   /** Código do cliente no Calcgraf (para de-para CLIENTE). */
   clienteCodigo?: string
@@ -346,6 +355,10 @@ export function normalizarOpParaHash(dto: OpOrigemDTO): string {
     // Fase 2: variações e tintas (texto) entram no hash.
     variacoes: variacoesNorm,
     tintasTexto: normalizarEscalar(dto.tintasTexto),
+    // Observação textual (memo) entra no hash → mudança de observação (ex.:
+    // bobina passou de "encomendado" para "em estoque") é detectada como
+    // alteração e re-sincronizada.
+    observacaoTexto: normalizarEscalar(dto.observacaoTexto),
     // Paridade PDF (T4): cliente (doc/código), entregas, planos, tags.
     clienteCodigo: normalizarEscalar(dto.clienteCodigo),
     clienteDoc: normalizarEscalar(dto.clienteDoc),
