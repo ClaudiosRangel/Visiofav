@@ -15,6 +15,7 @@ import {
   montarEtapaDTO,
   montarTextoTintas,
   montarProgramacaoDeLotes,
+  montarProgramacaoDeCalculo,
   agregarCoresPorPlano,
   montarPlanosDTO,
 } from './calcgraf-roteiro'
@@ -127,6 +128,64 @@ test('montarProgramacaoDeLotes ignora lotes SEM data (não inventa)', () => {
 test('montarProgramacaoDeLotes sem nenhuma data válida → undefined (fallback do backend)', () => {
   assert.equal(montarProgramacaoDeLotes([]), undefined)
   assert.equal(montarProgramacaoDeLotes([{ tiragem: 100 }]), undefined)
+})
+
+// ── Programação de entrega por CÁLCULO (CalculoProgEntrega — fonte do PDF) ──
+
+test('montarProgramacaoDeCalculo: quantidade = Tiragem * Percentual / 100 (golden OP 3176: 40.000, 2x50%)', () => {
+  // OP 3176 do PDF: "20.000 para 18/11, 20.000 para 21/12" (tiragem 40.000, 50% cada).
+  const r = montarProgramacaoDeCalculo([
+    { dataEntrega: '2026-12-21', tiragem: 40000, percentual: 50 },
+    { dataEntrega: '2026-11-18', tiragem: 40000, percentual: 50 },
+  ])
+  assert.ok(r)
+  assert.equal(r?.length, 2)
+  // Ordenado por data crescente: 18/11 antes de 21/12.
+  assert.equal(r?.[0].data, '2026-11-18')
+  assert.equal(r?.[0].quantidade, 20000)
+  assert.equal(r?.[1].data, '2026-12-21')
+  assert.equal(r?.[1].quantidade, 20000)
+})
+
+test('montarProgramacaoDeCalculo: 4 parcelas de 25% de 40.000 = 10.000 cada (calc 15196)', () => {
+  const r = montarProgramacaoDeCalculo([
+    { dataEntrega: '2026-10-09', tiragem: 40000, percentual: 25 },
+    { dataEntrega: '2026-11-02', tiragem: 40000, percentual: 25 },
+    { dataEntrega: '2026-12-01', tiragem: 40000, percentual: 25 },
+    { dataEntrega: '2026-12-01', tiragem: 40000, percentual: 25 },
+  ])
+  assert.equal(r?.length, 4)
+  for (const e of r ?? []) assert.equal(e.quantidade, 10000)
+})
+
+test('montarProgramacaoDeCalculo: percentual 100 (parcela única) usa a tiragem cheia (calc 15193)', () => {
+  const r = montarProgramacaoDeCalculo([{ dataEntrega: '2026-10-23', tiragem: 400, percentual: 100 }])
+  assert.equal(r?.length, 1)
+  assert.equal(r?.[0].quantidade, 400)
+})
+
+test('montarProgramacaoDeCalculo: percentual ausente/0 cai na tiragem direta', () => {
+  const r = montarProgramacaoDeCalculo([{ dataEntrega: '2026-10-23', tiragem: 1680 }])
+  assert.equal(r?.[0].quantidade, 1680)
+})
+
+test('montarProgramacaoDeCalculo: ignora linhas SEM data e → undefined quando nenhuma válida', () => {
+  assert.equal(montarProgramacaoDeCalculo([]), undefined)
+  assert.equal(montarProgramacaoDeCalculo([{ tiragem: 100, percentual: 50 }]), undefined)
+  const r = montarProgramacaoDeCalculo([
+    { dataEntrega: '2026-05-04', tiragem: 1000, percentual: 100 },
+    { dataEntrega: '', tiragem: 1000, percentual: 50 },
+  ])
+  assert.equal(r?.length, 1)
+})
+
+test('montarProgramacaoDeCalculo: arredonda a quantidade (33,33% de 60.000 ≈ 20.000)', () => {
+  const r = montarProgramacaoDeCalculo([
+    { dataEntrega: '2026-10-13', tiragem: 60000, percentual: 66.6666666667 },
+    { dataEntrega: '2026-11-13', tiragem: 60000, percentual: 33.3333333333 },
+  ])
+  assert.equal(r?.[0].quantidade, 40000)
+  assert.equal(r?.[1].quantidade, 20000)
 })
 
 // ── T6b: cores por plano + planos/retiração (dados reais do backup) ──

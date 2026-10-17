@@ -12,7 +12,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { montarQueryObservacaoOp, assertSomenteLeitura } from './calcgraf-reader'
+import { montarQueryObservacaoOp, montarQueryProgEntregaCalculo, assertSomenteLeitura } from './calcgraf-reader'
 
 test('montarQueryObservacaoOp seleciona Memo de TabelaMemos por CalculoOp', () => {
   const sql = montarQueryObservacaoOp([15196, 15193])
@@ -34,4 +34,18 @@ test('montarQueryObservacaoOp trunca os códigos (sem SQL injection via número)
 test('a query de observação passa pelo guardião somente-leitura', () => {
   // Não deve lançar — é um SELECT puro.
   assert.doesNotThrow(() => assertSomenteLeitura(montarQueryObservacaoOp([1, 2, 3])))
+})
+
+test('montarQueryProgEntregaCalculo seleciona CalculoProgEntrega (fonte do PDF)', () => {
+  const sql = montarQueryProgEntregaCalculo([15023, 15196])
+  assert.match(sql, /FROM\s+CalculoProgEntrega/i)
+  assert.match(sql, /Codigo AS CalcCodigo/i)
+  assert.match(sql, /Tiragem/i)
+  assert.match(sql, /Percentual/i)
+  assert.match(sql, /DataEntrega/i)
+  assert.match(sql, /Codigo\s+IN\s*\(15023,\s*15196\)/i)
+})
+
+test('a query de prog. entrega passa pelo guardião somente-leitura', () => {
+  assert.doesNotThrow(() => assertSomenteLeitura(montarQueryProgEntregaCalculo([1, 2])))
 })

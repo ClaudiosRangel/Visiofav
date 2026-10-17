@@ -41,6 +41,9 @@ import {
   montarVariacaoDTO,
   montarTextoTintas,
   montarProgramacaoDeLotes,
+  montarProgramacaoDeCalculo,
+  type ProgEntregaCalcRow,
+  type EntregaDTO,
   agregarCoresPorPlano,
   montarPlanosDTO,
   type AtividadeRow,
@@ -1121,6 +1124,30 @@ export function montarQueryObservacaoOp(codigosCalculo: number[]): string {
   )
 }
 
+/**
+ * SELECT da PROGRAMAÇÃO DE ENTREGA por CÁLCULO (`CalculoProgEntrega`). Esta é
+ * a MESMA fonte que o GPrint usa para montar a linha "Programação de Entrega"
+ * do PDF da OP (igual ao importador de PDF) — por CÁLCULO, não pelo pedido.
+ * Cada linha é uma parcela: `Tiragem` é a tiragem total do cálculo (repetida)
+ * e `Percentual` a fração da parcela (quantidade = Tiragem*Percentual/100).
+ * `DataEntrega` é `smalldatetime`. SOMENTE SELECT.
+ *
+ * Descoberto no backup (18/10/2026): a data de entrega NÃO está no pedido
+ * (`PedidoItemEntrega` fica vazio em muitas OPs — ex. OP 3176) nem em
+ * `OpLote.DataPrometida` (NULL); está aqui, no cálculo. `CalculoProgEntrega`
+ * tem 10.387 linhas / 4.223 cálculos no backup — é a fonte confiável.
+ */
+export function montarQueryProgEntregaCalculo(codigosCalculo: number[]): string {
+  const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  return (
+    `SELECT Codigo AS CalcCodigo, Tiragem, Percentual, ` +
+    `CONVERT(varchar(10), DataEntrega, 126) AS DataEntrega, ItemLote ` +
+    `FROM CalculoProgEntrega ` +
+    `WHERE Codigo IN (${lista}) ` +
+    `ORDER BY Codigo, DataEntrega`
+  )
+}
+
 /** SELECT das etapas (CalculoAtividades) de um conjunto de cálculos, com nomes. */
 export function montarQueryCalculoAtividades(codigosCalculo: number[]): string {
   const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
@@ -1197,6 +1224,13 @@ interface LinhaCalcDaOp {
 interface LinhaObsOp {
   CalcCodigo: number
   memo?: string | null
+}
+interface LinhaProgEntregaCalc {
+  CalcCodigo: number
+  Tiragem?: number | null
+  Percentual?: number | null
+  DataEntrega?: string | null
+  ItemLote?: number | null
 }
 interface LinhaAtividade {
   CalcCodigo: number
@@ -1357,16 +1391,21 @@ export async function lerOpsCandidatas(
 
     const cli = clientePorHeader.get(h.Codigo)
 
-    // Programação de entrega: TODAS as parcelas do PEDIDO (PedidoItemEntrega) —
-    // fonte correta (OpLote.DataPrometida é NULL na prática — descoberto na T7).
-    // `montarProgramacaoDeLotes` reusa a lógica (data+quantidade, ordena, ignora
-    // sem data). Fallback: se não houver parcela de pedido, tenta os lotes.
-    const parcelas = (progPorHeader.get(h.Codigo) ?? []).map((p) => ({
+    // Programação de entrega — PRIORIDADE (18/10/2026):
+    //   1) CÁLCULO (`CalculoProgEntrega`, via `r.programacaoEntrega`): é a MESMA
+    //      fonte do PDF do Calcgraf (por cálculo). Resolve OPs cujo PEDIDO não
+    //      tem `PedidoItemEntrega` (ex.: OP 3176, que no PDF tem 2 parcelas mas
+    //      no pedido não tinha nada → Entregas ficava 0 no Vizor).
+    //   2) PEDIDO (`PedidoItemEntrega`): mantido como fallback.
+    //   3) LOTES (`OpLote`): último fallback (datas raramente preenchidas).
+    const parcelasPedido = (progPorHeader.get(h.Codigo) ?? []).map((p) => ({
       dataPrometida: dataIsoOuUndef(p.DataEntrega),
       tiragem: numOuUndef(p.Quantidade),
     }))
     const programacaoEntrega =
-      montarProgramacaoDeLotes(parcelas) ?? montarProgramacaoDeLotes(lotes)
+      (r?.programacaoEntrega && r.programacaoEntrega.length > 0 ? r.programacaoEntrega : undefined) ??
+      montarProgramacaoDeLotes(parcelasPedido) ??
+      montarProgramacaoDeLotes(lotes)
     // Data de entrega do cabeçalho = menor data da programação (quando houver).
     const dataEntregaCab = programacaoEntrega && programacaoEntrega.length > 0
       ? programacaoEntrega[0].data
@@ -1425,6 +1464,12 @@ interface RoteiroOp {
   planos?: PlanoDTO[]
   /** Observação textual da OP (memo de TabelaMemos). */
   observacaoTexto?: string
+  /**
+   * Programação de entrega POR CÁLCULO (`CalculoProgEntrega`) — fonte do PDF do
+   * Calcgraf. Preferida sobre o pedido/lotes (undefined quando o cálculo não
+   * tem programação). Cada item é `{ data, quantidade }`.
+   */
+  programacaoEntrega?: EntregaDTO[]
 }
 
 /**
@@ -1462,6 +1507,19 @@ async function lerRoteiroEmLote(
     const texto = strOuUndef(row.memo)
     if (row.CalcCodigo != null && texto) obsPorCalc.set(row.CalcCodigo, texto)
   }
+  // Programação de entrega por cálculo — CalculoProgEntrega (fonte do PDF).
+  const progRaw = await conexao.consultar<LinhaProgEntregaCalc>(montarQueryProgEntregaCalculo(codigosCalculo))
+  const progPorCalc = new Map<number, ProgEntregaCalcRow[]>()
+  for (const row of progRaw) {
+    if (row.CalcCodigo == null) continue
+    const arr = progPorCalc.get(row.CalcCodigo) ?? []
+    arr.push({
+      dataEntrega: row.DataEntrega ?? undefined,
+      tiragem: numOuUndef(row.Tiragem),
+      percentual: numOuUndef(row.Percentual),
+    })
+    progPorCalc.set(row.CalcCodigo, arr)
+  }
 
   // 3) Agrupa por CalcCodigo.
   const atividadesPorCalc = agruparPor(atividadesRaw, (r) => r.CalcCodigo)
@@ -1490,7 +1548,8 @@ async function lerRoteiroEmLote(
     const coresPorPlano = agregarCoresPorPlano((coresPorCalc.get(calc) ?? []) as CoresPlanoRow[])
     const planos = montarPlanosDTO((planosPorCalc.get(calc) ?? []) as PlanoRow[], coresPorPlano)
     const observacaoTexto = obsPorCalc.get(calc)
-    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto, planos, observacaoTexto })
+    const programacaoEntrega = montarProgramacaoDeCalculo(progPorCalc.get(calc) ?? [])
+    resultado.set(codHeader, { etapas, variacoes, materiais, tintasTexto, planos, observacaoTexto, programacaoEntrega })
   }
 
   return resultado

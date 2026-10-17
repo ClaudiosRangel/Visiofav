@@ -239,6 +239,53 @@ export function montarProgramacaoDeLotes(lotes: LoteParaEntrega[]): EntregaDTO[]
   return entregas
 }
 
+/**
+ * Linha crua de `CalculoProgEntrega` — a programação de entrega POR CÁLCULO,
+ * que é a fonte real da "Programação de Entrega" do PDF do Calcgraf (igual ao
+ * importador de PDF). Cada linha é uma parcela: `Tiragem` é a tiragem TOTAL do
+ * cálculo (repetida nas linhas) e `Percentual` é a fração daquela parcela.
+ * A quantidade real da parcela = `Tiragem * Percentual / 100`.
+ */
+export interface ProgEntregaCalcRow {
+  /** `CalculoProgEntrega.DataEntrega` (ISO/string de data). */
+  dataEntrega?: string | null
+  /** Tiragem total do cálculo (repetida em cada parcela). */
+  tiragem?: number
+  /** Percentual da parcela (0..100). Quando ausente/0, usa a Tiragem direta. */
+  percentual?: number
+}
+
+/**
+ * Monta a programação de entrega a partir de `CalculoProgEntrega` (fonte do
+ * PDF do Calcgraf — por CÁLCULO, não por pedido). Converte cada linha numa
+ * parcela `{ data, quantidade }`, com `quantidade = Tiragem * Percentual/100`
+ * (ou `Tiragem` quando `Percentual` ausente/0). Ignora linhas SEM data (não
+ * inventa). Ordena por data crescente. Retorna `undefined` quando não há
+ * nenhuma data válida (o chamador então cai no fallback: pedido → lotes).
+ *
+ * PURA (testável sem conexão). Arredonda a quantidade para inteiro (as tiragens
+ * do Calcgraf são inteiras; evita 9999.999 por imprecisão de float do percentual).
+ */
+export function montarProgramacaoDeCalculo(linhas: ProgEntregaCalcRow[]): EntregaDTO[] | undefined {
+  const entregas: EntregaDTO[] = []
+  for (const l of linhas) {
+    const data = (l.dataEntrega ?? '').toString().trim()
+    if (!data) continue // sem data → não vira entrega (não inventa)
+    const tiragem = l.tiragem != null ? num(l.tiragem) : 0
+    const perc = l.percentual != null ? num(l.percentual) : 0
+    const quantidade = perc > 0 ? Math.round((tiragem * perc) / 100) : (tiragem > 0 ? tiragem : undefined)
+    entregas.push({ data, quantidade })
+  }
+  if (entregas.length === 0) return undefined
+  entregas.sort((a, b) => {
+    const ta = new Date(a.data as string).getTime()
+    const tb = new Date(b.data as string).getTime()
+    if (Number.isNaN(ta) || Number.isNaN(tb)) return 0
+    return ta - tb
+  })
+  return entregas
+}
+
 // ===========================================================================
 // Planos/componentes + retiração (frente/verso) — paridade PDF (T6b)
 // ===========================================================================
