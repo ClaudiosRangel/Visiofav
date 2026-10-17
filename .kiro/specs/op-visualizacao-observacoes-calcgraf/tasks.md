@@ -99,10 +99,16 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
     corretude da normalização.
   - [x] 5.2 Script removido. _Requisitos: 4.1_
 
-- [ ] 6. Empacotar agente v0.4.0 e implantar
-  - [ ] 6.1 Bump v0.4.0; selo; build + dist; doc de deploy (backend primeiro →
-    validar → trocar agente no servidor).
-  - [ ] 6.2 Commit/push (back e front separados). Deploy monitorado.
+- [x] 6. Empacotar agente v0.4.0 e implantar
+  - [x] 6.1 Bump `package.json` → **0.4.0**; selo da UI (`main.ts` INFO_VERSAO)
+    = "Fase 2+ — Paridade PDF + Observações da OP"; `npm run build` + `npm run
+    dist` OK → `release/VisioFab Agente Calcgraf Setup 0.4.0.exe` (~165,72 MB).
+  - [x] 6.2 Commit/push na `main` do backend (`e1f9ca3f8`) — Render redeploya o
+    backend automaticamente (ingestão passa a aceitar/anexar `observacaoTexto`).
+    PENDENTE operacional (fora do código): reinstalar o `.exe` v0.4.0 no servidor
+    PHTech via RDP APÓS o deploy do backend concluir — manter o agente antigo
+    parado até lá (ordem backend-primeiro é retrocompatível: `observacaoTexto` é
+    aditivo e o backend v0.4.0 só anexa quando o campo chega).
   - _Requisitos: 5.1_
 
 ## Task Dependency Graph
