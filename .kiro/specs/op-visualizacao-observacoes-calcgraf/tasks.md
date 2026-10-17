@@ -48,59 +48,73 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
 > e `CalculoHeader` não tem coluna de tipo de serviço. → O servidor NÃO
 > resolveria; são derivações do GPrint. Fica fora (baixo valor; sem fonte).
 >
-> **(B) Saldo das bobinas (em estoque vs. encomendado) — DEFINIÇÃO FINAL do
-> usuário (18/10/2026): o saldo de estoque é um CONTROLE APARTADO do Calcgraf**
-> (não vive no banco dele de forma consultável — por isso `EstSaldos` e
-> `SuporteXEstoque` estão com 0 linhas, confirmado por `COUNT(*)`). Portanto a
-> **OBSERVAÇÃO TEXTUAL é a fonte definitiva** do "em estoque / encomendado" — NÃO
-> é fallback temporário. O Bloco 4 (regra por `EstSaldos`) é DESCARTADO: não há
-> saldo consultável para substituir o texto. A regra "Aguardando Cartão"
-> permanece como está (lê a observação) — correto e definitivo.
-> O que importa é o agente TRAZER a observação de bobina no formato que a regra
-> entende (`[Bobina] <desc> em estoque|encomendado (N kg)`), igual ao PDF.
+> **(B) Observação da OP (incl. bobina "em estoque/encomendado") — FONTE
+> ENCONTRADA (18/10/2026):** o texto está SIM no banco, num campo memo
+> (`ntext`), na tabela genérica **`TabelaMemos`** com
+> `NomeTabela = 'CalculoOp'` e `Codigo = <CalcCodigo>` (o mesmo CalcCodigo que o
+> reader já resolve para o roteiro — maior `CalculoHeader.Codigo` da OP). O
+> campo `Memo` contém o texto consolidado da observação por área (Serviço
+> Novo/Repetição + "Bobina ... em estoque/encomendado (N kg)" + LXL + Montagem
+> + instruções), exatamente como no PDF e como a tela "Observações por Áreas"
+> do Calcgraf mostra. Confirmado em cálculos reais (15196, 15193, 15189...).
+> `EstSaldos`/`SuporteXEstoque` estão vazios porque o saldo é controle apartado
+> — mas o TEXTO da observação (que a regra do cartão usa) está no memo.
+> → Bloco 4 REABERTO como VIÁVEL (ver Task 4 abaixo): o agente lê esse memo e
+> traz como `observacaoTexto`; o backend grava em `observacoes` (a regra do
+> cartão passa a funcionar nas OPs sincronizadas, igual às de PDF).
 
-- [x] 3. Observações confiáveis — ENCERRADO (sem fonte de campo no Calcgraf
-  para acondicionamento/tipo de serviço — são derivações do GPrint). O relatório
-  Vizor (Bloco 1) já exibe TODAS as observações presentes em `observacoes`. Não
-  implementado enriquecimento na origem para não inventar dado.
-  _Requisitos: 3.2, 3.3 (exibição coberta pelo Bloco 1)_
+- [ ] 3. Agente lê a observação da OP de `TabelaMemos` e envia ao Vizor
+  - [ ] 3.1 Reader (`calcgraf-reader.ts`): nova query (SELECT) em `TabelaMemos`
+    por `NomeTabela='CalculoOp'` + `Codigo IN (<CalcCodigos>)` → `Memo` (ntext).
+    Reusa o CalcCodigo já resolvido para o roteiro (lote, sequencial — tedious).
+    DTO aditivo `observacaoTexto?: string`. Função pura de limpeza/normalização
+    testada (`node:test`).
+  - [ ] 3.2 Backend ingestão (`ingestao-op-calcgraf.service.ts`): anexar
+    `observacaoTexto` ao campo `observacoes` da OP (preservando as tags já
+    montadas `[Cliente]`/`[Produto]`/etc.). Aditivo; hash cobre. Cintos
+    preservados. Multi-tenant por `empresaId` da OP.
+  - [ ] 3.3 Testes do service (vitest): observação anexada; não-regressão.
+  - _Requisitos: 3.1, 3.2, 3.3, 3.4_
 
-- [x] 4. Regra "Aguardando Cartão" por `EstSaldos` — DESCARTADO (decisão do
-  usuário: o saldo de estoque é controle APARTADO do Calcgraf, não existe no
-  banco). A regra permanece lendo a OBSERVAÇÃO textual — fonte definitiva, não
-  fallback. Nenhuma regressão. Guia de diagnóstico de estoque removido (obsoleto).
-  Investigação concluída: o texto "Bobina ... em estoque/encomendado (N kg)" NÃO
-  existe em nenhuma tabela consultável do Calcgraf (nem saldo nem observação de
-  bobina). O agente NÃO tem o que ler para OPs sincronizadas; o controle de
-  cartão nessas OPs depende de ação MANUAL do usuário no Vizor (editar
-  observação). OPs de PDF seguem com a observação vinda do parser.
-  _Requisitos: 4.3, 4.4 (OPs de PDF, mantidas)_
+- [ ] 4. Regra "Aguardando Cartão" nas OPs sincronizadas (via observação)
+  - [ ] 4.1 Com a `observacaoTexto` do Calcgraf gravada em `observacoes` (Task 3),
+    a regra existente de `etapa-operacional.routes.ts` (`temMaterialEncomendado`
+    / `analisarMaterial`, que lê "em estoque/encomendado (N kg)") passa a
+    funcionar nas OPs do agente SEM alteração na regra.
+  - [ ] 4.2 Validar o formato: o memo do Calcgraf usa "em estoque ( N kg )" com
+    espaços variáveis. Conferir que o regex da regra casa; se não, normalizar o
+    texto no backend (ingestão) para o formato que a regra entende — sem mudar
+    a regra. Teste de não-regressão.
+  - _Requisitos: 4.1, 4.3, 4.4_
 
-- [x] 5. Validação — Blocos 1/2 validados por testes unitários (6/6) +
-  get_diagnostics. Validação de estoque não se aplica (Bloco 4 descartado).
-  _Requisitos: 6.1 (relatório isolado por empresa — Bloco 1)_
+- [ ] 5. Validação ponta a ponta contra o backup local
+  - [ ] 5.1 Script `_tmp-` (removido após uso): rodar o reader contra
+    `CalcgrafCartonWega` para OPs com observação (ex.: cálculos 15196/15193) e
+    conferir que `observacaoTexto` sai correto e que a regra do cartão detecta.
+  - [ ] 5.2 Remover o script. _Requisitos: 4.1_
 
-- [x] 6. Empacotar agente — NÃO NECESSÁRIO. Blocos 1 e 2 entregam a visualização
-  completa SEM mexer no agente. Sem reempacotamento nesta spec. _Requisitos: 5.1_
+- [ ] 6. Empacotar agente v0.4.0 e implantar
+  - [ ] 6.1 Bump v0.4.0; selo; build + dist; doc de deploy (backend primeiro →
+    validar → trocar agente no servidor).
+  - [ ] 6.2 Commit/push (back e front separados). Deploy monitorado.
+  - _Requisitos: 5.1_
 
 ## Task Dependency Graph
 
 ```mermaid
 flowchart TD
-  T1[1. Relatório Vizor enriquecido] --> T2[2. Decisão Visualizar no front]
-  T1 --> T5[5. Validação contra backup]
-  T3[3. Observações confiáveis] --> T5
-  T4[4. Regra cartão por EstSaldos] --> T5
-  T3 --> T6[6. Empacotar + implantar]
-  T4 --> T6
-  T5 --> T6
+  T1[1. Relatorio Vizor FEITO] --> T2[2. Visualizar front FEITO]
+  T3[3. Agente le observacao de TabelaMemos] --> T4[4. Regra cartao via observacao]
+  T4 --> T5[5. Validacao contra backup]
+  T3 --> T5
+  T5 --> T6[6. Empacotar agente v0.4.0 + implantar]
 ```
 
 ```json
 {
   "waves": [
-    { "wave": 1, "tasks": ["1", "3", "4"] },
-    { "wave": 2, "tasks": ["2", "5"] },
+    { "wave": 1, "tasks": ["3"] },
+    { "wave": 2, "tasks": ["4", "5"] },
     { "wave": 3, "tasks": ["6"] }
   ]
 }
@@ -108,9 +122,11 @@ flowchart TD
 
 ## Notes
 
-- Blocos 1 e 2 entregam a visualização completa SEM reinstalar o agente (usam os
-  dados já sincronizados) — valor imediato.
+- Blocos 1 e 2 (FEITOS) entregam a visualização completa SEM reinstalar o agente
+  — valor imediato, já em produção.
 - Blocos 3, 4 e 6 mexem no agente (reinstalação no servidor PHTech, via RDP).
-- A regra do cartão é mantida intacta: o agente só muda a ORIGEM do texto de
-  bobina (de PDF para saldo real) — fallback preserva as OPs antigas.
-- Sem mudança de schema por padrão; se necessário, migração idempotente.
+- FONTE da observação: `TabelaMemos` (`NomeTabela='CalculoOp'`, `Codigo=CalcCodigo`,
+  campo `Memo` ntext) — o texto completo da OP (incl. bobina "em estoque/
+  encomendado"). A regra do cartão NÃO muda: passa a ter a observação também nas
+  OPs sincronizadas (hoje só OPs de PDF a tinham). Sem regressão.
+- Sem mudança de schema (reusa `OrdemProducao.observacoes`).
