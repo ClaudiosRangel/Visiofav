@@ -3486,6 +3486,14 @@ model EtapaOrdemProducao {
   // fila — a reordenação automática (por número de OP, depois data de
   // entrega) só rearranja as etapas SEM esta flag.
   ordemManual            Boolean          @default(false) @map("ordem_manual")
+  // Âncora de agenda do Gantt (spec pcp-gantt-travar-mover). Quando o
+  // planejador TRAVA uma etapa numa data (ou MOVE o bloco no Gantt),
+  // `inicioAgendadoManual` recebe a data/hora de início e `agendaTravada`
+  // vira true. O motor da timeline usa esse início como PONTO FIXO (APS pin)
+  // em vez de derivar da fila; as demais etapas se ajustam ao redor. NULL /
+  // false = etapa 100% calculada (comportamento legado, não-regressão).
+  inicioAgendadoManual   DateTime?        @map("inicio_agendado_manual")
+  agendaTravada          Boolean          @default(false) @map("agenda_travada")
   // Status de pré-impressão: FINALIZADO, METADE, PROBLEMA ou null (sem marcação)
   preImpressaoStatus     String?          @map("pre_impressao_status") @db.VarChar(20)
   // Tipo de colagem extraído do PDF (texto exato após a "/" na linha da

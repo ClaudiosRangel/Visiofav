@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { calcularAgenda, type EtapaAgenda } from './timeline-agenda.service'
 
 /**
  * Timeline de Produção — Visão preditiva de cascata de tempos por OP.
@@ -47,6 +48,10 @@ interface EtapaTimeline {
   // Cascata calculada
   inicioPrevistoAt: string | null // ISO datetime
   fimPrevistoAt: string | null
+  // Âncora de agenda (spec pcp-gantt-travar-mover): se travada, o início acima
+  // é a âncora manual; o front mostra cadeado e permite destravar.
+  agendaTravada: boolean
+  inicioAgendadoManual: string | null
   // Real
   inicioRealAt: string | null
   fimRealAt: string | null
@@ -225,6 +230,10 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
             quantidadeProduzida: true,
             quantidadePerda: true,
             posicaoFila: true,
+            // Âncora de agenda (spec pcp-gantt-travar-mover): quando travada, o
+            // motor usa inicioAgendadoManual como ponto fixo.
+            agendaTravada: true,
+            inicioAgendadoManual: true,
             centroProducaoId: true,
             centroProducao: {
               select: {
@@ -269,86 +278,33 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
     const agora = new Date()
 
     // ═══════════════════════════════════════════════════════════════════════
-    // FILA REAL POR CENTRO — calcula quando cada etapa PODE começar
-    // com base na posição na fila da máquina (posicaoFila)
+    // MOTOR DE AGENDAMENTO (spec pcp-gantt-travar-mover): delega o cálculo da
+    // cascata/fila + turno + ÂNCORAS ao serviço puro `calcularAgenda`. Sem
+    // nenhuma etapa travada, o resultado é idêntico ao cálculo anterior
+    // (não-regressão garantida por teste). Etapas travadas viram pontos fixos.
     // ═══════════════════════════════════════════════════════════════════════
-    
-    // Coletar todas as etapas de todas as OPs e agrupar por centro
-    const todasEtapas: Array<{
-      id: string
-      centroProducaoId: string | null
-      posicaoFila: number | null
-      tempoSetupMinutos: number
-      tempoOperacaoCalculado: number
-      status: string
-      dataInicioReal: Date | null
-      dataFimReal: Date | null
-      turno: { horaInicio: string; horaFim: string; diasSemana: number[]; duracaoMinutos: number } | null
-    }> = []
-
+    const etapasAgenda: EtapaAgenda[] = []
     for (const op of ops) {
       for (const etapa of op.etapas) {
-        todasEtapas.push({
+        etapasAgenda.push({
           id: etapa.id,
+          ordemProducaoId: op.id,
           centroProducaoId: etapa.centroProducaoId,
           posicaoFila: etapa.posicaoFila,
+          sequencia: etapa.sequencia,
           tempoSetupMinutos: Number(etapa.tempoSetupMinutos) || 0,
-          tempoOperacaoCalculado: Number(etapa.tempoOperacaoCalculado) || 0,
+          tempoOperacaoMinutos: Number(etapa.tempoOperacaoCalculado) || 0,
+          tempoEsperaMinutos: Number(etapa.tempoEsperaMinutos) || 0,
           status: etapa.status,
           dataInicioReal: etapa.dataInicioReal ? new Date(etapa.dataInicioReal) : null,
           dataFimReal: etapa.dataFimReal ? new Date(etapa.dataFimReal) : null,
           turno: etapa.centroProducao?.turnoProducao || null,
+          agendaTravada: Boolean(etapa.agendaTravada),
+          inicioAgendadoManual: etapa.inicioAgendadoManual ? new Date(etapa.inicioAgendadoManual) : null,
         })
       }
     }
-
-    // Agrupar por centro e ordenar por posicaoFila
-    const filaPorCentro = new Map<string, typeof todasEtapas>()
-    for (const et of todasEtapas) {
-      if (!et.centroProducaoId) continue
-      if (!filaPorCentro.has(et.centroProducaoId)) filaPorCentro.set(et.centroProducaoId, [])
-      filaPorCentro.get(et.centroProducaoId)!.push(et)
-    }
-    for (const [centroId, fila] of filaPorCentro) {
-      fila.sort((a, b) => (a.posicaoFila || 999) - (b.posicaoFila || 999))
-    }
-
-    // Calcular início previsto de cada etapa com base na fila do centro
-    // Para cada centro: cursor avança conforme as etapas da fila terminam
-    const inicioPrevistoMap = new Map<string, Date>() // etapaId → data início previsto
-
-    for (const [centroId, fila] of filaPorCentro) {
-      let cursorCentro = new Date(agora)
-      const turno = fila[0]?.turno || null
-
-      for (const et of fila) {
-        if (et.status === 'CONCLUIDA' && et.dataFimReal) {
-          // Etapa já concluída — cursor avança para o fim real
-          cursorCentro = new Date(Math.max(cursorCentro.getTime(), et.dataFimReal.getTime()))
-          inicioPrevistoMap.set(et.id, et.dataInicioReal || cursorCentro)
-          continue
-        }
-
-        if (et.status === 'EM_ANDAMENTO' && et.dataInicioReal) {
-          // Etapa em andamento — usa início real, projetar fim
-          inicioPrevistoMap.set(et.id, et.dataInicioReal)
-          const totalMin = et.tempoSetupMinutos + et.tempoOperacaoCalculado
-          const fimProjetado = turno
-            ? calcularFimComTurno(et.dataInicioReal, totalMin, turno)
-            : new Date(et.dataInicioReal.getTime() + totalMin * 60000)
-          cursorCentro = fimProjetado
-          continue
-        }
-
-        // Etapa PENDENTE/PAUSADA — início é quando a anterior termina
-        inicioPrevistoMap.set(et.id, new Date(cursorCentro))
-        const totalMin = et.tempoSetupMinutos + et.tempoOperacaoCalculado
-        const fimProjetado = turno
-          ? calcularFimComTurno(cursorCentro, totalMin, turno)
-          : new Date(cursorCentro.getTime() + totalMin * 60000)
-        cursorCentro = fimProjetado
-      }
-    }
+    const agendaMap = calcularAgenda(etapasAgenda, agora)
 
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -374,24 +330,20 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
 
         tempoTotalPrevistoOp += totalPrevisto
 
-        // Turno da máquina (se cadastrado)
+        // Início/fim previstos: vêm do motor puro `calcularAgenda` (cascata +
+        // fila + turno + ÂNCORAS). Fallback defensivo para a cascata local da
+        // OP caso o motor não tenha a etapa (não deve ocorrer).
         const turno = etapa.centroProducao?.turnoProducao || null
-
-        // Início previsto: usa a projeção baseada na fila do centro (posicaoFila)
-        // Se a etapa tem posição na fila, o início é determinado por quando as
-        // etapas anteriores na mesma máquina terminam — não apenas pela cascata
-        // sequencial da OP. Isso reflete a realidade: a máquina pode estar
-        // ocupada com outra OP antes de chegar nesta.
-        const inicioFromFila = inicioPrevistoMap.get(etapa.id)
-        const inicioPrevisto = inicioFromFila
-          ? new Date(Math.max(cursorPrevisto.getTime(), inicioFromFila.getTime()))
+        const agendaEtapa = agendaMap.get(etapa.id)
+        const inicioPrevisto = agendaEtapa
+          ? agendaEtapa.inicioPrevisto
           : new Date(cursorPrevisto)
-
-        // Fim previsto = início + duração prevista, respeitando turno
-        const fimPrevisto = turno
-          ? calcularFimComTurno(inicioPrevisto, totalPrevisto, turno)
-          : new Date(inicioPrevisto.getTime() + totalPrevisto * 60000)
-        // Próxima etapa (da mesma OP) começa após o fim + espera
+        const fimPrevisto = agendaEtapa
+          ? agendaEtapa.fimPrevisto
+          : (turno
+            ? calcularFimComTurno(inicioPrevisto, totalPrevisto, turno)
+            : new Date(inicioPrevisto.getTime() + totalPrevisto * 60000))
+        // Cursor da cascata local mantido só para o fallback.
         cursorPrevisto = turno
           ? calcularFimComTurno(fimPrevisto, espera, turno)
           : new Date(fimPrevisto.getTime() + espera * 60000)
@@ -451,6 +403,8 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           tempoSetupMinutos: setup,
           tempoOperacaoMinutos: operacao,
           tempoTotalPrevisto: totalPrevisto,
+          agendaTravada: Boolean(etapa.agendaTravada),
+          inicioAgendadoManual: etapa.inicioAgendadoManual ? new Date(etapa.inicioAgendadoManual).toISOString() : null,
           inicioPrevistoAt: inicioPrevisto.toISOString(),
           fimPrevistoAt: fimPrevisto.toISOString(),
           inicioRealAt: etapa.dataInicioReal ? new Date(etapa.dataInicioReal).toISOString() : null,

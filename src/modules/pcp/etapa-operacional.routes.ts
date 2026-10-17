@@ -1012,6 +1012,125 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // PATCH /api/pcp/etapas/:id/agendar — TRAVA a etapa numa data de início (e,
+  // opcionalmente, move de centro). É a rota chamada pelo drag & drop do Gantt
+  // (spec pcp-gantt-travar-mover). Mover = fixar naquela data.
+  // =========================================================================
+  app.patch('/etapas/:id/agendar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idSchema.parse(request.params)
+    const body = z.object({
+      // Data/hora de início (ISO). Obrigatória ao travar/mover (Req 2.5).
+      inicio: z.string().datetime({ offset: true }).or(z.string().min(10)),
+      // Opcional: mover para outro centro no mesmo gesto (Req 3.2).
+      centroProducaoId: z.string().uuid().optional(),
+    }).parse(request.body)
+
+    // Mesma permissão de reorganização da fila (mover). ADMIN/SUPER_ADMIN passam.
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeMover')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para agendar etapas neste tipo de processo' })
+    }
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+      include: { ordemProducao: { select: { status: true } } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    // Proteção (Req 2.3): não agendar etapa/OP finalizada.
+    if (etapa.status === 'CONCLUIDA') {
+      return reply.status(409).send({ message: 'Etapa concluída não pode ser reagendada' })
+    }
+    if (['CONCLUIDA', 'CANCELADA'].includes(etapa.ordemProducao.status)) {
+      return reply.status(409).send({ message: 'OP finalizada não pode ter a agenda alterada' })
+    }
+
+    const inicio = new Date(body.inicio)
+    if (Number.isNaN(inicio.getTime())) {
+      return reply.status(400).send({ message: 'Data de início inválida' })
+    }
+
+    // Se vier troca de centro, valida e aplica (reusa a regra do /mover:
+    // append no fim da fila do destino).
+    const dados: Record<string, unknown> = {
+      inicioAgendadoManual: inicio,
+      agendaTravada: true,
+    }
+    let centroInfo = ''
+    if (body.centroProducaoId && body.centroProducaoId !== etapa.centroProducaoId) {
+      const centro = await prisma.centroProducao.findFirst({
+        where: { id: body.centroProducaoId, empresaId: user.empresaId },
+        select: { id: true, codigo: true, descricao: true },
+      })
+      if (!centro) return reply.status(404).send({ message: 'Centro de destino não encontrado' })
+      const maxPos = await prisma.etapaOrdemProducao.aggregate({
+        where: { centroProducaoId: body.centroProducaoId, status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] } },
+        _max: { posicaoFila: true },
+      })
+      dados.centroProducaoId = body.centroProducaoId
+      dados.ordemManual = false
+      dados.posicaoFila = (maxPos._max.posicaoFila || 0) + 1
+      centroInfo = ` e movida para ${centro.codigo || centro.descricao}`
+    }
+
+    const atualizada = await prisma.etapaOrdemProducao.update({ where: { id }, data: dados })
+
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        statusAnterior: etapa.status,
+        statusNovo: etapa.status,
+        usuarioId: user.id,
+        observacao: `Etapa "${etapa.descricao}" travada em ${inicio.toISOString()}${centroInfo}`,
+      },
+    })
+
+    return {
+      id: atualizada.id,
+      centroProducaoId: atualizada.centroProducaoId,
+      inicioAgendadoManual: atualizada.inicioAgendadoManual,
+      agendaTravada: atualizada.agendaTravada,
+    }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/destravar — remove a âncora de agenda (volta ao
+  // cálculo automático pela fila). Spec pcp-gantt-travar-mover.
+  // =========================================================================
+  app.patch('/etapas/:id/destravar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idSchema.parse(request.params)
+
+    const { permitido } = await verificarPermissaoEtapa(user, id, 'podeMover')
+    if (!permitido) {
+      return reply.status(403).send({ message: 'Sem permissão para destravar etapas neste tipo de processo' })
+    }
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: { agendaTravada: false, inicioAgendadoManual: null },
+    })
+
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: etapa.ordemProducaoId,
+        statusAnterior: etapa.status,
+        statusNovo: etapa.status,
+        usuarioId: user.id,
+        observacao: `Etapa "${etapa.descricao}" destravada (agenda volta ao cálculo automático)`,
+      },
+    })
+
+    return { id: atualizada.id, agendaTravada: false, inicioAgendadoManual: null }
+  })
+
+  // =========================================================================
   // POST /api/pcp/etapas/adicionar-manual — Adiciona OP manualmente à fila de um centro
   // =========================================================================
   app.post('/etapas/adicionar-manual', async (request, reply) => {

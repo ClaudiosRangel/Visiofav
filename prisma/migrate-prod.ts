@@ -5120,6 +5120,15 @@ async function seedMateriaisFromOPs() {
   console.log('✅ PCP Planos: plano_ordem_producao criada + etapa.plano_id (nullable, SetNull)')
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Gantt: travar/mover (spec pcp-gantt-travar-mover). Âncora de agenda por
+  // etapa — início manual travado pelo planejador (APS pin). Aditivo: NULL/
+  // false = etapa 100% calculada (não-regressão). Idempotente.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "inicio_agendado_manual" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "agenda_travada" BOOLEAN NOT NULL DEFAULT false`)
+  console.log('✅ PCP Gantt: etapa.inicio_agendado_manual + agenda_travada (âncora de agenda)')
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Importador de OP do Calcgraf (agente desktop → Vizor) — Task 1.
   // Credencial de máquina do agente (agente_api_key), fila de revisão de OPs
   // alteradas com produção (alteracao_op_pendente) e hash de origem na OP para
