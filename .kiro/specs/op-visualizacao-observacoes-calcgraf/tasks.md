@@ -40,47 +40,48 @@ S1/S2 da ingestão, multi-tenant por `empresaId`.
   - _Requisitos: 1.1, 1.2, 1.3, 2.1, 2.4_
 
 > **DESCOBERTA (investigação no backup `CalcgrafCartonWega`) — re-escopo dos
-> blocos 3–6:** as observações "soltas" do PDF (acondicionamento, tipo de
-> serviço) e o status de estoque das bobinas NÃO têm fonte de campo confiável
-> acessível no backup:
-> - `CalculoProdutosConjuntos` está vazio (acondicionamento não vem daí).
-> - `CalculoHeader` não tem campo de tipo de serviço (Novo/Repetição) — é
->   derivado pelo GPrint na geração do PDF.
-> - **`EstSaldos` está VAZIO no backup** (nenhum `SaldoFisico > 0`) e não há
->   de-para direto `Suporte → CodItemEstoque`. Reconstruir "em estoque vs.
->   encomendado" sem isso produziria dado ERRADO numa regra CRÍTICA.
+> blocos 3–6. Dois motivos DIFERENTES de bloqueio:**
 >
-> Decisão (alinhada ao usuário: "primordial que a regra seja por campo
-> confiável, para não quebrar"): **NÃO implementar o Bloco 4 agora** (risco de
-> corromper a regra do cartão com dado incerto). Mantém-se o texto atual
-> (fallback) — zero regressão. Blocos 3/4 ficam BLOQUEADOS por dado
-> indisponível no backup; destravar exige acesso ao saldo real do Calcgraf de
-> PRODUÇÃO (query no servidor PHTech) ou o de-para suporte→item.
+> **(A) Tipo de serviço (Novo/Repetição) e Acondicionamento — NÃO existem como
+> campo** nem no backup nem no servidor. O GPrint monta esses textos ao gerar o
+> PDF, por regra interna. `CalculoProdutosConjuntos` (ConteudoAcond) está vazio
+> e `CalculoHeader` não tem coluna de tipo de serviço. → O servidor NÃO
+> resolveria; são derivações do GPrint. Fica fora (baixo valor; sem fonte).
+>
+> **(B) Saldo das bobinas (em estoque vs. encomendado) — DEFINIÇÃO FINAL do
+> usuário (18/10/2026): o saldo de estoque é um CONTROLE APARTADO do Calcgraf**
+> (não vive no banco dele de forma consultável — por isso `EstSaldos` e
+> `SuporteXEstoque` estão com 0 linhas, confirmado por `COUNT(*)`). Portanto a
+> **OBSERVAÇÃO TEXTUAL é a fonte definitiva** do "em estoque / encomendado" — NÃO
+> é fallback temporário. O Bloco 4 (regra por `EstSaldos`) é DESCARTADO: não há
+> saldo consultável para substituir o texto. A regra "Aguardando Cartão"
+> permanece como está (lê a observação) — correto e definitivo.
+> O que importa é o agente TRAZER a observação de bobina no formato que a regra
+> entende (`[Bobina] <desc> em estoque|encomendado (N kg)`), igual ao PDF.
 
-- [-] 3. Observações confiáveis — BLOQUEADO (sem fonte de campo confiável no
-  backup para acondicionamento/tipo de serviço). O relatório Vizor (Bloco 1) já
-  exibe TODAS as observações que o agente trouxer; o enriquecimento na origem
-  fica para quando houver campo confiável. Não implementado para não inventar
-  dado. _Requisitos: 3.2, 3.3 (parcial — exibição coberta pelo Bloco 1)_
+- [x] 3. Observações confiáveis — ENCERRADO (sem fonte de campo no Calcgraf
+  para acondicionamento/tipo de serviço — são derivações do GPrint). O relatório
+  Vizor (Bloco 1) já exibe TODAS as observações presentes em `observacoes`. Não
+  implementado enriquecimento na origem para não inventar dado.
+  _Requisitos: 3.2, 3.3 (exibição coberta pelo Bloco 1)_
 
-- [-] 4. Regra "Aguardando Cartão" por `EstSaldos` — BLOQUEADO (dado
-  indisponível/incerto no backup: `EstSaldos` vazio + sem de-para
-  suporte→item). A regra atual (texto "encomendado") CONTINUA funcionando como
-  está — nenhuma regressão (Req 4.3 já garante o fallback). Reabrir quando
-  tivermos o saldo real confiável. **Guia de diagnóstico pronto para rodar no
-  Calcgraf de PRODUÇÃO (somente leitura):**
-  `docs/calcgraf-diagnostico-estoque-bobina.md` — mapeia OP → suporte →
-  CodItemEstoque → EstSaldos + a necessidade em kg. Com isso o Bloco 4 destrava.
-  _Requisitos: 4.1, 4.2 (bloqueado); 4.3, 4.4 (já atendidos pelo comportamento atual)_
+- [x] 4. Regra "Aguardando Cartão" por `EstSaldos` — DESCARTADO (decisão do
+  usuário: o saldo de estoque é controle APARTADO do Calcgraf, não existe no
+  banco). A regra permanece lendo a OBSERVAÇÃO textual — fonte definitiva, não
+  fallback. Nenhuma regressão. Guia de diagnóstico de estoque removido (obsoleto).
+  Investigação concluída: o texto "Bobina ... em estoque/encomendado (N kg)" NÃO
+  existe em nenhuma tabela consultável do Calcgraf (nem saldo nem observação de
+  bobina). O agente NÃO tem o que ler para OPs sincronizadas; o controle de
+  cartão nessas OPs depende de ação MANUAL do usuário no Vizor (editar
+  observação). OPs de PDF seguem com a observação vinda do parser.
+  _Requisitos: 4.3, 4.4 (OPs de PDF, mantidas)_
 
-- [-] 5. Validação contra backup — PARCIAL. Blocos 1/2 validados por testes
-  unitários + diagnostics. A validação ponta a ponta de estoque (5.1) depende do
-  Bloco 4 (bloqueado). _Requisitos: 6.1 (relatório isolado por empresa — já no
-  Bloco 1)_
+- [x] 5. Validação — Blocos 1/2 validados por testes unitários (6/6) +
+  get_diagnostics. Validação de estoque não se aplica (Bloco 4 descartado).
+  _Requisitos: 6.1 (relatório isolado por empresa — Bloco 1)_
 
-- [-] 6. Empacotar agente — NÃO NECESSÁRIO nesta leva. Blocos 1 e 2 entregam a
-  visualização completa SEM mexer no agente. Reempacotar só quando os blocos 3/4
-  forem destravados (dado confiável). _Requisitos: 5.1_
+- [x] 6. Empacotar agente — NÃO NECESSÁRIO. Blocos 1 e 2 entregam a visualização
+  completa SEM mexer no agente. Sem reempacotamento nesta spec. _Requisitos: 5.1_
 
 ## Task Dependency Graph
 
