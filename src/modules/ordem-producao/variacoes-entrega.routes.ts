@@ -77,6 +77,51 @@ export async function variacoesEntregaRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // PLANOS / COMPONENTES (PlanoOrdemProducao — TAMPA/CAIXA/FACE FRENTE/VERSO)
+  //
+  // Diferente de VariacaoOrdemProducao (acima, model legado), estes são os
+  // planos reais gravados pelo agente Calcgraf e pelo importador de PDF. A aba
+  // "Planos" do detalhe da OP consome esta rota. Leitura pura, isolada por
+  // empresa VIA a OP (não há empresaId direto na query — a OP já é validada).
+  // Spec pcp-visualizacao-planos-gantt (Req 2).
+  // =========================================================================
+
+  /** GET /api/ordens-producao/:id/planos */
+  app.get('/:id/planos', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    const planos = await prisma.planoOrdemProducao.findMany({
+      where: { ordemProducaoId: id },
+      orderBy: { sequencia: 'asc' },
+      select: {
+        id: true,
+        nome: true,
+        tipo: true,
+        formato: true,
+        cores: true,
+        tiragem: true,
+        montagem: true,
+        material: true,
+        gramatura: true,
+        pesoKg: true,
+        aproveitamento: true,
+        matriz: true,
+        faceDeId: true,
+        sequencia: true,
+      },
+    })
+
+    return { ordemProducaoId: id, planos, total: planos.length }
+  })
+
+  // =========================================================================
   // PROGRAMAÇÃO DE ENTREGAS PARCIAIS
   // =========================================================================
 
