@@ -11,7 +11,37 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
-## ✅ IMPORTADOR DE OP (agente desktop) — FUNCIONANDO EM PRODUÇÃO (16/10/2026)
+## 🟢 ESTADO ATUAL DO AGENTE (18/10/2026) — v0.4.1 PRONTA, FALTA REINSTALAR
+
+**Resumo p/ nova sessão:** as DUAS queixas do usuário (observação da OP vazia +
+programação de entrega não aparece em "Entregas") **já estão corrigidas no
+código, commitadas e empacotadas na v0.4.1**. O que falta é SÓ OPERACIONAL:
+reinstalar o `release/VisioFab Agente Calcgraf Setup 0.4.1.exe` no servidor
+PHTech (via RDP) e re-sincronizar. O usuário havia instalado a **v0.4.0**, que
+é anterior a ambas as correções — por isso nada mudou pra ele.
+
+Diagnóstico confirmado (18/10, validado contra o backup local + testes 5/5):
+- **Observação da OP** — commit `9a4b8d0e7` (17/10 21:31). O memo (`TabelaMemos`,
+  `NomeTabela='CalculoOp'`) fica SEMPRE no cálculo ORIGINAL (mesmo `NumCalculo`,
+  MENOR `Codigo`), nunca no `MAX(Codigo)` (recálculo técnico). `montarQueryObservacaoOp`
+  junta `CalculoHeader` por `NumCalculo` e lê o memo do irmão; múltiplas linhas
+  de memo são concatenadas. Validado 9/9 OPs com memo (antes 0/9).
+- **Programação de entrega** — commit `f35baed10` (17/10 08:33). A data de entrega
+  NÃO está em `OpLote.DataPrometida` (quase sempre NULL) nem sempre no pedido
+  (`PedidoItemEntrega` vazio p/ várias OPs, ex. 3176). A fonte do PDF é
+  **`CalculoProgEntrega`** (por cálculo). Prioridade no reader (`lerOpsCandidatas`,
+  ~linha 1420): `CalculoProgEntrega` → `PedidoItemEntrega` → `OpLote`. O backend
+  (`ingestao-op-calcgraf.service.ts` → `criarProgramacaoEntrega`) já grava
+  `ProgramacaoEntrega` a partir do `programacaoEntrega` do payload, igual ao
+  fluxo do PDF.
+- **Instalador 0.4.1.exe** gerado 17/10 21:38 (7 min APÓS o último commit) →
+  contém AS DUAS correções. `package.json` em v0.4.1.
+- Tudo commitado em `origin/main` (nada pendente em `VisioFab.AgenteCalcgraf/src/`
+  nem `src/modules/pcp/`). `tsc` do agente OK; `node --test` do reader 5/5.
+
+**AÇÃO PENDENTE (usuário/Pedro):** reinstalar v0.4.1 no servidor + sincronizar.
+Depois disso, observações E entregas aparecem nas OPs sincronizadas pelo agente.
+Nenhuma mudança de código adicional é necessária para essas duas queixas.
 
 > 📄 **AO RETOMAR ESTE TEMA, LEIA PRIMEIRO:** `docs/importador-calcgraf-HANDOFF.md`
 > (handoff consolidado: connection string do servidor, credenciais, logon

@@ -1105,3 +1105,56 @@ bypass SUPER_ADMIN). O `GET /etapas/:id/apontamentos` resolve a etapa com
 ### NÃO toca o apontamento
 `POST /checkout/etapas/:id/apontar` e `POST /pcp/etapas/:id/apontar` permanecem
 inalterados — gravam o dado bruto. A base só muda EXIBIÇÃO/meta/progresso.
+
+---
+
+## 13. PENDÊNCIA EM ANDAMENTO (18/10/2026) — filtro de centros + reformulação dos Apontamentos
+
+Pedido do usuário (ainda NÃO implementado — só levantamento feito):
+
+1. **Filtro de centros** em TODOS os quadros/dashboards/menus que listam centros
+   de produção: exibir só os **ATIVOS** (`CentroProducao.status === true`) **E**
+   os que NÃO estão "fora de programação" (`disponivelProgramacao === true`,
+   coluna `disponivel_programacao`).
+2. **Menu Apontamentos** — reformular TOTAL: dashboards, relatórios,
+   totalizadores por centro produtivo ativo/disponível, histórico completo por
+   período, consultas com impressão (PDF).
+
+### Levantamento (não reinvestigar)
+
+**TEMA 1 (rápido — fazer primeiro):** `GET /pcp/programacao/painel` JÁ filtra
+`{ status: true, disponivelProgramacao: true }` (correto). FALTA adicionar
+`disponivelProgramacao: true` ao `where` de `centroProducao.findMany` em DOIS
+pontos:
+- `GET /pcp/quadro-producao` em `etapa-operacional.routes.ts` (~linha 1614) —
+  hoje só `{ empresaId, status: true }`.
+- `GET /pcp/dashboard/indicadores` em `dashboard-unificado.routes.ts` (~linha
+  173) — hoje só `{ empresaId, status: true }`.
+Depois: `git grep` por outros `centroProducao.findMany` sem o filtro; conferir
+telas front (quadro-producao, painel-producao, dashboard de indicadores).
+
+**TEMA 2 (grande):** a tela atual `pcp/apontamentos/page.tsx` (hoje VAZIA/removida
+do disco) listava `ApontamentoProducao` via `GET /apontamentos-producao` —
+**fonte ERRADA** (quase sempre vazia: o chão de fábrica grava em
+`ApontamentoEtapa`, não em `ApontamentoProducao`).
+- **Fonte de verdade = `ApontamentoEtapa`** (schema ~linha 3530): `tipo`
+  (PRODUCAO|PERDA|PARADA|RETOMADA), `quantidadeProduzida`, `quantidadePerda`,
+  `quantidadeRetrabalho`, `motivoPerda`, `motivoParada`, `tempoParadaMinutos`,
+  `observacao`, `fotoUrl`, `dataHora`, `funcionarioId`, `fonteApontamento`,
+  `setupInicio/Fim/DuracaoMinutos`, `etapaOrdemProducaoId`. Índice
+  `(empresaId, dataHora)`. Relação `etapaOrdemProducao → ordemProducao +
+  centroProducao`.
+- Rotas existentes: `POST /pcp/etapas/:id/apontar`, `GET /pcp/etapas/:id/apontamentos`
+  (por etapa). `GET /pcp/dashboard/indicadores` já agrega `apontamentoEtapa.findMany`
+  (OEE/Pareto). NÃO existe listagem/relatório consolidado a nível de menu nem PDF.
+- PDF: lib **pdfkit** (`import PDFDocument from 'pdfkit'`, ver
+  `op-pdf-gerado.service.ts` como padrão). Sidebar: `ModuleSidebar.tsx` ~linha
+  436 (`{ label: 'Apontamentos', href: '/pcp/apontamentos' }`).
+- Multi-tenant: filtrar `empresaId` EXPLÍCITO da OP real (não só `prismaScoped` —
+  bypass SUPER_ADMIN; ver steering ATENCAO-pontos-verificar §2.1).
+
+### Decisão de processo
+Dado o tamanho (dashboards + relatórios + PDF), o Tema 2 merece UMA spec nova
+(requirements→design→tasks). O Tema 1 é cirúrgico (2 `where`), pode ir direto.
+NADA desta pendência toca o agente Calcgraf. **Confirmar escopo do Tema 2 com o
+usuário antes de implementar** (houve retrabalho prévio por ambiguidade).
