@@ -3574,6 +3574,25 @@ model ApontamentoEtapa {
   @@map("apontamento_etapa")
 }
 
+// Meta de produção por centro (spec pcp-apontamentos-dashboards-relatorios).
+// Alvo diário de produção (quantidade na base de contagem do centro) e,
+// opcionalmente, em R$/dia, com vigência por período. Alimenta a linha de
+// meta e o % atingido nos dashboards de Apontamentos. Isolamento por empresaId.
+model MetaProducaoCentro {
+  id                String    @id @default(uuid())
+  empresaId         String    @map("empresa_id")
+  centroProducaoId  String    @map("centro_producao_id")
+  metaQuantidadeDia Decimal   @map("meta_quantidade_dia") @db.Decimal(14, 2)
+  metaValorDia      Decimal?  @map("meta_valor_dia") @db.Decimal(14, 2)
+  vigenciaInicio    DateTime  @map("vigencia_inicio")
+  vigenciaFim       DateTime? @map("vigencia_fim")
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, centroProducaoId])
+  @@map("meta_producao_centro")
+}
+
 // Requisição de Corte de Cartão (formulário FO-002/PCP). Criada a partir da
 // aba Cortadeira do painel de Programação. Ver spec pcp-planos-frente-costa-rc.
 // Vínculo com a OP é OPCIONAL (RC avulsa é válida). Numeração NN/AAAA

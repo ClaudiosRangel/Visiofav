@@ -5173,6 +5173,26 @@ async function seedMateriaisFromOPs() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "alteracao_op_pendente" ADD CONSTRAINT "alteracao_op_pendente_ordem_producao_id_fkey" FOREIGN KEY ("ordem_producao_id") REFERENCES "ordem_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
   } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK alteracao_op_pendente→op skip:', e.message?.substring(0, 80)) }
   console.log('✅ Importador Calcgraf: agente_api_key, alteracao_op_pendente, ordem_producao.hash_importacao_origem')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Apontamentos — Dashboards/Relatórios/Metas (spec pcp-apontamentos-
+  // dashboards-relatorios). Meta de produção por centro (quantidade/dia e
+  // opcionalmente R$/dia) com vigência. Aditivo. Idempotente.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "meta_producao_centro" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "centro_producao_id" TEXT NOT NULL,
+    "meta_quantidade_dia" DECIMAL(14,2) NOT NULL,
+    "meta_valor_dia" DECIMAL(14,2),
+    "vigencia_inicio" TIMESTAMP(3) NOT NULL,
+    "vigencia_fim" TIMESTAMP(3),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "meta_producao_centro_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "meta_producao_centro_empresa_id_centro_producao_id_idx" ON "meta_producao_centro"("empresa_id","centro_producao_id")`)
+  console.log('✅ Apontamentos BI: meta_producao_centro criada')
 }
 
 main()

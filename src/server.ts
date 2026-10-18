@@ -188,6 +188,7 @@ import { importadorCalcgrafRoutes } from './modules/pcp/importador-calcgraf/impo
 import { alteracaoOpPendenteRoutes } from './modules/pcp/importador-calcgraf/alteracao-op-pendente.routes'
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
+import { apontamentosBiRoutes } from './modules/pcp/apontamentos-bi/apontamentos-bi.routes'
 import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
@@ -500,6 +501,8 @@ async function bootstrap() {
   await app.register(calculoConsumoGraficoRoutes, { prefix: '/api/pcp' })
   await app.register(etapaOperacionalRoutes, { prefix: '/api/pcp' })
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
+  // Apontamentos — Dashboards/Relatórios/Metas (spec pcp-apontamentos-dashboards-relatorios)
+  await app.register(apontamentosBiRoutes, { prefix: '/api/pcp' })
   await app.register(timelineProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
