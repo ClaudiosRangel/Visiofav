@@ -1117,10 +1117,21 @@ export function montarQueryCalculoDaOp(codigosHeader: number[]): string {
  */
 export function montarQueryObservacaoOp(codigosCalculo: number[]): string {
   const lista = codigosCalculo.map((c) => Math.trunc(c)).join(', ')
+  // CORREÇÃO (19/10/2026): o reader resolve o CÁLCULO da OP por MAX(Codigo)
+  // (um recálculo técnico), mas o MEMO ("Observações por Áreas") fica SEMPRE no
+  // cálculo ORIGINAL — outro `CalculoHeader.Codigo` com o MESMO `NumCalculo`.
+  // Confirmado no backup: p/ OP 3133 o MAX=15174 tem memo=0; o irmão 15165
+  // (mesmo NumCalculo) tem memo. Então: dado o CalcCodigo-MAX, buscamos o memo
+  // de QUALQUER CalculoHeader irmão (mesmo NumCalculo) via TabelaMemos, e
+  // devolvemos a CHAVE = o CalcCodigo-MAX (que o reader usa como índice).
+  // `cm.Codigo` = Codigo do cálculo que TEM o memo; `chMax.Codigo` = o MAX.
   return (
-    `SELECT Codigo AS CalcCodigo, CAST(Memo AS nvarchar(max)) AS memo ` +
-    `FROM TabelaMemos ` +
-    `WHERE NomeTabela = 'CalculoOp' AND Codigo IN (${lista})`
+    `SELECT chMax.Codigo AS CalcCodigo, CAST(tm.Memo AS nvarchar(max)) AS memo ` +
+    `FROM CalculoHeader chMax ` +
+    `INNER JOIN CalculoHeader cm ON cm.NumCalculo = chMax.NumCalculo ` +
+    `INNER JOIN TabelaMemos tm ON tm.NomeTabela = 'CalculoOp' AND tm.Codigo = cm.Codigo ` +
+    `WHERE chMax.Codigo IN (${lista}) ` +
+    `AND DATALENGTH(tm.Memo) > 0`
   )
 }
 
@@ -1501,11 +1512,20 @@ async function lerRoteiroEmLote(
   const matRaw = await conexao.consultar<LinhaMatAcab>(montarQueryCalculoMatAcabamento(codigosCalculo))
   const coresRaw = await conexao.consultar<LinhaCores>(montarQueryCalculoCores(codigosCalculo))
   // Observação textual (memo) por cálculo — TabelaMemos (NomeTabela='CalculoOp').
+  // Uma OP pode ter MÚLTIPLAS linhas de memo por cálculo (ex.: 2 — "por áreas");
+  // CONCATENAMOS todas (separadas por quebra de linha), preservando o conjunto.
   const obsRaw = await conexao.consultar<LinhaObsOp>(montarQueryObservacaoOp(codigosCalculo))
-  const obsPorCalc = new Map<number, string>()
+  const obsPartesPorCalc = new Map<number, string[]>()
   for (const row of obsRaw) {
     const texto = strOuUndef(row.memo)
-    if (row.CalcCodigo != null && texto) obsPorCalc.set(row.CalcCodigo, texto)
+    if (row.CalcCodigo == null || !texto) continue
+    const arr = obsPartesPorCalc.get(row.CalcCodigo) ?? []
+    arr.push(texto)
+    obsPartesPorCalc.set(row.CalcCodigo, arr)
+  }
+  const obsPorCalc = new Map<number, string>()
+  for (const [calc, partes] of obsPartesPorCalc) {
+    obsPorCalc.set(calc, partes.join('\n'))
   }
   // Programação de entrega por cálculo — CalculoProgEntrega (fonte do PDF).
   const progRaw = await conexao.consultar<LinhaProgEntregaCalc>(montarQueryProgEntregaCalculo(codigosCalculo))

@@ -16,14 +16,21 @@ import { montarQueryObservacaoOp, montarQueryProgEntregaCalculo, assertSomenteLe
 
 test('montarQueryObservacaoOp seleciona Memo de TabelaMemos por CalculoOp', () => {
   const sql = montarQueryObservacaoOp([15196, 15193])
-  // Filtra pela área correta (CalculoOp) e pelos códigos de cálculo.
-  assert.match(sql, /FROM\s+TabelaMemos/i)
+  // Área correta (CalculoOp) e TabelaMemos como fonte do memo (via JOIN).
+  assert.match(sql, /JOIN\s+TabelaMemos/i)
   assert.match(sql, /NomeTabela\s*=\s*'CalculoOp'/i)
-  assert.match(sql, /Codigo\s+IN\s*\(15196,\s*15193\)/i)
+  // Correção 19/10/2026: o memo fica no cálculo ORIGINAL (mesmo NumCalculo do
+  // MAX). A query junta CalculoHeader por NumCalculo para achar o memo do irmão.
+  assert.match(sql, /CalculoHeader/i)
+  assert.match(sql, /NumCalculo\s*=\s*chMax\.NumCalculo/i)
+  // Filtra pelos CalcCodigos-MAX recebidos (chave do reader).
+  assert.match(sql, /chMax\.Codigo\s+IN\s*\(15196,\s*15193\)/i)
   // Converte o ntext em nvarchar(max) para o driver trazer como string.
-  assert.match(sql, /CAST\(Memo AS nvarchar\(max\)\)\s+AS memo/i)
-  // Alias do código de cálculo.
-  assert.match(sql, /Codigo AS CalcCodigo/i)
+  assert.match(sql, /CAST\(tm\.Memo AS nvarchar\(max\)\)\s+AS memo/i)
+  // Alias do código de cálculo (o MAX, chave do reader).
+  assert.match(sql, /chMax\.Codigo AS CalcCodigo/i)
+  // Ignora memos vazios.
+  assert.match(sql, /DATALENGTH\(tm\.Memo\)\s*>\s*0/i)
 })
 
 test('montarQueryObservacaoOp trunca os códigos (sem SQL injection via número)', () => {

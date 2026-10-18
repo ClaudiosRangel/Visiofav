@@ -48,9 +48,16 @@ import type { EntradaLog, InfoVersao } from './ipc-canais'
  * NomeTabela='CalculoOp') — Serviço Novo/Repetição + bobinas "em estoque/
  * encomendado (N kg)" + LXL + Montagem. Com isso a regra "Aguardando Cartão"
  * passa a funcionar também nas OPs sincronizadas (antes só nas de PDF).
+ *
+ * v0.4.1 (CORREÇÃO 19/10/2026): o memo da observação ficava no cálculo
+ * ORIGINAL da OP (mesmo `NumCalculo`), não no `MAX(Codigo)` que o reader usa
+ * para o roteiro — por isso a observação vinha VAZIA. A query de observação
+ * passou a juntar `CalculoHeader` por `NumCalculo` e buscar o memo do cálculo
+ * irmão (validado contra o backup: 9/9 OPs com memo). Múltiplas linhas de memo
+ * por cálculo agora são concatenadas.
  */
 const INFO_VERSAO: Omit<InfoVersao, 'versao'> = {
-  fase: 'Fase 2+ — Paridade PDF + Observações da OP',
+  fase: 'Fase 2+ — Paridade PDF + Observações da OP (v0.4.1)',
   trazRoteiro: true,
 }
 
