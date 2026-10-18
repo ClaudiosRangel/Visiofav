@@ -1613,7 +1613,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
 
     const centros = await prisma.centroProducao.findMany({
-      where: { empresaId: user.empresaId, status: true },
+      // Só centros ATIVOS e disponíveis para programação (fora de programação não entra no quadro)
+      where: { empresaId: user.empresaId, status: true, disponivelProgramacao: true },
       include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } } },
       orderBy: [{ tipoProcesso: { posicao: 'asc' } }, { posicao: 'asc' }, { codigo: 'asc' }],
     })
@@ -1941,7 +1942,8 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     // Buscar todos os centros ativos para a lista de opções (dropdown de máquinas)
     const centrosAtivos = await prisma.centroProducao.findMany({
-      where: { empresaId: user.empresaId, status: true },
+      // Só centros ATIVOS e disponíveis para programação (fora de programação não é opção de máquina)
+      where: { empresaId: user.empresaId, status: true, disponivelProgramacao: true },
       select: { id: true, codigo: true, descricao: true, tipoProcessoId: true },
       orderBy: [{ posicao: 'asc' }, { codigo: 'asc' }],
     })

@@ -171,7 +171,8 @@ export async function dashboardUnificadoRoutes(app: FastifyInstance) {
 
     const [centros, tiposProcesso] = await Promise.all([
       prisma.centroProducao.findMany({
-        where: { empresaId, status: true },
+        // Só centros ATIVOS e disponíveis para programação (fora de programação não entra nos indicadores)
+        where: { empresaId, status: true, disponivelProgramacao: true },
         select: { id: true, descricao: true, capacidadeHora: true, tipoProcessoId: true },
       }),
       prisma.tipoProcesso.findMany({
