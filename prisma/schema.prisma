@@ -3555,6 +3555,10 @@ model ApontamentoEtapa {
   // Requirement 8 — planejada vs não planejada
   paradaPlanejada Boolean? @map("parada_planejada")
 
+  // Código de parada customizável (spec pcp-relatorio-gerencial-producao).
+  // Nullable/aditivo; o enum motivoParada acima continua válido por compat.
+  codigoParadaId String? @map("codigo_parada_id")
+
   // Requirement 6 — setup como evento com início/fim
   setupInicio         DateTime? @map("setup_inicio")
   setupFim            DateTime? @map("setup_fim")
@@ -3591,6 +3595,39 @@ model MetaProducaoCentro {
 
   @@index([empresaId, centroProducaoId])
   @@map("meta_producao_centro")
+}
+
+// Meta de produção por TIPO DE PROCESSO (spec pcp-relatorio-gerencial-producao).
+// Alvo diário agregando os centros do processo (ex.: Meta Impressão = soma
+// CD5+CD7+KBA). Coexiste com MetaProducaoCentro. Isolamento por empresaId.
+model MetaProducaoProcesso {
+  id                String    @id @default(uuid())
+  empresaId         String    @map("empresa_id")
+  tipoProcessoId    String    @map("tipo_processo_id")
+  metaQuantidadeDia Decimal   @map("meta_quantidade_dia") @db.Decimal(14, 2)
+  metaValorDia      Decimal?  @map("meta_valor_dia") @db.Decimal(14, 2)
+  vigenciaInicio    DateTime  @map("vigencia_inicio")
+  vigenciaFim       DateTime? @map("vigencia_fim")
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, tipoProcessoId])
+  @@map("meta_producao_processo")
+}
+
+// Código de parada customizável por empresa (spec pcp-relatorio-gerencial-
+// producao). Usado no Pareto de ocorrências. Ex.: "1 = Troca de chapa/Setup".
+// Complementa o enum legado ApontamentoEtapa.motivoParada (mantido).
+model CodigoParada {
+  id          String   @id @default(uuid())
+  empresaId   String   @map("empresa_id")
+  codigo      String   @db.VarChar(20)
+  descricao   String   @db.VarChar(200)
+  status      Boolean  @default(true)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("codigo_parada")
 }
 
 // Requisição de Corte de Cartão (formulário FO-002/PCP). Criada a partir da

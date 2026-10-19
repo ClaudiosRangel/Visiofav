@@ -5193,6 +5193,39 @@ async function seedMateriaisFromOPs() {
   )`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "meta_producao_centro_empresa_id_centro_producao_id_idx" ON "meta_producao_centro"("empresa_id","centro_producao_id")`)
   console.log('✅ Apontamentos BI: meta_producao_centro criada')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Relatório Gerencial de Produção (spec pcp-relatorio-gerencial-producao):
+  // meta por processo, códigos de parada customizáveis e vínculo opcional no
+  // apontamento. Aditivo. Idempotente.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "meta_producao_processo" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "tipo_processo_id" TEXT NOT NULL,
+    "meta_quantidade_dia" DECIMAL(14,2) NOT NULL,
+    "meta_valor_dia" DECIMAL(14,2),
+    "vigencia_inicio" TIMESTAMP(3) NOT NULL,
+    "vigencia_fim" TIMESTAMP(3),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "meta_producao_processo_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "meta_producao_processo_empresa_id_tipo_processo_id_idx" ON "meta_producao_processo"("empresa_id","tipo_processo_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "codigo_parada" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo" VARCHAR(20) NOT NULL,
+    "descricao" VARCHAR(200) NOT NULL,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "codigo_parada_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "codigo_parada_empresa_id_codigo_key" ON "codigo_parada"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "codigo_parada_id" TEXT`)
+  console.log('✅ Relatório Gerencial: meta_producao_processo, codigo_parada, apontamento_etapa.codigo_parada_id')
 }
 
 main()
