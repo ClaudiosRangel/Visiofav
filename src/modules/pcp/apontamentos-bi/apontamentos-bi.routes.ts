@@ -24,6 +24,15 @@ const filtroSchema = z.object({
 })
 
 export async function apontamentosBiRoutes(app: FastifyInstance) {
+  // Aceita token via query param (?token=) para abrir PDFs em nova aba do
+  // navegador (sem header Authorization). Promove o token para o header ANTES
+  // do authenticate rodar. Mesmo objetivo da rota /op-pdf/:opId.
+  app.addHook('onRequest', async (request) => {
+    const q = request.query as { token?: string } | undefined
+    if (q?.token && !request.headers.authorization) {
+      request.headers.authorization = `Bearer ${q.token}`
+    }
+  })
   app.addHook('onRequest', authenticate)
 
   // ─── Dashboard por centro + série diária (Req 3) ──────────────────────────
