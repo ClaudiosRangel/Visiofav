@@ -1260,12 +1260,24 @@ sobrescreve ajuste manual).
   (Resumo por Processo / Produção Diária / Pareto) + botão PDF.
 - `pcp/gerencial/codigos-parada/page.tsx` — CRUD de códigos de parada.
 
+### COMPLETADO (18/10/2026 — 2ª leva, "faça completo")
+- **Tela Relatório Mensal COMPLETA** (front `1216330`): 7 abas — Resumo (gráfico
+  de barras por processo), Produção Diária (linha + ReferenceLine da média),
+  Metas por Processo (linha diária + ReferenceLine meta/média), Dados por Centro
+  (matriz data×centro com meta), Produtividade (barras + tabela mês×operador/
+  máquina), OPs Emitidas (barras comparativo 3 anos + tabela), Pareto (barras +
+  tabela). Gráficos com **recharts** (3.10.0, já no projeto). PDF mantido.
+- **Código de parada no apontamento** (back `b5ef95fea`, front `1216330`): a
+  pausa de etapa (`PATCH /pcp/etapas/:id/pausar`) agora aceita `codigoParadaId`
+  opcional (aditivo; `pausarEtapa` grava no ApontamentoEtapa). O modal "Pausar
+  Etapa" da Programação mostra um Select de Código de Parada (carregado de
+  `/pcp/gerencial/codigos-parada`, só quando há códigos cadastrados). O Pareto do
+  relatório usa o código quando presente, senão cai no enum `motivoParada`.
+
 ### Pendências/evoluções (não bloqueiam)
-- Associar `codigoParadaId` no apontamento do chão (hoje o Pareto usa o código
-  quando existir, senão cai no enum `motivoParada`). Falta UI no apontamento
-  para escolher o código cadastrado.
-- Gráficos de barra/linha "idênticos às planilhas" (recharts): as telas usam
-  tabelas+cards; o backend já entrega as séries para plotar quando desejado.
-- Produtividade por operador/máquina e OPs emitidas têm endpoints prontos; a
-  tela expõe Resumo/Diária/Pareto — adicionar abas Produtividade/OPs/Dados-por-
-  Centro no front é incremento aditivo (endpoints já existem).
+- Custo-hora/velocidade dos ~60 centros sem de-para automático ainda precisam ser
+  preenchidos manualmente na tela PCP → Cadastros → Centros para o R$ sair
+  completo (os 11 que casaram por nome já estão).
+- "Trabalhos em máquina" (`GET /pcp/gerencial/trabalhos-em-maquina`) tem endpoint
+  pronto mas ainda não há UI dedicada na tela (dá pra plugar como drill-down nos
+  dias de pico/meta quando desejado).
