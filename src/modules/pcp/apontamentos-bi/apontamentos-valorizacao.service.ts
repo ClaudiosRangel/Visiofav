@@ -53,6 +53,7 @@ export function percentualAtingido(realizado: number, meta?: number | null): num
  * consistente com o reset diário do contador no restante do PCP.
  */
 export function mesCivilBrasilia(date: Date): string {
+  if (!date || Number.isNaN(date.getTime())) return 'invalida'
   const br = new Date(date.getTime() - 3 * 60 * 60 * 1000)
   const ano = br.getUTCFullYear()
   const mes = String(br.getUTCMonth() + 1).padStart(2, '0')
@@ -61,6 +62,7 @@ export function mesCivilBrasilia(date: Date): string {
 
 /** Data civil (YYYY-MM-DD) no fuso -3h — usada no agrupamento diário. */
 export function dataCivilBrasilia(date: Date): string {
+  if (!date || Number.isNaN(date.getTime())) return 'invalida'
   const br = new Date(date.getTime() - 3 * 60 * 60 * 1000)
   const ano = br.getUTCFullYear()
   const mes = String(br.getUTCMonth() + 1).padStart(2, '0')

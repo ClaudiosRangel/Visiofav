@@ -106,7 +106,7 @@ export async function agregarDashboard(
       dataHora: true,
       etapaOrdemProducao: {
         select: {
-          tempoRealMinutos: true,
+          tempoOperacaoCalculado: true,
           centroProducao: {
             select: {
               id: true,
@@ -176,11 +176,12 @@ export async function agregarDashboard(
     acc.perda += Number(a.quantidadePerda)
     acc.retrabalho += Number(a.quantidadeRetrabalho)
     acc.paradaMinutos += a.tempoParadaMinutos ?? 0
-    // Minutos de produção (proxy p/ valorização por custoHora): tempoReal da
-    // etapa quando disponível, senão setupDuracao. Apenas apontamentos de
-    // produção contribuem.
+    // Minutos de produção (proxy p/ valorização por custoHora): tempo de
+    // operação calculado da etapa quando disponível, senão setupDuracao do
+    // apontamento. Apenas apontamentos de produção contribuem.
     if (a.tipo === 'PRODUCAO') {
-      const min = a.etapaOrdemProducao?.tempoRealMinutos ?? a.setupDuracaoMinutos ?? 0
+      const tempoOp = a.etapaOrdemProducao?.tempoOperacaoCalculado
+      const min = (tempoOp != null ? Number(tempoOp) : null) ?? a.setupDuracaoMinutos ?? 0
       acc.minutosProducao += min
       const dia = dataCivilBrasilia(a.dataHora)
       const s = acc.serie.get(dia) ?? { produzido: 0, minutos: 0 }

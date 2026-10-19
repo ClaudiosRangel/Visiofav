@@ -26,7 +26,7 @@ function apontamento(over: Record<string, unknown> = {}) {
     dataHora: new Date('2026-09-10T13:00:00Z'),
     funcionarioId: 'op-1',
     etapaOrdemProducao: {
-      tempoRealMinutos: 60,
+      tempoOperacaoCalculado: 60,
       centroProducao: {
         id: 'c-1',
         descricao: 'Coladeira A',
@@ -54,7 +54,7 @@ describe('agregarDashboard (Property 3, 4, 7)', () => {
   it('agrega por centro, valoriza (custoHora×horas) e cruza meta', async () => {
     mp.apontamentoEtapa.findMany.mockResolvedValue([
       apontamento(),
-      apontamento({ quantidadeProduzida: 500, dataHora: new Date('2026-09-11T13:00:00Z'), setupDuracaoMinutos: 30, etapaOrdemProducao: { tempoRealMinutos: 30, centroProducao: { id: 'c-1', descricao: 'Coladeira A', custoHora: 100, tipoProcesso: { codigo: 'COLAGEM' } } } }),
+      apontamento({ quantidadeProduzida: 500, dataHora: new Date('2026-09-11T13:00:00Z'), setupDuracaoMinutos: 30, etapaOrdemProducao: { tempoOperacaoCalculado: 30, centroProducao: { id: 'c-1', descricao: 'Coladeira A', custoHora: 100, tipoProcesso: { codigo: 'COLAGEM' } } } }),
     ] as never)
     mp.metaProducaoCentro.findMany.mockResolvedValue([
       { centroProducaoId: 'c-1', metaQuantidadeDia: 2000, metaValorDia: 300, vigenciaInicio: new Date('2026-01-01'), vigenciaFim: null },
