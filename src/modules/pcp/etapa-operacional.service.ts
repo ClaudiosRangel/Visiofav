@@ -145,6 +145,7 @@ export async function pausarEtapa(
     motivoParada: 'MANUTENCAO' | 'FALTA_MATERIAL' | 'ACERTO_MAQUINA' | 'TROCA_TURNO' | 'OUTRO'
     observacao?: string
     paradaPlanejada?: boolean
+    codigoParadaId?: string
   },
 ) {
   // Segurança: filtro explícito por empresaId — ver comentário em iniciarEtapa.
@@ -168,6 +169,9 @@ export async function pausarEtapa(
       motivoParada: dados.motivoParada,
       observacao: dados.observacao,
       paradaPlanejada: dados.paradaPlanejada,
+      // Código de parada customizável (spec pcp-relatorio-gerencial-producao) —
+      // opcional/aditivo; alimenta o Pareto do Relatório Gerencial.
+      codigoParadaId: dados.codigoParadaId ?? null,
       // Requirement 15.2 (spec checkout-apontamento) — gravado
       // explicitamente (mesmo já sendo o default do schema) para manter
       // consistência com o restante das rotas do Checkout, que também

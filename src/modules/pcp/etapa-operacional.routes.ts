@@ -255,6 +255,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const body = z.object({
       motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']),
       observacao: z.string().optional(),
+      codigoParadaId: z.string().uuid().optional(),
     }).parse(request.body)
 
     // Verificar permissão
