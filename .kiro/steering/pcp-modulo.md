@@ -1108,9 +1108,56 @@ inalterados — gravam o dado bruto. A base só muda EXIBIÇÃO/meta/progresso.
 
 ---
 
-## 13. PENDÊNCIA EM ANDAMENTO (18/10/2026) — filtro de centros + reformulação dos Apontamentos
+## 13. ✅ ENTREGUE (18/10/2026) — filtro de centros + reformulação dos Apontamentos
 
-Pedido do usuário (ainda NÃO implementado — só levantamento feito):
+**STATUS: CONCLUÍDO e no ar** (back `5510ff267` + `81dc1c7c2`; front `bd6234d`).
+
+### Tema 1 — filtro de centros (feito)
+`disponivelProgramacao: true` adicionado ao `where` de `centroProducao.findMany`
+em `GET /pcp/quadro-producao` + dropdown de máquina (etapa-operacional.routes.ts)
+e `GET /pcp/dashboard/indicadores` (dashboard-unificado.routes.ts). O painel de
+Programação já filtrava. Agora todos os quadros/dashboards só exibem centros
+ATIVOS e disponíveis para programação.
+
+### Tema 2 — módulo Apontamentos BI (feito)
+Spec `pcp-apontamentos-dashboards-relatorios`. Reformulação total sobre
+`ApontamentoEtapa` (fonte real), modo B (metas + valorização R$):
+- **Schema**: model `MetaProducaoCentro` (`meta_producao_centro`) +
+  migrate-prod.ts idempotente (CREATE TABLE/INDEX IF NOT EXISTS). Migração local
+  não rodou (Postgres local off); roda no deploy do Render.
+- **Backend** (`src/modules/pcp/apontamentos-bi/`): motor puro
+  `apontamentos-valorizacao.service.ts` (valorizar/percentualAtingido/
+  mesCivilBrasilia — 10/10 testes); agregação `apontamentos-bi.service.ts`
+  (dashboard por centro+série diária, produtividade operador/máquina por mês,
+  histórico paginado — 7/7 testes com mocks); PDFs `apontamentos-bi-pdf.service.ts`
+  (relatório diário + totais por centro, pdfkit); rotas `apontamentos-bi.routes.ts`
+  (prefixo /api/pcp, authenticate, isolamento empresaId explícito).
+  Endpoints: `GET /apontamentos-bi/dashboard|produtividade|historico`,
+  `GET /apontamentos-bi/relatorio-diario.pdf|dashboard.pdf`, CRUD
+  `/apontamentos-bi/metas`.
+- **Valorização**: `valorUnitario × qtd` (quando houver) OU `custoHora × horas
+  produtivas` (proxy = `tempoRealMinutos` da etapa, senão `setupDuracaoMinutos`).
+  Sem base → R$ 0 (nunca erro).
+- **Frontend**: `pcp/apontamentos/page.tsx` reformulada (abas Dashboard /
+  Produtividade / Histórico / Relatórios / Metas; seletor de período + centro;
+  PDFs abrem via token na query). Não usa mais `GET /apontamentos-producao`.
+  Build Next OK (rota 12.6 kB).
+
+### Pendências/limitações conscientes
+- A valorização por `custoHora × horas` depende de `tempoRealMinutos`/
+  `setupDuracaoMinutos` estarem preenchidos nos apontamentos; se o chão não
+  preencher tempo, o R$ por custoHora fica 0 — nesses casos cadastrar
+  `valorUnitario` (hoje não há campo de valorUnitario por centro no schema; a
+  valorização unitária está prevista no motor mas sem cadastro — adicionar
+  campo `valorUnitarioProducao` em CentroProducao se o usuário quiser R$ por
+  peça/folha em vez de por hora).
+- Gráficos de barra por dia: o backend já entrega `serieDiaria`; o front hoje
+  mostra tabelas + cards + barras de meta. Se quiser os gráficos de barras
+  idênticos às planilhas (recharts), é um incremento visual aditivo.
+
+<!-- Histórico do levantamento original abaixo (mantido para referência). -->
+
+### (levantamento original) Pedido do usuário:
 
 1. **Filtro de centros** em TODOS os quadros/dashboards/menus que listam centros
    de produção: exibir só os **ATIVOS** (`CentroProducao.status === true`) **E**
