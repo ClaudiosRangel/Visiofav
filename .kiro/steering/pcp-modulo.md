@@ -1274,10 +1274,17 @@ sobrescreve ajuste manual).
   `/pcp/gerencial/codigos-parada`, só quando há códigos cadastrados). O Pareto do
   relatório usa o código quando presente, senão cai no enum `motivoParada`.
 
-### Pendências/evoluções (não bloqueiam)
-- Custo-hora/velocidade dos ~60 centros sem de-para automático ainda precisam ser
-  preenchidos manualmente na tela PCP → Cadastros → Centros para o R$ sair
-  completo (os 11 que casaram por nome já estão).
-- "Trabalhos em máquina" (`GET /pcp/gerencial/trabalhos-em-maquina`) tem endpoint
-  pronto mas ainda não há UI dedicada na tela (dá pra plugar como drill-down nos
-  dias de pico/meta quando desejado).
+### COMPLETADO (18/10/2026 — 3ª leva)
+- **Custo-hora populado**: além dos 11 automáticos, mais **35 centros** via de-para
+  MANUAL conferido 1-a-1 (`scripts/depara-custo-manual-wega.ts`, aplicado em
+  produção). Total **46 centros com custo-hora** — todos os principais das
+  planilhas cobertos (CD5=440, CD7=550, KBA=480, Bobst E/S=300/280, Cortadeiras=
+  113.21, Guilhotinas=77.69, etc.). O script só preenche nulo/0 (idempotente).
+  Centros restantes (serviços manuais raros) ficam para a tela quando precisar.
+- **Aba "Trabalhos em Máquina"** no Relatório Mensal (front `87cc50b`): seletor de
+  dia (sugere o pico do mês) → lista OP/cliente/máquina apontados no dia, via
+  `GET /pcp/gerencial/trabalhos-em-maquina`. Replica as planilhas "trabalhos que
+  estavam em máquina nos dias que batemos a meta".
+
+### Estado final: módulo gerencial 100% das imagens entregue.
+Nada pendente das planilhas da reunião. Evoluções futuras só se o usuário pedir.
