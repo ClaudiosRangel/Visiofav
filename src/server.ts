@@ -189,6 +189,8 @@ import { alteracaoOpPendenteRoutes } from './modules/pcp/importador-calcgraf/alt
 import { etapaOperacionalRoutes } from './modules/pcp/etapa-operacional.routes'
 import { dashboardUnificadoRoutes } from './modules/pcp/dashboard-unificado.routes'
 import { apontamentosBiRoutes } from './modules/pcp/apontamentos-bi/apontamentos-bi.routes'
+import { gerencialCadastrosRoutes } from './modules/pcp/gerencial/gerencial-cadastros.routes'
+import { relatorioProducaoRoutes } from './modules/pcp/gerencial/relatorio-producao.routes'
 import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
@@ -503,6 +505,9 @@ async function bootstrap() {
   await app.register(dashboardUnificadoRoutes, { prefix: '/api/pcp' })
   // Apontamentos — Dashboards/Relatórios/Metas (spec pcp-apontamentos-dashboards-relatorios)
   await app.register(apontamentosBiRoutes, { prefix: '/api/pcp' })
+  // Gerencial — metas por processo, códigos de parada e relatório mensal de produção
+  await app.register(gerencialCadastrosRoutes, { prefix: '/api/pcp' })
+  await app.register(relatorioProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(timelineProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
