@@ -153,3 +153,43 @@ describe('Property 6: determinismo', () => {
     }
   })
 })
+
+
+// ─── ajustarParaTurno (snap ao próximo horário válido — padrão APS) ─────────
+import { ajustarParaTurno } from './timeline-agenda.service'
+
+describe('ajustarParaTurno', () => {
+  const T: TurnoAgenda = { horaInicio: '08:00', horaFim: '17:00', diasSemana: [1, 2, 3, 4, 5], duracaoMinutos: 540 }
+
+  it('instante dentro do turno permanece inalterado', () => {
+    const d = new Date('2026-10-20T10:00:00') // ter 10:00 (local)
+    expect(ajustarParaTurno(d, T).getTime()).toBe(d.getTime())
+  })
+
+  it('antes do início do turno → vai para o início do mesmo dia', () => {
+    const d = new Date('2026-10-20T06:00:00') // ter 06:00
+    const r = ajustarParaTurno(d, T)
+    expect(r.getHours()).toBe(8)
+    expect(r.getMinutes()).toBe(0)
+    expect(r.getDate()).toBe(20)
+  })
+
+  it('depois do fim do turno (18:00) → próximo dia útil 08:00', () => {
+    const d = new Date('2026-10-20T18:00:00') // ter 18:00
+    const r = ajustarParaTurno(d, T)
+    expect(r.getHours()).toBe(8)
+    expect(r.getDate()).toBe(21) // quarta
+  })
+
+  it('sexta 18:00 → segunda 08:00 (pula o fim de semana)', () => {
+    const d = new Date('2026-10-23T18:00:00') // sexta 18:00
+    const r = ajustarParaTurno(d, T)
+    expect(r.getHours()).toBe(8)
+    expect(r.getDay()).toBe(1) // segunda
+  })
+
+  it('sem turno retorna o próprio instante', () => {
+    const d = new Date('2026-10-20T18:00:00')
+    expect(ajustarParaTurno(d, null).getTime()).toBe(d.getTime())
+  })
+})

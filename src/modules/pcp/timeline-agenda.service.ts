@@ -112,6 +112,52 @@ function avancar(inicio: Date, minutos: number, turno: TurnoAgenda | null): Date
   return turno ? calcularFimComTurno(inicio, minutos, turno) : new Date(inicio.getTime() + minutos * 60000)
 }
 
+/**
+ * "Snap" de um instante para o PRÓXIMO horário de trabalho válido do turno
+ * (padrão APS/DHTMLX/IBM: ao fixar/soltar fora do expediente, o início efetivo
+ * rola para o próximo início de expediente). Se o instante já está dentro do
+ * turno, retorna-o inalterado. Sem turno → retorna o próprio instante.
+ *
+ * Isso garante que a barra do Gantt comece no primeiro instante PRODUTIVO
+ * (não desenha o vão ocioso entre a âncora fora do turno e o início real).
+ */
+export function ajustarParaTurno(instante: Date, turno: TurnoAgenda | null): Date {
+  if (!turno) return new Date(instante)
+
+  const [hIni, mIni] = turno.horaInicio.split(':').map(Number)
+  const [hFim, mFim] = turno.horaFim.split(':').map(Number)
+  const turnoInicioMin = hIni * 60 + mIni
+  const turnoFimMin = hFim * 60 + mFim
+
+  let cursor = new Date(instante)
+  const maxIteracoes = 365
+  let iteracoes = 0
+
+  while (iteracoes < maxIteracoes) {
+    iteracoes++
+    const diaConvertido = cursor.getDay() === 0 ? 7 : cursor.getDay()
+
+    if (!turno.diasSemana.includes(diaConvertido)) {
+      cursor.setDate(cursor.getDate() + 1)
+      cursor.setHours(hIni, mIni, 0, 0)
+      continue
+    }
+    const minAtual = cursor.getHours() * 60 + cursor.getMinutes()
+    if (minAtual < turnoInicioMin) {
+      cursor.setHours(hIni, mIni, 0, 0)
+      return cursor
+    }
+    if (minAtual >= turnoFimMin) {
+      cursor.setDate(cursor.getDate() + 1)
+      cursor.setHours(hIni, mIni, 0, 0)
+      continue
+    }
+    // Já está dentro do turno.
+    return cursor
+  }
+  return cursor
+}
+
 /** Duração total prevista de uma etapa (setup + operação). */
 function duracao(e: EtapaAgenda): number {
   return (Number(e.tempoSetupMinutos) || 0) + (Number(e.tempoOperacaoMinutos) || 0)
@@ -143,10 +189,13 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
     const turno = fila[0]?.turno ?? null
 
     // Janelas ocupadas por etapas TRAVADAS deste centro (pontos fixos).
+    // A âncora é "snapada" para o próximo horário válido do turno (APS pin):
+    // se o planejador travou fora do expediente, o início efetivo rola para o
+    // próximo início de turno (a barra começa no 1º instante produtivo).
     const janelasTravadas: Array<{ ini: number; fim: number }> = []
     for (const e of fila) {
       if (e.agendaTravada && e.inicioAgendadoManual) {
-        const ini = e.inicioAgendadoManual
+        const ini = ajustarParaTurno(e.inicioAgendadoManual, turno)
         const fim = avancar(ini, duracao(e), turno)
         janelasTravadas.push({ ini: ini.getTime(), fim: fim.getTime() })
         inicioPorEtapa.set(e.id, ini)
@@ -179,7 +228,8 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
       if (e.agendaTravada && e.inicioAgendadoManual) {
         // Já posicionada (ponto fixo). O cursor avança para o fim dela se for
         // além do cursor atual, para as próximas não travadas virem depois.
-        const fim = avancar(e.inicioAgendadoManual, duracao(e), turno)
+        const iniAjustado = ajustarParaTurno(e.inicioAgendadoManual, turno)
+        const fim = avancar(iniAjustado, duracao(e), turno)
         cursor = new Date(Math.max(cursor.getTime(), fim.getTime()))
         continue
       }
@@ -232,8 +282,9 @@ export function calcularTimelineOp(
 
     let inicio: Date
     if (e.agendaTravada && e.inicioAgendadoManual) {
-      // Ponto fixo: início exatamente na âncora (não cruza com a cascata).
-      inicio = new Date(e.inicioAgendadoManual)
+      // Ponto fixo: início na âncora, "snapado" ao próximo horário válido do
+      // turno (não desenha vão ocioso fora do expediente). Não cruza a cascata.
+      inicio = ajustarParaTurno(e.inicioAgendadoManual, turno)
     } else {
       const fromFila = inicioPorFila.get(e.id)
       inicio = fromFila ? new Date(Math.max(cursor.getTime(), fromFila.getTime())) : new Date(cursor)
