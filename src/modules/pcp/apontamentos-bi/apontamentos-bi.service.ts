@@ -15,6 +15,7 @@ import {
   percentualAtingido,
   mesCivilBrasilia,
   dataCivilBrasilia,
+  horasPorVelocidade,
 } from './apontamentos-valorizacao.service'
 
 export interface FiltroApontamentos {
@@ -112,6 +113,7 @@ export async function agregarDashboard(
               id: true,
               descricao: true,
               custoHora: true,
+              velocidade: true,
               tipoProcesso: { select: { codigo: true } },
             },
           },
@@ -144,6 +146,7 @@ export async function agregarDashboard(
     centroDescricao: string
     tipoProcessoCodigo: string | null
     custoHora: number | null
+    velocidade: number | null
     produzido: number
     perda: number
     retrabalho: number
@@ -163,6 +166,7 @@ export async function agregarDashboard(
         centroDescricao: centro.descricao,
         tipoProcessoCodigo: centro.tipoProcesso?.codigo ?? null,
         custoHora: centro.custoHora != null ? Number(centro.custoHora) : null,
+        velocidade: centro.velocidade != null ? Number(centro.velocidade) : null,
         produzido: 0,
         perda: 0,
         retrabalho: 0,
@@ -194,19 +198,25 @@ export async function agregarDashboard(
   const resultado: DashboardCentroDTO[] = []
   for (const acc of porCentro.values()) {
     const base = baseContagem(acc.tipoProcessoCodigo ?? '')
+    // Horas produtivas: preferir produção ÷ velocidade (independe de o operador
+    // apontar tempo); fallback no tempo de operação apontado.
+    const horasTotal = horasPorVelocidade(acc.produzido, acc.velocidade) ?? acc.minutosProducao / 60
     const valorRs = valorizar({
-      tempoProdutivoHoras: acc.minutosProducao / 60,
+      tempoProdutivoHoras: horasTotal,
       custoHora: acc.custoHora,
       quantidade: acc.produzido,
     })
     const meta = metaPorCentro.get(acc.centroId)
     const serieDiaria: SerieDiaria[] = [...acc.serie.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([data, v]) => ({
-        data,
-        produzido: v.produzido,
-        valorRs: valorizar({ tempoProdutivoHoras: v.minutos / 60, custoHora: acc.custoHora, quantidade: v.produzido }),
-      }))
+      .map(([data, v]) => {
+        const horasDia = horasPorVelocidade(v.produzido, acc.velocidade) ?? v.minutos / 60
+        return {
+          data,
+          produzido: v.produzido,
+          valorRs: valorizar({ tempoProdutivoHoras: horasDia, custoHora: acc.custoHora, quantidade: v.produzido }),
+        }
+      })
     resultado.push({
       centroId: acc.centroId,
       centroDescricao: acc.centroDescricao,

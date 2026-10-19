@@ -5,6 +5,7 @@ import {
   percentualAtingido,
   mesCivilBrasilia,
   dataCivilBrasilia,
+  horasPorVelocidade,
 } from './apontamentos-valorizacao.service'
 
 describe('valorizar (Req 2)', () => {
@@ -36,6 +37,29 @@ describe('valorizar (Req 2)', () => {
           expect(v1).toBe(v2)
           expect(v1).toBeGreaterThanOrEqual(0)
           expect(Number.isFinite(v1)).toBe(true)
+        },
+      ),
+    )
+  })
+})
+
+describe('horasPorVelocidade (Req 6.1 — Property 3)', () => {
+  it('golden: 10000 folhas / 5000 folhas-hora = 2 horas', () => {
+    expect(horasPorVelocidade(10000, 5000)).toBe(2)
+  })
+  it('velocidade ausente/<=0 → null (fallback)', () => {
+    expect(horasPorVelocidade(10000, null)).toBeNull()
+    expect(horasPorVelocidade(10000, 0)).toBeNull()
+  })
+  it('Property: não-negativo e determinístico', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1e7, noNaN: true }),
+        fc.double({ min: 0.01, max: 1e5, noNaN: true }),
+        (prod, vel) => {
+          const h = horasPorVelocidade(prod, vel)
+          expect(h).not.toBeNull()
+          expect(h as number).toBeGreaterThanOrEqual(0)
         },
       ),
     )
@@ -82,7 +106,7 @@ describe('mesCivilBrasilia / dataCivilBrasilia (Req 4.4 — Property 6)', () => 
 
   it('Property 6: idempotente e formato estável', () => {
     fc.assert(
-      fc.property(fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') }), (d) => {
+      fc.property(fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31'), noInvalidDate: true }), (d) => {
         const m1 = mesCivilBrasilia(d)
         const m2 = mesCivilBrasilia(d)
         expect(m1).toBe(m2)

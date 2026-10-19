@@ -70,6 +70,18 @@ export function dataCivilBrasilia(date: Date): string {
   return `${ano}-${mes}-${dia}`
 }
 
+/**
+ * Horas produtivas derivadas da produção pela velocidade do centro
+ * (spec pcp-relatorio-gerencial-producao). `horas = produção ÷ velocidade`.
+ * Retorna null quando a velocidade é ausente/<=0 (chamador cai no fallback do
+ * tempo apontado). Nunca negativo.
+ */
+export function horasPorVelocidade(producao: number, velocidade?: number | null): number | null {
+  if (velocidade == null || !Number.isFinite(velocidade) || velocidade <= 0) return null
+  const p = Number.isFinite(producao) && producao > 0 ? producao : 0
+  return p / velocidade
+}
+
 /** Arredonda para 2 casas (R$ e percentuais). */
 function arred2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100
