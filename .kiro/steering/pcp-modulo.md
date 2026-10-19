@@ -1205,3 +1205,67 @@ Dado o tamanho (dashboards + relatórios + PDF), o Tema 2 merece UMA spec nova
 (requirements→design→tasks). O Tema 1 é cirúrgico (2 `where`), pode ir direto.
 NADA desta pendência toca o agente Calcgraf. **Confirmar escopo do Tema 2 com o
 usuário antes de implementar** (houve retrabalho prévio por ambiguidade).
+
+---
+
+## 14. Menu Gerencial + Relatório Mensal de Produção (18/10/2026 — ENTREGUE)
+
+Spec `pcp-relatorio-gerencial-producao`. Novo menu **Gerencial** no PCP
+agrupando: Relatório Mensal de Produção (novo), Mapa de Custos (RKW), Análise
+Gerencial (RKW) e Códigos de Parada. Replica as planilhas gerenciais da Carton
+Wega. Valorização SOMENTE por custo. Back `0ddee25a3`+`e8eefe29c`+`3ecd8153e`;
+front `dc83921`.
+
+### Schema novo (migrate-prod idempotente, roda no deploy)
+- `MetaProducaoProcesso` (`meta_producao_processo`) — meta diária por tipo de
+  processo (coexiste com `MetaProducaoCentro`).
+- `CodigoParada` (`codigo_parada`) — código de parada customizável por empresa
+  (`@@unique([empresaId, codigo])`), usado no Pareto.
+- `ApontamentoEtapa.codigoParadaId` (nullable, aditivo) — enum `motivoParada`
+  mantido por compat.
+
+### Backend (`src/modules/pcp/gerencial/`)
+- `gerencial-cadastros.routes.ts` — CRUD `/pcp/gerencial/metas-processo` e
+  `/pcp/gerencial/codigos-parada` (isolamento empresaId, 409 em código duplicado).
+- `relatorio-producao.service.ts` — agregação do mês: `resumoPorProcesso`
+  (base de contagem por processo + valor custo + meta/%), `serieDiariaConsolidada`
+  (pico/2º/3º/média/menor), `dadosDiariosPorCentro` (matriz data×centro),
+  `paretoParadas` (código cadastrado, fallback motivoParada), `opsEmitidasPorMes`
+  (comparativo anual por `criadoEm`), `trabalhosEmMaquina` (OPs/clientes do dia,
+  cliente via tag [Cliente]). `intervaloMes(ano,mes)` em BRT (-3h).
+- `relatorio-producao.routes.ts` — `GET /pcp/gerencial/producao-mensal`
+  (resumo+diaria+pareto), `/dados-por-centro`, `/produtividade` (reusa
+  `agregarProdutividade`), `/ops-emitidas`, `/pareto-paradas`,
+  `/trabalhos-em-maquina`, `/producao-mensal.pdf` (token via query).
+- `relatorio-producao-pdf.service.ts` — PDF pdfkit (resumo+diária+pareto).
+- Testes: `relatorio-producao.service.test.ts` 6/6; valorização
+  `horasPorVelocidade` em apontamentos-valorizacao (20/20 no módulo apontamentos-bi).
+
+### Valorização por custo (importante)
+`valorRs = custoHora × horas`, com `horas = produção ÷ velocidade` (campo
+`CentroProducao.velocidade`) e fallback no `tempoOperacaoCalculado` da etapa /
+`setupDuracaoMinutos`. Sem custoHora/velocidade → R$ 0 (só quantidade).
+**Custo-hora/velocidade dos centros da Carton Wega estão PARCIALMENTE preenchidos**:
+`scripts/popular-custo-velocidade-centros.ts <empresaId> [--apply]` populou 11
+centros automaticamente (de-para por nome normalizado com os exports do Calcgraf
+em `cartoon/export/`); os ~60 restantes têm nome divergente Vizor↔Calcgraf e
+devem ser preenchidos manualmente na tela PCP → Cadastros → Centros (campos
+Custo/Hora e Velocidade já existem). O script só preenche campos nulos/0 (nunca
+sobrescreve ajuste manual).
+
+### Frontend
+- `ModuleSidebar.tsx` — grupo "Gerencial" (os itens RKW saíram de soltos para
+  dentro dele).
+- `pcp/gerencial/producao-mensal/page.tsx` — seletor mês/ano + abas
+  (Resumo por Processo / Produção Diária / Pareto) + botão PDF.
+- `pcp/gerencial/codigos-parada/page.tsx` — CRUD de códigos de parada.
+
+### Pendências/evoluções (não bloqueiam)
+- Associar `codigoParadaId` no apontamento do chão (hoje o Pareto usa o código
+  quando existir, senão cai no enum `motivoParada`). Falta UI no apontamento
+  para escolher o código cadastrado.
+- Gráficos de barra/linha "idênticos às planilhas" (recharts): as telas usam
+  tabelas+cards; o backend já entrega as séries para plotar quando desejado.
+- Produtividade por operador/máquina e OPs emitidas têm endpoints prontos; a
+  tela expõe Resumo/Diária/Pareto — adicionar abas Produtividade/OPs/Dados-por-
+  Centro no front é incremento aditivo (endpoints já existem).
