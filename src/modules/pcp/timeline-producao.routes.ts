@@ -38,6 +38,7 @@ interface EtapaTimeline {
   sequencia: number
   descricao: string
   centroProducao: string | null
+  centroProducaoId: string | null
   tipoProcesso: string | null
   turno: { horaInicio: string; horaFim: string; diasSemana: number[]; duracaoMinutos: number } | null
   status: string
@@ -275,6 +276,23 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
     const clienteMap = new Map(clientes.map(c => [c.id, c.razaoSocial]))
     const produtoMap = new Map(produtos.map(p => [p.id, p.descricao]))
 
+    // Exceções de calendário por centro (spec pcp-excecoes-calendario-gantt).
+    // Sobrepõem o turno-base do centro em datas específicas (hora extra / dia
+    // extra / não-trabalho). Isolamento multi-tenant por empresaId explícito.
+    const excecoesRows = await prisma.excecaoTurno.findMany({
+      where: { empresaId: user.empresaId },
+      select: { centroProducaoId: true, data: true, tipo: true, horaInicio: true, horaFim: true },
+    })
+    const excecoesPorCentro: Record<string, Array<{ data: string; tipo: string; horaInicio: string | null; horaFim: string | null }>> = {}
+    for (const ex of excecoesRows) {
+      const d = new Date(ex.data)
+      // Chave de dia civil LOCAL (mesmo formato usado por janelaDoDia no motor).
+      const chave = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+      const lista = excecoesPorCentro[ex.centroProducaoId] ?? []
+      lista.push({ data: chave, tipo: ex.tipo, horaInicio: ex.horaInicio, horaFim: ex.horaFim })
+      excecoesPorCentro[ex.centroProducaoId] = lista
+    }
+
     const agora = new Date()
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -299,6 +317,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           dataInicioReal: etapa.dataInicioReal ? new Date(etapa.dataInicioReal) : null,
           dataFimReal: etapa.dataFimReal ? new Date(etapa.dataFimReal) : null,
           turno: etapa.centroProducao?.turnoProducao || null,
+          excecoes: (etapa.centroProducaoId ? excecoesPorCentro[etapa.centroProducaoId] : undefined) as EtapaAgenda['excecoes'],
           agendaTravada: Boolean(etapa.agendaTravada),
           inicioAgendadoManual: etapa.inicioAgendadoManual ? new Date(etapa.inicioAgendadoManual) : null,
         })
@@ -396,6 +415,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           sequencia: etapa.sequencia,
           descricao: etapa.descricao,
           centroProducao: etapa.centroProducao?.descricao || null,
+          centroProducaoId: etapa.centroProducaoId || null,
           tipoProcesso: etapa.centroProducao?.tipoProcesso?.descricao || null,
           tipoProcessoPosicao: etapa.centroProducao?.tipoProcesso?.posicao ?? 999,
           turno: etapa.centroProducao?.turnoProducao || null,
@@ -564,6 +584,6 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.send({ resumo: { ...resumo, conflitos: conflitos.length }, timeline, conflitos })
+    return reply.send({ resumo: { ...resumo, conflitos: conflitos.length }, timeline, conflitos, excecoesPorCentro })
   })
 }

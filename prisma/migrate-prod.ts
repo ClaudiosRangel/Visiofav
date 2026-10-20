@@ -5226,6 +5226,34 @@ async function seedMateriaisFromOPs() {
 
   await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "codigo_parada_id" TEXT`)
   console.log('✅ Relatório Gerencial: meta_producao_processo, codigo_parada, apontamento_etapa.codigo_parada_id')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Exceções de calendário por centro/data (spec pcp-excecoes-calendario-gantt):
+  // sobrepõem o turno-base do centro naquela data (hora extra / dia extra /
+  // não-trabalho). Aditivo. Idempotente.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "excecao_turno" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "centro_producao_id" TEXT NOT NULL,
+    "data" DATE NOT NULL,
+    "tipo" VARCHAR(20) NOT NULL,
+    "hora_inicio" VARCHAR(5),
+    "hora_fim" VARCHAR(5),
+    "observacao" VARCHAR(300),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "excecao_turno_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "excecao_turno_centro_producao_id_data_key" ON "excecao_turno"("centro_producao_id","data")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "excecao_turno_empresa_id_idx" ON "excecao_turno"("empresa_id")`)
+  // FK para centro_producao (Postgres não tem ADD CONSTRAINT IF NOT EXISTS).
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "excecao_turno" ADD CONSTRAINT "excecao_turno_centro_producao_id_fkey" FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) {
+    if (!String(e?.message).includes('already exists')) throw e
+  }
+  console.log('✅ Exceções de calendário: excecao_turno criada')
 }
 
 main()

@@ -193,3 +193,115 @@ describe('ajustarParaTurno', () => {
     expect(ajustarParaTurno(d, null).getTime()).toBe(d.getTime())
   })
 })
+
+
+// ─── Exceções de calendário (spec pcp-excecoes-calendario-gantt) ────────────
+import { janelaDoDia, type ExcecaoCalendario } from './timeline-agenda.service'
+
+// Turno comercial local seg-sex 08:00-17:00 (base dos testes de exceção).
+const T_COM: TurnoAgenda = { horaInicio: '08:00', horaFim: '17:00', diasSemana: [1, 2, 3, 4, 5], duracaoMinutos: 540 }
+
+describe('janelaDoDia', () => {
+  it('dia útil sem exceção → janela do turno-base', () => {
+    const j = janelaDoDia(new Date('2026-10-20T00:00:00'), T_COM, []) // terça
+    expect(j).toEqual({ trabalha: true, inicioMin: 8 * 60, fimMin: 17 * 60 })
+  })
+
+  it('sábado sem exceção → não trabalha (fora de diasSemana)', () => {
+    const j = janelaDoDia(new Date('2026-10-24T00:00:00'), T_COM, []) // sábado
+    expect(j!.trabalha).toBe(false)
+  })
+
+  it('HORA_EXTRA estende o fim do dia (exceção vence o turno-base)', () => {
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-20', tipo: 'HORA_EXTRA', horaInicio: '08:00', horaFim: '20:00' }]
+    const j = janelaDoDia(new Date('2026-10-20T00:00:00'), T_COM, exc)
+    expect(j).toEqual({ trabalha: true, inicioMin: 8 * 60, fimMin: 20 * 60 })
+  })
+
+  it('DIA_EXTRA torna o sábado trabalhável na janela da exceção', () => {
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-24', tipo: 'DIA_EXTRA', horaInicio: '08:00', horaFim: '14:00' }]
+    const j = janelaDoDia(new Date('2026-10-24T00:00:00'), T_COM, exc)
+    expect(j).toEqual({ trabalha: true, inicioMin: 8 * 60, fimMin: 14 * 60 })
+  })
+
+  it('NAO_TRABALHO bloqueia um dia útil (feriado)', () => {
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-20', tipo: 'NAO_TRABALHO', horaInicio: null, horaFim: null }]
+    const j = janelaDoDia(new Date('2026-10-20T00:00:00'), T_COM, exc)
+    expect(j!.trabalha).toBe(false)
+  })
+
+  it('janela inválida (fim <= início) é ignorada → cai no turno-base', () => {
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-20', tipo: 'HORA_EXTRA', horaInicio: '20:00', horaFim: '08:00' }]
+    const j = janelaDoDia(new Date('2026-10-20T00:00:00'), T_COM, exc)
+    expect(j).toEqual({ trabalha: true, inicioMin: 8 * 60, fimMin: 17 * 60 })
+  })
+})
+
+/** Etapa num centro com turno comercial local + exceções opcionais. */
+function etapaCom(
+  over: Partial<EtapaAgenda> & { id: string; ordemProducaoId: string },
+  excecoes: ExcecaoCalendario[] = [],
+): EtapaAgenda {
+  return {
+    centroProducaoId: 'C1',
+    posicaoFila: 1,
+    sequencia: 1,
+    tempoSetupMinutos: 0,
+    tempoOperacaoMinutos: 60,
+    tempoEsperaMinutos: 0,
+    status: 'PENDENTE',
+    dataInicioReal: null,
+    dataFimReal: null,
+    turno: T_COM,
+    excecoes,
+    agendaTravada: false,
+    inicioAgendadoManual: null,
+    ...over,
+  }
+}
+
+describe('Property 1 (exceções): não-regressão sem exceção', () => {
+  it('calcularFimComTurno sem exceção == com [] ', () => {
+    const inicio = new Date('2026-10-20T15:00:00') // ter 15:00 (dentro do turno)
+    const semArg = calcularFimComTurno(inicio, 180, T_COM)
+    const comVazio = calcularFimComTurno(inicio, 180, T_COM, [])
+    expect(comVazio.toISOString()).toBe(semArg.toISOString())
+  })
+
+  it('180min a partir de ter 15:00 (turno 08-17) → transborda p/ quarta 09:00', () => {
+    const inicio = new Date('2026-10-20T15:00:00') // consome 15-17 (120) + 60 na quarta
+    const fim = calcularFimComTurno(inicio, 180, T_COM)
+    expect(fim.getDate()).toBe(21)
+    expect(fim.getHours()).toBe(9)
+  })
+})
+
+describe('Property 2 (exceções): HORA_EXTRA faz caber no mesmo dia', () => {
+  it('180min a partir de ter 15:00 com hora extra até 20:00 → termina mesma terça 18:00', () => {
+    const inicio = new Date('2026-10-20T15:00:00')
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-20', tipo: 'HORA_EXTRA', horaInicio: '08:00', horaFim: '20:00' }]
+    const fim = calcularFimComTurno(inicio, 180, T_COM, exc)
+    expect(fim.getDate()).toBe(20) // mesma terça
+    expect(fim.getHours()).toBe(18)
+  })
+})
+
+describe('Property 3 (exceções): NAO_TRABALHO empurra para o próximo dia', () => {
+  it('início numa terça marcada como feriado → produção começa só na quarta 08:00', () => {
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-20', tipo: 'NAO_TRABALHO', horaInicio: null, horaFim: null }]
+    const inicio = new Date('2026-10-20T08:00:00') // terça feriado
+    const fim = calcularFimComTurno(inicio, 60, T_COM, exc)
+    expect(fim.getDate()).toBe(21) // quarta
+    expect(fim.getHours()).toBe(9) // 08:00 + 60min
+  })
+})
+
+describe('Property 2 (exceções): DIA_EXTRA permite produção no sábado', () => {
+  it('etapa PENDENTE agendada rodando num sábado-extra consome dentro da janela', () => {
+    const exc: ExcecaoCalendario[] = [{ data: '2026-10-24', tipo: 'DIA_EXTRA', horaInicio: '08:00', horaFim: '14:00' }]
+    // sábado 08:00 + 120min dentro da janela extra → 10:00 mesmo sábado
+    const fim = calcularFimComTurno(new Date('2026-10-24T08:00:00'), 120, T_COM, exc)
+    expect(fim.getDate()).toBe(24)
+    expect(fim.getHours()).toBe(10)
+  })
+})

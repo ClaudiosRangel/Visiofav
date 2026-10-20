@@ -25,6 +25,84 @@ export interface TurnoAgenda {
   duracaoMinutos: number
 }
 
+/**
+ * Exceção de calendário de um centro numa data específica (spec
+ * pcp-excecoes-calendario-gantt). Sobrepõe o turno-base NAQUELA data.
+ *  - HORA_EXTRA / DIA_EXTRA: janela [horaInicio, horaFim] é a trabalhável do dia.
+ *  - NAO_TRABALHO: o dia inteiro não é trabalhável (horaInicio/horaFim ignorados).
+ */
+export interface ExcecaoCalendario {
+  data: string // "2026-10-24" (dia civil local)
+  tipo: 'HORA_EXTRA' | 'DIA_EXTRA' | 'NAO_TRABALHO'
+  horaInicio: string | null // "17:00"
+  horaFim: string | null // "20:00"
+}
+
+/** Janela trabalhável resolvida de um dia: minutos do dia (0..1439) ou dia bloqueado. */
+export interface JanelaDia {
+  trabalha: boolean
+  inicioMin: number
+  fimMin: number
+}
+
+/** Chave "YYYY-MM-DD" (dia civil LOCAL) de um instante — base do match de exceção. */
+function chaveDiaLocal(d: Date): string {
+  const ano = d.getFullYear()
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const dia = String(d.getDate()).padStart(2, '0')
+  return `${ano}-${mes}-${dia}`
+}
+
+function hhmmParaMin(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+/**
+ * Janela trabalhável EFETIVA de um dia: a exceção da data (se houver) sobrepõe
+ * o turno-base. Prioridade: exceção > turno-base. Sem turno e sem exceção
+ * trabalhável ⇒ `null` (tratar como operação linear/24h no chamador).
+ *
+ * Regras:
+ *  - NAO_TRABALHO ⇒ { trabalha:false }.
+ *  - HORA_EXTRA/DIA_EXTRA com janela válida ⇒ usa [horaInicio, horaFim].
+ *    (janela inválida/ausente é ignorada defensivamente → cai no turno-base.)
+ *  - Sem exceção ⇒ turno-base: trabalha se o diaSemana está em diasSemana.
+ */
+export function janelaDoDia(
+  data: Date,
+  turnoBase: TurnoAgenda | null,
+  excecoes: ExcecaoCalendario[],
+): JanelaDia | null {
+  const chave = chaveDiaLocal(data)
+  const exc = excecoes.find((e) => e.data === chave)
+
+  if (exc) {
+    if (exc.tipo === 'NAO_TRABALHO') {
+      return { trabalha: false, inicioMin: 0, fimMin: 0 }
+    }
+    // HORA_EXTRA | DIA_EXTRA: usa a janela da exceção se válida.
+    if (exc.horaInicio && exc.horaFim) {
+      const ini = hhmmParaMin(exc.horaInicio)
+      const fim = hhmmParaMin(exc.horaFim)
+      if (fim > ini) return { trabalha: true, inicioMin: ini, fimMin: fim }
+    }
+    // Janela inválida → ignora a exceção e cai no turno-base (defensivo).
+  }
+
+  if (!turnoBase) return null
+
+  const diaConvertido = data.getDay() === 0 ? 7 : data.getDay()
+  if (!turnoBase.diasSemana.includes(diaConvertido)) {
+    return { trabalha: false, inicioMin: 0, fimMin: 0 }
+  }
+  return {
+    trabalha: true,
+    inicioMin: hhmmParaMin(turnoBase.horaInicio),
+    fimMin: hhmmParaMin(turnoBase.horaFim),
+  }
+}
+
 /** Entrada do motor por etapa (subconjunto puro do que a rota carrega). */
 export interface EtapaAgenda {
   id: string
@@ -40,6 +118,9 @@ export interface EtapaAgenda {
   dataInicioReal: Date | null
   dataFimReal: Date | null
   turno: TurnoAgenda | null
+  // Exceções de calendário do centro (spec pcp-excecoes-calendario-gantt).
+  // Opcional: ausente/vazio ⇒ comportamento legado (só turno-base).
+  excecoes?: ExcecaoCalendario[]
   // ── Âncora de agenda (spec pcp-gantt-travar-mover) ──
   agendaTravada: boolean
   inicioAgendadoManual: Date | null
@@ -57,13 +138,13 @@ export interface ResultadoAgenda {
  * do turno (pula períodos fora do expediente). CÓPIA FIEL da função usada hoje
  * em timeline-producao.routes.ts (mesma semântica → não-regressão).
  */
-export function calcularFimComTurno(inicio: Date, duracaoMinutos: number, turno: TurnoAgenda): Date {
+export function calcularFimComTurno(
+  inicio: Date,
+  duracaoMinutos: number,
+  turno: TurnoAgenda,
+  excecoes: ExcecaoCalendario[] = [],
+): Date {
   if (duracaoMinutos <= 0) return new Date(inicio)
-
-  const [hIni, mIni] = turno.horaInicio.split(':').map(Number)
-  const [hFim, mFim] = turno.horaFim.split(':').map(Number)
-  const turnoInicioMin = hIni * 60 + mIni
-  const turnoFimMin = hFim * 60 + mFim
 
   let restante = duracaoMinutos
   let cursor = new Date(inicio)
@@ -72,44 +153,48 @@ export function calcularFimComTurno(inicio: Date, duracaoMinutos: number, turno:
 
   while (restante > 0 && iteracoes < maxIteracoes) {
     iteracoes++
-    const diaSemana = cursor.getDay()
-    const diaConvertido = diaSemana === 0 ? 7 : diaSemana
 
-    if (!turno.diasSemana.includes(diaConvertido)) {
+    // Janela trabalhável EFETIVA do dia atual (exceção da data > turno-base).
+    const janela = janelaDoDia(cursor, turno, excecoes)
+    const [hBaseI, mBaseI] = turno.horaInicio.split(':').map(Number)
+
+    if (!janela || !janela.trabalha) {
+      // Dia não trabalhável (fim de semana sem exceção, ou NAO_TRABALHO):
+      // pula para o começo do próximo dia (às horas-base, ajustado no próx. laço).
       cursor.setDate(cursor.getDate() + 1)
-      cursor.setHours(hIni, mIni, 0, 0)
+      cursor.setHours(hBaseI, mBaseI, 0, 0)
       continue
     }
 
     const minAtual = cursor.getHours() * 60 + cursor.getMinutes()
 
-    if (minAtual < turnoInicioMin) {
-      cursor.setHours(hIni, mIni, 0, 0)
+    if (minAtual < janela.inicioMin) {
+      cursor.setHours(Math.floor(janela.inicioMin / 60), janela.inicioMin % 60, 0, 0)
       continue
     }
-    if (minAtual >= turnoFimMin) {
+    if (minAtual >= janela.fimMin) {
       cursor.setDate(cursor.getDate() + 1)
-      cursor.setHours(hIni, mIni, 0, 0)
+      cursor.setHours(hBaseI, mBaseI, 0, 0)
       continue
     }
 
-    const minutosAteFinTurno = turnoFimMin - minAtual
-    if (restante <= minutosAteFinTurno) {
+    const minutosAteFimJanela = janela.fimMin - minAtual
+    if (restante <= minutosAteFimJanela) {
       cursor = new Date(cursor.getTime() + restante * 60000)
       restante = 0
     } else {
-      restante -= minutosAteFinTurno
+      restante -= minutosAteFimJanela
       cursor.setDate(cursor.getDate() + 1)
-      cursor.setHours(hIni, mIni, 0, 0)
+      cursor.setHours(hBaseI, mBaseI, 0, 0)
     }
   }
   return cursor
 }
 
 /** Soma `minutos` a um instante, respeitando o turno (ou linear se sem turno). */
-function avancar(inicio: Date, minutos: number, turno: TurnoAgenda | null): Date {
+function avancar(inicio: Date, minutos: number, turno: TurnoAgenda | null, excecoes: ExcecaoCalendario[] = []): Date {
   if (minutos <= 0) return new Date(inicio)
-  return turno ? calcularFimComTurno(inicio, minutos, turno) : new Date(inicio.getTime() + minutos * 60000)
+  return turno ? calcularFimComTurno(inicio, minutos, turno, excecoes) : new Date(inicio.getTime() + minutos * 60000)
 }
 
 /**
@@ -121,13 +206,10 @@ function avancar(inicio: Date, minutos: number, turno: TurnoAgenda | null): Date
  * Isso garante que a barra do Gantt comece no primeiro instante PRODUTIVO
  * (não desenha o vão ocioso entre a âncora fora do turno e o início real).
  */
-export function ajustarParaTurno(instante: Date, turno: TurnoAgenda | null): Date {
+export function ajustarParaTurno(instante: Date, turno: TurnoAgenda | null, excecoes: ExcecaoCalendario[] = []): Date {
   if (!turno) return new Date(instante)
 
-  const [hIni, mIni] = turno.horaInicio.split(':').map(Number)
-  const [hFim, mFim] = turno.horaFim.split(':').map(Number)
-  const turnoInicioMin = hIni * 60 + mIni
-  const turnoFimMin = hFim * 60 + mFim
+  const [hBaseI, mBaseI] = turno.horaInicio.split(':').map(Number)
 
   let cursor = new Date(instante)
   const maxIteracoes = 365
@@ -135,24 +217,24 @@ export function ajustarParaTurno(instante: Date, turno: TurnoAgenda | null): Dat
 
   while (iteracoes < maxIteracoes) {
     iteracoes++
-    const diaConvertido = cursor.getDay() === 0 ? 7 : cursor.getDay()
+    const janela = janelaDoDia(cursor, turno, excecoes)
 
-    if (!turno.diasSemana.includes(diaConvertido)) {
+    if (!janela || !janela.trabalha) {
       cursor.setDate(cursor.getDate() + 1)
-      cursor.setHours(hIni, mIni, 0, 0)
+      cursor.setHours(hBaseI, mBaseI, 0, 0)
       continue
     }
     const minAtual = cursor.getHours() * 60 + cursor.getMinutes()
-    if (minAtual < turnoInicioMin) {
-      cursor.setHours(hIni, mIni, 0, 0)
+    if (minAtual < janela.inicioMin) {
+      cursor.setHours(Math.floor(janela.inicioMin / 60), janela.inicioMin % 60, 0, 0)
       return cursor
     }
-    if (minAtual >= turnoFimMin) {
+    if (minAtual >= janela.fimMin) {
       cursor.setDate(cursor.getDate() + 1)
-      cursor.setHours(hIni, mIni, 0, 0)
+      cursor.setHours(hBaseI, mBaseI, 0, 0)
       continue
     }
-    // Já está dentro do turno.
+    // Já está dentro da janela trabalhável.
     return cursor
   }
   return cursor
@@ -187,6 +269,8 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
     // Ordena pela posição na fila (igual ao motor atual).
     fila.sort((a, b) => (a.posicaoFila ?? 999) - (b.posicaoFila ?? 999))
     const turno = fila[0]?.turno ?? null
+    // Exceções são por CENTRO — iguais para toda a fila; usa as da 1ª etapa.
+    const excecoes = fila[0]?.excecoes ?? []
 
     // Janelas ocupadas por etapas TRAVADAS deste centro (pontos fixos).
     // A âncora é "snapada" para o próximo horário válido do turno (APS pin):
@@ -195,8 +279,8 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
     const janelasTravadas: Array<{ ini: number; fim: number }> = []
     for (const e of fila) {
       if (e.agendaTravada && e.inicioAgendadoManual) {
-        const ini = ajustarParaTurno(e.inicioAgendadoManual, turno)
-        const fim = avancar(ini, duracao(e), turno)
+        const ini = ajustarParaTurno(e.inicioAgendadoManual, turno, excecoes)
+        const fim = avancar(ini, duracao(e), turno, excecoes)
         janelasTravadas.push({ ini: ini.getTime(), fim: fim.getTime() })
         inicioPorEtapa.set(e.id, ini)
       }
@@ -210,7 +294,7 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
       // Repete até não colidir com nenhuma janela (as janelas estão ordenadas).
       while (mudou) {
         mudou = false
-        const fim = avancar(new Date(ini), durMin, turno).getTime()
+        const fim = avancar(new Date(ini), durMin, turno, excecoes).getTime()
         for (const j of janelasTravadas) {
           // Sobreposição [ini,fim) × [j.ini,j.fim): empurra para o fim da janela.
           if (ini < j.fim && fim > j.ini) {
@@ -228,8 +312,8 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
       if (e.agendaTravada && e.inicioAgendadoManual) {
         // Já posicionada (ponto fixo). O cursor avança para o fim dela se for
         // além do cursor atual, para as próximas não travadas virem depois.
-        const iniAjustado = ajustarParaTurno(e.inicioAgendadoManual, turno)
-        const fim = avancar(iniAjustado, duracao(e), turno)
+        const iniAjustado = ajustarParaTurno(e.inicioAgendadoManual, turno, excecoes)
+        const fim = avancar(iniAjustado, duracao(e), turno, excecoes)
         cursor = new Date(Math.max(cursor.getTime(), fim.getTime()))
         continue
       }
@@ -242,7 +326,7 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
 
       if (e.status === 'EM_ANDAMENTO' && e.dataInicioReal) {
         inicioPorEtapa.set(e.id, e.dataInicioReal)
-        cursor = avancar(e.dataInicioReal, duracao(e), turno)
+        cursor = avancar(e.dataInicioReal, duracao(e), turno, excecoes)
         continue
       }
 
@@ -250,7 +334,7 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
       const iniMs = empurrar(cursor.getTime(), duracao(e))
       const ini = new Date(iniMs)
       inicioPorEtapa.set(e.id, ini)
-      cursor = avancar(ini, duracao(e), turno)
+      cursor = avancar(ini, duracao(e), turno, excecoes)
     }
   }
 
@@ -277,6 +361,7 @@ export function calcularTimelineOp(
 
   for (const e of etapas) {
     const turno = e.turno
+    const excecoes = e.excecoes ?? []
     const dur = duracao(e)
     const espera = Number(e.tempoEsperaMinutos) || 0
 
@@ -284,17 +369,17 @@ export function calcularTimelineOp(
     if (e.agendaTravada && e.inicioAgendadoManual) {
       // Ponto fixo: início na âncora, "snapado" ao próximo horário válido do
       // turno (não desenha vão ocioso fora do expediente). Não cruza a cascata.
-      inicio = ajustarParaTurno(e.inicioAgendadoManual, turno)
+      inicio = ajustarParaTurno(e.inicioAgendadoManual, turno, excecoes)
     } else {
       const fromFila = inicioPorFila.get(e.id)
       inicio = fromFila ? new Date(Math.max(cursor.getTime(), fromFila.getTime())) : new Date(cursor)
     }
 
-    const fim = avancar(inicio, dur, turno)
+    const fim = avancar(inicio, dur, turno, excecoes)
     resultado.push({ etapaId: e.id, inicioPrevisto: inicio, fimPrevisto: fim })
 
     // Próxima etapa da OP começa após o fim + espera.
-    cursor = avancar(fim, espera, turno)
+    cursor = avancar(fim, espera, turno, excecoes)
   }
 
   return resultado

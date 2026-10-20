@@ -3054,9 +3054,36 @@ model CentroProducao {
   sessoesTerminal SessaoTerminal[]
   acabamentosGraficos AcabamentoGrafico[]
   leiturasContador LeituraContador[]
+  excecoesTurno   ExcecaoTurno[]
 
   @@unique([empresaId, codigo])
   @@map("centro_producao")
+}
+
+/// Exceção de calendário por centro e por data (spec pcp-excecoes-calendario-gantt).
+/// Sobrepõe o turno-base do centro NAQUELA data (padrão "calendar exception" de
+/// MS Project/DHTMLX/Bryntum). Três tipos:
+///  - HORA_EXTRA: estende o expediente de um dia (janela horaInicio-horaFim).
+///  - DIA_EXTRA: torna trabalhável um dia normalmente não-útil (ex.: sábado).
+///  - NAO_TRABALHO: torna NÃO trabalhável um dia normalmente útil (feriado/parada).
+/// Recurso ADITIVO: sem exceções, o motor do Gantt é idêntico ao atual.
+model ExcecaoTurno {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  centroProducaoId String   @map("centro_producao_id")
+  data             DateTime @db.Date
+  tipo             String   @db.VarChar(20) // HORA_EXTRA | DIA_EXTRA | NAO_TRABALHO
+  horaInicio       String?  @map("hora_inicio") @db.VarChar(5) // "17:00" (null em NAO_TRABALHO)
+  horaFim          String?  @map("hora_fim") @db.VarChar(5) // "20:00"
+  observacao       String?  @db.VarChar(300)
+  criadoEm         DateTime @default(now()) @map("criado_em")
+  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
+
+  centroProducao CentroProducao @relation(fields: [centroProducaoId], references: [id], onDelete: Cascade)
+
+  @@unique([centroProducaoId, data])
+  @@index([empresaId])
+  @@map("excecao_turno")
 }
 
 /// Leitura do contador/odômetro da máquina por apontamento de Produção, em
