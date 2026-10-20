@@ -1633,12 +1633,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             id: true, numero: true, produtoId: true, clienteId: true,
             quantidade: true, unidadeMedida: true, observacoes: true,
             referenciaExterna: true,
+            // Itens de material — usado em "Aguardando Cartão" para derivar o
+            // cartão real (preferindo PAPEL que não seja o Micro da acoplagem).
+            itens: { select: { descricaoProduto: true, quantidade: true, tipoMaterial: true } },
           },
         },
         // Base de contagem (spec base-contagem-por-tipo-processo): precisa do
         // código do tipo de processo do centro e da tiragem do plano da etapa.
         centroProducao: { select: { tipoProcesso: { select: { codigo: true } } } },
-        plano: { select: { tiragem: true } },
+        // material/gramatura/formato/pesoKg: cartão REAL do plano (prioridade
+        // na exibição da cortadeira — não o "Micro Pardo" da linha "(M)").
+        plano: { select: { tiragem: true, material: true, gramatura: true, formato: true, pesoKg: true } },
       },
     })
 
@@ -2464,10 +2469,16 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
               }
               return qtd
             })(),
-            materialPrincipal: papel?.descricaoProduto || null,
-            gramatura: (papel ? extrairGramatura(papel.descricaoProduto) : null) || extrairGramatura(e.ordemProducao.observacoes || ''),
-            formato: extrairFormatoObs(e.ordemProducao.observacoes) || (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
-            pesoKg: papel ? Number(papel.quantidade) : null,
+            // Cartão/material exibido na cortadeira: PRIORIZA o material do
+            // PLANO da etapa (cartão REAL do PDF: "NZ Fibra Longa 200",
+            // "Billerud Board 225"), não o item PAPEL [0] da lista de materiais
+            // — que frequentemente é o "Micro Pardo" da linha de ACOPLAGEM "(M)"
+            // e não o cartão principal (queixa do cliente, OP-3133). Fallback
+            // ao papel[0] quando a etapa não tem plano (OP de plano único).
+            materialPrincipal: (e.plano as any)?.material || papel?.descricaoProduto || null,
+            gramatura: ((e.plano as any)?.gramatura != null ? Number((e.plano as any).gramatura) : null) || (papel ? extrairGramatura(papel.descricaoProduto) : null) || extrairGramatura(e.ordemProducao.observacoes || ''),
+            formato: ((e.plano as any)?.formato) || extrairFormatoObs(e.ordemProducao.observacoes) || (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
+            pesoKg: ((e.plano as any)?.pesoKg != null ? Number((e.plano as any).pesoKg) : null) || (papel ? Number(papel.quantidade) : null),
             materialEncomendado: temMaterialEncomendado(e),
             // Availability check parcial: quando a OP tem estoque parcial, o
             // card no centro mostra quanto está liberado vs aguardando material.
@@ -2662,7 +2673,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const aguardandoCartao = etapasAtivas
       .filter(e => temMaterialEncomendado(e))
       .map(e => {
-        const papel = e.ordemProducao.itens?.[0] || null
+        // Cartão exibido: prioriza o material do PLANO (cartão real do PDF).
+        // Para o fallback, prefere um item PAPEL que NÃO seja o "Micro Pardo"
+        // da acoplagem — e só usa itens[0] como último recurso.
+        const itens = e.ordemProducao.itens || []
+        const papelReal =
+          itens.find((i) => i.tipoMaterial === 'PAPEL' && !/micro\s*(pardo|maculado)/i.test(i.descricaoProduto)) ||
+          itens.find((i) => i.tipoMaterial === 'PAPEL') ||
+          itens[0] || null
+        const materialPlano = (e.plano as any)?.material as string | undefined
         const m = analisarMaterial(e)
         const { bobinas, kgEstoque, kgEncomendado } = m
 
@@ -2682,10 +2701,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           unidade: e.ordemProducao.unidadeMedida,
           prioridade: e.ordemProducao.prioridade,
           dataEntrega: e.ordemProducao.dataEntregaPrevista,
-          materialPrincipal: papel?.descricaoProduto || null,
-          gramatura: papel ? extrairGramatura(papel.descricaoProduto) : null,
-          formato: papel ? extrairFormato(papel.descricaoProduto) : null,
-          pesoKg: papel ? Number(papel.quantidade) : null,
+          materialPrincipal: materialPlano || papelReal?.descricaoProduto || null,
+          gramatura: ((e.plano as any)?.gramatura != null ? Number((e.plano as any).gramatura) : null) || (papelReal ? extrairGramatura(papelReal.descricaoProduto) : null),
+          formato: ((e.plano as any)?.formato) || (papelReal ? extrairFormato(papelReal.descricaoProduto) : null),
+          pesoKg: ((e.plano as any)?.pesoKg != null ? Number((e.plano as any).pesoKg) : null) || (papelReal ? Number(papelReal.quantidade) : null),
           observacoes: e.ordemProducao.observacoes,
           observacaoOperador: (e.observacaoOperador || '').replace(/\[MATRIZ_OK\]/g, '').replace(/\[PREIMPRESS:\w+\]/g, '').trim() || null,
           centroDescricao: e.centroProducao?.descricao || null,
