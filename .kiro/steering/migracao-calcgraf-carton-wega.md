@@ -32,18 +32,47 @@ versão antiga estava gerando problemas (ex.: sync zerando roteiro — ver incid
   (a revogada não volta), embutir o token no agente e reinstalar. NÃO basta
   mudar o status no banco — o token em claro só existe na criação.
 
-## 🟢 ORÇAMENTO 7343 SEEDADO NA PRODUÇÃO (20/10/2026) — paridade visível na tela
+## 🟡 ORÇAMENTO 7343 SEEDADO (nº 5346) — SÓ CABEÇALHO; ITEM VAZIO (PENDÊNCIA 20/10)
+
+> **⚠️ RETOMAR AQUI NA PRÓXIMA SESSÃO.** O seed do 7343 ficou PELA METADE: o
+> cabeçalho/totais batem, mas o ITEM interno está VAZIO — ao abrir o wizard
+> "Editar Item" nada vem preenchido (tipo genérico "Cartuchos", suporte vazio,
+> cores CMYK 30% em vez dos 3 Pantone, nenhum acabamento marcado) e o
+> "Recalcular" dá OUTRO número (R$ 5.261,70 ≠ 5.411,87). O usuário reportou isso
+> com prints (20/10). Precisa montar o ITEM ESTRUTURADO de verdade.
 
 O cálculo **7343** do Calcgraf ("RÓTULO P/ARAME FARPADO ELEFANTE 250M", cliente
-A Imperatriz, tiragem 4.000) foi **gravado como orçamento real na produção** da
-Wega para validação de paridade visível na tela:
+A Imperatriz, tiragem 4.000) foi gravado como **orçamento nº 5346**
+(`serie='7343'`, RASCUNHO) por `scripts/seed-orcamento-7343-wega.ts`.
 
-- **Orçamento nº 5346** (`serie='7343'`, status RASCUNHO) no módulo Orçamento
-  Gráfico. Criado por `scripts/seed-orcamento-7343-wega.ts` (idempotente por
-  `serie='7343'`; dry-run por padrão, `--apply` grava).
-- **Bate com o Calcgraf:** Material Direto 4.240,90 · Custo Transformação
-  1.170,47 · **Custo de Produção 5.411,37** (Calcgraf = 5.411,87; desvio 0,009%,
-  arredondamento de centavos). O `resultadoCalculo` gravado é o do motor real
+### O que está CERTO
+- **Cabeçalho/Totais Consolidados batem:** MD 4.240,90 · CT 1.170,47 · **C.PROD
+  5.411,37** (Calcgraf 5.411,87; 0,009%). Gravado via `resultadoCalculo` do
+  motor real + `custoProducaoConsolidado`/`valorTotalConsolidado`.
+- **Golden de regressão** `calibracao/golden-7343.{fixture,test}.ts` (12/12) —
+  6º golden calibrado, prova que o MOTOR reproduz o Calcgraf.
+
+### O que FALTA (a pendência real — montar o ITEM clicável)
+O registro foi gravado com `cores=null`, `acabamentos=null`, `papelId=null` e um
+`tipoEmbalagemId` genérico (CG-EMB-1 "Cartuchos"). NÃO há linha em
+`item_orcamento_grafico`. Por isso a tela de EDIÇÃO abre tudo em branco e
+recalcula diferente. Para o 5346 ficar IDÊNTICO ao Calcgraf ao editar, falta
+criar o ITEM (via `POST /orcamento-grafico/:id/itens` ou gravar direto) com:
+- **Suporte real** "Nz Bobina 325" (resolver `suporteId`/`papelId` do cadastro)
+  + gramatura 325 + preço 8,343/kg; **aproveitamentoManual** p/ bater as 1.334
+  folhas (o encaixe da bobina 613×1210 não sai sozinho).
+- **3 cores Pantone** (Pantone 01/02/03) com as coberturas reais (o pré-cálculo
+  não traz % por cor — usar as do golden/consumo SPANKS; preços 65/90/155... na
+  verdade memória usa 65/90/155).
+- **Acabamentos marcados** (acabamentosRicos, por `acabamentoId` do cadastro):
+  Cortadeira (Grande), Guilhotina de envol, Laminação maior, Fita dupla face,
+  + BOPP/Fita material + Matriz RVU. Já existem no cadastro (ver estado dos 67).
+- Depois **recalcular o item** e conferir que a Revisão do wizard dá 5.411,87.
+- DECISÃO: ou (a) montar o item fiel (trabalho de mapear IDs reais + encaixe),
+  ou (b) assumir que o 5346 é só "cabeçalho-espelho" e criar o item DE VERDADE
+  pelo wizard manualmente na tela. Confirmar com o usuário o caminho.
+
+(Histórico do seed inicial abaixo — `resultadoCalculo` gravado é o do motor real
   (`calcularOrcamentoGrafico`), então a tela de detalhe renderiza os lançamentos
   (suporte Nz Bobina, matriz RVU, 3 Pantones, BOPP, Fita, impressão + 4
   acabamentos) idênticos ao pré-cálculo.
