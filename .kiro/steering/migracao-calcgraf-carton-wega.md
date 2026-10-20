@@ -11,6 +11,81 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🔴 AGENTE DE SINCRONIZAÇÃO INATIVADO (20/10/2026 — pedido do usuário)
+
+**A API do agente Calcgraf está DESLIGADA em produção por decisão do usuário.**
+Motivo: não conseguiram atualizar o agente com as últimas correções (v0.4.1) e a
+versão antiga estava gerando problemas (ex.: sync zerando roteiro — ver incidente
+15–16/10). Para parar o sangramento, a credencial foi **revogada**.
+
+- **Como foi feito:** a `AgenteApiKey` "Agente TS PHTech (Calcgraf)" da empresa
+  Wega (`75848e24-...`) está com **`status='REVOGADO'`** no banco de produção.
+- **Efeito:** `agenteAuth` (`src/modules/pcp/importador-calcgraf/agente-auth.ts`)
+  exige `status: 'ATIVO'` para resolver a chave; com REVOGADO, toda chamada a
+  `POST /api/pcp/ingest-op-calcgraf` responde **401 "Credencial do agente
+  inválida ou revogada"**. Ou seja, o agente NÃO consegue mais sincronizar —
+  inativação efetiva, sem mexer em código.
+- **Importação de OP continua** normalmente pelo **PDF** (fluxo
+  `importar-op-pdf`) — só o agente automático está parado.
+- **Para REATIVAR** quando o usuário quiser (após instalar a v0.4.1 no servidor
+  PHTech): gerar uma NOVA chave em PCP → Importador Calcgraf → Chaves do Agente
+  (a revogada não volta), embutir o token no agente e reinstalar. NÃO basta
+  mudar o status no banco — o token em claro só existe na criação.
+
+## 🟢 ORÇAMENTO 7343 SEEDADO NA PRODUÇÃO (20/10/2026) — paridade visível na tela
+
+O cálculo **7343** do Calcgraf ("RÓTULO P/ARAME FARPADO ELEFANTE 250M", cliente
+A Imperatriz, tiragem 4.000) foi **gravado como orçamento real na produção** da
+Wega para validação de paridade visível na tela:
+
+- **Orçamento nº 5346** (`serie='7343'`, status RASCUNHO) no módulo Orçamento
+  Gráfico. Criado por `scripts/seed-orcamento-7343-wega.ts` (idempotente por
+  `serie='7343'`; dry-run por padrão, `--apply` grava).
+- **Bate com o Calcgraf:** Material Direto 4.240,90 · Custo Transformação
+  1.170,47 · **Custo de Produção 5.411,37** (Calcgraf = 5.411,87; desvio 0,009%,
+  arredondamento de centavos). O `resultadoCalculo` gravado é o do motor real
+  (`calcularOrcamentoGrafico`), então a tela de detalhe renderiza os lançamentos
+  (suporte Nz Bobina, matriz RVU, 3 Pantones, BOPP, Fita, impressão + 4
+  acabamentos) idênticos ao pré-cálculo.
+- **Golden de regressão:** `src/modules/orcamento-grafico/calibracao/
+  golden-7343.{fixture,test}.ts` (12/12 verde; suíte orcamento-grafico 202
+  passed). É o 6º golden calibrado (15168/15182/15185/15086/15235/**7343**),
+  todos ≤0,5%. Confirma que o motor do Vizor reproduz o Calcgraf.
+- **Pré-cálculo-fonte:** memória de cálculo impressa enviada pelo usuário em
+  20/10 (MD 4.240,89 / CT 1.170,98 / C.PROD 5.411,87 / Cr.IPI 78,14 / TOTAL
+  5.340,65). NOTA: a tela "Estrutura" tinha preços de OUTRA tabela de custo
+  (mais cara, somava 5.835,95); a memória de cálculo é a fonte correta.
+
+### Cadastros de acabamento completados na produção (20/10/2026)
+As "lacunas de cadastro" do orçamento foram tratadas com DADO REAL (nada
+inventado), via 3 scripts versionados:
+- `vincular-acabamento-centro-wega.ts` — 22 acabamentos HORA_MAQUINA vinculados
+  ao `CentroProducao` por nome EXATO (herdam custo-hora; corrigido bug de match
+  frouxo "Cortadeira (Grande)"→"(Pequena)").
+- `completar-precos-acabamentos-wega.ts` — preenche preço/custo a partir do
+  `Itc`+`TabelasCustoDetalhe` exportados: MAT.ACABAMENTO usa `ValorTotal` (Tab=2
+  Col=1); CENTRO DE CUSTO usa `ValorDireto`. Reclassifica MATERIAL_*→HORA_MAQUINA
+  quando o item é atividade (ex.: SG Laminadora, Colar envelopes).
+- `depara-acabamentos-manual-wega.ts` — de-para manual conferido das telas
+  (Verniz BA Brilho 13,2 / Fosco 24,2, Fechadora de Caixa 115, Colagem acetato
+  0,06, Colocação ilhós/velcro 15, Poliéster 1).
+- **Estado final:** 67 acabamentos — 46 com valor (40 HORA_MAQUINA c/ custo-hora
+  + 6 MATERIAL c/ preço). **21 ainda sem valor**, e são genuinamente os que
+  dependem de calibração: processos que a Wega NÃO opera (Rotogravura,
+  Serigrafia, Tipografia, Flexografia, Offset Rotativa, Formulário Contínuo,
+  Relevo) e ATIVIDADES COMPOSTAS (Laminação maior/menor, 6 Sacolas, Verniz
+  genérico/Local/UV Local Wega, Colagem Manual) — preço justo sai de um
+  pré-cálculo real que use a atividade (como o 7343 deu BOPP 0,55 e Fita 20).
+
+### Taxas/margem (item confirmado — não há tabela a importar)
+O CEV (Taxa Administrativa + PIS/Cofins 9,25% + ICMS + comissão) é aplicado por
+FÓRMULA automática sobre o custo (gross-up: `preço = custo ÷ (1 − margem% −
+CEV%)`), que o Vizor já faz (`formarPrecoVenda`). No Calcgraf a MARGEM é por
+cálculo (tabela `CalculoTaxas`), não um cadastro global — só existem 2 Taxas
+globais (Taxa Adm 0% + PIS/Cofins 9,25%). A `TabelaMargem` padrão da Wega
+(markup 30% / impostos 14,75% / comissão 3%) é o default correto. Nada a
+importar aqui.
+
 ## 🟢 ESTADO ATUAL DO AGENTE (18/10/2026) — v0.4.1 PRONTA, FALTA REINSTALAR
 
 **Resumo p/ nova sessão:** as DUAS queixas do usuário (observação da OP vazia +
