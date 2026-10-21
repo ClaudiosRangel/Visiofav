@@ -55,9 +55,10 @@ com `*` (opcionais/puladas para MVP).
       `dadosPersistenciaItem` existentes.
     - _Requirements: 1.3, 3.2_
 
-  - [ ]* 2.3 Property test do round-trip do mapeamento
+  - [x]* 2.3 Property test do round-trip do mapeamento
     - **Property 3: Round-trip do mapeamento biblioteca ↔ item do orçamento**
     - **Validates: Requirements 1.3, 3.2**
+    - _Feito: `calculo-grafico-mapeamento.test.ts` (5 testes, fast-check)._
 
 - [ ] 3. Service do Cálculo Gráfico: criação atômica + numeração
   - [x] 3.1 Implementar criação atômica com numeração própria por empresa
@@ -67,9 +68,12 @@ com `*` (opcionais/puladas para MVP).
       o cálculo exista com número mas fora da biblioteca. `empresaId` explícito.
     - _Requirements: 1.1, 1.2, 1.5, 5.1, 5.2, 8.1, 8.3_
 
-  - [ ]* 3.2 Property test de numeração própria única e atômica
+  - [x]* 3.2 Property test de numeração própria única e atômica
     - **Property 5: Numeração própria única e atômica por empresa**
     - **Validates: Requirements 1.2, 5.2**
+    - _Feito: invariante puro da numeração em massa em
+      `calculo-grafico-import.service.test.ts`. A atomicidade transacional real
+      (rollback) fica com teste de integração (fora do escopo PBT puro)._
 
   - [ ]* 3.3 Property test de empresa + origem corretas na criação
     - **Property 2: Cálculo sempre carrega empresa e origem corretas** (ramo de
@@ -190,10 +194,14 @@ com `*` (opcionais/puladas para MVP).
   - [ ]* 9.3 Property test de importação idempotente
     - **Property 11: Importação idempotente**
     - **Validates: Requirements 6.4**
+    - _Parcial: a idempotência real (Set/banco) fica no serviço; a lógica pura
+      coberta em `calculo-grafico-import.service.test.ts`._
 
-  - [ ]* 9.4 Property test de importação resiliente + conservação das contagens
+  - [x]* 9.4 Property test de importação resiliente + conservação das contagens
     - **Property 12: Importação resiliente com relatório e contagens conservadas**
     - **Validates: Requirements 6.5, 6.6**
+    - _Feito: `calculo-grafico-import.service.test.ts` (resiliência +
+      conservação #OK+#erro===total, sobre `mapearLinhaParaCalculo`)._
 
   - [ ]* 9.5 Property test de empresa + origem na importação
     - **Property 2: Cálculo sempre carrega empresa e origem corretas** (ramo de
