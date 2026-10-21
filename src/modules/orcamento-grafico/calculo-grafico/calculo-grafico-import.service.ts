@@ -125,8 +125,17 @@ export interface LinhaAcervoCalcgraf {
   tiragem?: number | null
 
   // ── Geometria / produto ──
-  /** Tipo de embalagem (ESSENCIAL — FK `TipoEmbalagem` no destino). */
+  /**
+   * Tipo de embalagem — FK `TipoEmbalagem` no destino. Pode vir de duas formas:
+   *  - `tipoEmbalagemId` (UUID do Vizor) direto, quando já resolvido; OU
+   *  - `codProduto` (número do Calcgraf, tabela `Produtos`), que o importador
+   *    resolve para o `TipoEmbalagem` cujo código é `CG-EMB-<codProduto>` via o
+   *    de-para passado a `importarAcervo`.
+   * Pelo menos UM dos dois deve estar presente (senão a linha é "corrompida").
+   */
   tipoEmbalagemId?: string | null
+  /** Código do Produto no Calcgraf (tabela `Produtos`) → `CG-EMB-<n>`. */
+  codProduto?: number | null
   /** Medidas do produto (nome do parâmetro → valor em mm). */
   medidas?: Record<string, number> | null
 
@@ -218,6 +227,18 @@ function paraStringOuNull(v: unknown): string | null {
   if (v == null) return null
   const s = String(v).trim()
   return s === '' ? null : s
+}
+
+/**
+ * String não-vazia TRUNCADA a `max` caracteres (defensivo contra colunas
+ * VARCHAR do destino — o acervo tem descrições > 200 chars que estouravam o
+ * `createMany`). Limites do schema `calculo_grafico`: clienteNome/produto/
+ * descricao 200, linhaProduto 120, siglaAcabado 60.
+ */
+function paraStringTruncada(v: unknown, max: number): string | null {
+  const s = paraStringOuNull(v)
+  if (s == null) return null
+  return s.length > max ? s.slice(0, max) : s
 }
 
 /**
@@ -324,6 +345,7 @@ function derivarImposicao(linha: LinhaAcervoCalcgraf): {
  */
 export function mapearLinhaParaCalculo(
   linha: LinhaAcervoCalcgraf,
+  deParaTipoEmbalagem?: Map<number, string>,
 ): ResultadoMapeamentoLinha {
   // ── Campo essencial 1: numCalculo (chave de idempotência / numeroCalcgraf) ──
   const numeroCalcgraf = paraNumeroOuNull(linha.numCalculo)
@@ -335,10 +357,23 @@ export function mapearLinhaParaCalculo(
   }
 
   // ── Campo essencial 2: tipoEmbalagemId (FK obrigatória no destino) ──
-  const tipoEmbalagemId = paraStringOuNull(linha.tipoEmbalagemId)
+  // Resolve de duas formas (ver LinhaAcervoCalcgraf.tipoEmbalagemId):
+  //  1) `tipoEmbalagemId` string direto (já é UUID do Vizor); ou
+  //  2) `codProduto` (número Calcgraf) → UUID via `deParaTipoEmbalagem`.
+  let tipoEmbalagemId = paraStringOuNull(linha.tipoEmbalagemId)
   if (tipoEmbalagemId == null) {
+    const codProduto = paraNumeroOuNull(linha.codProduto)
+    if (codProduto != null && deParaTipoEmbalagem) {
+      tipoEmbalagemId = deParaTipoEmbalagem.get(codProduto) ?? null
+    }
+  }
+  if (tipoEmbalagemId == null) {
+    const cod = paraNumeroOuNull(linha.codProduto)
     return {
-      erro: 'Linha sem tipoEmbalagem (campo essencial ausente)',
+      erro:
+        cod != null
+          ? `Tipo de embalagem CG-EMB-${cod} não encontrado no Vizor (rode a fase tipos-embalagem antes)`
+          : 'Linha sem tipoEmbalagem (campo essencial ausente)',
       numeroCalcgraf,
     }
   }
@@ -359,7 +394,8 @@ export function mapearLinhaParaCalculo(
   const { aproveitamentoManual, montagemLinhas, montagemColunas } =
     derivarImposicao(linha)
 
-  const descricao = paraStringOuNull(linha.descricao)
+  // Descrição truncada ao limite do VARCHAR(200) do destino.
+  const descricao = paraStringTruncada(linha.descricao, 200)
 
   const engenharia: CamposEngenhariaCalculo = {
     // ── Geometria / produto ──
@@ -406,11 +442,13 @@ export function mapearLinhaParaCalculo(
   return {
     engenharia,
     biblioteca: {
-      clienteNome: paraStringOuNull(linha.cliente),
-      linhaProduto: paraStringOuNull(linha.linhaProduto),
-      produto: paraStringOuNull(linha.produto),
+      // Truncados aos limites do schema calculo_grafico (evita estourar VARCHAR
+      // no createMany — o acervo tem descrições/nomes longos).
+      clienteNome: paraStringTruncada(linha.cliente, 200),
+      linhaProduto: paraStringTruncada(linha.linhaProduto, 120),
+      produto: paraStringTruncada(linha.produto, 200),
       descricao,
-      siglaAcabado: paraStringOuNull(linha.siglaAcabado),
+      siglaAcabado: paraStringTruncada(linha.siglaAcabado, 60),
     },
     numeroCalcgraf,
     // FOTO da origem como está — NÃO recalcula (Req 6.2).
@@ -480,14 +518,63 @@ export async function importarAcervo(
 ): Promise<ResumoImportacao> {
   const { empresaId, linhas, dryRun = false } = params
 
+  // De-para Produto(Calcgraf) → TipoEmbalagem(Vizor): os `Produtos` do Calcgraf
+  // foram migrados como TipoEmbalagem com código `CG-EMB-<codProduto>` (fase
+  // `tipos-embalagem`). Monta o mapa `codProduto → tipoEmbalagemId` uma vez por
+  // chamada, filtrando pela empresa (multi-tenant explícito).
+  const deParaTipoEmbalagem = new Map<number, string>()
+  const tiposEmb = await prisma.tipoEmbalagem.findMany({
+    where: { empresaId, codigo: { startsWith: 'CG-EMB-' } },
+    select: { id: true, codigo: true },
+  })
+  for (const te of tiposEmb) {
+    const m = te.codigo.match(/^CG-EMB-(\d+)$/)
+    if (m) deParaTipoEmbalagem.set(Number(m[1]), te.id)
+  }
+
+  // Idempotência (Req 6.4) — PRÉ-CARREGA todos os `numeroCalcgraf` já migrados
+  // da empresa num Set, com UMA query (em vez de 1 findFirst por linha — isso
+  // tornava o loop lentíssimo no pooler Neon). O Set é a fonte da checagem de
+  // "já existe"; a constraint @@unique continua sendo a garantia final sob
+  // concorrência.
+  const jaExistentes = new Set<number>()
+  {
+    const existentes = await prisma.calculoGrafico.findMany({
+      where: { empresaId, numeroCalcgraf: { not: null } },
+      select: { numeroCalcgraf: true },
+    })
+    for (const e of existentes) {
+      if (e.numeroCalcgraf != null) jaExistentes.add(e.numeroCalcgraf)
+    }
+  }
+
+  // Numeração própria em MASSA: para a migração, numeramos em memória a partir
+  // do maior `numero` atual da empresa (uma query). Inserimos em LOTE via
+  // `createMany` — MUITO mais rápido que `criarCalculoGrafico` um-a-um (que faz
+  // 2 roundtrips por registro no pooler Neon). Não altera o fluxo normal de
+  // criação (esse é um caminho exclusivo do importador). A constraint
+  // `@@unique([empresaId, numero])` permanece como rede de segurança.
+  let proximoNumero = 0
+  if (!dryRun) {
+    const maior = await prisma.calculoGrafico.findFirst({
+      where: { empresaId },
+      orderBy: { numero: 'desc' },
+      select: { numero: true },
+    })
+    proximoNumero = (maior?.numero ?? 0) + 1
+  }
+
   let importados = 0
   const atualizados = 0 // nunca sobrescreve nesta migração (idempotência mantém)
   let ignorados = 0
   let erros = 0
   const relatorio: RelatorioImportacao[] = []
 
+  // Acumula as linhas prontas para o `createMany` do lote.
+  const paraInserir: Array<Record<string, unknown>> = []
+
   for (const linha of linhas) {
-    const mapeado = mapearLinhaParaCalculo(linha)
+    const mapeado = mapearLinhaParaCalculo(linha, deParaTipoEmbalagem)
 
     // 1. Linha corrompida → relatório + erro, sem abortar (Req 6.5).
     if (mapeamentoEhErro(mapeado)) {
@@ -499,48 +586,83 @@ export async function importarAcervo(
       continue
     }
 
-    // 2. Idempotência por (empresaId, numeroCalcgraf) — EXPLÍCITO (Req 6.4).
-    const existente = await prisma.calculoGrafico.findFirst({
-      where: { empresaId, numeroCalcgraf: mapeado.numeroCalcgraf },
-      select: { id: true },
-    })
-    if (existente) {
+    // 2. Idempotência por (empresaId, numeroCalcgraf) — via Set pré-carregado.
+    if (jaExistentes.has(mapeado.numeroCalcgraf)) {
       ignorados += 1
       continue
     }
+    jaExistentes.add(mapeado.numeroCalcgraf)
 
-    // 3. Nova linha mapeada OK: grava (ou simula, no dryRun).
+    // 3. dryRun: só conta (não grava).
     if (dryRun) {
       importados += 1
       continue
     }
 
+    // 4. Monta a linha do `createMany` (numeração própria em memória).
+    const eng = mapeado.engenharia
+    paraInserir.push({
+      empresaId,
+      numero: proximoNumero++,
+      numeroCalcgraf: mapeado.numeroCalcgraf,
+      origem: 'MIGRADO_CALCGRAF',
+      clienteNome: mapeado.biblioteca.clienteNome,
+      linhaProduto: mapeado.biblioteca.linhaProduto,
+      produto: mapeado.biblioteca.produto,
+      descricao: mapeado.biblioteca.descricao ?? eng.descricao ?? null,
+      siglaAcabado: mapeado.biblioteca.siglaAcabado,
+      tipoEmbalagemId: eng.tipoEmbalagemId,
+      medidas: eng.medidas,
+      papelId: eng.papelId ?? null,
+      papelDescricao: eng.papelDescricao ?? null,
+      suporteId: eng.suporteId ?? null,
+      gramatura: eng.gramatura ?? null,
+      numCores: eng.numCores,
+      cores: (eng.cores ?? null) as never,
+      maquinaId: eng.maquinaId ?? null,
+      matrizQuantidade: eng.matrizQuantidade ?? null,
+      matrizPrecoUnitario: eng.matrizPrecoUnitario ?? null,
+      tintaModo: eng.tintaModo ?? null,
+      tintaConsumoKg: eng.tintaConsumoKg ?? null,
+      acabamentosRicos: (eng.acabamentosRicos ?? null) as never,
+      modeloFacaId: eng.modeloFacaId ?? null,
+      aproveitamentoManual: eng.aproveitamentoManual ?? null,
+      montagemLinhas: eng.montagemLinhas ?? null,
+      montagemColunas: eng.montagemColunas ?? null,
+      formatoCorteLarguraMm: eng.formatoCorteLarguraMm ?? null,
+      formatoCorteAlturaMm: eng.formatoCorteAlturaMm ?? null,
+      itensDiversos: (eng.itensDiversos ?? null) as never,
+      itensFornecidos: (eng.itensFornecidos ?? null) as never,
+      camposLivres: (eng.camposLivres ?? null) as never,
+      quantidade: eng.quantidade,
+      resultadoCalculo: (mapeado.resultadoCalculo ?? null) as never,
+      custoProducao: mapeado.custoProducao ?? null,
+      valorTotal: mapeado.valorTotal ?? null,
+      margemSelecionada: eng.margemSelecionada ?? null,
+    })
+  }
+
+  // 5. Insere o lote de uma vez (createMany). `skipDuplicates` cobre colisões
+  //    residuais de `numeroCalcgraf`/`numero` sem abortar. Em erro do lote
+  //    inteiro, registra no relatório e NÃO aborta a carga das outras levas.
+  if (!dryRun && paraInserir.length > 0) {
     try {
-      await criarCalculoGrafico({
-        empresaId,
-        engenharia: mapeado.engenharia,
-        clienteId: null,
-        clienteNome: mapeado.biblioteca.clienteNome,
-        linhaProduto: mapeado.biblioteca.linhaProduto,
-        produto: mapeado.biblioteca.produto,
-        descricao: mapeado.biblioteca.descricao,
-        siglaAcabado: mapeado.biblioteca.siglaAcabado,
-        numeroCalcgraf: mapeado.numeroCalcgraf,
-        origem: 'MIGRADO_CALCGRAF',
-        resultadoCalculo: mapeado.resultadoCalculo,
-        custoProducao: mapeado.custoProducao,
-        valorTotal: mapeado.valorTotal,
+      const res = await prisma.calculoGrafico.createMany({
+        data: paraInserir as never,
+        skipDuplicates: true,
       })
-      importados += 1
+      importados += res.count
+      if (res.count < paraInserir.length) {
+        ignorados += paraInserir.length - res.count
+      }
     } catch (err) {
-      // Falha de gravação (ex.: corrida violando @@unique) não aborta a carga.
-      erros += 1
+      erros += paraInserir.length
       relatorio.push({
-        numeroCalcgraf: mapeado.numeroCalcgraf,
+        numeroCalcgraf: null,
         motivo:
           err instanceof Error
-            ? `Falha ao gravar: ${err.message}`
-            : 'Falha ao gravar o cálculo',
+            ? `Falha ao gravar lote de ${paraInserir.length}: ${err.message}`
+            : `Falha ao gravar lote de ${paraInserir.length}`,
       })
     }
   }

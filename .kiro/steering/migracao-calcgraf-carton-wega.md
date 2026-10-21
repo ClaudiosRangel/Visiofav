@@ -129,11 +129,43 @@ nesta máquina. NADA commitado (política do usuário).**
   `BuscaCalculoModal.tsx` na tela de detalhe do orçamento (cria item a partir do
   cálculo). Rota real = `/orcamento-grafico/biblioteca-calculos` (não `/pcp/...`).
 
-**Próximos passos quando o usuário retomar**: (1) escrever/rodar o exportador do
-acervo e conferir o de-para de colunas em `brutoParaLinha`; (2) rodar
-`--dry-run` contra local, depois produção com confirmação; (3) opcional: os
-property tests P1–P12 (tasks `*`); (4) deploy (migrate-prod roda a criação da
-tabela).
+**✅ ACERVO MIGRADO EM PRODUÇÃO (21/10/2026):** os **7.951 cálculos** do Calcgraf
+foram importados para `calculo_grafico` da Wega (produção Neon,
+`75848e24-...`), origem `MIGRADO_CALCGRAF`, 0 erros. A tela Biblioteca de
+Cálculos deixou de estar vazia. Processo:
+- **Exportador** `scripts/exportar-calculos-acervo-calcgraf.mjs` (SOMENTE-LEITURA
+  do SQL Server local; `sqlcmd -u` UTF-16→UTF-8 p/ acentos). De-para confirmado
+  no banco real:
+  - numCalculo←`CalculoHeader.NumCalculo`; tiragem←`TiragemBase`;
+    cliente←`Nomes.RazaoSocial` via `CodNome` (só 32/7951 têm cliente — o resto é
+    "sem cliente definido" no Calcgraf, NÃO é bug); linha←`_LinhasProduto.Nome`;
+    produto/descrição/sigla←`CalculoAcabados` (subquery TOP 1 por `ItemAcabado`);
+    valor←`CalculoTiragens.ValorTotalVenda`; custo←`SUM(CustoFixo)+SUM(CustoUnitario)
+    ×tiragem` de `CalculoResAgrupamento` (agrup. 1/2/3 positivos); cores←`CalculoTintas`.
+  - **DEDUPE CRÍTICO:** um `NumCalculo` pode ter 2+ linhas em `CalculoHeader`
+    (original + recálculo) → a query mantém só o de **MAIOR Codigo** por
+    NumCalculo (`AND h.Codigo = (SELECT MAX...)`). Sem isso vinham 10.950 linhas
+    com duplicatas; com o dedupe = **7.951 distintos**. Rascunhos sem NumCalculo
+    (462) saem no dedupe/erro.
+  - **Produto→TipoEmbalagem:** `CalculoAcabados.CodProduto` (1..12) → `TipoEmbalagem`
+    código `CG-EMB-<n>` (os 12 CG-EMB já existem na Wega de produção). O importador
+    resolve via `deParaTipoEmbalagem` (Map montado no início de `importarAcervo`).
+- **Importador** `scripts/importar-calculos-calcgraf.ts` + `importarAcervo`:
+  idempotente por `(empresaId, numeroCalcgraf)` via Set pré-carregado (1 query, não
+  1/linha). **Inserção em LOTE via `createMany`** (lotes de 500) — o caminho
+  um-a-um (`criarCalculoGrafico`) era ~1,3/s no pooler Neon (~2h); o createMany fez
+  em ~1min. Campos de texto TRUNCADOS aos limites do schema
+  (descricao/produto/clienteNome 200, linhaProduto 120, siglaAcabado 60) — havia
+  1 descrição de 224 chars que derrubava o lote inteiro.
+- **Como rodar de novo (idempotente):** export local → `DATABASE_URL` do Neon
+  (`:5432...&pgbouncer=true&connection_limit=1` p/ Prisma) →
+  `npx tsx scripts/importar-calculos-calcgraf.ts --empresa 75848e24-... [--dry-run]`.
+  NÃO toca PCP (tabela isolada). A connection string do Neon fica FORA do git.
+
+**Pendências restantes:** (1) property tests P1–P12 (tasks `*`, opcionais); (2)
+ativar o botão "Usar em orçamento" na tela da biblioteca (hoje só navega); (3)
+`criarCalculoGrafico` ficou não-usado pelo importador (ainda usado pela criação
+normal via rota) — ok manter.
 
 ### ✅ ALINHAMENTO DE CADASTROS DO ORÇAMENTO — levantado (20/10/2026)
 

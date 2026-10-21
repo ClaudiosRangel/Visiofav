@@ -183,6 +183,8 @@ function brutoParaLinha(raw: Record<string, unknown>): LinhaAcervoCalcgraf {
       'tipoEmbalagemId',
       'tipoEmbalagem',
     ) ?? null) as string | null,
+    // codProduto (Calcgraf) → o importador resolve p/ TipoEmbalagem CG-EMB-<n>.
+    codProduto: num(pegar(raw, 'codProduto', 'CodProduto')),
     medidas: (pegar(raw, 'Medidas', 'medidas') ?? null) as Record<
       string,
       number
