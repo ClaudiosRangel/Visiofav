@@ -30,6 +30,11 @@ import {
   EmissaoOpError,
 } from './orcamento-grafico-op.service'
 import type { ResultadoOrcamento } from './orcamento-grafico-calculo.service'
+import {
+  obterCalculoGrafico,
+  registroParaEngenharia,
+} from './calculo-grafico/calculo-grafico.service'
+import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 
 /**
  * Extrai os parâmetros customizados (com defaults) de um TipoEmbalagem para o
@@ -3791,6 +3796,95 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     await reconsolidarOrcamento(id, user.empresaId)
 
+    return reply.status(201).send(item)
+  })
+
+  /**
+   * POST /api/orcamento-grafico/:id/itens/de-calculo
+   *
+   * Reaproveita um `CalculoGrafico` da biblioteca criando um
+   * `ItemOrcamentoGrafico` NOVO no orçamento `:id`, por CÓPIA (foto congelada,
+   * não vínculo): os campos de engenharia e o `resultadoCalculo` do cálculo são
+   * COPIADOS para o item (não há recálculo). Grava `calculoGraficoOrigemId` para
+   * rastreabilidade (spec biblioteca-calculos-graficos, Req 3.1–3.4).
+   *
+   * Multi-tenant (steering ATENCAO §2.1): `empresaId` EXPLÍCITO em toda query.
+   * Req 3.4: bloqueia com 403 quando o cálculo existe mas é de OUTRA empresa
+   * (buscamos SEM filtro de empresa primeiro; inexistente → 404; de outra
+   * empresa → 403; só então copiamos a foto).
+   */
+  app.post('/:id/itens/de-calculo', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id: orcamentoId } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z
+      .object({
+        calculoId: z.string().uuid(),
+        novaQuantidade: z.number().int().positive().optional(),
+      })
+      .parse(request.body)
+
+    // 1) Orçamento de destino existe e é da empresa do usuário → 404 se não.
+    const orcamento = await prisma.orcamentoGrafico.findFirst({
+      where: { id: orcamentoId, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+
+    // 2) Carrega o cálculo SEM filtro de empresa para distinguir 404 de 403
+    //    (Req 3.4 — 403 EXPLÍCITO quando o cálculo é de outra empresa).
+    const calcCrossTenant = await prisma.calculoGrafico.findUnique({
+      where: { id: body.calculoId },
+      select: { id: true, empresaId: true },
+    })
+    if (!calcCrossTenant) return reply.status(404).send({ message: 'Cálculo não encontrado' })
+    if (calcCrossTenant.empresaId !== user.empresaId) {
+      return reply.status(403).send({ message: 'Acesso negado: cálculo de outra empresa' })
+    }
+
+    // 3) Carrega o cálculo COMPLETO (foto + engenharia), isolado por empresaId.
+    const calc = await obterCalculoGrafico(user.empresaId, body.calculoId)
+    if (!calc) return reply.status(404).send({ message: 'Cálculo não encontrado' })
+
+    // 4) Reconstrói o body do item a partir dos campos de engenharia do cálculo
+    //    (Decimal→number + JSONs via `registroParaEngenharia`; depois
+    //    `calculoParaItemBody`). `novaQuantidade` sobrepõe a tiragem do cálculo.
+    const engenharia = registroParaEngenharia(calc)
+    const itemBody = calculoParaItemBody(engenharia) as unknown as ItemOrcamentoBody
+    if (body.novaQuantidade != null) itemBody.quantidade = body.novaQuantidade
+
+    // 5) Próxima sequência do orçamento (maior sequência + 1).
+    const ultimo = await prisma.itemOrcamentoGrafico.findFirst({
+      where: { orcamentoId, empresaId: user.empresaId },
+      orderBy: { sequencia: 'desc' },
+      select: { sequencia: true },
+    })
+    const sequencia = (ultimo?.sequencia ?? 0) + 1
+
+    // Persiste o item COPIANDO a FOTO do cálculo (sem recalcular): usamos a foto
+    // `calc.resultadoCalculo` como resultado congelado via `dadosPersistenciaItem`
+    // (mesmo padrão de cópia de `dadosPersistenciaItemSemRecalculo`). Os totais
+    // (custoProducao/valorTotal) saem do próprio resultado; quando a foto não
+    // carrega esses campos, caímos nos totais persistidos no cálculo.
+    const fotoResultado = (calc.resultadoCalculo ?? {
+      custoProducao: calc.custoProducao != null ? Number(calc.custoProducao) : 0,
+      precoVenda: calc.valorTotal != null ? Number(calc.valorTotal) : 0,
+    }) as ResultadoOrcamento
+
+    const item = await prisma.itemOrcamentoGrafico.create({
+      data: {
+        orcamentoId,
+        empresaId: user.empresaId,
+        sequencia,
+        ...dadosPersistenciaItem(itemBody, fotoResultado),
+        // Rastreabilidade: de qual cálculo da biblioteca este item foi copiado.
+        calculoGraficoOrigemId: calc.id,
+      },
+    })
+
+    // 6) Reconsolida os totais do orçamento.
+    await reconsolidarOrcamento(orcamentoId, user.empresaId)
+
+    // 7) Retorna o item criado.
     return reply.status(201).send(item)
   })
 

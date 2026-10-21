@@ -11,6 +11,162 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🟢 7343 (5346) — HISTÓRICO GRAVADO / item completo (20/10/2026)
+
+A pendência do 5346 (item vazio) foi RESOLVIDA. O item seq 1
+(`051b4ae0-3e85-456f-82dc-223a6df769da`) do orçamento 5346 foi gravado como
+**FOTO ARQUIVADA** do cálculo 7343 — cada informação no seu lugar na tela:
+suporte Nz Bobina 325 (`775b436a-...` @ 8,343/kg, 321,58 kg), 3 Pantones
+(65/90/155), Matriz 3×100, BOPP 544,21, Fita 520, impressão Roland 770 + 4
+acabamentos (Guilhotina/Cortadeira/Fita/Laminação, IDs reais). `resultadoCalculo`
+= golden `calcularOrcamentoGrafico(input7343)`. **C.PROD R$ 5.411,37** (Calcgraf
+5.411,87; desvio 0,009%). É HISTÓRICO — não recalcular (o "Recalcular" refaz com
+cadastros atuais e diverge). Gravado via script `_tmp-` (removido após uso).
+
+## 🟡 ACERTO POR COR das máquinas — EXTRAÍDO mas NÃO gravado (decisão 20/10/2026)
+
+Extraído da base restaurada do Calcgraf (`CalculoAtividades.tempoPorAcerto`/
+`tempoPrimeiroAcerto` por `codCentroCusto`, moda sobre milhares de cálculos):
+- Heidelberg CD 5 cores (centro 2) → acerto 5 / setup 0 (3.545 cálc.)
+- KBA Rápida 75 6 cores (centro 1) → 10 / 35 (1.795)
+- Heidelberg CD 7 cores (centro 46) → 18 / 30 (1.506)
+- Roland RVU 4 cores (centro 45) → 30 / 0 (747)
+- Roland RZU 2 cores (centro 4) → 30 / 0 (657)
+- Heidelberg SM 2 cores (centro 3) → 10 / 0 (522)
+
+**NÃO GRAVADO** — motivo (decisão do usuário): o cadastro `CentroProducao` do
+Vizor tem DOIS mundos de máquina misturados: (A) importados do **PDF** (códigos
+numéricos 10/19/21/39/41, usados HOJE na Programação do chão) e (B) cadastrados
+p/ o **orçamento gráfico** (HEID-CD5/ROLAND-RVU4/KBA-75-6...). Os do mundo A já
+têm acerto preenchido em CALIBRAÇÃO ANTERIOR validada por golden (RVU=90, CD5=25,
+KBA=20, CD7=36 — ver steering, batem com "CC2=25/CC45=90/...") e DIVERGEM da
+leitura bruta acima (o `tempoPorAcerto` puro ≠ acerto efetivo calibrado). Gravar
+agora sujaria o cadastro ambíguo.
+
+**Plano acordado (NÃO pular):** estruturar o fluxo NOVO (orçamento gráfico → OP
+pelo Vizor) usando o conjunto de cadastros "do orçamento" (mundo B); deixar o
+legado do PDF (mundo A: máquinas/OPs da Programação) INTOCADO por ora. Quando o
+Vizor assumir todo o PCP, decidir o destino do legado (limpar/começar vida nova
+ou migrar) — fica para depois. FOCO ATUAL: alinhar de ponta a ponta o
+preenchimento do orçamento de cálculo + cadastros de apoio, ANTES de escolher um
+cálculo-exemplo recente p/ recriar. Acerto por cor volta à pauta quando definir
+qual conjunto de máquinas é o "oficial do orçamento".
+
+### ✅ MÁQUINAS DO ORÇAMENTO definidas (20/10/2026) — mundo B oficial
+
+Decisão: as máquinas OFICIAIS do orçamento gráfico são o **MUNDO B** (as que
+têm FORMATO DE FOLHA + VELOCIDADE cadastrados): `HEID-CD5`, `HEID-CD7`,
+`HEID-LETTER`, `HEID-SM2`, `KBA-75-6`, `ROLAND-RVU4`, `ROLAND-RZU2`. O mundo A
+(códigos numéricos 19/2/10/21/39/41 — importadas do PDF, usadas na Programação,
+SEM formato de folha) fica INTOCADO.
+
+Feito (produção, reversível):
+1. **Acerto por cor do mundo B completado** (copiado do par calibrado do mundo A;
+   só preencheu o que estava null): `ROLAND-RVU4`→acerto 90/setup 0,
+   `ROLAND-RZU2`→45/0. As demais do mundo B já estavam calibradas (CD5=25,
+   CD7=36/30, KBA=20). HEID-SM2/HEID-LETTER (2 cores) ficaram sem acerto — sem par
+   calibrado; não bloqueiam as demais. Mundo A NÃO tocado.
+2. **Seletor de máquina do orçamento filtrado** (`StepCores.tsx`, reusado também
+   pelo `ItemWizardModal`): agora só lista máquinas IMPRESSAO ativas COM formato
+   de folha > 0 (= mundo B), eliminando as duplicatas do PDF no wizard. Só
+   frontend; NÃO toca backend/importação-PDF/painel de Programação. ATENÇÃO: as
+   do mundo B `ROLAND-RVU4/ROLAND-RZU2/HEID-SM2` seguem com `disponivelProgramacao
+   =true` (aparecem no painel hoje) — NÃO alterado de propósito (mexer afetaria o
+   painel). Limpeza da duplicata NO PAINEL fica para depois, se o usuário pedir.
+
+### ✅ BIBLIOTECA DE CÁLCULOS GRÁFICOS — implementada (LOCAL, não commitada) (21/10/2026)
+
+Spec `.kiro/specs/biblioteca-calculos-graficos/` (requirements + design + tasks).
+Resolve o fluxo do Calcgraf "Localiza o Cálculo Padrão": o operador PUXA um
+cálculo existente (por CÓPIA/foto congelada) em vez de refazer tudo; e prepara a
+migração do acervo histórico (11.561 cálculos) para a biblioteca. **Entidade
+nova `CalculoGrafico`** (independente do orçamento), mesmo shape de engenharia do
+`ItemOrcamentoGrafico`.
+
+**Entregue (todas as tasks de implementação; property tests `*` ficaram como
+follow-up opcional). Tudo validado por `get_diagnostics` — tsc inteiro não roda
+nesta máquina. NADA commitado (política do usuário).**
+
+- **Schema** (`schema.prisma`): model `CalculoGrafico` (tabela `calculo_grafico`)
+  com `numero` próprio por empresa, `numeroCalcgraf` (ref. Calcgraf),
+  `origem` (VIZOR|MIGRADO_CALCGRAF), `status`, campos de engenharia espelhando o
+  item, `resultadoCalculo` (FOTO congelada), `fotosAnteriores` (histórico de
+  recálculo). `@@unique([empresaId,numero])` + `@@unique([empresaId,numeroCalcgraf])`.
+  Coluna aditiva `ItemOrcamentoGrafico.calculoGraficoOrigemId` (rastreabilidade).
+  `migrate-prod.ts` atualizado idempotente (CREATE TABLE/INDEX IF NOT EXISTS +
+  índice único parcial `WHERE numero_calcgraf IS NOT NULL` + ADD COLUMN) — **roda
+  no deploy do Render** (Postgres local indisponível; migração local não rodada).
+- **Submódulo** `src/modules/orcamento-grafico/calculo-grafico/`:
+  - `calculo-grafico.types.ts` — tipo `CamposEngenhariaCalculo` (shape comum).
+  - `calculo-grafico-mapeamento.ts` — `calculoParaItemBody`/`itemBodyParaCalculo`
+    (puras, round-trip).
+  - `calculo-grafico.service.ts` — `criarCalculoGrafico` (numeração atômica por
+    empresa em transação), `buscarCalculosGraficos` (critérios conjuntos,
+    case-insensitive, snapshot em `$transaction`), `obterCalculoGrafico`,
+    `recalcularCalculoGrafico` (preserva a foto anterior em `fotosAnteriores`),
+    `registroParaEngenharia` (exportada). **empresaId EXPLÍCITO em TODA query.**
+  - `calculo-grafico-import.service.ts` — `mapearLinhaParaCalculo` (pura,
+    resiliente) + `importarAcervo` (idempotente por `(empresaId,numeroCalcgraf)`,
+    foto da origem, relatório de corrompidos, invariante
+    `importados+atualizados+ignorados+erros == total`).
+  - `calculo-grafico.routes.ts` — CRUD + busca + recalcular + `importar-acervo`
+    (ADMIN, hoje 501 apontando o script). Registrado em `server.ts` com prefixo
+    `/api/calculo-grafico`.
+  - Rota `POST /api/orcamento-grafico/:id/itens/de-calculo` (em
+    `orcamento-grafico.routes.ts`): cria item do orçamento COPIANDO a foto do
+    cálculo; **403** se o cálculo for de outra empresa (Req 3.4).
+- **Script** `scripts/importar-calculos-calcgraf.ts` (versionado, não `_tmp-`):
+  lê `cartoon/export/<arquivo>.json`, mapeia tolerante → `LinhaAcervoCalcgraf`,
+  importa em lotes de 500 com `comRetry` (pooler Neon). Flags: `--empresa`,
+  `--arquivo`, `--desde-numero`, `--desde-ano`, `--dry-run`. EXIGE empresa
+  existente (não cria). **Pendência**: o exportador do acervo (SQL Server →
+  JSON com `sqlcmd -u` UTF-16→UTF-8) ainda não foi escrito/rodado; o
+  `brutoParaLinha` é tolerante mas os nomes de coluna precisam ser conferidos
+  contra o export real antes do `--apply` em produção.
+- **Frontend** (`VisioFab.Wms.Front`, também não commitado):
+  `orcamento-grafico/biblioteca-calculos/page.tsx` (tela de busca), item
+  "Biblioteca de Cálculos" no `ModuleSidebar`, e botão "Localizar Cálculo" +
+  `BuscaCalculoModal.tsx` na tela de detalhe do orçamento (cria item a partir do
+  cálculo). Rota real = `/orcamento-grafico/biblioteca-calculos` (não `/pcp/...`).
+
+**Próximos passos quando o usuário retomar**: (1) escrever/rodar o exportador do
+acervo e conferir o de-para de colunas em `brutoParaLinha`; (2) rodar
+`--dry-run` contra local, depois produção com confirmação; (3) opcional: os
+property tests P1–P12 (tasks `*`); (4) deploy (migrate-prod roda a criação da
+tabela).
+
+### ✅ ALINHAMENTO DE CADASTROS DO ORÇAMENTO — levantado (20/10/2026)
+
+Estado dos cadastros de apoio (produção, só-leitura):
+- **Máquinas (mundo B):** prontas, acerto por cor completo.
+- **Acabamentos:** 46/67 com valor. As 21 sem valor são (a) 8 processos que a
+  Wega NÃO opera (Flexo/Roto/Serigrafia/Tipografia/Offset Plana|Rotativa/
+  Formulário/Relevo — irrelevantes) e (b) 13 atividades compostas (Laminação
+  maior/menor, Colagem Manual, 6 Sacolas, Vernizes). Os que a Wega USA
+  (Cortadeiras/Guilhotinas/Coladeiras AFT70/Bobst/Diana/CVM/acoplagens/
+  plastificadoras/hotstamping) TÊM valor. NOTA: acabamento usa custo-hora +
+  produção/hora + 1º acerto (tpAcerto=0 em todos — "acerto por cor" é só da
+  impressão). Laminação/Verniz: valor sai do pré-cálculo se o cálculo usar.
+- **Modelos de Faca (GCad): 0 cadastrados** ⚠️ — o encaixe/imposição NÃO virá de
+  faca; usar **aproveitamentoManual** (nº peças/folha do pré-cálculo), como no
+  7343 (1.334 folhas). Não é bloqueio.
+- **Tipos de Embalagem:** 20 ativos, fórmulas OK (ROTULO = L+SANGRIA*2). Há
+  duplicatas (import vs manual: Cartuchos/Cartucho Simples, Impressos 2×, etc.) —
+  mesmo padrão das máquinas; não bloqueia. A fórmula importa pouco quando se usa
+  aproveitamento manual (curto-circuita a planificação).
+- **Suportes:** 84 completos (coefTinta SPANKS ok; Nz Bobina, Kraft Senges 2,2).
+- **Preços papel:** 1.767 ✅. **Tintas:** 233 (muitos Pantone com preço 0 — cor é
+  entrada manual no orçamento, não bloqueia).
+- **Tabela de margem** (Padrão Wega) + **Parâmetro de perda** (geral): ✅.
+
+LIÇÃO-CHAVE p/ recriar um cálculo e BATER o Calcgraf: 2 campos vêm do pré-cálculo/
+memória, NÃO do cadastro — (1) aproveitamento/folhas (imposição da faca) e (2)
+valores de laminação/verniz se usados. O resto já está cadastrado.
+
+PRÓXIMO: escolher um cálculo-exemplo recente do Calcgraf e percorrer o wizard
+inteiro (cliente→tipo→medidas→papel→cores/máquina→acabamentos→revisão) validando
+cada passo contra a memória de cálculo, até o C.PROD bater; depois emitir a OP.
+
 ## 🔴 AGENTE DE SINCRONIZAÇÃO INATIVADO (20/10/2026 — pedido do usuário)
 
 **A API do agente Calcgraf está DESLIGADA em produção por decisão do usuário.**

@@ -4287,6 +4287,9 @@ model ItemOrcamentoGrafico {
   // ── Frente C: suporte de produção quando o item NÃO tem planos (Req 6.1) ──
   suporteProducaoId String? @map("suporte_producao_id")
 
+  // ── Biblioteca de Cálculos: de qual CalculoGrafico este item foi copiado (spec biblioteca-calculos-graficos, Decisão 3.A) ──
+  calculoGraficoOrigemId String? @map("calculo_grafico_origem_id")
+
   orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
   planos     PlanoCalculoGrafico[]
@@ -4297,6 +4300,86 @@ model ItemOrcamentoGrafico {
   @@index([orcamentoId])
   @@index([modeloFacaId])
   @@map("item_orcamento_grafico")
+}
+
+/// Cálculo Gráfico reutilizável, independente do Orçamento (biblioteca estilo
+/// "Cálculo Padrão" do Calcgraf). Mesmo shape de engenharia do
+/// ItemOrcamentoGrafico, porém SEM orçamento pai. Isolamento por empresaId.
+/// Spec biblioteca-calculos-graficos.
+model CalculoGrafico {
+  id        String @id @default(uuid())
+  empresaId String @map("empresa_id")
+
+  // ── Identificação / biblioteca ──
+  numero         Int // sequência PRÓPRIA do Vizor por empresa (Req 5.2 / 7.A)
+  numeroCalcgraf Int?    @map("numero_calcgraf") // nº original do Calcgraf, p/ busca (Req 7)
+  origem         String  @default("VIZOR") @db.VarChar(20) // MIGRADO_CALCGRAF | VIZOR (Req 8.3)
+  status         String  @default("ATIVO") @db.VarChar(20) // ATIVO | RASCUNHO | ARQUIVADO (Req 5.A)
+
+  // ── Cliente / classificação de busca (Req 2.2) ──
+  clienteId    String? @map("cliente_id")
+  clienteNome  String? @map("cliente_nome") @db.VarChar(200)
+  linhaProduto String? @map("linha_produto") @db.VarChar(120)
+  produto      String? @db.VarChar(200)
+  descricao    String? @db.VarChar(200)
+  siglaAcabado String? @map("sigla_acabado") @db.VarChar(60)
+
+  // ── Geometria / produto (espelha item) ──
+  tipoEmbalagemId String @map("tipo_embalagem_id")
+  medidas         Json
+
+  // ── Papel / suporte ──
+  papelId        String?  @map("papel_id")
+  papelDescricao String?  @map("papel_descricao") @db.VarChar(200)
+  suporteId      String?  @map("suporte_id")
+  gramatura      Decimal? @db.Decimal(6, 2)
+
+  // ── Impressão / cores / máquina ──
+  numCores  Int     @default(4) @map("num_cores")
+  cores     Json? // [{nome, tipo, cobertura%, precoKg, ...}]
+  maquinaId String? @map("maquina_id")
+
+  // ── Matriz / tinta ──
+  matrizQuantidade    Decimal? @map("matriz_quantidade") @db.Decimal(12, 3)
+  matrizPrecoUnitario Decimal? @map("matriz_preco_unitario") @db.Decimal(14, 4)
+  tintaModo           String?  @map("tinta_modo") @db.VarChar(20)
+  tintaConsumoKg      Decimal? @map("tinta_consumo_kg") @db.Decimal(12, 3)
+
+  // ── Acabamentos ricos / faca / montagem ──
+  acabamentosRicos      Json?    @map("acabamentos_ricos")
+  modeloFacaId          String?  @map("modelo_faca_id")
+  aproveitamentoManual  Decimal? @map("aproveitamento_manual") @db.Decimal(12, 3)
+  montagemLinhas        Int?     @map("montagem_linhas")
+  montagemColunas       Int?     @map("montagem_colunas")
+  formatoCorteLarguraMm Decimal? @map("formato_corte_largura_mm") @db.Decimal(10, 2)
+  formatoCorteAlturaMm  Decimal? @map("formato_corte_altura_mm") @db.Decimal(10, 2)
+
+  // ── Itens diversos / fornecidos / campos livres ──
+  itensDiversos   Json? @map("itens_diversos")
+  itensFornecidos Json? @map("itens_fornecidos")
+  camposLivres    Json? @map("campos_livres")
+
+  // ── Tiragem e FOTO congelada ──
+  quantidade        Int
+  resultadoCalculo  Json?    @map("resultado_calculo") // FOTO congelada (Req 4) — não recalcular
+  custoProducao     Decimal? @map("custo_producao") @db.Decimal(14, 2)
+  valorTotal        Decimal? @map("valor_total") @db.Decimal(14, 2)
+  margemSelecionada Decimal? @map("margem_selecionada") @db.Decimal(5, 2)
+
+  // ── Histórico de recálculo (Req 4.3) ──
+  fotosAnteriores Json?    @map("fotos_anteriores") // [{resultadoCalculo, custoProducao, valorTotal, em}]
+  dataCalculo     DateTime @default(now()) @map("data_calculo")
+
+  criadoPorId  String?  @map("criado_por_id")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, numero])
+  @@unique([empresaId, numeroCalcgraf]) // idempotência da migração (Req 6.4)
+  @@index([empresaId, status])
+  @@index([empresaId, clienteNome])
+  @@index([empresaId, numeroCalcgraf])
+  @@map("calculo_grafico")
 }
 
 /// Plano/cálculo filho de ItemOrcamentoGrafico (Fase 2 — paridade de

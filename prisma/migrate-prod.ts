@@ -4961,6 +4961,65 @@ async function seedMateriaisFromOPs() {
   try { await prisma.$executeRawUnsafe(`ALTER TABLE "historico_troca_suporte" ADD CONSTRAINT "hist_troca_plano_fk" FOREIGN KEY ("plano_id") REFERENCES "plano_calculo_grafico"("id") ON DELETE CASCADE`) } catch {}
   console.log('✅ Orçamento Gráfico Paridade/OP (Fase 3): tabela historico_troca_suporte + índices + FKs item/plano (idempotente)')
 
+  // ── Biblioteca de Cálculos Gráficos (spec biblioteca-calculos-graficos) ──
+  await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "calculo_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "numero" INTEGER NOT NULL,
+    "numero_calcgraf" INTEGER,
+    "origem" VARCHAR(20) NOT NULL DEFAULT 'VIZOR',
+    "status" VARCHAR(20) NOT NULL DEFAULT 'ATIVO',
+    "cliente_id" TEXT,
+    "cliente_nome" VARCHAR(200),
+    "linha_produto" VARCHAR(120),
+    "produto" VARCHAR(200),
+    "descricao" VARCHAR(200),
+    "sigla_acabado" VARCHAR(60),
+    "tipo_embalagem_id" TEXT NOT NULL,
+    "medidas" JSONB NOT NULL,
+    "papel_id" TEXT,
+    "papel_descricao" VARCHAR(200),
+    "suporte_id" TEXT,
+    "gramatura" DECIMAL(6,2),
+    "num_cores" INTEGER NOT NULL DEFAULT 4,
+    "cores" JSONB,
+    "maquina_id" TEXT,
+    "matriz_quantidade" DECIMAL(12,3),
+    "matriz_preco_unitario" DECIMAL(14,4),
+    "tinta_modo" VARCHAR(20),
+    "tinta_consumo_kg" DECIMAL(12,3),
+    "acabamentos_ricos" JSONB,
+    "modelo_faca_id" TEXT,
+    "aproveitamento_manual" DECIMAL(12,3),
+    "montagem_linhas" INTEGER,
+    "montagem_colunas" INTEGER,
+    "formato_corte_largura_mm" DECIMAL(10,2),
+    "formato_corte_altura_mm" DECIMAL(10,2),
+    "itens_diversos" JSONB,
+    "itens_fornecidos" JSONB,
+    "campos_livres" JSONB,
+    "quantidade" INTEGER NOT NULL,
+    "resultado_calculo" JSONB,
+    "custo_producao" DECIMAL(14,2),
+    "valor_total" DECIMAL(14,2),
+    "margem_selecionada" DECIMAL(5,2),
+    "fotos_anteriores" JSONB,
+    "data_calculo" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "criado_por_id" TEXT,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "calculo_grafico_pkey" PRIMARY KEY ("id")
+  )
+`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "calculo_grafico_empresa_id_numero_key" ON "calculo_grafico"("empresa_id","numero")`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "calculo_grafico_empresa_numcalcgraf_key" ON "calculo_grafico"("empresa_id","numero_calcgraf") WHERE "numero_calcgraf" IS NOT NULL`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_calculo_grafico_empresa_status" ON "calculo_grafico"("empresa_id","status")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_calculo_grafico_empresa_cliente" ON "calculo_grafico"("empresa_id","cliente_nome")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_calculo_grafico_empresa_numcalcgraf" ON "calculo_grafico"("empresa_id","numero_calcgraf")`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "calculo_grafico_origem_id" TEXT`)
+  console.log('✅ Biblioteca de Cálculos Gráficos: tabela calculo_grafico + coluna de origem no item')
+
   // ── Fase 4: extensão aditiva da OP (frente D) ────────────────────────────────
   for (const [col, tipo] of [
     ['orcamento_item_id','TEXT'],['via','VARCHAR(20)'],
