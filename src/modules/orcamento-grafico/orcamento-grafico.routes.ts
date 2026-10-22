@@ -2395,6 +2395,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             numCores: true,
             cores: true,
             maquinaId: true,
+            // Aproveitamento manual (peças/folha) — imposição real do Calcgraf.
+            // Sem este campo no select, o item vinha sem aproveitamento e o motor
+            // recalculava o encaixe geométrico (ex.: 4 em vez dos 3 reais),
+            // inflando o rendimento e divergindo do Calcgraf no recálculo.
+            aproveitamentoManual: true,
             matrizQuantidade: true,
             matrizPrecoUnitario: true,
             tintaModo: true,
