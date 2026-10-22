@@ -740,6 +740,52 @@ function dadosPersistenciaItemSemRecalculo(body: ItemOrcamentoBody, itemOrigem: 
   }
 }
 
+/** Registro completo de `CalculoGrafico` (retorno de `obterCalculoGrafico`). */
+type CalculoGraficoRegistroCompleto = NonNullable<
+  Awaited<ReturnType<typeof obterCalculoGrafico>>
+>
+
+/**
+ * Fonte ÚNICA da regra de cópia de um `CalculoGrafico` da Biblioteca para um
+ * `ItemOrcamentoGrafico` por CÓPIA da FOTO CONGELADA (sem recálculo). Reaproveita
+ * os helpers já existentes (`registroParaEngenharia` → `calculoParaItemBody` →
+ * `dadosPersistenciaItem`), evitando duplicar a lógica em cada rota que puxa um
+ * cálculo (fluxo "dentro de um orçamento" em `/:id/itens/de-calculo` e o fluxo
+ * "a partir da criação" em `/de-calculo`).
+ *
+ * Retorna:
+ * - `dadosItem`: os campos prontos para persistir no `ItemOrcamentoGrafico`
+ *   (engenharia copiada + totais da foto), sem recalcular;
+ * - `fotoResultado`: a foto congelada usada como resultado do item (útil para
+ *   herdar medidas/dados do cálculo no orçamento).
+ *
+ * `novaQuantidade > 0` sobrepõe a tiragem do cálculo; caso contrário usa a
+ * quantidade do próprio cálculo (a `quantidade` já vem de `calculoParaItemBody`).
+ */
+function copiarCalculoParaItem(
+  calc: CalculoGraficoRegistroCompleto,
+  novaQuantidade?: number,
+) {
+  // Reconstrói o body do item a partir dos campos de engenharia do cálculo
+  // (Decimal→number + JSONs via `registroParaEngenharia`; depois
+  // `calculoParaItemBody`). `novaQuantidade > 0` sobrepõe a tiragem do cálculo.
+  const engenharia = registroParaEngenharia(calc)
+  const itemBody = calculoParaItemBody(engenharia) as unknown as ItemOrcamentoBody
+  if (novaQuantidade != null && novaQuantidade > 0) itemBody.quantidade = novaQuantidade
+
+  // Foto congelada do cálculo como resultado do item (sem recalcular). Quando a
+  // foto não carrega os totais, caímos nos totais persistidos no cálculo.
+  const fotoResultado = (calc.resultadoCalculo ?? {
+    custoProducao: calc.custoProducao != null ? Number(calc.custoProducao) : 0,
+    precoVenda: calc.valorTotal != null ? Number(calc.valorTotal) : 0,
+  }) as ResultadoOrcamento
+
+  return {
+    dadosItem: dadosPersistenciaItem(itemBody, fotoResultado),
+    fotoResultado,
+  }
+}
+
 /** Reconstrói o `PlanoBody` a partir da linha persistida de um `PlanoCalculoGrafico`. */
 function reconstruirBodyDoPlano(plano: any): PlanoBody {
   return {
@@ -3845,12 +3891,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const calc = await obterCalculoGrafico(user.empresaId, body.calculoId)
     if (!calc) return reply.status(404).send({ message: 'Cálculo não encontrado' })
 
-    // 4) Reconstrói o body do item a partir dos campos de engenharia do cálculo
-    //    (Decimal→number + JSONs via `registroParaEngenharia`; depois
-    //    `calculoParaItemBody`). `novaQuantidade` sobrepõe a tiragem do cálculo.
-    const engenharia = registroParaEngenharia(calc)
-    const itemBody = calculoParaItemBody(engenharia) as unknown as ItemOrcamentoBody
-    if (body.novaQuantidade != null) itemBody.quantidade = body.novaQuantidade
+    // 4) Reconstrói/copia a FOTO do cálculo para o item via helper compartilhado
+    //    (fonte ÚNICA da regra — mesma usada pela rota `/de-calculo`).
+    //    `novaQuantidade > 0` sobrepõe a tiragem do cálculo.
+    const { dadosItem } = copiarCalculoParaItem(calc, body.novaQuantidade)
 
     // 5) Próxima sequência do orçamento (maior sequência + 1).
     const ultimo = await prisma.itemOrcamentoGrafico.findFirst({
@@ -3860,22 +3904,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     const sequencia = (ultimo?.sequencia ?? 0) + 1
 
-    // Persiste o item COPIANDO a FOTO do cálculo (sem recalcular): usamos a foto
-    // `calc.resultadoCalculo` como resultado congelado via `dadosPersistenciaItem`
-    // (mesmo padrão de cópia de `dadosPersistenciaItemSemRecalculo`). Os totais
-    // (custoProducao/valorTotal) saem do próprio resultado; quando a foto não
-    // carrega esses campos, caímos nos totais persistidos no cálculo.
-    const fotoResultado = (calc.resultadoCalculo ?? {
-      custoProducao: calc.custoProducao != null ? Number(calc.custoProducao) : 0,
-      precoVenda: calc.valorTotal != null ? Number(calc.valorTotal) : 0,
-    }) as ResultadoOrcamento
-
+    // Persiste o item COPIANDO a FOTO do cálculo (sem recalcular).
     const item = await prisma.itemOrcamentoGrafico.create({
       data: {
         orcamentoId,
         empresaId: user.empresaId,
         sequencia,
-        ...dadosPersistenciaItem(itemBody, fotoResultado),
+        ...dadosItem,
         // Rastreabilidade: de qual cálculo da biblioteca este item foi copiado.
         calculoGraficoOrigemId: calc.id,
       },
@@ -3886,6 +3921,131 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     // 7) Retorna o item criado.
     return reply.status(201).send(item)
+  })
+
+  /**
+   * POST /api/orcamento-grafico/de-calculo
+   *
+   * "Puxar Cálculo" no PONTO DE CRIAÇÃO (abordagem A da spec
+   * orcamento-puxar-calculo-biblioteca): numa ÚNICA transação, cria um
+   * `OrcamentoGrafico` RASCUNHO herdando cliente/tipoEmbalagem/medidas/quantidade
+   * do `CalculoGrafico` da Biblioteca e um `ItemOrcamentoGrafico` copiado da FOTO
+   * congelada (sem recálculo), gravando `calculoGraficoOrigemId` para
+   * rastreabilidade. Retorna 201 com o orçamento criado (mesmo `select` da
+   * listagem/detalhe, com `id` e `numero`) para o front redirecionar.
+   *
+   * Irmão de `/:id/itens/de-calculo` (fluxo "dentro de um orçamento"); NÃO altera
+   * o comportamento daquela rota. Reusa o helper ÚNICO `copiarCalculoParaItem`.
+   *
+   * Multi-tenant (steering ATENCAO §2.1): `empresaId` EXPLÍCITO em toda query.
+   * Req 6.2/6.3: carrega o cálculo SEM filtro de empresa primeiro para distinguir
+   * 404 (inexistente) de 403 (outra empresa); só então opera com o `empresaId`
+   * correto. Req 7.2: colisão de número (P2002) → 409; a transação reverte o item
+   * junto (atomicidade — nunca orçamento órfão).
+   */
+  app.post('/de-calculo', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const body = z
+      .object({
+        calculoId: z.string().uuid({ message: 'calculoId deve ser um UUID válido' }),
+        novaQuantidade: z
+          .number({ invalid_type_error: 'novaQuantidade deve ser um número inteiro positivo' })
+          .int({ message: 'novaQuantidade deve ser um número inteiro positivo' })
+          .positive({ message: 'novaQuantidade deve ser um número inteiro positivo' })
+          .optional(),
+      })
+      .parse(request.body)
+
+    // 1) Carrega o cálculo SEM filtro de empresa para distinguir 404 de 403
+    //    (Req 6.2/6.3 — mesmo padrão do guard de `/:id/itens/de-calculo`).
+    const calcCrossTenant = await prisma.calculoGrafico.findUnique({
+      where: { id: body.calculoId },
+      select: { id: true, empresaId: true },
+    })
+    if (!calcCrossTenant) return reply.status(404).send({ message: 'Cálculo não encontrado' })
+    if (calcCrossTenant.empresaId !== user.empresaId) {
+      return reply.status(403).send({ message: 'Acesso negado: cálculo de outra empresa' })
+    }
+
+    // 2) Carrega o cálculo COMPLETO (foto + engenharia), isolado por empresaId.
+    const calc = await obterCalculoGrafico(user.empresaId, body.calculoId)
+    if (!calc) return reply.status(404).send({ message: 'Cálculo não encontrado' })
+
+    // 3) Reconstrói/copia a FOTO do cálculo para o item (fonte ÚNICA da regra).
+    //    `novaQuantidade > 0` sobrepõe a tiragem do cálculo (Req 5.2/5.3).
+    const { dadosItem } = copiarCalculoParaItem(calc, body.novaQuantidade)
+
+    // Quantidade resolvida (Nova_Quantidade sobrepõe; senão a do cálculo).
+    const quantidade = body.novaQuantidade && body.novaQuantidade > 0 ? body.novaQuantidade : calc.quantidade
+
+    // Totais consolidados do cabeçalho a partir da foto do único item criado.
+    const margemItem = dadosItem.margemSelecionada != null ? Number(dadosItem.margemSelecionada) : 0
+    const consolidado = consolidarOrcamento([
+      {
+        custoProducao: dadosItem.custoProducao != null ? Number(dadosItem.custoProducao) : 0,
+        valorTotalPorMargem: {
+          [String(margemItem)]: dadosItem.valorTotal != null ? Number(dadosItem.valorTotal) : 0,
+        },
+        margemSelecionada: margemItem,
+      },
+    ])
+
+    // 4) Criação ATÔMICA (orçamento RASCUNHO + item copiado) numa transação.
+    //    Herança: cliente (se existir, senão null), tipoEmbalagem, medidas,
+    //    quantidade (Req 4.1–4.4, 5). empresaId EXPLÍCITO em ambos (Req 6.4).
+    let orcamento
+    try {
+      orcamento = await prisma.$transaction(async (tx) => {
+        // Número sequencial por empresa (maior + 1) — Req 3.3.
+        const ultimo = await tx.orcamentoGrafico.findFirst({
+          where: { empresaId: user.empresaId },
+          orderBy: { numero: 'desc' },
+          select: { numero: true },
+        })
+        const numero = (ultimo?.numero ?? 0) + 1
+
+        const criado = await tx.orcamentoGrafico.create({
+          data: {
+            empresaId: user.empresaId,
+            numero,
+            versao: 1,
+            clienteId: calc.clienteId ?? null,
+            clienteNome: calc.clienteNome ?? null,
+            tipoEmbalagemId: calc.tipoEmbalagemId,
+            medidas: (calc.medidas ?? {}) as any,
+            quantidade,
+            status: 'RASCUNHO',
+            custoProducaoConsolidado: consolidado.custoProducaoConsolidado,
+            valorTotalConsolidado: consolidado.valorTotalConsolidado,
+            criadoPorId: user.id,
+          },
+          select: orcamentoGraficoSelect,
+        })
+
+        await tx.itemOrcamentoGrafico.create({
+          data: {
+            orcamentoId: criado.id,
+            empresaId: user.empresaId,
+            sequencia: 1,
+            ...dadosItem,
+            // Rastreabilidade: de qual cálculo da biblioteca este item foi copiado.
+            calculoGraficoOrigemId: calc.id,
+          },
+        })
+
+        return criado
+      })
+    } catch (err: any) {
+      // P2002 = violação de unique (empresaId, numero, versao) — Req 7.2.
+      // A transação reverte o item junto (sem orçamento órfão / duplicado).
+      if (err?.code === 'P2002') {
+        return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
+      }
+      throw err
+    }
+
+    // 5) 201 com o orçamento criado (com id e numero) para o front redirecionar.
+    return reply.status(201).send(orcamento)
   })
 
   /**

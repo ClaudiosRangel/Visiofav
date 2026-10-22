@@ -11,6 +11,101 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🗺️ ROADMAP — próximos passos do orçamento gráfico (priorizado 21/10/2026)
+
+Decisão do usuário: fazer AGORA só o item 1; os demais ficam para depois.
+
+1. **[✅ ENTREGUE 21/10/2026 — NÃO commitado] "Puxar cálculo" no Novo Orçamento**
+   (igual "Localiza o Cálculo Padrão" do Calcgraf). Spec
+   `orcamento-puxar-calculo-biblioteca` (requirements+design+tasks). Núcleo
+   funcional completo; property tests opcionais (3.1–3.9) ficaram pendentes.
+   - **Backend** (`orcamento-grafico.routes.ts`): helper ÚNICO
+     `copiarCalculoParaItem(calc, novaQuantidade?)` (reúsa `registroParaEngenharia`
+     →`calculoParaItemBody`→`dadosPersistenciaItem`, cópia da foto SEM recálculo) —
+     o handler existente `/:id/itens/de-calculo` foi refatorado para usá-lo (fonte
+     única). Rota NOVA atômica `POST /api/orcamento-grafico/de-calculo` (body
+     `{calculoId, novaQuantidade?}`): numa `$transaction` cria OrcamentoGrafico
+     RASCUNHO (herda cliente/tipoEmbalagem/medidas/quantidade; número max+1 por
+     empresa) + ItemOrcamentoGrafico copiado da foto + `calculoGraficoOrigemId`;
+     201 com o orçamento; 404 inexistente / 403 outra empresa / 409 colisão (P2002,
+     reverte item junto — nunca orçamento órfão). empresaId EXPLÍCITO. Sem schema/
+     migração.
+   - **Frontend**: `BuscaCalculoModal` ganhou `orcamentoId` OPCIONAL + `onCriado`
+     (modo criação chama a rota nova e redireciona); botão "Puxar Cálculo"
+     (variant light, IconListSearch) ao lado de "Novo Orçamento" na lista
+     (`orcamento-grafico/page.tsx`) → abre o modal em modo criação → no onCriado
+     navega para `/orcamento-grafico/:id`. "Novo Orçamento" em branco preservado.
+   - get_diagnostics limpo nos 3 arquivos. Validar com o usuário na tela.
+
+2. **[ROADMAP] Histórico e reversão de Custo-Hora dos Centros.** Hoje atualizar o
+   custo-hora (edição manual OU botão "Aplicar ao Orçamento" do Mapa de Custos)
+   faz UPDATE direto em `CentroProducao.custoHora` e PERDE o valor anterior — não
+   há como voltar. Criar tabela `HistoricoCustoHoraCentro` (centro, valor
+   anterior, valor novo, origem = "Mapa <competência>" | "manual", usuário, data),
+   gravar em TODA mudança (edição + aplicar-orçamento), tela de histórico por
+   centro + botão "Reverter para este valor". Padrão igual `LogLeituraContador`.
+   NOTA: reverter o custo-hora só afeta cálculos NOVOS/recalculados; fotos de
+   orçamentos salvos ficam congeladas (correto). O motor do orçamento LÊ
+   `CentroProducao.custoHora/velocidade/acerto` (confirmado em
+   `orcamento-grafico-item.service.ts`), então o custo-hora influencia DIRETO o
+   preço. (Renomear o botão "Aplicar ao Orçamento" → "Publicar Custo-Hora" é
+   cosmético, pode entrar junto.)
+
+3. **[ROADMAP] "Criar cálculo novo no ato" dentro do Novo Orçamento**: abrir o
+   wizard de engenharia (medidas→papel→cores/máquina→acabamentos) já no ponto de
+   criação do orçamento, calculando e salvando como cálculo + item de uma vez.
+   O wizard `/novo` já existe; falta integrar ao ponto de criação. Fica para
+   depois do item 1.
+
+4. **[ROADMAP] Camada 2 — Conferência foto × recálculo (anti-vergonha)**: ao
+   reaproveitar um cálculo migrado num orçamento, exibir colunas Calcgraf (foto)
+   × Vizor (recalc) + desvio por componente; ≤0,5% verde, senão alerta. Tasks 7
+   da spec `calculo-grafico-foto-rica`.
+
+5. **[ROADMAP] Botão Imprimir/PDF da foto rica** (Task 4.2 de `calculo-grafico-foto-rica`).
+
+## 🟢 FOTO RICA — CEV/margens/C.PROD DECIFRADOS (21/10/2026) — 11121 bate 100%
+
+Spec `.kiro/specs/calculo-grafico-foto-rica/`. A foto rica (`versaoFoto:2`,
+gravada em `calculo_grafico.resultado_calculo`) agora reproduz o pré-cálculo
+INTEIRO do Calcgraf. **As 3 fórmulas que faltavam foram decifradas e validadas
+contra o cálculo 11121 (ESAB), batendo 100%** (exportador
+`scripts/exportar-calculos-acervo-rico.mjs`):
+
+1. **C.PROD exibido = CT + MD + SE + Crédito IPM** onde crédito IPI = agrupamento
+   **−5** de `CalculoResAgrupamento` (`Σ CustoFixo + CustoUnitario×tiragem`).
+   No 11121: CT 11.278,55 + MD 51.825,38 + SE 0 + IPI 1.387,79 = **64.491,72** (= PDF).
+   (CT=agr 1, MD=agr 2, SE=agr 3, mesma fórmula.)
+
+2. **CEV total = 21,25%** — composição DETERMINÍSTICA do banco (sem hardcode):
+   - **ICMS** = `TributacaoVenda.AliquotaImposto` via `CalculoHeader.CodTributacao`
+     (11121: CodTributacao=2 "ICMS + IPI" → 3%).
+   - **PIS/Cofins** = `CalculoTaxas` CodTaxa=**2** (9,25%).
+   - **Comissões** = `CalculoTaxas` CodTaxa=**−7** (3%).
+   - **Juros** = `CalculoHeader.TaxaJurosAplicacao`(%/mês) × (`CpPrazoPrimeiraParcela`/30).
+     11121: 2%/mês × (90/30) = **6%**.
+   - Soma = 3 + 9,25 + 3 + 6 = **21,25%**.
+
+3. **3 faixas de margem via gross-up** (o Calcgraf só grava o valorTotal da
+   SELECIONADA em `CalculoTiragens`; as outras são recalculadas na tela):
+   - Faixas (ItemMargem 0/1/2) = `CalculoMargens` com **ItemTiragem=0 e
+     ItemAgrupamento=0** → aliq 10 / 15,9283909276128 / 30 no 11121.
+   - A selecionada = `CalculoTiragens.ItemMargem` (+ `ValorTotalVenda` +
+     `AliqMargem` + `ValorContMarginal`=CM).
+   - `base = valorSel × (1 − margemSel%/100 − 21,25%/100)` = 63.185,97.
+   - cada faixa: `valorTotal = base / (1 − margem%/100 − 21,25%/100)`.
+   - Resultado 11121: 10%→**91.906,87** · 15,93%→**100.580,00** (sel, CM 27,14%)
+     · 30%→**129.612,26** (≈ nota validada 91.906,90 / 100.580 / 129.612,20;
+     diferença de centavos = arredondamento interno do Delphi, irrelevante).
+
+Mapeamento de-para completo da foto rica no `design.md` da spec. O importador é
+`scripts/importar-foto-rica-calcgraf.ts` (npx tsx trava → gravar via `pg` direto
+num `.mjs` quando precisar). Frontend renderiza tudo em `biblioteca-calculos/
+page.tsx` (FotoRicaView): planos/suportes/tintas/mat.acab/impressão/acabamentos
++ C.PROD(com IPI) + CEV decomposto + 3 margens (selecionada destacada).
+**Nomes de suporte vêm do cadastro com espaço/sem gramatura (ex.: "Stora Enzo
+Bobina ") — é o dado REAL, não truncamento; a gramatura (181) vem do plano.**
+
 ## 🟢 7343 (5346) — HISTÓRICO GRAVADO / item completo (20/10/2026)
 
 A pendência do 5346 (item vazio) foi RESOLVIDA. O item seq 1

@@ -50,10 +50,16 @@ const cabecalhos = queryJson(`
   SELECT h.Codigo AS codigo, h.NumCalculo AS numeroCalcgraf, h.TiragemBase AS tiragem,
          n.RazaoSocial AS cliente, lp.Nome AS linhaProduto,
          h.CodNome AS codNome,
-         CONVERT(varchar(19), h.DataHoraGravacao, 126) AS dataCalculo
+         CONVERT(varchar(19), h.DataHoraGravacao, 126) AS dataCalculo,
+         h.CodTributacao AS codTributacao,
+         tv.Nome AS tributacao,
+         ISNULL(tv.AliquotaImposto, 0) AS aliqIcms,
+         ISNULL(h.TaxaJurosAplicacao, 0) AS taxaJurosMes,
+         ISNULL(h.CpPrazoPrimeiraParcela, 0) AS prazoPrimeiraParcela
   FROM CalculoHeader h
   LEFT JOIN Nomes n ON n.Codigo = h.CodNome
   LEFT JOIN _LinhasProduto lp ON lp.Codigo = h.CodLinhaProduto
+  LEFT JOIN TributacaoVenda tv ON tv.Codigo = h.CodTributacao
   WHERE h.FlagCancelado = 0 ${filtroNum}
     AND h.Codigo = (SELECT MAX(h2.Codigo) FROM CalculoHeader h2 WHERE h2.NumCalculo = h.NumCalculo AND h2.FlagCancelado = 0)
 `)
@@ -81,6 +87,8 @@ const resagrPorCod = new Map()
 const tiragensPorCod = new Map()
 const taxasPorCod = new Map()
 const diversosPorCod = new Map()
+const margensPorCod = new Map()   // CalculoMargens (faixas de margem por ItemMargem)
+const creditoIpiPorCod = new Map() // agr -5 (crédito IPI reintegrado no C.PROD do PDF)
 
 function push(map, cod, item) {
   if (!map.has(cod)) map.set(cod, [])
@@ -124,6 +132,14 @@ for (const bloco of emBlocos(codigos, soNumero ? 1 : 300)) {
   for (const r of queryJson(`SELECT Codigo codigo, CodAgrupamento agr, CustoFixo fixo, CustoUnitario unit FROM CalculoResAgrupamento WHERE Codigo IN (${inList}) AND CodAgrupamento IN (1,2,3)`))
     push(resagrPorCod, r.codigo, r)
 
+  // Crédito IPI reintegrado (agrupamento -5) — compõe o C.PROD exibido no PDF.
+  for (const r of queryJson(`SELECT Codigo codigo, CustoFixo fixo, CustoUnitario unit FROM CalculoResAgrupamento WHERE Codigo IN (${inList}) AND CodAgrupamento = -5`))
+    push(creditoIpiPorCod, r.codigo, r)
+
+  // Faixas de margem: ItemTiragem=0 (tiragem base), ItemAgrupamento=0 (a aliquota "cheia" da faixa).
+  for (const r of queryJson(`SELECT Codigo codigo, ItemMargem itemMargem, AliqMargem aliq FROM CalculoMargens WHERE Codigo IN (${inList}) AND ItemTiragem = 0 AND ItemAgrupamento = 0`))
+    push(margensPorCod, r.codigo, r)
+
   for (const r of queryJson(`SELECT Codigo codigo, Tiragem tiragem, ItemMargem itemMargem, ValorTotalVenda valorTotal, AliqMargem aliqMargem, ValorContMarginal cm FROM CalculoTiragens WHERE Codigo IN (${inList})`))
     push(tiragensPorCod, r.codigo, r)
 
@@ -147,6 +163,8 @@ for (const h of cabecalhos) {
   const tiragens = tiragensPorCod.get(cod) || []
   const taxas = taxasPorCod.get(cod) || []
   const diversos = diversosPorCod.get(cod) || []
+  const faixasMargem = margensPorCod.get(cod) || []
+  const creditoIpiRows = creditoIpiPorCod.get(cod) || []
 
   const tiragemBase = num(h.tiragem) ?? 0
 
@@ -154,10 +172,13 @@ for (const h of cabecalhos) {
   //   agrup 1 = Custo de Transformação (máquinas/acabamentos)
   //   agrup 2 = Material Direto (papel + tinta + mat.acabamento)
   //   agrup 3 = Serviço Externo
+  //   agrup -5 = Crédito IPI reintegrado (compõe o C.PROD exibido no PDF)
   // custo por agrupamento = Σ (CustoFixo + CustoUnitario × tiragem).
   const porAgr = (a) => resagr.filter((r) => Number(r.agr) === a).reduce((s, r) => s + (num(r.fixo) ?? 0) + (num(r.unit) ?? 0) * tiragemBase, 0)
   const ct = porAgr(1), md = porAgr(2), se = porAgr(3)
-  const custoProducao = md + ct + se
+  const creditoIpi = creditoIpiRows.reduce((s, r) => s + (num(r.fixo) ?? 0) + (num(r.unit) ?? 0) * tiragemBase, 0)
+  const custoProducaoAgrupamentos = md + ct + se           // soma dos agrupamentos 1/2/3
+  const custoProducao = custoProducaoAgrupamentos + creditoIpi // C.PROD exibido no pré-cálculo (com IPI)
 
   // Planos.
   const planos = planosRaw.map((p) => ({
@@ -198,22 +219,69 @@ for (const h of cabecalhos) {
     producaoHora: num(a.producaoHora),
   }))
 
-  // Margens (faixas de CalculoTiragens).
-  const margens = tiragens.map((t) => {
-    const vt = num(t.valorTotal) ?? 0
+  // ── CEV (Custos Específicos de Venda) — composição determinística do banco ──
+  //   ICMS      = TributacaoVenda.AliquotaImposto (via CalculoHeader.CodTributacao)
+  //   PIS/Cofins= CalculoTaxas CodTaxa=2
+  //   Comissões = CalculoTaxas CodTaxa=-7
+  //   Juros     = TaxaJurosAplicacao(%/mês) × (CpPrazoPrimeiraParcela / 30)
+  // Validado no 11121: 3 + 9,25 + 3 + 6 = 21,25% (reproduz as 3 margens EXATAS).
+  const taxa = (c) => { const t = taxas.find((x) => Number(x.codTaxa) === c); return t ? (num(t.aliquota) ?? 0) : 0 }
+  const icmsPerc = num(h.aliqIcms) ?? 0
+  const pisCofinsPerc = taxa(2)
+  const comissoesPerc = taxa(-7)
+  const taxaJurosMes = num(h.taxaJurosMes) ?? 0
+  const prazoDias = num(h.prazoPrimeiraParcela) ?? 0
+  const jurosPerc = taxaJurosMes * (prazoDias / 30)
+  const cevTotalPerc = icmsPerc + pisCofinsPerc + comissoesPerc + jurosPerc
+  const cev = {
+    icms: icmsPerc, juros: round2(jurosPerc), pisCofins: pisCofinsPerc,
+    comissoes: comissoesPerc, totalPercent: round2(cevTotalPerc),
+  }
+
+  // ── Margens (3 faixas) via gross-up ──
+  // A margem SELECIONADA e seu ValorTotalVenda estão em CalculoTiragens.
+  //   base = valorSel × (1 − margemSel% − cevTotal%)
+  //   cada faixa: valorTotal = base / (1 − margem% − cevTotal%)
+  // As faixas (ItemMargem 0/1/2) vêm de CalculoMargens (ItemTiragem=0, Agr=0).
+  const tirSel = tiragens[0] || {}
+  const valorSel = num(tirSel.valorTotal) ?? 0
+  const margemSelPerc = num(tirSel.aliqMargem) ?? 0
+  const itemMargemSel = num(tirSel.itemMargem)
+  const cmSel = num(tirSel.cm)
+  const grossup = (m) => (1 - m / 100 - cevTotalPerc / 100)
+  const baseGrossup = valorSel * grossup(margemSelPerc)
+
+  // Ordena as faixas por ItemMargem e gera cada valorTotal.
+  const faixasOrd = faixasMargem
+    .map((f) => ({ itemMargem: num(f.itemMargem), aliq: num(f.aliq) ?? 0 }))
+    .filter((f) => f.itemMargem != null)
+    .sort((a, b) => a.itemMargem - b.itemMargem)
+
+  let margens = faixasOrd.map((f) => {
+    const g = grossup(f.aliq)
+    const vt = g > 0 ? baseGrossup / g : 0
+    const selecionada = itemMargemSel != null && f.itemMargem === itemMargemSel
     return {
-      margemPercent: num(t.aliqMargem) ?? 0,
-      cmPercent: null,
+      margemPercent: round2(f.aliq),
+      cmPercent: selecionada && cmSel != null && valorSel > 0 ? round2((cmSel / valorSel) * 100) : null,
       valorUnitario: tiragemBase > 0 ? Math.round((vt / tiragemBase) * 100) / 100 : 0,
-      valorTotal: vt,
-      selecionada: true,
+      valorTotal: round2(vt),
+      selecionada,
     }
   })
-  const valorTotal = margens.length ? margens[0].valorTotal : null
-
-  // CEV (taxas por código — simplificado).
-  const taxa = (c) => { const t = taxas.find((x) => Number(x.codTaxa) === c); return t ? num(t.aliquota) : null }
-  const cev = { pisCofins: taxa(2), comissoes: taxa(-7), icms: null, juros: null, totalPercent: null }
+  // Fallback: sem CalculoMargens, usa só a faixa selecionada de CalculoTiragens.
+  if (margens.length === 0 && valorSel > 0) {
+    margens = [{
+      margemPercent: round2(margemSelPerc),
+      cmPercent: cmSel != null && valorSel > 0 ? round2((cmSel / valorSel) * 100) : null,
+      valorUnitario: tiragemBase > 0 ? Math.round((valorSel / tiragemBase) * 100) / 100 : 0,
+      valorTotal: round2(valorSel),
+      selecionada: true,
+    }]
+  }
+  // Valor total exibido = o da faixa selecionada (ou a 1ª).
+  const selObj = margens.find((m) => m.selecionada) || margens[0]
+  const valorTotal = selObj ? selObj.valorTotal : null
 
   fotos.push({
     numeroCalcgraf: num(h.numeroCalcgraf),
@@ -233,7 +301,13 @@ for (const h of cabecalhos) {
       },
       planos, suportes, matriz: null, tintas, matAcabamento, impressao, acabamentos,
       itensDiversos: diversos.filter((d) => str(d.descricao)).map((d) => ({ descricao: str(d.descricao), valor: num(d.valor) ?? 0 })),
-      custos: { materialDireto: round2(md), custoTransformacao: round2(ct), servicoExterno: round2(se), custoProducao: round2(custoProducao) },
+      custos: {
+        materialDireto: round2(md),
+        custoTransformacao: round2(ct),
+        servicoExterno: round2(se),
+        creditoIpi: round2(creditoIpi),
+        custoProducao: round2(custoProducao),            // C.PROD exibido (CT+MD+SE + crédito IPI)
+      },
       cev, margens,
     },
   })
