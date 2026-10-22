@@ -2606,9 +2606,23 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       },
     })
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
-    const resultado = orcamento.resultadoCalculo as any
+    // Orçamentos MULTI-ITEM (ex.: puxar cálculo/repetição) não guardam o
+    // `resultadoCalculo` no cabeçalho — ele fica no ITEM. Fallback: usa o
+    // resultado do 1º item que tenha cálculo, para o relatório do cabeçalho
+    // não falhar com 400 nesses orçamentos.
+    let resultado = orcamento.resultadoCalculo as any
     if (!resultado || typeof resultado !== 'object') {
-      return reply.status(400).send({ message: 'Orçamento sem resultado de cálculo. Recalcule antes de gerar o relatório.' })
+      const item = await prisma.itemOrcamentoGrafico.findFirst({
+        where: { orcamentoId: id, empresaId: user.empresaId, resultadoCalculo: { not: null } },
+        orderBy: { criadoEm: 'asc' },
+        select: { resultadoCalculo: true, quantidade: true },
+      })
+      if (item?.resultadoCalculo && typeof item.resultadoCalculo === 'object') {
+        resultado = item.resultadoCalculo
+      }
+    }
+    if (!resultado || typeof resultado !== 'object') {
+      return reply.status(400).send({ message: 'Orçamento sem resultado de cálculo. Abra o item, recalcule e salve antes de gerar o relatório.' })
     }
 
     const empresa = await prisma.empresa.findUnique({
