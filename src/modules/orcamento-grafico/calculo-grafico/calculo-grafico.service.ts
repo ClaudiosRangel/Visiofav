@@ -638,8 +638,11 @@ export async function recalcularCalculoGrafico(
 // completo). Retorna o cálculo atualizado + o clienteId resolvido (para a rota
 // de puxar gravar no orçamento) + as pendências.
 
-/** Pendências que BLOQUEIAM o recálculo (essenciais ao motor). */
-const PENDENCIAS_ESSENCIAIS: CampoEngenharia[] = ['papel', 'gramatura', 'cores']
+// Pendências ESSENCIAIS = as que realmente travam a montagem do item/orçamento.
+// Cores NÃO entra: no Calcgraf a cor é entrada manual (vocabulário de tinta
+// incompatível com o cadastro do Vizor) — fica como pendência informativa, não
+// bloqueia marcar a engenharia como completa.
+const PENDENCIAS_ESSENCIAIS: CampoEngenharia[] = ['papel', 'gramatura']
 
 export interface GarantirEngenhariaResultado {
   calculo: CalculoGraficoRegistro
