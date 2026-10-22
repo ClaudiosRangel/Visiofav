@@ -66,6 +66,21 @@ um com `gramatura=null` e outro com `415`). O match exato por nome vira AMBÍGUO
 duplicatas (manter a com gramatura preenchida) subiria o papel bem acima de 66%.
 PENDENTE — tratar com cuidado (é cadastro de produção usado pelo motor de preço).
 
+### ⚠️ BUG CRÍTICO ENCONTRADO E CORRIGIDO (23/10) — medidas L/A
+Ao validar o 12992 na tela, o recálculo deu custo R$937 (vs R$5.104 do Calcgraf)
+— divergência brutal. CAUSA (investigada): as fórmulas dos `TipoEmbalagem` 2D do
+Vizor usam as variáveis **`L` (largura) e `A` (altura)**, mas o gravador estava
+gravando `medidas` só como `{largura, altura}`. Como `L`/`A` existem com
+`default 0`, `avaliarFormula` NÃO erra — usa 0 → planificação ≈ 0 → `calcularEncaixe`
+"cabe" 7665 peças/folha (73×105, 97%) → consumo de papel ZERA (R$114 vs R$4026).
+CORREÇÃO (`gravar-engenharia-real.mjs`): gravar `medidas` com AMBAS as convenções
+`{L, A, largura, altura}`. O motor PRESERVA o `aproveitamentoManual>0` (sobrepõe o
+encaixe), mas só ~54% dos migrados têm aproveitamento — por isso a medida correta
+é essencial para os 46% sem aproveitamento. REPROCESSADO os 7.951 em produção.
+LIÇÃO: ao gravar `medidas` de qualquer cálculo, usar as MESMAS variáveis que a
+fórmula do TipoEmbalagem referencia (L/A para 2D; L/A/P para 3D), senão o encaixe
+explode silenciosamente.
+
 ### Regra de ouro deste mecanismo
 - A **FOTO** (`resultado_calculo`) continua IMUTÁVEL e é a referência de
   conferência (C.PROD/valores batem 100%). A **engenharia** (colunas) é o que o
