@@ -774,6 +774,23 @@ function copiarCalculoParaItem(
   const itemBody = calculoParaItemBody(engenharia) as unknown as ItemOrcamentoBody
   if (novaQuantidade != null && novaQuantidade > 0) itemBody.quantidade = novaQuantidade
 
+  // Saneamento das CORES vindas de cálculos migrados: a foto do Calcgraf traz
+  // só nome + cobertura das cores (sem preço/rendimento de tinta). A coluna
+  // `cores` desses migrados ficou com `rendimentoM2Kg: 0`, o que reprova a
+  // validação do item (`rendimentoM2Kg` deve ser > 0) e trava a Revisão/salvar.
+  // Aqui garantimos um rendimento padrão (> 0) e preço 0 (operador ajusta), sem
+  // alterar nome/cobertura — cor permanece entrada manual/revisável.
+  if (Array.isArray(itemBody.cores)) {
+    itemBody.cores = itemBody.cores.map((cor) => {
+      const c = cor as { precoKg?: number | null; rendimentoM2Kg?: number | null }
+      return {
+        ...cor,
+        precoKg: c.precoKg != null && c.precoKg > 0 ? c.precoKg : 0,
+        rendimentoM2Kg: c.rendimentoM2Kg != null && c.rendimentoM2Kg > 0 ? c.rendimentoM2Kg : 25,
+      }
+    }) as ItemOrcamentoBody['cores']
+  }
+
   // Foto congelada do cálculo como resultado do item (sem recalcular). Quando a
   // foto não carrega os totais, caímos nos totais persistidos no cálculo.
   const fotoResultado = (calc.resultadoCalculo ?? {

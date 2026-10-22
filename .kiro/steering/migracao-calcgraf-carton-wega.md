@@ -11,6 +11,77 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🟢 ENGENHARIA REAL DO "PUXAR CÁLCULO" — RESOLVIDO (23/10/2026) — LER ANTES DE MEXER
+
+**Contexto do problema (que se arrastou por sessões):** ao "Puxar Cálculo" na
+Biblioteca, o item nascia com campos VAZIOS (medidas, papel, cores sem preço),
+porque a migração em lote gravou só a **FOTO** (`resultado_calculo` — valores
+finais que batem 100%), e NÃO a engenharia estruturada (colunas do
+`calculo_grafico`: medidas/aproveitamento/papel/cores). O usuário cobrou, com
+razão, DADOS REAIS, não foto. **Resolvido: os dados concretos do Calcgraf foram
+EXTRAÍDOS do banco restaurado e GRAVADOS nas colunas do Vizor.**
+
+### O Calcgraf TEM tudo (confirmado no banco restaurado `CalcgrafCartonWega`)
+Validado no cálculo 12992 (Gerdau, "Rótulo p/ farpado GIR 500M"):
+- `CalculoPlanos`: `dimensao1/dimensao2` (medida do produto, ex. 190×1200 mm),
+  `aproveitamento` (peças/folha, ex. 3), `ocorrencias`, `formSuporte` (formato da
+  folha "650 x 1225"), `gramatura` (415), `codSuporte`, `CodFaca`.
+  → nome/preço do suporte: `Itc` (Origem='SUPORTE', `CodOrigem`=codSuporte,
+  casar por `Gramatura`) + `TabelasCustoDetalhe` (Coluna=1 → preço R$/kg).
+  Ex.: "Stora Enzo Bobina 415" = R$ 7,45/kg.
+- `CalculoTintas`: `codTinta`, `areaTinta` (cobertura %), `ComplementoNome` (nome
+  real da cor). → preço R$/kg: `Itc` (Origem='TINTA', `CodOrigem`=codTinta) +
+  `TabelasCustoDetalhe` (Coluna=1). Ex. 12992: Pantone 01 R$71,50 / Pantone 02
+  R$99,00 / Pantone 03 R$170,50.
+- **Acesso ao SQL Server local:** `sqlcmd -S localhost -E -C -d CalcgrafCartonWega`
+  (`-C` OBRIGATÓRIO p/ trust do cert; `-u` p/ acentos UTF-16→UTF-8 em exports).
+
+### Scripts criados (versionados, reexecutáveis, idempotentes)
+1. **`scripts/exportar-engenharia-calcgraf.mjs`** (SOMENTE LEITURA do SQL Server
+   local) → `cartoon/export/EngenhariaCalcgraf.json`. Extrai por cálculo (maior
+   `Codigo` por `NumCalculo` não cancelado): planos (medidas/aproveitamento/
+   formato/gramatura/suporteNome/suportePrecoKg/codFaca) + tintas (nome/cobertura/
+   precoKg). `--numero N` para um só. Usa `FOR JSON PATH` + UTF-16→UTF-8.
+2. **`scripts/gravar-engenharia-real.mjs`** (grava no Neon de produção via `pg`)
+   → lê o JSON acima e grava nas COLUNAS do `calculo_grafico`: `medidas`
+   (`{largura,altura}` do produto), `aproveitamento_manual`, `gramatura`,
+   `papel_id`/`suporte_id`/`papel_descricao` (de-para papel por suporte+gramatura,
+   match único), `cores` (nome+cobertura+**precoKg REAL**+rendimentoM2Kg=25 padrão
+   editável+tipo CMYK/PANTONE), `num_cores`. Idempotente, transações em lote (200),
+   retry ECONNRESET. `--dry-run` / `--numero N`. **NÃO** toca a foto.
+
+### ESTADO EM PRODUÇÃO (Wega `75848e24-...`) — 7.951 cálculos
+Executado 23/10/2026. Dados REAIS gravados nas colunas (não foto):
+- **Medidas (largura×altura do produto): 100%** (7.951)
+- **Cores com preço R$/kg real: 100%** (7.951)
+- **Papel + gramatura: 66%** (5.279) — os 34% restantes são papéis cuja gramatura
+  específica NÃO existe no cadastro `preco_materia_prima` do Vizor (não inventar).
+- **Aproveitamento (peças/folha): 54%** (4.262).
+- Máquina 12% (934); Cliente por CNPJ 32 (código do Calcgraf cobre o resto no puxar).
+
+### ⚠️ DUPLICATAS no cadastro de PAPEL (derruba parte dos 34%)
+Há papéis duplicados no `preco_materia_prima` (ex.: DOIS "Stora Enzo Bobina 415",
+um com `gramatura=null` e outro com `415`). O match exato por nome vira AMBÍGUO
+(2 candidatos → não casa) e cai na 2ª estratégia (nome+gramatura). Limpar as
+duplicatas (manter a com gramatura preenchida) subiria o papel bem acima de 66%.
+PENDENTE — tratar com cuidado (é cadastro de produção usado pelo motor de preço).
+
+### Regra de ouro deste mecanismo
+- A **FOTO** (`resultado_calculo`) continua IMUTÁVEL e é a referência de
+  conferência (C.PROD/valores batem 100%). A **engenharia** (colunas) é o que o
+  operador edita/recalcula. NUNCA inventar: de-para 0/2+ → campo fica vazio.
+- Para RE-RODAR: export local (`exportar-engenharia-calcgraf.mjs`) → `DATABASE_URL`
+  do Neon no env → `gravar-engenharia-real.mjs`. NÃO toca PCP.
+- **Cor = entrada manual/editável** no orçamento; agora vem com PREÇO real do
+  Calcgraf (antes vinha 0, o que travava a Revisão com "rendimentoM2Kg > 0").
+  `copiarCalculoParaItem` (orcamento-grafico.routes.ts) saneia rendimento 0→25.
+
+### Para VALIDAR na tela (após deploy)
+Puxar o cálculo DE NOVO (orçamentos criados ANTES desta gravação não pegam os
+dados novos — o item é cópia do momento). Ex.: nº Calcgraf 12992 (Gerdau) →
+nasce com medida 190×1200, aproveitamento 3, papel Stora Enzo Bobina 415, 3 cores
+com preço. Bons para teste: 12992, 13296 (Vapza), 12834, 12540, 11122 (ESAB).
+
 ## 🗺️ ROADMAP — próximos passos do orçamento gráfico (priorizado 21/10/2026)
 
 Decisão do usuário: fazer AGORA só o item 1; os demais ficam para depois.
