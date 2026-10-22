@@ -120,6 +120,12 @@ export interface FotoMargem {
 export interface FotoCabecalho {
   numeroCalcgraf: number
   cliente: string | null
+  /** Documento (CNPJ/CPF) do cliente no Calcgraf — chave do de-para por CNPJ
+   *  normalizado (spec orcamento-repeticao-engenharia-completa). */
+  clienteDoc?: string | null
+  /** Código do cliente no Calcgraf (Nomes.Codigo) — informativo; o Vizor NÃO
+   *  guarda esse código, o vínculo é por CNPJ. */
+  clienteCodigo?: number | null
   contato?: string | null
   linhaProduto: string | null
   produto: string | null

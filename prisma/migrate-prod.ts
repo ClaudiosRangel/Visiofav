@@ -5020,6 +5020,15 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "calculo_grafico_origem_id" TEXT`)
   console.log('✅ Biblioteca de Cálculos Gráficos: tabela calculo_grafico + coluna de origem no item')
 
+  // ── Orçamento de Repetição + enriquecimento da engenharia ──
+  // spec orcamento-repeticao-engenharia-completa (aditivo, idempotente).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "cliente_doc" VARCHAR(20)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "cliente_codigo" INTEGER`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "engenharia_completa" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "engenharia_pendentes" JSONB`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "tipo" VARCHAR(12) NOT NULL DEFAULT 'NOVO'`)
+  console.log('✅ Orçamento Repetição: cliente_doc/cliente_codigo/engenharia_completa/engenharia_pendentes em calculo_grafico + tipo em orcamento_grafico')
+
   // ── Fase 4: extensão aditiva da OP (frente D) ────────────────────────────────
   for (const [col, tipo] of [
     ['orcamento_item_id','TEXT'],['via','VARCHAR(20)'],

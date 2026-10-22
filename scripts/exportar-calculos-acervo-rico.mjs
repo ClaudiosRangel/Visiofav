@@ -48,7 +48,7 @@ const str = (v) => { if (v == null) return null; const s = String(v).trim(); ret
 const filtroNum = soNumero ? `AND h.NumCalculo = ${Number(soNumero)}` : ''
 const cabecalhos = queryJson(`
   SELECT h.Codigo AS codigo, h.NumCalculo AS numeroCalcgraf, h.TiragemBase AS tiragem,
-         n.RazaoSocial AS cliente, lp.Nome AS linhaProduto,
+         n.RazaoSocial AS cliente, n.CNPJCPF AS clienteDoc, lp.Nome AS linhaProduto,
          h.CodNome AS codNome,
          CONVERT(varchar(19), h.DataHoraGravacao, 126) AS dataCalculo,
          h.CodTributacao AS codTributacao,
@@ -286,12 +286,18 @@ for (const h of cabecalhos) {
   fotos.push({
     numeroCalcgraf: num(h.numeroCalcgraf),
     valorTotal,
+    // Nível raiz: documento/código do cliente p/ o importador gravar nas colunas
+    // cliente_doc/cliente_codigo (de-para de cliente por CNPJ normalizado).
+    clienteDoc: str(h.clienteDoc),
+    clienteCodigo: num(h.codNome),
     foto: {
       versaoFoto: 2,
       origem: 'MIGRADO_CALCGRAF',
       cabecalho: {
         numeroCalcgraf: num(h.numeroCalcgraf),
         cliente: str(h.cliente),
+        clienteDoc: str(h.clienteDoc),
+        clienteCodigo: num(h.codNome),
         linhaProduto: str(h.linhaProduto),
         produto: str(acab.tipoProduto),
         descricao: str(acab.descricao),

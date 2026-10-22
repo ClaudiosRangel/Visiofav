@@ -29,6 +29,10 @@ import {
   type ItemOrcamentoInput,
 } from '../orcamento-grafico-item.service'
 import type { ResultadoOrcamento } from '../orcamento-grafico-calculo.service'
+import {
+  enriquecerEngenharia,
+  type CampoEngenharia,
+} from './enriquecimento-engenharia.service'
 
 /**
  * Parâmetros de criação de um `CalculoGrafico` na biblioteca.
@@ -616,4 +620,85 @@ export async function recalcularCalculoGrafico(
     throw new CalculoGraficoError('Cálculo não encontrado após recálculo', 404)
   }
   return atualizado
+}
+
+// ============================================================================
+// ENRIQUECIMENTO DA ENGENHARIA (spec orcamento-repeticao-engenharia-completa)
+// ============================================================================
+//
+// `garantirEngenhariaCompleta` roda o de-para (enriquecerEngenharia) quando o
+// cálculo ainda não foi enriquecido (`engenhariaCompleta=false`), grava os campos
+// resolvidos DE VOLTA no próprio CalculoGrafico (melhora progressiva — Req 2),
+// persiste a lista de pendências (`engenhariaPendentes`) e marca
+// `engenhariaCompleta=true` quando NÃO restam pendências ESSENCIAIS (papel,
+// gramatura, cores) — campos secundários pendentes (ex.: máquina) não bloqueiam.
+//
+// A FOTO (`resultadoCalculo`) e os totais (`custoProducao`/`valorTotal`) NUNCA
+// são alterados. `empresaId` EXPLÍCITO. Idempotente (não reexecuta se já
+// completo). Retorna o cálculo atualizado + o clienteId resolvido (para a rota
+// de puxar gravar no orçamento) + as pendências.
+
+/** Pendências que BLOQUEIAM o recálculo (essenciais ao motor). */
+const PENDENCIAS_ESSENCIAIS: CampoEngenharia[] = ['papel', 'gramatura', 'cores']
+
+export interface GarantirEngenhariaResultado {
+  calculo: CalculoGraficoRegistro
+  /** Cliente resolvido por CNPJ (para a rota gravar no orçamento). */
+  clienteId: string | null
+  /** Campos A_COMPLETAR após o enriquecimento. */
+  pendentes: CampoEngenharia[]
+}
+
+/**
+ * Garante que a engenharia estruturada do CalculoGrafico está preenchida.
+ * Idempotente: se `engenhariaCompleta=true`, apenas relê e devolve (resolvendo o
+ * clienteId pela foto/clienteDoc para a rota). `empresaId` EXPLÍCITO.
+ */
+export async function garantirEngenhariaCompleta(
+  empresaId: string,
+  id: string,
+): Promise<GarantirEngenhariaResultado> {
+  const calc = await prisma.calculoGrafico.findFirst({ where: { id, empresaId } })
+  if (!calc) throw new CalculoGraficoError('Cálculo não encontrado', 404)
+
+  // Roda o de-para a partir da foto (não altera a foto).
+  const { campos, pendentes } = await enriquecerEngenharia(empresaId, {
+    resultadoCalculo: calc.resultadoCalculo,
+    clienteDoc: (calc as { clienteDoc?: string | null }).clienteDoc ?? null,
+    cores: calc.cores,
+  })
+
+  // Se já estava completo, não regrava a engenharia (idempotência — Req 2.3);
+  // apenas devolve o clienteId resolvido (útil para a rota de puxar).
+  const jaCompleto = (calc as { engenhariaCompleta?: boolean }).engenhariaCompleta === true
+  if (jaCompleto) {
+    return { calculo: calc, clienteId: campos.clienteId ?? calc.clienteId ?? null, pendentes }
+  }
+
+  // Monta o `data` apenas com os campos RESOLVIDOS (nunca sobrescreve com vazio).
+  const data: Record<string, unknown> = {}
+  if (campos.papelId) data.papelId = campos.papelId
+  if (campos.suporteId) data.suporteId = campos.suporteId
+  if (campos.gramatura != null) data.gramatura = campos.gramatura
+  if (campos.cores) data.cores = campos.cores as never
+  if (campos.acabamentosRicos) data.acabamentosRicos = campos.acabamentosRicos as never
+  if (campos.maquinaId) data.maquinaId = campos.maquinaId
+  if (campos.clienteId) data.clienteId = campos.clienteId
+
+  const essenciaisPendentes = pendentes.filter((p) => PENDENCIAS_ESSENCIAIS.includes(p))
+  data.engenhariaPendentes = (pendentes.length ? pendentes : null) as never
+  data.engenhariaCompleta = essenciaisPendentes.length === 0
+
+  await prisma.calculoGrafico.updateMany({
+    where: { id, empresaId },
+    data: data as never,
+  })
+
+  const atualizado = await prisma.calculoGrafico.findFirst({ where: { id, empresaId } })
+  if (!atualizado) throw new CalculoGraficoError('Cálculo não encontrado após enriquecimento', 404)
+  return {
+    calculo: atualizado,
+    clienteId: campos.clienteId ?? atualizado.clienteId ?? null,
+    pendentes,
+  }
 }

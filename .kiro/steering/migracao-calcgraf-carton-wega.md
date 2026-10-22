@@ -15,10 +15,15 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 
 Decisão do usuário: fazer AGORA só o item 1; os demais ficam para depois.
 
-1. **[✅ ENTREGUE 21/10/2026 — NÃO commitado] "Puxar cálculo" no Novo Orçamento**
+1. **[✅ ENTREGUE + COMMITADO/no ar 22/10/2026] "Puxar cálculo" no Novo Orçamento**
    (igual "Localiza o Cálculo Padrão" do Calcgraf). Spec
    `orcamento-puxar-calculo-biblioteca` (requirements+design+tasks). Núcleo
    funcional completo; property tests opcionais (3.1–3.9) ficaram pendentes.
+   Commits: back `35b908071`, front `df3da5b`. **Correção aplicada 22/10**: erro
+   de validação ao recalcular/salvar item agora SINALIZA o campo faltante/errado
+   (handler Zod global compõe "Dados inválidos — campo: motivo", `StepRevisao`
+   lista os issues) em vez do genérico "Dados inválidos" — back `0f4d47116`,
+   front `973fa25`.
    - **Backend** (`orcamento-grafico.routes.ts`): helper ÚNICO
      `copiarCalculoParaItem(calc, novaQuantidade?)` (reúsa `registroParaEngenharia`
      →`calculoParaItemBody`→`dadosPersistenciaItem`, cópia da foto SEM recálculo) —
@@ -63,6 +68,51 @@ Decisão do usuário: fazer AGORA só o item 1; os demais ficam para depois.
    da spec `calculo-grafico-foto-rica`.
 
 5. **[ROADMAP] Botão Imprimir/PDF da foto rica** (Task 4.2 de `calculo-grafico-foto-rica`).
+
+## 🟡 ORÇAMENTO DE REPETIÇÃO + ENGENHARIA COMPLETA (22/10/2026 — EM ANDAMENTO, NÃO commitado)
+
+Spec `.kiro/specs/orcamento-repeticao-engenharia-completa/` (requirements+design+
+tasks). Estudo de mercado em `docs/estudo-reaproveitamento-calculo-repeticao.md`
+(Sage/Certinia/Printavo/CERM + Calcgraf: puxar cálculo = cópia COMPLETA editável;
+repetição é tipo de 1ª classe). Caminho escolhido: **(b) enriquecimento sob
+demanda no puxar + (c) lote prioritário** dos 366 produtos que mais repetem em
+2026 (56 com 5+, 310 com 2–4; 1.022 só 1x). Cliente no cálculo quase sempre
+ausente (só 32/7951 têm doc; agrupa por PRODUTO, não cliente).
+
+**DE-PARA DO CLIENTE (confirmado): por CNPJ normalizado, NÃO por código.** O Vizor
+NÃO guarda o código do Calcgraf; o vínculo é `clienteDoc` (só dígitos) ×
+`cliente.cpf_cnpj` (só dígitos). Testado 8/8 e 5/5 em produção → 100%.
+
+**FEITO (backend + produção, NÃO commitado):**
+- Schema (`schema.prisma`+`migrate-prod.ts`, aditivo idempotente): `OrcamentoGrafico.tipo`
+  (NOVO|REPETICAO, default NOVO); `CalculoGrafico.engenhariaCompleta`/`engenhariaPendentes`/
+  `clienteDoc`/`clienteCodigo`. As 5 colunas JÁ aplicadas em produção (via `pg`).
+- `foto-rica.types.ts`: `cabecalho.clienteDoc`/`clienteCodigo`.
+- Exportador `exportar-calculos-acervo-rico.mjs`: inclui `n.CNPJCPF`→clienteDoc e
+  `h.CodNome`→clienteCodigo (nível raiz + cabeçalho). RE-EXPORTADO + RE-GRAVADO os
+  **7.951 em produção** via `scripts/gravar-foto-rica.mjs` (idempotente, com retry
+  p/ ECONNRESET do pooler; foto imutável, só acrescenta doc/código). 32 com doc,
+  todos casam com cliente do Vizor por CNPJ.
+- `enriquecimento-engenharia.service.ts` (novo): de-para por nome normalizado
+  (papel/suporte/gramatura/cores/acabamentos/máquina) + cliente por CNPJ; 0 ou 2+
+  candidatos → PENDENTE (nunca inventa); NÃO toca a foto; empresaId explícito.
+- `calculo-grafico.service.ts`: `garantirEngenhariaCompleta` (roda de-para, grava
+  engenharia DE VOLTA no cálculo — melhora progressiva, marca
+  engenhariaCompleta quando sem pendência essencial papel/gramatura/cores;
+  idempotente).
+- Rota `POST /orcamento-grafico/de-calculo`: antes de copiar, chama
+  `garantirEngenhariaCompleta`; grava `tipo='REPETICAO'` + `clienteId` resolvido.
+  `orcamentoGraficoSelect` passou a incluir `tipo`.
+- Endpoint admin `POST /api/calculo-grafico/enriquecer-lote` (lote prioritário —
+  Task 7): roda o de-para nos migrados incompletos, relatório resolvidos×pendentes.
+- Conferência `GET /orcamento-grafico/:id/itens/:itemId/conferencia` (Task 6):
+  foto (origem) × recálculo (Vizor) + desvio %; ≤0,5% = confere. Não grava.
+- Frontend: badge "Repetição" na lista e no detalhe (Task 8.1).
+- get_diagnostics limpo em todos os arquivos tocados.
+
+**FALTA:** Task 8.2 (chips A_COMPLETAR no wizard) + 8.3 (painel de conferência no
+StepRevisao) + Task 9 (property tests) + Task 10 (checkpoint na tela). Depois:
+rodar o `enriquecer-lote` em produção (precisa da API no ar) e commitar.
 
 ## 🟢 FOTO RICA — CEV/margens/C.PROD DECIFRADOS (21/10/2026) — 11121 bate 100%
 

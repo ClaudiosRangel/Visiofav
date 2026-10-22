@@ -4175,6 +4175,10 @@ model OrcamentoGrafico {
   // Modo Repetição/Reimpressão: produto cadastrado (com BOM/roteiro) que este
   // orçamento reproduz. Null = orçamento por especificação (produto novo).
   produtoId        String?       @map("produto_id")
+  // Tipo do orçamento (spec orcamento-repeticao-engenharia-completa):
+  // NOVO (em branco) | REPETICAO (criado puxando um CalculoGrafico da biblioteca).
+  // Distinto de `produtoId` (repetição por produto cadastrado) — coexistem.
+  tipo             String        @default("NOVO") @map("tipo") @db.VarChar(12)
   // Variações de tiragem (simulações)
   variacoes        Json? // [{quantidade, precoUnitario, precoTotal}]
   observacoes      String?       @db.Text
@@ -4319,10 +4323,22 @@ model CalculoGrafico {
   // ── Cliente / classificação de busca (Req 2.2) ──
   clienteId    String? @map("cliente_id")
   clienteNome  String? @map("cliente_nome") @db.VarChar(200)
+  // Documento/código do cliente vindos do Calcgraf (spec
+  // orcamento-repeticao-engenharia-completa). `clienteDoc` (CNPJ/CPF) é a chave
+  // do de-para por CNPJ normalizado (o Vizor NÃO guarda o código do Calcgraf).
+  clienteDoc    String? @map("cliente_doc") @db.VarChar(20)
+  clienteCodigo Int?    @map("cliente_codigo")
   linhaProduto String? @map("linha_produto") @db.VarChar(120)
   produto      String? @db.VarChar(200)
   descricao    String? @db.VarChar(200)
   siglaAcabado String? @map("sigla_acabado") @db.VarChar(60)
+
+  // ── Enriquecimento da engenharia (spec orcamento-repeticao-engenharia-completa) ──
+  // `engenhariaCompleta` = o de-para da engenharia estruturada já rodou e não
+  // restam pendências essenciais (evita reexecutar). `engenhariaPendentes` =
+  // lista de campos A_COMPLETAR que o de-para não resolveu (ex.: ["papel"]).
+  engenhariaCompleta  Boolean @default(false) @map("engenharia_completa")
+  engenhariaPendentes Json?   @map("engenharia_pendentes")
 
   // ── Geometria / produto (espelha item) ──
   tipoEmbalagemId String @map("tipo_embalagem_id")

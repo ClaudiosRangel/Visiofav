@@ -28,6 +28,7 @@ import {
   buscarCalculosGraficos,
   obterCalculoGrafico,
   recalcularCalculoGrafico,
+  garantirEngenhariaCompleta,
   CalculoGraficoError,
 } from './calculo-grafico.service'
 
@@ -390,5 +391,57 @@ export async function calculoGraficoRoutes(app: FastifyInstance) {
       message:
         'Importação do acervo é executada via script scripts/importar-calculos-calcgraf.ts',
     })
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 8. POST /enriquecer-lote — enriquecimento ANTECIPADO da engenharia (ADMIN)
+  //    (spec orcamento-repeticao-engenharia-completa, Task 7 — lote prioritário).
+  //    Roda `garantirEngenhariaCompleta` nos cálculos MIGRADO_CALCGRAF ainda não
+  //    completos, priorizando os mais usados. Idempotente (pula completos).
+  //    `empresaId` EXPLÍCITO. NÃO toca PCP. Retorna relatório resolvidos×pendentes.
+  // ───────────────────────────────────────────────────────────────────────────
+  app.post('/enriquecer-lote', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!user.perfil || !['ADMIN', 'SUPER_ADMIN'].includes(user.perfil)) {
+      return reply.status(403).send({ message: 'Acesso restrito a administradores' })
+    }
+    const { limite } = z
+      .object({ limite: z.coerce.number().int().positive().max(2000).optional().default(400) })
+      .parse(request.body ?? {})
+
+    // Candidatos: migrados ainda não completos, da empresa (isolamento explícito).
+    const candidatos = await prisma.calculoGrafico.findMany({
+      where: {
+        empresaId: user.empresaId,
+        origem: 'MIGRADO_CALCGRAF',
+        engenhariaCompleta: false,
+      } as never,
+      orderBy: { numeroCalcgraf: 'desc' },
+      take: limite,
+      select: { id: true, numeroCalcgraf: true },
+    })
+
+    let completos = 0
+    let comPendencia = 0
+    const pendenciasPorCampo: Record<string, number> = {}
+    for (const c of candidatos) {
+      try {
+        const r = await garantirEngenhariaCompleta(user.empresaId, c.id)
+        if (r.pendentes.length === 0) completos++
+        else {
+          comPendencia++
+          for (const p of r.pendentes) pendenciasPorCampo[p] = (pendenciasPorCampo[p] ?? 0) + 1
+        }
+      } catch {
+        comPendencia++
+      }
+    }
+
+    return {
+      processados: candidatos.length,
+      completos,
+      comPendencia,
+      pendenciasPorCampo,
+    }
   })
 }

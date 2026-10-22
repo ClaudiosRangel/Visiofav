@@ -33,6 +33,7 @@ import type { ResultadoOrcamento } from './orcamento-grafico-calculo.service'
 import {
   obterCalculoGrafico,
   registroParaEngenharia,
+  garantirEngenhariaCompleta,
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 
@@ -2016,6 +2017,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     aprovadoEm: true,
     pedidoVendaId: true,
     produtoId: true,
+    tipo: true,
     variacoes: true,
     observacoes: true,
     criadoPorId: true,
@@ -2421,6 +2423,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             formatoCorteAlturaMm: true,
             ajusteCorteMicroMm: true,
             suporteProducaoId: true,
+            // Origem do item (repetição): cálculo da biblioteca de onde foi
+            // copiado — habilita a Conferência foto×recálculo (spec repetição).
+            calculoGraficoOrigemId: true,
             // ── Fase 2 (Task 9/11) — planos do cálculo para hidratar a tela ──
             planos: {
               orderBy: { sequencia: 'asc' },
@@ -3967,9 +3972,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Acesso negado: cálculo de outra empresa' })
     }
 
-    // 2) Carrega o cálculo COMPLETO (foto + engenharia), isolado por empresaId.
-    const calc = await obterCalculoGrafico(user.empresaId, body.calculoId)
-    if (!calc) return reply.status(404).send({ message: 'Cálculo não encontrado' })
+    // 2) ENRIQUECIMENTO (spec orcamento-repeticao-engenharia-completa): completa
+    //    a engenharia estruturada do cálculo a partir da foto (de-para) e grava
+    //    de volta no próprio cálculo (melhora progressiva). Resolve o cliente por
+    //    CNPJ. A FOTO permanece imutável. Idempotente (não roda se já completo).
+    const enriquecido = await garantirEngenhariaCompleta(user.empresaId, body.calculoId)
+    const calc = enriquecido.calculo // já com a engenharia completada
+    const clienteIdResolvido = enriquecido.clienteId
 
     // 3) Reconstrói/copia a FOTO do cálculo para o item (fonte ÚNICA da regra).
     //    `novaQuantidade > 0` sobrepõe a tiragem do cálculo (Req 5.2/5.3).
@@ -4009,12 +4018,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             empresaId: user.empresaId,
             numero,
             versao: 1,
-            clienteId: calc.clienteId ?? null,
+            // Cliente resolvido por CNPJ (de-para); senão o do cálculo; senão null.
+            clienteId: clienteIdResolvido ?? calc.clienteId ?? null,
             clienteNome: calc.clienteNome ?? null,
             tipoEmbalagemId: calc.tipoEmbalagemId,
             medidas: (calc.medidas ?? {}) as any,
             quantidade,
             status: 'RASCUNHO',
+            // Orçamento de REPETIÇÃO (puxado de um cálculo da biblioteca).
+            tipo: 'REPETICAO',
             custoProducaoConsolidado: consolidado.custoProducaoConsolidado,
             valorTotalConsolidado: consolidado.valorTotalConsolidado,
             criadoPorId: user.id,
@@ -4146,6 +4158,74 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     await reconsolidarOrcamento(id, user.empresaId)
 
     return { resultado, fechamento: { custoProducao: fech.custoProducao, valorTotal: fech.valorTotal } }
+  })
+
+  /**
+   * GET /api/orcamento-grafico/:id/itens/:itemId/conferencia
+   *
+   * Conferência FOTO × RECÁLCULO (spec orcamento-repeticao-engenharia-completa,
+   * Req 6). Compara a FOTO original do cálculo de origem (Calcgraf, IMUTÁVEL) com
+   * o resultado recalculado pelo motor (Vizor), por componente e total, com o
+   * desvio %. ≤ 0,5% = "confere". NÃO grava nada (foto preservada). `empresaId`
+   * EXPLÍCITO. Só se aplica a item vinculado a um CalculoGrafico (origem).
+   */
+  app.get('/:id/itens/:itemId/conferencia', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id, itemId } = z
+      .object({ id: z.string().uuid(), itemId: z.string().uuid() })
+      .parse(request.params)
+
+    const item = await prisma.itemOrcamentoGrafico.findFirst({
+      where: { id: itemId, orcamentoId: id, empresaId: user.empresaId },
+    })
+    if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const origemId = (item as { calculoGraficoOrigemId?: string | null }).calculoGraficoOrigemId
+    if (!origemId) {
+      return reply.status(400).send({ message: 'Item não vinculado a um cálculo da biblioteca (sem foto de origem).' })
+    }
+
+    // FOTO original (imutável) do cálculo de origem — isolada por empresa.
+    const calc = await obterCalculoGrafico(user.empresaId, origemId)
+    if (!calc) return reply.status(404).send({ message: 'Cálculo de origem não encontrado' })
+    const foto = calc.resultadoCalculo as { custos?: { custoProducao?: number }; margens?: Array<{ valorTotal?: number; selecionada?: boolean }> } | null
+    const custoFoto = Number(foto?.custos?.custoProducao ?? calc.custoProducao ?? 0)
+    const valorFoto = Number(
+      foto?.margens?.find((m) => m.selecionada)?.valorTotal ?? calc.valorTotal ?? 0,
+    )
+
+    // RECÁLCULO (Vizor) com a engenharia atual do item — NÃO persiste.
+    let recalc: ResultadoOrcamento | null = null
+    let erroRecalc: string | null = null
+    try {
+      const engenharia = registroParaEngenharia(calc)
+      const bodyItem = calculoParaItemBody(engenharia)
+      recalc = await calcularItem(user.empresaId, bodyItem as never)
+    } catch (err) {
+      erroRecalc = err instanceof ItemOrcamentoError ? err.message : 'Recálculo indisponível'
+    }
+
+    const custoVizor = recalc ? Number(recalc.custoProducao ?? recalc.custoTotal ?? 0) : null
+    const valorVizor = recalc ? Number(recalc.precoVenda ?? 0) : null
+
+    const desvio = (foto: number, vizor: number | null): number | null => {
+      if (vizor == null || foto === 0) return null
+      return Math.round((Math.abs(vizor - foto) / foto) * 10000) / 100 // % com 2 casas
+    }
+    const desvioCusto = desvio(custoFoto, custoVizor)
+    const desvioValor = desvio(valorFoto, valorVizor)
+    const desvioTotal = desvioValor ?? desvioCusto
+    const confere = erroRecalc == null && desvioTotal != null && desvioTotal <= 0.5
+
+    return {
+      origemCalculoId: origemId,
+      numeroCalcgraf: calc.numeroCalcgraf,
+      foto: { custoProducao: custoFoto, valorTotal: valorFoto },
+      vizor: recalc ? { custoProducao: custoVizor, valorTotal: valorVizor } : null,
+      desvio: { custoPercent: desvioCusto, valorPercent: desvioValor, totalPercent: desvioTotal },
+      confere,
+      alerta: confere ? null : (erroRecalc ?? 'Desvio acima de 0,5% entre a foto (Calcgraf) e o recálculo (Vizor).'),
+    }
   })
 
   /**
