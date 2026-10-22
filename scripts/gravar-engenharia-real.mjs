@@ -87,9 +87,14 @@ for (const l of linhas) {
   if (plano.gramatura > 0) campos.gramatura = plano.gramatura
   // aproveitamento real (peças/folha) — imposição concreta
   if (plano.aproveitamento > 0) { campos.aproveitamento_manual = plano.aproveitamento; aprovOk++ }
-  // medidas do produto (largura/altura reais em mm)
+  // medidas do produto (largura/altura reais em mm). As fórmulas dos TipoEmbalagem
+  // 2D usam as variáveis L (largura) e A (altura); gravamos AMBAS as convenções
+  // (L/A + largura/altura) para o motor resolver a planificação corretamente —
+  // sem isso, L/A caem no default 0 e o encaixe explode (bug do 7665 peças/folha).
   if (plano.produtoLarguraMm > 0 || plano.produtoAlturaMm > 0) {
-    campos.medidas = JSON.stringify({ largura: plano.produtoLarguraMm || 0, altura: plano.produtoAlturaMm || 0 })
+    const L = plano.produtoLarguraMm || 0
+    const A = plano.produtoAlturaMm || 0
+    campos.medidas = JSON.stringify({ L, A, largura: L, altura: A })
     medidasOk++
   }
   // cores reais com preço/kg + cobertura (rendimento padrão 25 — editável)
