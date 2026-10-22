@@ -412,6 +412,11 @@ model Cliente {
 
   vendedorId String? @map("vendedor_id")
 
+  // Código do cliente no sistema legado Calcgraf/GPrint (de-para por CNPJ).
+  // Usado na busca de cliente e como fallback no "puxar cálculo" (repetição).
+  // Opcional — só os clientes migrados do Calcgraf têm valor.
+  codigoCalcgraf Int? @map("codigo_calcgraf")
+
   // Shelf life mínimo de expedição exigido por este cliente (dias de validade a
   // vencer). Aplicado no picking/FEFO. Opcional (spec atributos-logisticos-shelf-life).
   shelfLifeMinimoExpedicaoDias Int? @map("shelf_life_minimo_expedicao_dias")

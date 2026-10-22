@@ -665,6 +665,7 @@ export async function garantirEngenhariaCompleta(
   const { campos, pendentes } = await enriquecerEngenharia(empresaId, {
     resultadoCalculo: calc.resultadoCalculo,
     clienteDoc: (calc as { clienteDoc?: string | null }).clienteDoc ?? null,
+    clienteCodigo: (calc as { clienteCodigo?: number | null }).clienteCodigo ?? null,
     cores: calc.cores,
   })
 

@@ -5027,7 +5027,9 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "engenharia_completa" BOOLEAN NOT NULL DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "engenharia_pendentes" JSONB`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "tipo" VARCHAR(12) NOT NULL DEFAULT 'NOVO'`)
-  console.log('✅ Orçamento Repetição: cliente_doc/cliente_codigo/engenharia_completa/engenharia_pendentes em calculo_grafico + tipo em orcamento_grafico')
+  // Código do cliente no Calcgraf (de-para por CNPJ) — busca + fallback no puxar cálculo.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "codigo_calcgraf" INTEGER`)
+  console.log('✅ Orçamento Repetição: cliente_doc/cliente_codigo/engenharia_completa/engenharia_pendentes em calculo_grafico + tipo em orcamento_grafico + codigo_calcgraf em cliente')
 
   // ── Fase 4: extensão aditiva da OP (frente D) ────────────────────────────────
   for (const [col, tipo] of [

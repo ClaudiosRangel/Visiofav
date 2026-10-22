@@ -131,6 +131,62 @@ async function resolverMateriaPrima(
   }
 }
 
+type PapelResolvido = { id: string; suporteId: string | null; precoUnitario: number; gramatura: number | null }
+
+/**
+ * Resolve o PAPEL (PrecoMateriaPrima tipo PAPEL) a partir do nome do SUPORTE da
+ * foto + gramatura do plano. O de-para por nome exato NÃO funciona para papel,
+ * porque a foto traz o suporte SEM gramatura ("Stora Enzo Bobina") e o cadastro
+ * do Vizor embute a gramatura no nome ("Stora Enzo Bobina 222"). Estratégias
+ * (nesta ordem), sempre exigindo match ÚNICO (0 ou 2+ → undefined, nunca chuta):
+ *   1) nome do suporte EXATO = descrição do papel;
+ *   2) "<suporte> <gramatura>" = descrição do papel (ex.: "Stora Enzo Bobina 222");
+ *   3) descrição-base (descrição do papel sem o número final de gramatura) = suporte
+ *      E a gramatura do cadastro == gramatura da foto.
+ * `empresaId` explícito.
+ */
+async function resolverPapel(
+  empresaId: string,
+  nomeSuporte: string,
+  gramaturaFoto: number | null,
+): Promise<PapelResolvido | undefined> {
+  const alvo = normalizarNome(nomeSuporte)
+  if (!alvo) return undefined
+  const candidatos = await prisma.precoMateriaPrima.findMany({
+    where: { empresaId, tipo: 'PAPEL', status: true },
+    select: { id: true, descricao: true, suporteId: true, precoUnitario: true, gramatura: true },
+  })
+  const mapear = (c: (typeof candidatos)[number]): PapelResolvido => ({
+    id: c.id,
+    suporteId: c.suporteId ?? null,
+    precoUnitario: Number(c.precoUnitario),
+    gramatura: c.gramatura != null ? Number(c.gramatura) : null,
+  })
+  const unico = (lista: typeof candidatos) => (lista.length === 1 ? mapear(lista[0]) : undefined)
+
+  // 1) nome exato
+  const porExato = unico(candidatos.filter((c) => normalizarNome(c.descricao) === alvo))
+  if (porExato) return porExato
+
+  const g = gramaturaFoto != null && gramaturaFoto > 0 ? Math.round(gramaturaFoto) : null
+  if (g == null) return undefined
+
+  // 2) "<suporte> <gramatura>" == descrição
+  const alvoComG = normalizarNome(`${nomeSuporte} ${g}`)
+  const porNomeGram = unico(candidatos.filter((c) => normalizarNome(c.descricao) === alvoComG))
+  if (porNomeGram) return porNomeGram
+
+  // 3) descrição-base (sem número final) == suporte E gramatura do cadastro == g
+  const porBaseGram = unico(
+    candidatos.filter((c) => {
+      const base = normalizarNome(c.descricao).replace(/\s+\d+$/, '')
+      const gc = c.gramatura != null ? Math.round(Number(c.gramatura)) : null
+      return base === alvo && gc === g
+    }),
+  )
+  return porBaseGram
+}
+
 /**
  * ENRIQUECE a engenharia de um CalculoGrafico a partir da sua foto rica.
  * Resolve: papel/suporte/gramatura, cores (preço/rendimento), acabamentos,
@@ -146,6 +202,7 @@ export async function enriquecerEngenharia(
   calc: {
     resultadoCalculo: unknown
     clienteDoc?: string | null
+    clienteCodigo?: number | null
     cores?: unknown
   },
 ): Promise<ResultadoEnriquecimento> {
@@ -164,7 +221,7 @@ export async function enriquecerEngenharia(
   const nomeSuporte = planoComSuporte?.suporte ?? (foto.suportes ?? [])[0]?.nome ?? null
   const gramaturaFoto = planoComSuporte?.gramatura ?? null
   if (nomeSuporte) {
-    const papel = await resolverMateriaPrima(empresaId, 'PAPEL', nomeSuporte)
+    const papel = await resolverPapel(empresaId, nomeSuporte, gramaturaFoto)
     if (papel) {
       campos.papelId = papel.id
       if (papel.suporteId) campos.suporteId = papel.suporteId
@@ -247,14 +304,21 @@ export async function enriquecerEngenharia(
     pendentes.push('maquina')
   }
 
-  // ── Cliente (CNPJ normalizado → cliente.cpf_cnpj normalizado) ──
+  // ── Cliente ──
+  // 1º) por CNPJ normalizado (de-para mais confiável).
+  // 2º) fallback pelo CÓDIGO do Calcgraf (coluna codigoCalcgraf, de-para já
+  //     importado por CNPJ) quando não houver documento ou o CNPJ não casar.
   const doc = normalizarDoc(calc.clienteDoc)
-  if (doc) {
-    const clientes = await prisma.cliente.findMany({
+  const codigo = calc.clienteCodigo ?? null
+  if (doc || codigo != null) {
+    const clientes = (await prisma.cliente.findMany({
       where: { empresaId },
-      select: { id: true, cpfCnpj: true },
-    })
-    const casado = matchClientePorDoc(doc, clientes)
+      select: { id: true, cpfCnpj: true, codigoCalcgraf: true } as never,
+    })) as Array<{ id: string; cpfCnpj: string | null; codigoCalcgraf: number | null }>
+    let casado = doc ? matchClientePorDoc(doc, clientes) : undefined
+    if (!casado && codigo != null) {
+      casado = clientes.find((c) => c.codigoCalcgraf === codigo)
+    }
     if (casado) campos.clienteId = casado.id
     else pendentes.push('cliente')
   } else {

@@ -26,6 +26,12 @@ export async function clienteRoutes(app: FastifyInstance) {
         { nomeFantasia: { contains: search, mode: 'insensitive' } },
         { cpfCnpj: { contains: search } },
       ]
+      // Busca pelo código do Calcgraf (de-para por CNPJ já importado): se o termo
+      // for um número inteiro, casa exatamente pelo codigoCalcgraf também.
+      const termoNumerico = search.trim()
+      if (/^\d+$/.test(termoNumerico)) {
+        where.OR.push({ codigoCalcgraf: Number(termoNumerico) })
+      }
     }
     if (q.status) where.status = q.status === 'true'
 
