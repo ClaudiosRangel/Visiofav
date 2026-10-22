@@ -4922,6 +4922,9 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "fornecido" BOOLEAN NOT NULL DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "fibra" BOOLEAN NOT NULL DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "qtd_modelos" INTEGER NOT NULL DEFAULT 0`)
+  // aproveitamento_manual: existia no schema mas NUNCA foi criado em producao —
+  // o select do GET /:id com esse campo derrubava a rota com 500. (23/10)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "aproveitamento_manual" DECIMAL(12,3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "montagem_linhas" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "montagem_colunas" INTEGER`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "conteudo_volume" INTEGER`)
