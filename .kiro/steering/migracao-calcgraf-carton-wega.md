@@ -81,6 +81,20 @@ LIÇÃO: ao gravar `medidas` de qualquer cálculo, usar as MESMAS variáveis que
 fórmula do TipoEmbalagem referencia (L/A para 2D; L/A/P para 3D), senão o encaixe
 explode silenciosamente.
 
+### ⚠️ BUG 2 — aproveitamentoManual não voltava no GET /:id (corrigido 23/10)
+Validação do 12992 (2ª rodada): com as medidas L/A corretas, o encaixe deixou de
+ser absurdo (4×1=4 peças/folha) mas AINDA usava o encaixe GEOMÉTRICO (4) em vez
+do aproveitamento REAL do Calcgraf (3). Custo caiu de R$5.104 p/ R$3.585 (-30%),
+ainda divergindo. CAUSA: o `select` dos itens em `GET /orcamento-grafico/:id`
+(orcamento-grafico.routes.ts ~linha 2385) NÃO incluía `aproveitamentoManual`.
+O item puxado voltava sem o campo → `itemParaForm` recebia null → o recálculo não
+mandava o aproveitamento → o motor caía no encaixe geométrico. CORRIGIDO: add
+`aproveitamentoManual: true` ao select (back `08bc1ff3d`). O campo já existia em
+`ItemParaEditar`/`itemParaForm` e no motor (`params.aproveitamentoManual>0`
+sobrepõe o encaixe) — só faltava a API devolvê-lo. LIÇÃO: ao adicionar um campo
+de engenharia que o motor usa, conferir TODOS os selects que hidratam a tela
+(GET /:id, GET item, etc.), senão o recálculo ignora silenciosamente.
+
 ### Regra de ouro deste mecanismo
 - A **FOTO** (`resultado_calculo`) continua IMUTÁVEL e é a referência de
   conferência (C.PROD/valores batem 100%). A **engenharia** (colunas) é o que o
