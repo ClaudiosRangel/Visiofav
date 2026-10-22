@@ -241,13 +241,24 @@ app.setErrorHandler((error: any, request, reply) => {
   const issues = error?.issues
   const isZod = error?.name === 'ZodError' || Array.isArray(issues)
   if (isZod) {
+    const detalhes = (issues || []).map((i: any) => ({
+      campo: Array.isArray(i.path) ? i.path.join('.') : String(i.path ?? ''),
+      mensagem: i.message,
+    }))
+    // Compõe uma mensagem LEGÍVEL com os campos que falharam, em vez do genérico
+    // "Dados inválidos" — assim a tela mostra exatamente o que corrigir
+    // (ex.: "Dados inválidos: gramatura (Expected number, received nan); precoKg
+    // (obrigatório)"). O array `issues` continua disponível para consumo
+    // estruturado pelo frontend.
+    const resumo = detalhes
+      .map((d: { campo: string; mensagem: string }) =>
+        d.campo ? `${d.campo}: ${d.mensagem}` : d.mensagem,
+      )
+      .join('; ')
     return reply.status(400).send({
-      message: 'Dados inválidos',
+      message: resumo ? `Dados inválidos — ${resumo}` : 'Dados inválidos',
       code: 'VALIDATION_ERROR',
-      issues: (issues || []).map((i: any) => ({
-        campo: Array.isArray(i.path) ? i.path.join('.') : String(i.path ?? ''),
-        mensagem: i.message,
-      })),
+      issues: detalhes,
     })
   }
   // Erros com statusCode explícito (ex.: throw { statusCode, message }).
