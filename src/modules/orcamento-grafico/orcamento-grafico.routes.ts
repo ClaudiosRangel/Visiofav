@@ -240,7 +240,9 @@ const corItemSchema = z.object({
   tipo: z.enum(['CMYK', 'PANTONE']),
   coberturaPercent: z.number().min(0).max(100),
   precoKg: z.number().min(0),
-  rendimentoM2Kg: z.number().positive().default(25),
+  // Rendimento: aceita 0/ausente e normaliza para o padrão 25 (não bloqueia o
+  // salvar de itens vindos de cálculos migrados, onde o rendimento não vem).
+  rendimentoM2Kg: z.number().min(0).optional().transform((v) => (v && v > 0 ? v : 25)),
 })
 
 /**
@@ -279,9 +281,12 @@ const itemOrcamentoBodySchema = z.object({
     .discriminatedUnion('modo', [
       z.object({ modo: z.literal('COBERTURA') }),
       z.object({
+        // CONSUMO_DIRETO tolerante: aceita 0/ausente (não bloqueia o salvar de
+        // itens migrados). Com consumo/preço 0 o modo não acrescenta custo —
+        // equivale a COBERTURA para efeito de MD.
         modo: z.literal('CONSUMO_DIRETO'),
-        consumoKg: z.number().positive(),
-        precoKg: z.number().positive(),
+        consumoKg: z.number().min(0).optional().default(0),
+        precoKg: z.number().min(0).optional().default(0),
       }),
     ])
     .optional()
@@ -387,7 +392,13 @@ function montarInputDoItem(body: ItemOrcamentoBody): ItemOrcamentoInput {
     // Req 10 (Task 19) — matriz entra no MD como custo fixo (via itensDiversos no service).
     matriz: body.matriz ?? undefined,
     // Req 11 (Task 19) — modo de tinta (COBERTURA = legado; CONSUMO_DIRETO = direto no MD).
-    tinta: body.tinta ?? undefined,
+    // Se CONSUMO_DIRETO vier com consumo/preço 0 (ex.: item migrado sem consumo
+    // direto informado), trata como COBERTURA — senão o motor zeraria a tinta.
+    tinta:
+      body.tinta?.modo === 'CONSUMO_DIRETO' &&
+      (!body.tinta.consumoKg || body.tinta.consumoKg <= 0 || !body.tinta.precoKg || body.tinta.precoKg <= 0)
+        ? { modo: 'COBERTURA' as const }
+        : (body.tinta ?? undefined),
     servicosExternos: body.servicosExternos,
     // Itens Diversos/Fornecidos nesta task entram só como persistência (o motor
     // já aceita o formato {descricao, valor}; aqui mapeamos quantidade×valor dos
