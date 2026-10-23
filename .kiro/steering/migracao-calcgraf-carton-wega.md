@@ -95,6 +95,22 @@ sobrepõe o encaixe) — só faltava a API devolvê-lo. LIÇÃO: ao adicionar um
 de engenharia que o motor usa, conferir TODOS os selects que hidratam a tela
 (GET /:id, GET item, etc.), senão o recálculo ignora silenciosamente.
 
+### ⚠️ BUG 3 — formato de folha da MÁQUINA ≠ do PLANO (corrigido 23/10)
+Conferência do 12992: Material Direto Vizor R$2.644 vs Calcgraf R$4.026 (−34%).
+CAUSA (achada no banco): o motor (`calcularOrcamentoGrafico`) usa
+`maquinaImpressao.formatoLargura/Altura` (formato de folha CADASTRADO NA MÁQUINA,
+ex.: Roland RVU4 = 900×1260) para encaixe/papel/tinta. Mas o Calcgraf usa o
+formato do PLANO (`CalculoPlanos.formSuporte`, ex.: **650×1225** — a bobina
+cortada real). Com a folha MAIOR, o Vizor calcula MENOS folhas → menos peso de
+papel → MD menor. CORREÇÃO: `montarParamsDoItem` (orcamento-grafico-item.service)
+agora prioriza `input.formatoCorteLarguraMm/AlturaMm` (formato do plano) sobre o
+da máquina; o `gravar-engenharia-real.mjs` parseia `plano.formatoFolha`
+("650 x 1225") e grava em `formato_corte_largura_mm/altura_mm`. Reprocessado:
+99,1% dos 7.951 com formato de folha real. Conta manual do 12992: ~1.451 folhas
+× 0,650×1,225×415g = ~480 kg × 7,45 = ~R$3.574 de papel + tinta ≈ R$4.026 (bate).
+Back `8e5e8ed26`. LIÇÃO: no orçamento gráfico o formato de folha que importa é o
+do PLANO/corte (bobina real), NÃO o genérico da máquina.
+
 ### Regra de ouro deste mecanismo
 - A **FOTO** (`resultado_calculo`) continua IMUTÁVEL e é a referência de
   conferência (C.PROD/valores batem 100%). A **engenharia** (colunas) é o que o
