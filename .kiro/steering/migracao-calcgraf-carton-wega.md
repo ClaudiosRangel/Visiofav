@@ -39,6 +39,20 @@ batia; o front divergia):
    Front (`[id]/page.tsx`, commit front `a68233e`) exibe "Cálculo utilizado: nº 12992"
    em Dados Comerciais. Confirmado na tela pelo usuário.
 
+### StepRevisão da prévia divergia do salvo — CORRIGIDO (commit back `8cc1e16cc`, front `c6082de`)
+O StepRevisão (prévia no wizard de item) mostrava um valor MENOR que o cabeçalho
+(ex.: R$ 3.585 vs R$ 4.736) porque a rota `POST /orcamento-grafico/calcular`
+(prévia, SEM itemId) NÃO resolvia o preço do papel pelo cadastro nem recebia o
+formato de corte — ela usava o `precoKg` 4,5 do fallback do front e a folha da
+máquina. **Fix:** (1) `/calcular` agora resolve `precoKg` do cadastro
+(`PrecoMateriaPrima.precoUnitario`) quando há `papelId`; (2) aceita
+`formatoCorteLarguraMm/AlturaMm` (precedência sobre a folha da máquina); (3) o
+StepRevisão envia esses campos do formData. Validado: prévia do 12992 agora dá
+papel R$ 3.579,47, aprov 3/1334 folhas, custoProducao ~R$ 4.597 (antes R$ 3.585).
+A regra do preço do papel pelo cadastro está agora em TRÊS pontos:
+`preservarEngenhariaDoItem` (PUT/calcular do item) + `/calcular` (prévia) +
+nascimento via foto no `de-calculo`.
+
 ### Diferença residual de 8,8% — DECOMPOSTA do banco Calcgraf (12992, tiragem 4.000)
 `CalculoResAgrupamento` (Codigo=12992) — fonte de verdade do Calcgraf:
 - **Agrup 1 (Custo Transformação):** fixo 658,30 + unit 0,10495×4000 = **R$ 1.078,11**.
