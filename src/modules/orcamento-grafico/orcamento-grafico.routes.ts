@@ -1931,6 +1931,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       maquinaId: z.string().uuid().optional(),
       // Override do aproveitamento (peças/folha) — imposição real da faca.
       aproveitamentoManual: z.coerce.number().positive().optional(),
+      // Formato de corte (folha real do plano Calcgraf) — quando ausente, o motor
+      // usa o formato da máquina. O StepRevisão (prévia) os envia em repetição.
+      formatoCorteLarguraMm: z.coerce.number().positive().optional(),
+      formatoCorteAlturaMm: z.coerce.number().positive().optional(),
       cores: z.array(z.object({
         nome: z.string(),
         tipo: z.enum(['CMYK', 'PANTONE']),
@@ -1962,7 +1966,19 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       cev: z.object({ icms: z.number(), juros: z.number(), pisCofins: z.number(), comissoes: z.number() }).optional(),
     }).parse(request.body)
 
-    const precoKgPapel = body.precoKgPapel || body.precoKg
+    // Preço do papel: o CADASTRO (PrecoMateriaPrima) é a FONTE DE VERDADE. O
+    // wizard/StepRevisão não carrega o preço real do papel puxado (cai no fallback
+    // ~4,5/kg), o que barateia o papel e derruba o custo na PRÉVIA. Quando há
+    // papelId, resolvemos o preço do cadastro e o usamos.
+    let precoKgPapel = body.precoKgPapel || body.precoKg
+    if (body.papelId) {
+      const papelCad = await prisma.precoMateriaPrima.findFirst({
+        where: { id: body.papelId, empresaId: user.empresaId },
+        select: { precoUnitario: true },
+      })
+      const precoCad = papelCad?.precoUnitario != null ? Number(papelCad.precoUnitario) : 0
+      if (precoCad > 0) precoKgPapel = precoCad
+    }
     if (!precoKgPapel) return reply.status(400).send({ message: 'Preço do papel (precoKgPapel ou precoKg) é obrigatório' })
 
     // Pré-condições de cálculo (Req 2.4 e 5.4) — defesa em profundidade na borda.
@@ -2025,8 +2041,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       maquinaImpressao: {
         velocidade: Number(maquina.velocidade) || 6000,
         custoHora: Number(maquina.custoHora) || 250,
-        formatoLargura: maquina.formatoFolhaLargura || 660,
-        formatoAltura: maquina.formatoFolhaAltura || 960,
+        // Formato de corte do PLANO (folha real do Calcgraf) tem precedência sobre
+        // o formato genérico da máquina — alinha o peso de papel/encaixe ao Calcgraf.
+        formatoLargura: body.formatoCorteLarguraMm || maquina.formatoFolhaLargura || 660,
+        formatoAltura: body.formatoCorteAlturaMm || maquina.formatoFolhaAltura || 960,
         pinca: Number(maquina.pincaMm) || 10,
         // setup: usa o cadastrado (tempoSetupMin) quando houver; senão 30 (legado)
         setupMinutos: tempoSetupMin ?? 30,
