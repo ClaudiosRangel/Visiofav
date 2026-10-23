@@ -11,6 +11,31 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🟢 PUXAR CÁLCULO — RECÁLCULO AO SALVAR ITEM PRESERVA ENGENHARIA (23/10/2026, VALIDADO NA API)
+
+**VALIDADO em produção (API `api.vizorerp.com.br`, cálculo 12992):** o fluxo
+completo "Puxar Cálculo → abrir item → Salvar/Recalcular" agora PRESERVA formato
+de corte e aproveitamento mesmo quando o wizard NÃO reenvia esses campos no body.
+Último bug da cadeia: o `ItemWizardModal`/`novo` do front não coleta
+`formatoCorteLarguraMm/AlturaMm` nem `aproveitamentoManual`, então ao Salvar Item
+o backend regravava `null` e o motor caía no encaixe geométrico (4 peças/folha).
+**Fix (commit `7ce8e3050`):** `preservarEngenhariaDoItem(body, itemId)` completa o
+body com os valores já persistidos (via SQL raw) ANTES de calcular, nas rotas
+`POST /:id/itens/:itemId/calcular` e `PUT /:id/itens/:itemId`; depois regrava
+formato/aproveitamento no update. Resultado medido ao recalcular 12992 SEM enviar
+esses campos (simulando o wizard):
+- ENCAIXE aproveitamento = **3** (não mais 4 geométrico); folhas = **1.334**.
+- Formato de corte preservado = **650×1225** (plano do Calcgraf, não a máquina).
+- Papel = **R$ 3.579,47** (480,465 kg × 7,45) — **bate 100%** com o Calcgraf.
+- MD = R$ 3.870,22 · CT = R$ 866,58 · **Custo Produção = R$ 4.736,80** vs
+  **R$ 5.192,05** do Calcgraf = **8,8% de desvio** (de −82% → −31% → −8,8%).
+- **Resíduo de 8,8% (calibração fina, só se o usuário pedir):** laminação/BOPP
+  "Supera Bobina 252" (~R$ 156) não entra no MD; tempo de máquina/acerto (~R$ 211)
+  no CT. Não é bug de propagação — é componente de engenharia que o item puxado
+  ainda não traz.
+- Orçamentos de teste da Wega foram LIMPOS após a validação
+  (`scripts/limpar-orcamentos-wega.mjs`).
+
 ## 🟢 ENGENHARIA REAL DO "PUXAR CÁLCULO" — RESOLVIDO (23/10/2026) — LER ANTES DE MEXER
 
 **Contexto do problema (que se arrastou por sessões):** ao "Puxar Cálculo" na

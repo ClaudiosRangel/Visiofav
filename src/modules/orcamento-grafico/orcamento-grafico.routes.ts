@@ -465,6 +465,23 @@ async function preservarEngenhariaDoItem(body: ItemOrcamentoBody, itemId: string
   } catch {
     /* segue com o body como veio */
   }
+
+  // Preço do papel: o cadastro (PrecoMateriaPrima) é a FONTE DE VERDADE. O wizard
+  // do front não carrega o preço real do papel puxado do Calcgraf (cai no
+  // fallback 4,5/kg), o que barateia o papel e derruba o custo. Quando o body tem
+  // papelId, buscamos o preço do cadastro e sobrescrevemos o precoKg do body.
+  try {
+    if (body.papelId) {
+      const papel = await prisma.precoMateriaPrima.findFirst({
+        where: { id: body.papelId },
+        select: { precoUnitario: true },
+      })
+      const precoCad = papel?.precoUnitario != null ? Number(papel.precoUnitario) : 0
+      if (precoCad > 0) body.precoKg = precoCad
+    }
+  } catch {
+    /* mantém o precoKg do body */
+  }
 }
 
 function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrcamento) {
@@ -2541,7 +2558,37 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }
     } catch { /* se falhar, segue sem o campo (não quebra o GET) */ }
 
-    return { ...orcamento, produtoNome }
+    // Resolve o NÚMERO do cálculo da biblioteca que originou cada item (repetição),
+    // para a tela informar "Cálculo utilizado: nº ...". Isolado por empresa.
+    let calculoOrigemInfo: { id: string; numero: number | null; numeroCalcgraf: number | null } | null = null
+    try {
+      const itens = (orcamento as { itens?: Array<{ calculoGraficoOrigemId?: string | null }> }).itens ?? []
+      const origemIds = Array.from(
+        new Set(itens.map((i) => i.calculoGraficoOrigemId).filter((v): v is string => !!v)),
+      )
+      if (origemIds.length > 0) {
+        const calcs = await prisma.calculoGrafico.findMany({
+          where: { id: { in: origemIds }, empresaId: user.empresaId },
+          select: { id: true, numero: true, numeroCalcgraf: true },
+        })
+        const mapaCalc = new Map(calcs.map((c) => [c.id, c]))
+        for (const it of itens as Array<{ calculoGraficoOrigemId?: string | null; calculoOrigemNumero?: number | null }>) {
+          const c = it.calculoGraficoOrigemId ? mapaCalc.get(it.calculoGraficoOrigemId) : null
+          it.calculoOrigemNumero = c ? (c.numeroCalcgraf ?? c.numero ?? null) : null
+        }
+        // Cabeçalho do orçamento: 1º cálculo de origem encontrado.
+        const primeiro = calcs[0]
+        if (primeiro) {
+          calculoOrigemInfo = {
+            id: primeiro.id,
+            numero: primeiro.numero ?? null,
+            numeroCalcgraf: primeiro.numeroCalcgraf ?? null,
+          }
+        }
+      }
+    } catch { /* não quebra o GET se a resolução falhar */ }
+
+    return { ...orcamento, produtoNome, calculoOrigem: calculoOrigemInfo }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
