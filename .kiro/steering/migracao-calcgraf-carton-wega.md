@@ -11,6 +11,52 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🟢 PUXAR CÁLCULO — PREÇO DO PAPEL + VALOR IMEDIATO + CÁLCULO DE ORIGEM (23/10/2026)
+
+Três correções que fecharam as queixas do usuário no fluxo pela TELA (a API já
+batia; o front divergia):
+
+1. **Preço do papel errado pela tela (causa raiz do "pela API bate, pela tela
+   não").** O wizard do front NÃO carrega o preço real do papel puxado (cai no
+   fallback 4,5/kg) → papel saía R$ 2.162 (4,5×480kg) em vez de R$ 3.579 (7,45×480)
+   → Custo Produção despencava p/ R$ 3.319. **Fix (commit `51ca5af0a`):**
+   `preservarEngenhariaDoItem` agora, quando o body tem `papelId`, busca
+   `PrecoMateriaPrima.precoUnitario` do CADASTRO e sobrescreve `body.precoKg`
+   (cadastro = fonte de verdade do preço do papel). Validado e2e (limpar banco →
+   puxar 12992 → PUT como o front com precoKg 4,5): papel voltou R$ 3.579,47,
+   consolidado R$ 4.526,85.
+
+2. **Valor só aparecia ao SALVAR o item** (ao puxar, cabeçalho nascia R$ 0,00).
+   Causa: a foto copiada (`copiarCalculoParaItem`) não tem o resultado estruturado
+   do motor Vizor (só a foto de valores do Calcgraf), então o consolidado nascia 0.
+   **Fix (commit `1478e0367`):** o `POST /de-calculo`, após criar o item, RECALCULA
+   pelo motor (com engenharia preservada) e grava resultado+consolidado, e recarrega
+   o orçamento no 201. Agora o Custo de Produção aparece IMEDIATAMENTE ao puxar.
+
+3. **"Informar o cálculo utilizado no orçamento"** (pedido do usuário). O item já
+   gravava `calculoGraficoOrigemId`; o `GET /:id` agora resolve o número
+   (`numeroCalcgraf ?? numero`) de cada item e devolve `calculoOrigem` no cabeçalho.
+   Front (`[id]/page.tsx`, commit front `a68233e`) exibe "Cálculo utilizado: nº 12992"
+   em Dados Comerciais. Confirmado na tela pelo usuário.
+
+### Diferença residual de 8,8% — DECOMPOSTA do banco Calcgraf (12992, tiragem 4.000)
+`CalculoResAgrupamento` (Codigo=12992) — fonte de verdade do Calcgraf:
+- **Agrup 1 (Custo Transformação):** fixo 658,30 + unit 0,10495×4000 = **R$ 1.078,11**.
+- **Agrup 2 (Material Direto):** fixo 362,00 + unit 0,91606×4000 = **R$ 4.026,25**.
+- **C.PROD = 5.104,36** (o R$ 5.192,05 da tela inclui crédito IPI ~87).
+Vizor hoje: CT **866,58** (−211) + MD **3.870,22** (−156) = **4.736,80**.
+- **MD −R$ 156:** material de acabamento (laminação/BOPP "Supera Bobina 252") que o
+  item puxado ainda NÃO traz como item do MD. O `CalculoMatAcabamento` só guarda
+  parâmetros (CodMaterial/codAtvAcabamento), não o valor — o valor está embutido no
+  agrup 2. Para fechar: mapear o acabamento do cálculo → `acabamentosRicos`/item
+  diverso com o custo real.
+- **CT −R$ 211:** tempo de máquina/acerto (setup por cor) do 12992 não está sendo
+  totalmente reproduzido pelo motor. Precisa conferir acerto-por-cor da máquina do
+  cálculo vs cadastro do Vizor.
+- **Calibração fina dos 8,8% = rodada dedicada** (mapear acabamentos + acerto). NÃO
+  é bug de propagação (papel/aproveitamento/formato batem 100%). Fazer só quando o
+  usuário priorizar.
+
 ## 🟢 PUXAR CÁLCULO — RECÁLCULO AO SALVAR ITEM PRESERVA ENGENHARIA (23/10/2026, VALIDADO NA API)
 
 **VALIDADO em produção (API `api.vizorerp.com.br`, cálculo 12992):** o fluxo
