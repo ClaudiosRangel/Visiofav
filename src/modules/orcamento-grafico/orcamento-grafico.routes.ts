@@ -4217,47 +4217,31 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       throw err
     }
 
-    // 4.1) Recalcula o item recém-criado pelo MOTOR (com a engenharia já
-    //      preservada: formato de corte, aproveitamento, preço do papel do
-    //      cadastro) e grava o resultado + consolidado. Assim o Custo de Produção
-    //      aparece IMEDIATAMENTE ao puxar o cálculo, sem precisar abrir/salvar o
-    //      item. Falha aqui NÃO quebra a criação (o item segue com a foto).
+    // 4.1) Garante que o item e o cabeçalho já NASÇAM com o custo da FOTO do
+    //      cálculo (Calcgraf), para o Custo de Produção aparecer IMEDIATAMENTE ao
+    //      puxar — sem recalcular pelo motor de forma síncrona (o recálculo é
+    //      pesado e estourava o timeout do request → 502). O recálculo real
+    //      acontece quando o usuário abre/salva o item (PUT já reconsolida).
+    //      Usa o custo/valor da foto do cálculo; se ausente, o consolidado já
+    //      gravado na criação (bloco 3) permanece. Falha aqui NÃO quebra a criação.
     try {
       const orcId = (orcamento as { id: string }).id
-      const itemNovo = await prisma.itemOrcamentoGrafico.findFirst({
-        where: { orcamentoId: orcId, empresaId: user.empresaId },
-        orderBy: { sequencia: 'asc' },
-      })
-      if (itemNovo) {
-        const bodyRecalc = itemOrcamentoBodySchema.parse({
-          tipoEmbalagemId: itemNovo.tipoEmbalagemId,
-          medidas: (itemNovo.medidas ?? {}) as Record<string, number>,
-          papelId: itemNovo.papelId ?? undefined,
-          papelDescricao: itemNovo.papelDescricao ?? undefined,
-          suporteId: itemNovo.suporteId ?? undefined,
-          gramatura: itemNovo.gramatura != null ? Number(itemNovo.gramatura) : 0,
-          precoKg: 0, // resolvido do cadastro em preservarEngenhariaDoItem
-          numCores: itemNovo.numCores,
-          cores: (itemNovo.cores ?? undefined) as never,
-          acabamentosRicos: (itemNovo.acabamentosRicos ?? undefined) as never,
-          maquinaId: itemNovo.maquinaId ?? undefined,
-          quantidade: itemNovo.quantidade,
-          margemSelecionada: itemNovo.margemSelecionada != null ? Number(itemNovo.margemSelecionada) : undefined,
-        })
-        await preservarEngenhariaDoItem(bodyRecalc, itemNovo.id)
-        const resultado = await calcularItem(user.empresaId, montarInputDoItem(bodyRecalc))
-        const fech = fechamentoDoResultado(resultado, bodyRecalc.margemSelecionada)
-        await prisma.itemOrcamentoGrafico.update({
-          where: { id: itemNovo.id },
+      // Custo/valor da FOTO do Calcgraf (fonte fiel do orçamento de repetição).
+      // A foto grava o custo em `resultadoCalculo.custos.custoProducao` (aninhado)
+      // e/ou em `calc.custoProducao` (total persistido na migração). Usamos esse
+      // valor, não o `dadosItem` (que lê custoProducao da RAIZ do resultado e fica
+      // 0 para migrados, cujo custo está sob `custos`).
+      const fotoCustos = (calc.resultadoCalculo as { custos?: { custoProducao?: number } } | null)?.custos
+      const custoNum = Number(fotoCustos?.custoProducao ?? calc.custoProducao ?? 0)
+      const valorNum = Number(calc.valorTotal ?? 0)
+      if (custoNum > 0 || valorNum > 0) {
+        await prisma.orcamentoGrafico.update({
+          where: { id: orcId },
           data: {
-            resultadoCalculo: resultado as never,
-            margemSelecionada: fech.margemSelecionada,
-            custoProducao: fech.custoProducao,
-            valorTotal: fech.valorTotal,
+            custoProducaoConsolidado: custoNum,
+            valorTotalConsolidado: valorNum,
           },
         })
-        await reconsolidarOrcamento(orcId, user.empresaId)
-        // Recarrega o orçamento com os consolidados já preenchidos.
         const atualizado = await prisma.orcamentoGrafico.findFirst({
           where: { id: orcId, empresaId: user.empresaId },
           select: orcamentoGraficoSelect,
@@ -4265,7 +4249,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         if (atualizado) orcamento = atualizado
       }
     } catch {
-      /* mantém o orçamento como criado (foto) se o recálculo falhar */
+      /* mantém o orçamento como criado se a atualização do cabeçalho falhar */
     }
 
     // 5) 201 com o orçamento criado (com id e numero) para o front redirecionar.
