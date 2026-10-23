@@ -445,11 +445,6 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     tintaConsumoKg: body.tinta && body.tinta.modo === 'CONSUMO_DIRETO' ? body.tinta.consumoKg : null,
     acabamentosRicos: (body.acabamentosRicos ?? undefined) as any,
     modeloFacaId: body.modeloFacaId ?? null,
-    // Aproveitamento manual (peças/folha) — imposição real do Calcgraf. Precisa
-    // ser PERSISTIDO no item (antes ficava null) para o recálculo usar o valor
-    // real em vez do encaixe geométrico. `as any` porque o campo pode não estar
-    // no client tipado local (existe no schema; o build do Render regenera).
-    aproveitamentoManual: (body.aproveitamentoManual ?? null) as any,
     itensDiversos: (body.itensDiversos ?? undefined) as any,
     itensFornecidos: (body.itensFornecidos ?? undefined) as any,
     camposLivres: (body.camposLivres ?? undefined) as any,
@@ -3976,6 +3971,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       },
     })
 
+    // Grava o aproveitamento_manual real do Calcgraf via SQL raw (campo pode não
+    // estar no client tipado). Sem isto o motor recalcula o encaixe geométrico.
+    const aprovItem = (calc as { aproveitamentoManual?: unknown }).aproveitamentoManual
+    if (aprovItem != null && Number(aprovItem) > 0) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE item_orcamento_grafico SET aproveitamento_manual = $1 WHERE id = $2`,
+        Number(aprovItem), item.id,
+      )
+    }
+
     // 6) Reconsolida os totais do orçamento.
     await reconsolidarOrcamento(orcamentoId, user.empresaId)
 
@@ -4089,7 +4094,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           select: orcamentoGraficoSelect,
         })
 
-        await tx.itemOrcamentoGrafico.create({
+        const itemCriado = await tx.itemOrcamentoGrafico.create({
           data: {
             orcamentoId: criado.id,
             empresaId: user.empresaId,
@@ -4098,7 +4103,20 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             // Rastreabilidade: de qual cálculo da biblioteca este item foi copiado.
             calculoGraficoOrigemId: calc.id,
           },
+          select: { id: true },
         })
+
+        // Grava o aproveitamento_manual (imposição real do Calcgraf) via SQL raw
+        // — o Prisma Client pode não ter o campo tipado (não regenerado); sem
+        // isto o item nasce com aproveitamento null e o motor recalcula o encaixe
+        // geométrico. Fonte: o cálculo-origem.
+        const aprov = (calc as { aproveitamentoManual?: unknown }).aproveitamentoManual
+        if (aprov != null && Number(aprov) > 0) {
+          await tx.$executeRawUnsafe(
+            `UPDATE item_orcamento_grafico SET aproveitamento_manual = $1 WHERE id = $2`,
+            Number(aprov), itemCriado.id,
+          )
+        }
 
         return criado
       })
