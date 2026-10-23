@@ -445,6 +445,11 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     tintaConsumoKg: body.tinta && body.tinta.modo === 'CONSUMO_DIRETO' ? body.tinta.consumoKg : null,
     acabamentosRicos: (body.acabamentosRicos ?? undefined) as any,
     modeloFacaId: body.modeloFacaId ?? null,
+    // Aproveitamento manual (peças/folha) — imposição real do Calcgraf. Precisa
+    // ser PERSISTIDO no item (antes ficava null) para o recálculo usar o valor
+    // real em vez do encaixe geométrico. `as any` porque o campo pode não estar
+    // no client tipado local (existe no schema; o build do Render regenera).
+    aproveitamentoManual: (body.aproveitamentoManual ?? null) as any,
     itensDiversos: (body.itensDiversos ?? undefined) as any,
     itensFornecidos: (body.itensFornecidos ?? undefined) as any,
     camposLivres: (body.camposLivres ?? undefined) as any,
