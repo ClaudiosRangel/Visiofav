@@ -2395,11 +2395,6 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             numCores: true,
             cores: true,
             maquinaId: true,
-            // Aproveitamento manual (peças/folha) — imposição real do Calcgraf.
-            // Sem este campo no select, o item vinha sem aproveitamento e o motor
-            // recalculava o encaixe geométrico (ex.: 4 em vez dos 3 reais),
-            // inflando o rendimento e divergindo do Calcgraf no recálculo.
-            aproveitamentoManual: true,
             matrizQuantidade: true,
             matrizPrecoUnitario: true,
             tintaModo: true,
@@ -2485,6 +2480,25 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
       if (prod) produtoNome = `${prod.codigo} - ${prod.nome}`
     }
+
+    // aproveitamento_manual (peças/folha) via SQL raw — o campo existe no banco
+    // mas o Prisma Client pode não tê-lo (não regenerado); injetamos aqui para o
+    // recálculo usar a imposição real do Calcgraf em vez do encaixe geométrico.
+    try {
+      const itens = (orcamento as { itens?: Array<{ id: string }> }).itens ?? []
+      if (itens.length > 0) {
+        const ids = itens.map((i) => i.id)
+        const rows = await prisma.$queryRawUnsafe<Array<{ id: string; aproveitamento_manual: unknown }>>(
+          `SELECT id, aproveitamento_manual FROM item_orcamento_grafico WHERE id = ANY($1::text[])`,
+          ids,
+        )
+        const mapa = new Map(rows.map((r) => [r.id, r.aproveitamento_manual]))
+        for (const it of itens as Array<{ id: string; aproveitamentoManual?: unknown }>) {
+          const v = mapa.get(it.id)
+          it.aproveitamentoManual = v != null ? Number(v) : null
+        }
+      }
+    } catch { /* se falhar, segue sem o campo (não quebra o GET) */ }
 
     return { ...orcamento, produtoNome }
   })
