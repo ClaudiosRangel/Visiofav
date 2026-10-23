@@ -56,6 +56,7 @@ for (let i = 0; i < codigos.length; i += 300) blocos.push(codigos.slice(i, i + 3
 // Planos com nome e preço do suporte (Itc por CodOrigem=codSuporte + gramatura)
 const planosPorCod = new Map()
 const tintasPorCod = new Map()
+const etapasPorCod = new Map()
 for (const bloco of blocos) {
   const inList = bloco.join(',')
   // PLANO: resolve nome+preço do suporte casando Itc.CodOrigem=codSuporte e Gramatura
@@ -104,6 +105,34 @@ for (const bloco of blocos) {
     if (!tintasPorCod.has(t.codigo)) tintasPorCod.set(t.codigo, [])
     tintasPorCod.get(t.codigo).push(t)
   }
+  // ETAPAS DE PRODUÇÃO (CalculoAtividades): todas as atividades do cálculo —
+  // impressão + acabamentos (cortadeira/guilhotina/plastificadora/etc.). Cada uma
+  // com o centro (nome real do Calcgraf), custo-hora da Tabela de Custos 2
+  // (col 1, ValorDireto), produção/hora e os tempos de acerto REAIS. É isto que
+  // faltava no item puxado — sem as etapas de acabamento o CT do Vizor fica abaixo
+  // do Calcgraf. O de-para centro→Vizor é por NOME (feito no gravador).
+  const etapas = queryJson(`
+    SELECT a.Codigo AS codigo, a.itemSeq1 AS seq1, a.itemSeq2 AS seq2,
+           a.codCentroCusto AS codCentro, a.codAgrupamento AS codAgrupamento,
+           a.producaoHora AS producaoHora, a.quantAcertos AS quantAcertos,
+           a.tempoPorAcerto AS tempoPorAcerto, a.tempoPrimeiroAcerto AS tempoPrimeiroAcerto,
+           a.tiragem AS tiragem, a.entradas AS entradas,
+           cp.Nome AS centroNome,
+           det.ValorDireto AS custoHora
+    FROM CalculoAtividades a
+    LEFT JOIN CentrosProducao cp ON cp.Codigo = a.codCentroCusto
+    OUTER APPLY (
+      SELECT TOP 1 d.ValorDireto FROM Itc i
+      JOIN TabelasCustoDetalhe d ON d.CodItc = i.Codigo AND d.CodTabelaCusto = 2 AND d.Coluna = 1
+      WHERE i.Origem = 'CENTRO DE CUSTO' AND i.CodOrigem = a.codCentroCusto
+      ORDER BY i.Codigo
+    ) det
+    WHERE a.Codigo IN (${inList})
+  `)
+  for (const e of etapas) {
+    if (!etapasPorCod.has(e.codigo)) etapasPorCod.set(e.codigo, [])
+    etapasPorCod.get(e.codigo).push(e)
+  }
 }
 
 const saidaArr = cabs.map((c) => {
@@ -126,7 +155,21 @@ const saidaArr = cabs.map((c) => {
     coberturaPercent: num(t.cobertura),
     precoKg: num(t.precoKg),
   }))
-  return { numeroCalcgraf: c.numeroCalcgraf, tiragem: num(c.tiragem), planos, tintas }
+  const etapas = (etapasPorCod.get(c.codigo) || [])
+    .sort((a, b) => (num(a.seq1) ?? 0) - (num(b.seq1) ?? 0) || (num(a.seq2) ?? 0) - (num(b.seq2) ?? 0))
+    .map((e) => ({
+      centroCodigoCalcgraf: num(e.codCentro),
+      centroNome: str(e.centroNome),
+      codAgrupamento: num(e.codAgrupamento),
+      custoHora: num(e.custoHora),
+      producaoHora: num(e.producaoHora),
+      quantAcertos: num(e.quantAcertos),
+      tempoPorAcerto: num(e.tempoPorAcerto),
+      tempoPrimeiroAcerto: num(e.tempoPrimeiroAcerto),
+      tiragem: num(e.tiragem),
+      entradas: num(e.entradas),
+    }))
+  return { numeroCalcgraf: c.numeroCalcgraf, tiragem: num(c.tiragem), planos, tintas, etapas }
 })
 
 writeFileSync(saida, JSON.stringify(saidaArr, null, soNumero ? 2 : 0), 'utf8')
