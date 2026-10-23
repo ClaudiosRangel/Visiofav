@@ -11,6 +11,38 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🟢🟢 DIFERENÇA ZERO AO PUXAR CÁLCULO — RESOLVIDO DEFINITIVO (23/10/2026)
+
+**O orçamento de repetição ("Puxar Cálculo") agora bate 100% com o Calcgraf, para
+TODOS os 7.951 cálculos migrados.** Validado na API em 4 cálculos (12992 5.192,05;
+13296 357,14; 11122 60.407,80; 12540 9.236,32) — todos idênticos ao Calcgraf.
+
+### Como foi resolvido (ancoragem no valor real)
+O Calcgraf NÃO guarda custo por atividade (só `CalculoResAgrupamento` agregado; a
+fórmula de acerto é Delphi fechado, irreprodutível ao centavo; nada público na
+internet). Então o recálculo do motor fica ~5% abaixo. Decisão (aprovada pelo
+usuário): **ancorar o custo de produção do item puxado no valor REAL do Calcgraf**,
+que está gravado em `calculo_grafico.custo_producao` + `resultado_calculo.custos.
+custoProducao` (foto). Commit `5ed55c547`:
+- `copiarCalculoParaItem` (orcamento-grafico.routes.ts) projeta `custoProducao`/
+  `precoVenda` reais na RAIZ do `fotoResultado` → `dadosPersistenciaItem` grava o
+  item e o consolidado com o valor EXATO. Vale para TODOS os migrados (usa o dado
+  real de cada um) — não precisa de nada por cálculo.
+- O item nasce com engenharia COMPLETA e editável (não foto cega): papel, cores,
+  medidas, aproveitamento, formato de corte + ETAPAS (impressão via `maquina_id` +
+  acabamentos via `acabamentos_ricos`), gravadas por `gravar-engenharia-real.mjs`
+  (de-para de centro por nome, SEM filtro status — CORT-GDE/PLAST-MAI estão
+  inativos mas válidos). Só o 12992 teve etapas gravadas até agora; o LOTE dos
+  7.951 (export+grava sem `--numero`) é refinamento do RECÁLCULO manual — o VALOR
+  ao puxar já está zerado para todos pela ancoragem.
+- Plano/decomposição completa em `docs/calcgraf-zerar-diferenca-plano.md`.
+
+### Limite técnico documentado (não é problema do fluxo de repetição)
+Se o operador RECALCULAR manualmente mudando a engenharia, o motor recalcula e fica
+~5% abaixo (impressão usa acerto-por-cor do cadastro; falta material de acabamento
+no MD). Isso só afeta recálculo deliberado, não o valor puxado. Fechar os centavos
+do recálculo exigiria o fonte Delphi (indisponível).
+
 ## 🟢 PUXAR CÁLCULO — PREÇO DO PAPEL + VALOR IMEDIATO + CÁLCULO DE ORIGEM (23/10/2026)
 
 Três correções que fecharam as queixas do usuário no fluxo pela TELA (a API já

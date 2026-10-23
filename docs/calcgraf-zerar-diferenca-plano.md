@@ -154,6 +154,32 @@ foto `custos.custoProducao`). Implementar no backend: quando o item tem
 etapas gravadas garantem que, se o operador MUDAR a engenharia, o recálculo já
 parte de uma base completa (impressão + acabamentos), com diferença mínima.
 
+### ✅✅ RESOLVIDO (12992) — DIFERENÇA ZERO ao puxar (23/10/2026, validado na API)
+Ancoragem implementada (commit back `5ed55c547`): `copiarCalculoParaItem` projeta
+o `custoProducao`/`precoVenda` REAIS do Calcgraf na RAIZ do fotoResultado →
+`dadosPersistenciaItem` grava o item e o consolidado com o valor EXATO. Validado:
+puxar 12992 → **custoProducaoConsolidado R$ 5.192,05** + item.custoProducao
+5.192,05 + valorTotal R$ 15.084,04 = **bate 100% com o Calcgraf** (5.192,05 de tela
+com IPI; 5.104,36 sem IPI). O item nasce com as etapas (impressão + 3 acabamentos),
+papel, cores, aproveitamento e formato — engenharia completa e editável, NÃO foto
+cega. Se o operador recalcular mudando engenharia, o motor parte da base completa
+(gap técnico ~5% só no recálculo manual, documentado).
+
+### ⏳ FALTA: rodar o LOTE (os 7.951 cálculos)
+O 12992 foi exportado/gravado isolado (`--numero 12992`). Para TODOS baterem ao
+puxar, rodar SEM `--numero`:
+1. `node scripts/exportar-engenharia-calcgraf.mjs` (reexporta os 7.951 COM etapas;
+   ~alguns min, SQL Server local). Gera `cartoon/export/EngenhariaCalcgraf.json`.
+2. `DATABASE_URL=<neon> node scripts/gravar-engenharia-real.mjs` (grava etapas +
+   maquina + papel/cores/medidas nos 7.951; lotes de 200 com retry). Idempotente.
+3. A ancoragem do custo (já no backend) faz cada um bater ao puxar — não precisa
+   de nada por cálculo.
+OBS: a ancoragem já vale para TODOS os migrados agora (usa `calculo_grafico.
+custo_producao`/foto), mesmo sem as etapas gravadas. As etapas importam para o
+RECÁLCULO (quando o operador edita) partir completo. Ou seja: o VALOR ao puxar já
+está zerado para os 7.951 pela ancoragem; o lote de etapas é refinamento do
+recálculo manual.
+
 ### PRÓXIMOS PASSOS (retomar aqui)
 1. Exportar o MATERIAL de acabamento por atividade (laminação/BOPP) → gravar como
    acabamento MATERIAL_KG/UN no MD.

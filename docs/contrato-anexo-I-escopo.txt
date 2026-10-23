@@ -1,0 +1,122 @@
+================================================================================
+            ANEXO I - ESCOPO, PRECO, CRONOGRAMA E CRITERIOS DE ACEITE
+================================================================================
+
+Contrato de Licenciamento e Implantacao - Vizor ERP (VisioFab)
+Cliente : Carton Wega Industria de Embalagens S.A.
+Sistema : Vizor ERP
+
+
+--------------------------------------------------------------------------------
+1. MODULOS CONTRATADOS, PRAZOS, VALORES E CRITERIOS DE ACEITE
+--------------------------------------------------------------------------------
+
+A implantacao e gradativa por modulo. Cada modulo entra em cobranca apos o
+ACEITE FORMAL do cliente, mediante validacao em ambiente de producao dos
+criterios de aceite descritos abaixo.
+
+
+................................................................................
+MODULO BASE - PLANEJAMENTO E CONTROLE DE PRODUCAO (PCP)   [ja em uso]
+................................................................................
+Escopo funcional:
+  Importacao de Ordens de Producao a partir do PDF do Calcgraf/GPrint, painel
+  de programacao de producao por maquina e apontamento de chao de fabrica.
+
+Prazo de entrega .......... Entregue
+Mensalidade apos o aceite . R$ 800,00
+Criterio de aceite ........ Sistema em operacao continua desde 01/08/2026:
+                            importa a OP do PDF, exibe a programacao por maquina
+                            e registra os apontamentos de producao, conforme uso
+                            corrente homologado pela equipe.
+
+
+................................................................................
+MODULO A - COMERCIAL E PRODUCAO   (encerramento da 1a Fase)
+................................................................................
+Escopo funcional:
+  Orcamento Grafico com reaproveitamento de calculos migrados do Calcgraf,
+  Pedido de Venda, geracao de Ordem de Producao, comunicacao com o setor
+  comercial, apontamento de producao, baixa de materias-primas (WMS) e entrada
+  de produto acabado em estoque.
+
+Prazo de entrega .......... 27/10/2026 a 30/12/2026
+Mensalidade apos o aceite . R$ 1.500,00
+Criterio de aceite ........ O Vizor permite:
+                            (a) simular e emitir orcamento reaproveitando os
+                                calculos graficos ja existentes importados do
+                                Calcgraf;
+                            (b) aprovar o orcamento;
+                            (c) gerar o Pedido de Venda a partir do orcamento
+                                aprovado; e
+                            (d) gerar a Ordem de Producao correspondente, com
+                                baixa de materia-prima e registro de entrada do
+                                produto acabado em estoque.
+
+
+................................................................................
+MODULO B - FATURAMENTO E EXPEDICAO   (inicio da 2a Fase)
+................................................................................
+Escopo funcional:
+  Emissao de documentos fiscais eletronicos (NF-e, CT-e e MDF-e) dos pedidos
+  liberados, com roteirizacao/expedicao e baixa de estoque dos depositos de
+  produto acabado.
+
+Prazo de entrega .......... 05/12/2026 a 30/12/2027
+Mensalidade apos o aceite . R$ 1.800,00
+Criterio de aceite ........ O Vizor emite NF-e, CT-e e MDF-e dos pedidos
+                            liberados para expedicao (embalados e roteirizados)
+                            e realiza a baixa automatica dos saldos nos
+                            depositos de estoque de produto acabado
+                            correspondentes a expedicao.
+
+
+................................................................................
+MODULO C - FINANCEIRO E FISCAL   (encerramento da 2a Fase)
+................................................................................
+Escopo funcional:
+  Contas a pagar e a receber, obrigacoes fiscais acessorias (SPED Fiscal) e
+  integracao contabil.
+
+Prazo de entrega .......... 20/12/2026 a 15/01/2027
+Mensalidade apos o aceite . R$ 2.200,00
+Criterio de aceite ........ O Vizor gerencia contas a receber e a pagar e
+                            atende as obrigacoes fiscais acessorias (SPED
+                            Fiscal), com integracao contabil para a
+                            contabilidade.
+
+
+................................................................................
+TETO MENSAL   (clausula 2.1)
+................................................................................
+Prazo de entrega .......... -
+Mensalidade ............... R$ 2.200,00
+Criterio de aceite ........ -
+
+
+--------------------------------------------------------------------------------
+2. OBSERVACOES SOBRE OS CRITERIOS DE ACEITE
+--------------------------------------------------------------------------------
+
+1. ACEITE POR CRITERIO OBJETIVO.
+   Cada modulo e considerado aceito quando os itens listados em "Criterio de
+   aceite" forem demonstrados em ambiente de producao e validados pela equipe
+   da Carton Wega. O aceite e formalizado por termo simples (e-mail ou
+   assinatura no proprio anexo).
+
+2. CONTINUIDADE DO CALCGRAF DURANTE A TRANSICAO.
+   Enquanto os modulos da 1a Fase estiverem sendo validados, o sistema
+   Calcgraf/GPrint permanece disponivel como contingencia, e a importacao de OP
+   por PDF continua ativa.
+
+3. TETO MENSAL (clausula 2.1).
+   A soma das mensalidades dos modulos aceitos fica limitada ao teto de
+   R$ 2.200,00/mes previsto na clausula 2.1, conforme acordado na renegociacao.
+
+4. REAJUSTE.
+   Os valores seguem a politica de reajuste prevista no corpo do contrato.
+
+
+--------------------------------------------------------------------------------
+                                                                     Vizor ERP
+================================================================================
