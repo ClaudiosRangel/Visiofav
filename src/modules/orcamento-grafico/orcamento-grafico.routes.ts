@@ -437,6 +437,36 @@ function fechamentoDoResultado(
 }
 
 /** Campos persistidos de um item (reaproveitado por POST /:id/itens e PUT). */
+/**
+ * Preenche no `body` o formato de corte (folha real) e o aproveitamento manual
+ * PERSISTIDOS no item, quando o frontend não os reenviou. Sem isso o recálculo
+ * cairia no encaixe geométrico e na folha da máquina (divergindo do Calcgraf).
+ * Lê por SQL raw (campos podem não estar no client tipado). Não lança erro.
+ */
+async function preservarEngenhariaDoItem(body: ItemOrcamentoBody, itemId: string): Promise<void> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<
+      Array<{ formato_corte_largura_mm: unknown; formato_corte_altura_mm: unknown; aproveitamento_manual: unknown }>
+    >(
+      `SELECT formato_corte_largura_mm, formato_corte_altura_mm, aproveitamento_manual FROM item_orcamento_grafico WHERE id = $1`,
+      itemId,
+    )
+    const p = rows[0]
+    if (!p) return
+    if (body.formatoCorteLarguraMm == null && p.formato_corte_largura_mm != null) {
+      body.formatoCorteLarguraMm = Number(p.formato_corte_largura_mm)
+    }
+    if (body.formatoCorteAlturaMm == null && p.formato_corte_altura_mm != null) {
+      body.formatoCorteAlturaMm = Number(p.formato_corte_altura_mm)
+    }
+    if (body.aproveitamentoManual == null && p.aproveitamento_manual != null && Number(p.aproveitamento_manual) > 0) {
+      body.aproveitamentoManual = Number(p.aproveitamento_manual)
+    }
+  } catch {
+    /* segue com o body como veio */
+  }
+}
+
 function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrcamento) {
   const fech = fechamentoDoResultado(resultado, body.margemSelecionada)
   return {
@@ -4161,6 +4191,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (!existente) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
 
+    // Preserva formato de corte/aproveitamento persistidos quando o body não traz.
+    await preservarEngenhariaDoItem(body, itemId)
+
     let resultado: ResultadoOrcamento
     try {
       resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
@@ -4173,6 +4206,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       where: { id: itemId },
       data: dadosPersistenciaItem(body, resultado),
     })
+    // Reaplica o aproveitamento (dadosPersistenciaItem não grava esse campo).
+    if (body.aproveitamentoManual != null && body.aproveitamentoManual > 0) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE item_orcamento_grafico SET aproveitamento_manual = $1 WHERE id = $2`,
+        Number(body.aproveitamentoManual), itemId,
+      )
+    }
 
     await reconsolidarOrcamento(id, user.empresaId)
 
@@ -4221,6 +4261,12 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (!existente) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
 
+    // Preserva formato de corte (folha real do Calcgraf) e aproveitamento manual
+    // quando o frontend não os reenvia — o wizard atual não coleta esses campos,
+    // e sem eles o motor cairia no encaixe geométrico (ex.: 4 em vez de 3) e na
+    // folha genérica da máquina, divergindo do Calcgraf. Lemos por SQL raw.
+    await preservarEngenhariaDoItem(body, itemId)
+
     let resultado: ResultadoOrcamento
     try {
       resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
@@ -4230,6 +4276,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
 
     const fech = fechamentoDoResultado(resultado, body.margemSelecionada)
+    // Regrava também o formato de corte/aproveitamento (não perder na atualização).
     await prisma.itemOrcamentoGrafico.update({
       where: { id: itemId },
       data: {
@@ -4237,8 +4284,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         margemSelecionada: fech.margemSelecionada,
         custoProducao: fech.custoProducao,
         valorTotal: fech.valorTotal,
+        formatoCorteLarguraMm: body.formatoCorteLarguraMm ?? null,
+        formatoCorteAlturaMm: body.formatoCorteAlturaMm ?? null,
       },
     })
+    if (body.aproveitamentoManual != null && body.aproveitamentoManual > 0) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE item_orcamento_grafico SET aproveitamento_manual = $1 WHERE id = $2`,
+        Number(body.aproveitamentoManual), itemId,
+      )
+    }
     await reconsolidarOrcamento(id, user.empresaId)
 
     return { resultado, fechamento: { custoProducao: fech.custoProducao, valorTotal: fech.valorTotal } }
