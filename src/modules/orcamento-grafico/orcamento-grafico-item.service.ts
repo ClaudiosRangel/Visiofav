@@ -550,8 +550,21 @@ export async function montarParamsDoItem(
     maquinaImpressao: {
       velocidade: Number(maquina.velocidade) || 6000,
       custoHora: Number(maquina.custoHora) || 250,
-      formatoLargura: maquina.formatoFolhaLargura || 660,
-      formatoAltura: maquina.formatoFolhaAltura || 960,
+      // Formato da FOLHA usado no encaixe/papel/tinta. Prioridade:
+      //  1) formato de CORTE do item/plano (ex.: 650×1225 do Calcgraf) — é o
+      //     formato real da bobina cortada que o cálculo-origem usou;
+      //  2) senão, o formato de folha cadastrado na máquina;
+      //  3) senão, default legado.
+      // Sem (1), o motor usava a folha genérica da máquina (ex.: 900×1260),
+      // calculando MENOS folhas/papel que o Calcgraf (divergência do MD).
+      formatoLargura:
+        (input.formatoCorteLarguraMm && input.formatoCorteLarguraMm > 0
+          ? input.formatoCorteLarguraMm
+          : maquina.formatoFolhaLargura) || 660,
+      formatoAltura:
+        (input.formatoCorteAlturaMm && input.formatoCorteAlturaMm > 0
+          ? input.formatoCorteAlturaMm
+          : maquina.formatoFolhaAltura) || 960,
       pinca: Number(maquina.pincaMm) || 10,
       // setup: usa o cadastrado (tempoSetupMin) quando houver; senão 30 (legado)
       setupMinutos: tempoSetupMin ?? 30,

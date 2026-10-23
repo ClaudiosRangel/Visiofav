@@ -68,7 +68,7 @@ async function flush(ops) {
   catch (e) { try { await client.query('ROLLBACK') } catch {} await reconectar(); let n = 0; for (const o of ops) { await q(o.sql, o.vals); n++ } return n }
 }
 
-let proc = 0, papelOk = 0, coresOk = 0, aprovOk = 0, medidasOk = 0, gravados = 0
+let proc = 0, papelOk = 0, coresOk = 0, aprovOk = 0, medidasOk = 0, fmtOk = 0, gravados = 0
 const lote = []
 for (const l of linhas) {
   proc++
@@ -87,6 +87,21 @@ for (const l of linhas) {
   if (plano.gramatura > 0) campos.gramatura = plano.gramatura
   // aproveitamento real (peças/folha) — imposição concreta
   if (plano.aproveitamento > 0) { campos.aproveitamento_manual = plano.aproveitamento; aprovOk++ }
+  // formato da FOLHA real do Calcgraf (ex.: "650 x 1225") → formato de corte do
+  // item. O motor usa isto como folha no encaixe/papel/tinta (em vez da folha
+  // genérica da máquina), batendo o consumo de papel com o Calcgraf.
+  if (typeof plano.formatoFolha === 'string') {
+    const m = plano.formatoFolha.match(/(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)/)
+    if (m) {
+      const lg = Math.round(Number(m[1].replace(',', '.')))
+      const al = Math.round(Number(m[2].replace(',', '.')))
+      if (lg > 0 && al > 0) {
+        campos.formato_corte_largura_mm = lg
+        campos.formato_corte_altura_mm = al
+        fmtOk++
+      }
+    }
+  }
   // medidas do produto (largura/altura reais em mm). As fórmulas dos TipoEmbalagem
   // 2D usam as variáveis L (largura) e A (altura); gravamos AMBAS as convenções
   // (L/A + largura/altura) para o motor resolver a planificação corretamente —
@@ -124,5 +139,5 @@ if (!DRY && lote.length) gravados += await flush(lote)
 
 const pct = (n) => `${n} (${(100 * n / proc).toFixed(1)}%)`
 console.log('\n===== RESUMO =====')
-console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), coresComPreco: pct(coresOk), gravados }, null, 2))
+console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), gravados }, null, 2))
 try { await client.end() } catch {}
