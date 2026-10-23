@@ -851,10 +851,28 @@ function copiarCalculoParaItem(
 
   // Foto congelada do cálculo como resultado do item (sem recalcular). Quando a
   // foto não carrega os totais, caímos nos totais persistidos no cálculo.
-  const fotoResultado = (calc.resultadoCalculo ?? {
-    custoProducao: calc.custoProducao != null ? Number(calc.custoProducao) : 0,
-    precoVenda: calc.valorTotal != null ? Number(calc.valorTotal) : 0,
-  }) as ResultadoOrcamento
+  // ANCORAGEM CALCGRAF: o `custoProducao` REAL do cálculo (Calcgraf) é a fonte de
+  // verdade do orçamento de repetição. A foto do migrado guarda o custo em
+  // `custos.custoProducao` (aninhado) — mas `fechamentoDoResultado` lê da RAIZ.
+  // Por isso projetamos o custo/preço reais na RAIZ do fotoResultado, para o
+  // item puxado nascer com o valor EXATO do Calcgraf (diferença zero), sem
+  // depender da fórmula de acerto do Delphi (irreprodutível ao centavo).
+  const fotoBase = (calc.resultadoCalculo ?? {}) as ResultadoOrcamento & {
+    custos?: { custoProducao?: number }
+    margens?: Array<{ valorTotal?: number; selecionada?: boolean }>
+  }
+  const custoReal = Number(
+    fotoBase.custos?.custoProducao ?? calc.custoProducao ?? fotoBase.custoProducao ?? 0,
+  )
+  const valorReal = Number(
+    fotoBase.margens?.find((m) => m.selecionada)?.valorTotal ?? calc.valorTotal ?? fotoBase.precoVenda ?? 0,
+  )
+  const fotoResultado = {
+    ...fotoBase,
+    custoProducao: custoReal > 0 ? custoReal : fotoBase.custoProducao,
+    custoTotal: custoReal > 0 ? custoReal : (fotoBase as { custoTotal?: number }).custoTotal,
+    precoVenda: valorReal > 0 ? valorReal : fotoBase.precoVenda,
+  } as ResultadoOrcamento
 
   return {
     dadosItem: dadosPersistenciaItem(itemBody, fotoResultado),

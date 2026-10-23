@@ -37,6 +37,29 @@ async function q(sql, params, tent = 3) {
   throw ultimo
 }
 
+// Centros de produção do Vizor (de-para por NOME para as etapas do Calcgraf).
+// `ehImpressao` marca o centro de impressão (vai como maquina_id; as demais
+// etapas viram acabamentos ricos HORA_MAQUINA no CT).
+const centros = (await q(
+  `SELECT cp.id, cp.descricao, cp.custo_hora, cp.velocidade,
+          COALESCE(tp.codigo,'') AS tp_codigo
+   FROM centro_producao cp
+   LEFT JOIN tipo_processo tp ON tp.id = cp.tipo_processo_id
+   WHERE cp.empresa_id=$1`,
+  [EMPRESA],
+)).rows
+const centroExato = new Map()
+for (const c of centros) {
+  const k = norm(c.descricao)
+  if (!centroExato.has(k)) centroExato.set(k, [])
+  centroExato.get(k).push(c)
+}
+function resolverCentro(nome) {
+  const a = centroExato.get(norm(nome))
+  return a && a.length === 1 ? a[0] : undefined
+}
+const ehImpressao = (c) => c && String(c.tp_codigo).toUpperCase() === 'IMPRESSAO'
+
 // Cadastro de papel do Vizor (de-para alvo)
 const papeis = (await q(`SELECT id, descricao, suporte_id, gramatura FROM preco_materia_prima WHERE empresa_id=$1 AND tipo='PAPEL' AND status=true`, [EMPRESA])).rows
 const papelExato = new Map()
@@ -69,6 +92,7 @@ async function flush(ops) {
 }
 
 let proc = 0, papelOk = 0, coresOk = 0, aprovOk = 0, medidasOk = 0, fmtOk = 0, gravados = 0
+let etapasOk = 0, maquinaOk = 0, etapasSemDepara = 0
 const lote = []
 for (const l of linhas) {
   proc++
@@ -127,6 +151,40 @@ for (const l of linhas) {
     coresOk++
   }
 
+  // ETAPAS DE PRODUÇÃO (CT) — de-para dos centros do Calcgraf para o Vizor por
+  // NOME. A etapa de IMPRESSÃO vira o maquina_id; as demais (cortadeira,
+  // guilhotina, plastificadora, etc.) viram acabamentos ricos HORA_MAQUINA, que
+  // o motor soma no Custo de Transformação. Usa os valores REAIS do cálculo
+  // (custoHora da Tabela 2, producaoHora, acertos) — não o cadastro — para o CT
+  // bater com o Calcgraf. Sem de-para (centro inexistente) → NÃO inventa (ignora
+  // a etapa; fica registrado no resumo).
+  const etapas = l.etapas || []
+  if (etapas.length > 0) {
+    const acabRicos = []
+    let maquinaImpressaoId = null
+    for (const e of etapas) {
+      const centro = resolverCentro(e.centroNome)
+      if (!centro) { etapasSemDepara++; continue }
+      if (ehImpressao(centro) && !maquinaImpressaoId) {
+        maquinaImpressaoId = centro.id
+        continue // impressão entra via maquina_id (tinta/papel/acerto por cor)
+      }
+      // acabamento HORA_MAQUINA com os valores reais do cálculo
+      acabRicos.push({
+        naturezaCusto: 'HORA_MAQUINA',
+        nome: e.centroNome,
+        custoHora: Number(e.custoHora) > 0 ? Number(e.custoHora) : Number(centro.custo_hora) || 0,
+        producaoHora: Number(e.producaoHora) > 0 ? Number(e.producaoHora) : (Number(centro.velocidade) || 0),
+        unidadeBase: 'FOLHA',
+        quantAcertos: Number(e.quantAcertos) || 0,
+        tempoPorAcertoMin: Number(e.tempoPorAcerto) || 0,
+        tempoPrimeiroAcertoMin: Number(e.tempoPrimeiroAcerto) || 0,
+      })
+    }
+    if (maquinaImpressaoId) { campos.maquina_id = maquinaImpressaoId; maquinaOk++ }
+    if (acabRicos.length > 0) { campos.acabamentos_ricos = JSON.stringify(acabRicos); etapasOk++ }
+  }
+
   if (DRY) continue
   const sets = []; const vals = []; let i = 1
   for (const [k, v] of Object.entries(campos)) { sets.push(`"${k}"=$${i++}`); vals.push(v) }
@@ -139,5 +197,5 @@ if (!DRY && lote.length) gravados += await flush(lote)
 
 const pct = (n) => `${n} (${(100 * n / proc).toFixed(1)}%)`
 console.log('\n===== RESUMO =====')
-console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), gravados }, null, 2))
+console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), maquinaImpressao: pct(maquinaOk), etapasAcabamento: pct(etapasOk), etapasSemDepara, gravados }, null, 2))
 try { await client.end() } catch {}

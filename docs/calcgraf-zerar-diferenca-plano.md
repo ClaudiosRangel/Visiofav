@@ -126,6 +126,34 @@ Plast 109,05 + Guilh 56,48).
    hora-máquina) para o MD. Fonte: `CalculoMatAcabamento` + `Itc(MAT.ACABAMENTO)`
    + `TabelasCustoDetalhe`.
 
+### ✅ GRAVADOR estendido com ETAPAS + de-para de centro (feito, versionado)
+`scripts/gravar-engenharia-real.mjs` agora grava `maquina_id` (centro de
+impressão) e `acabamentos_ricos` (etapas de acabamento HORA_MAQUINA com custoHora/
+producaoHora/acertos REAIS do cálculo) no `calculo_grafico`, via de-para de centro
+por NOME. **IMPORTANTE:** carrega centros SEM filtro `status=true` (CORT-GDE e
+PLAST-MAI estão INATIVOS no cadastro, mas são válidos p/ orçamento — o motor usa o
+custoHora do próprio JSON, não busca o centro). Validado 12992: etapasSemDepara 0,
+3 acabamentos + maquina Roland gravados. O `calculo-grafico-mapeamento.ts` já copia
+`acabamentosRicos`/`maquinaId` do cálculo p/ o item no puxar — item nasce completo.
+
+### ESTADO ATUAL DO GAP (12992): C.Prod 4.845,85 vs 5.104,36 Calcgraf = 5,1%
+- MD 3.870,22 (Calcgraf 4.026,25; falta R$ 156 = material da plastificadora/
+  laminação no MD).
+- CT 975,63 (Calcgraf 1.078,11; falta R$ 102 = impressão usa acerto-por-cor do
+  CADASTRO (90min×cores) em vez dos valores reais do cálculo).
+
+### DECISÃO FINAL (ancoragem) — para ZERAR
+O Calcgraf NÃO guarda custo por atividade (confirmado: só CalculoResAgrupamento
+agregado; nenhuma coluna de custo por atividade; nada público na internet — é
+código Delphi fechado). Logo a fórmula exata de acerto não é reproduzível ao
+centavo. CAMINHO APROVADO PELO USUÁRIO: **ancorar o custo de produção do item
+puxado no valor REAL do Calcgraf** (`calculo_grafico.custo_producao` = 5.104,36 /
+foto `custos.custoProducao`). Implementar no backend: quando o item tem
+`calculoGraficoOrigemId` E a engenharia não foi alterada pelo operador, o
+`custoProducao`/consolidado usa o valor real do cálculo (não o recalculado). As
+etapas gravadas garantem que, se o operador MUDAR a engenharia, o recálculo já
+parte de uma base completa (impressão + acabamentos), com diferença mínima.
+
 ### PRÓXIMOS PASSOS (retomar aqui)
 1. Exportar o MATERIAL de acabamento por atividade (laminação/BOPP) → gravar como
    acabamento MATERIAL_KG/UN no MD.
