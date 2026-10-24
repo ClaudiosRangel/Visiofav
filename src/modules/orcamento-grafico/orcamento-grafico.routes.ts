@@ -3027,7 +3027,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const orcamento = await prisma.orcamentoGrafico.findFirst({
       where: { id, empresaId: user.empresaId },
-      select: { id: true, status: true, validadeAte: true, precoVenda: true, resultadoCalculo: true },
+      select: {
+        id: true, status: true, validadeAte: true, precoVenda: true, resultadoCalculo: true,
+        // Multi-item: o valor pode estar no consolidado + itens (orçamento de
+        // repetição puxado de cálculo não preenche precoVenda/resultadoCalculo
+        // do cabeçalho — o preço vive nos itens).
+        valorTotalConsolidado: true,
+        _count: { select: { itens: true } },
+      },
     })
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
     if (orcamento.status !== 'RASCUNHO') {
@@ -3035,7 +3042,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
     // Não permitir enviar um orçamento sem precificação — senão ele pode ser
     // aprovado gerando um PedidoVenda com valor zero (bug de negócio real).
-    if (orcamento.precoVenda == null || !orcamento.resultadoCalculo) {
+    // Precificado = (single-item) precoVenda+resultadoCalculo do cabeçalho, OU
+    // (multi-item) tem itens com valor total consolidado > 0.
+    const temPrecoSingle = orcamento.precoVenda != null && !!orcamento.resultadoCalculo
+    const temPrecoMulti =
+      (orcamento._count?.itens ?? 0) > 0 &&
+      orcamento.valorTotalConsolidado != null &&
+      Number(orcamento.valorTotalConsolidado) > 0
+    if (!temPrecoSingle && !temPrecoMulti) {
       return reply.status(400).send({
         message: 'Calcule o preço do orçamento antes de enviar (etapa Revisão).',
         code: 'ORCAMENTO_SEM_PRECO',
