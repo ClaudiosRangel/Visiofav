@@ -45,6 +45,22 @@ MULTI-item (repetição puxada de cálculo) — o preço vive no `valorTotalCons
 + nos itens. Fix: aceita precificado quando (single) cabeçalho tem preço OU
 (multi) tem itens E `valorTotalConsolidado > 0`.
 
+### Ciclo completo enviar→aprovar→Pedido de Venda — VALIDADO (commit back `6298d951b`)
+`POST /:id/aprovar` também validava `precoVenda` do cabeçalho (null em multi-item)
+e gerava o PedidoVenda com `valorTotal: precoVenda ?? 0`. Fix: aceita multi-item
+(valor = `valorTotalConsolidado`) e grava o PedidoVenda com esse valor. Validado
+na API (12992): PUXAR→ENVIAR(ENVIADO)→APROVAR(APROVADO)→**PedidoVenda nº1 valor
+R$ 15.084,04** RASCUNHO origem ORCAMENTO_GRAFICO.
+- **PRÉ-REQUISITO DE CADASTRO:** o PedidoVenda exige `tabelaPrecoId` (NOT NULL no
+  schema) + `clienteId`. A Wega NÃO tinha tabela de preço ativa → o aprovar
+  concluía mas NÃO gerava pedido (silencioso). CRIADA "Tabela Padrão" ativa na
+  Wega (`tabela_preco`, via pg). Cliente Gerdau existe (resolvido por CNPJ no
+  puxar). Se outra empresa aprovar sem tabela de preço ativa, o pedido não é
+  gerado — cadastrar uma tabela de preço ativa resolve.
+- **O "Enviar Proposta" é transição de status interna** (RASCUNHO→ENVIADO), NÃO
+  dispara e-mail/WhatsApp. Só define validade +30d e, se veio do Portal do
+  Representante, marca a solicitação PRECIFICADA. Aprovar→APROVADO + PedidoVenda.
+
 ### Plano "Base" aparece em "Detalhes do Cálculo" mas NÃO na seção "Planos do Cálculo — Item"
 NÃO é bug de dado faltando. `plano_calculo_grafico` tem FK **`item_id`** (planos
 são por ITEM de orçamento), não por cálculo. O cálculo migrado NÃO tem
