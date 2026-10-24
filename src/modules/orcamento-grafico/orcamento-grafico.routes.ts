@@ -3104,14 +3104,27 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         precoVenda: true,
         quantidade: true,
         precoUnitario: true,
+        // Multi-item: valor no consolidado + itens (orçamento de repetição não
+        // preenche precoVenda do cabeçalho).
+        valorTotalConsolidado: true,
+        _count: { select: { itens: true } },
       },
     })
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
     if (orcamento.status !== 'ENVIADO') {
       return reply.status(400).send({ message: 'Só é possível aprovar orçamentos com status ENVIADO' })
     }
-    // Reforço: não aprovar orçamento sem preço (evita PedidoVenda com valor 0)
-    if (orcamento.precoVenda == null) {
+    // Valor total do pedido: single-item usa precoVenda; multi-item usa o
+    // valorTotalConsolidado (soma dos itens). Reforço: não aprovar sem preço
+    // (evita PedidoVenda com valor 0).
+    const valorTotalPedido =
+      orcamento.precoVenda != null
+        ? Number(orcamento.precoVenda)
+        : orcamento.valorTotalConsolidado != null
+          ? Number(orcamento.valorTotalConsolidado)
+          : 0
+    const temItens = (orcamento._count?.itens ?? 0) > 0
+    if (valorTotalPedido <= 0 && !temItens) {
       return reply.status(400).send({
         message: 'Este orçamento não possui preço calculado e não pode ser aprovado.',
         code: 'ORCAMENTO_SEM_PRECO',
@@ -3147,7 +3160,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             clienteId: orcamento.clienteId,
             vendedorId: orcamento.vendedorId,
             tabelaPrecoId: tabelaPreco.id,
-            valorTotal: orcamento.precoVenda ?? 0,
+            valorTotal: valorTotalPedido,
             status: 'RASCUNHO',
             origemPedido: 'ORCAMENTO_GRAFICO',
             orcamentoOrigemId: id,
