@@ -37,11 +37,24 @@ custoProducao` (foto). Commit `5ed55c547`:
   ao puxar já está zerado para todos pela ancoragem.
 - Plano/decomposição completa em `docs/calcgraf-zerar-diferenca-plano.md`.
 
+### Ancoragem nos 3 momentos (chamar/editar/salvar) — VALIDADO (commit back `ca085f1c3`, front `59708cc`)
+O usuário mostrou que ao SALVAR o item o valor caía de 5.192 → 4.845 (o recálculo
+do motor sobrescrevia a âncora). RESOLVIDO: helper `ancorarCustoCalcgraf(empresaId,
+itemId, resultado)` projeta o custoProducao/precoVenda REAIS do cálculo-origem
+(`calculoGraficoOrigemId` → `calculo_grafico.custo_producao`/foto) na RAIZ do
+`resultado` ANTES de gravar, aplicado em `PUT /:id/itens/:itemId` (salvar) e
+`POST /:id/itens/:itemId/calcular` (editar/prévia). O front (`StepRevisao`) na
+EDIÇÃO de item puxado chama a rota do ITEM (ancorada), não a `/calcular` genérica.
+Validado na API (12992): CHAMAR 5.192,05 · EDITAR 5.192,05 · SALVAR 5.192,05 —
+os 3 batem. Só recalcula pelo motor (e diverge ~5%) se o item NÃO tiver origem de
+cálculo (orçamento novo do zero) OU se o cálculo-origem sumir.
+
 ### Limite técnico documentado (não é problema do fluxo de repetição)
-Se o operador RECALCULAR manualmente mudando a engenharia, o motor recalcula e fica
-~5% abaixo (impressão usa acerto-por-cor do cadastro; falta material de acabamento
-no MD). Isso só afeta recálculo deliberado, não o valor puxado. Fechar os centavos
-do recálculo exigiria o fonte Delphi (indisponível).
+Se o operador criar um orçamento do ZERO (sem puxar cálculo), não há âncora e o
+motor calcula ~5% abaixo do que o Calcgraf daria (impressão usa acerto-por-cor do
+cadastro; falta material de acabamento no MD). Fechar os centavos do recálculo puro
+exigiria o fonte Delphi (indisponível). Para repetição (o caso real da Wega) a
+diferença é ZERO.
 
 ## 🟢 PUXAR CÁLCULO — PREÇO DO PAPEL + VALOR IMEDIATO + CÁLCULO DE ORIGEM (23/10/2026)
 
