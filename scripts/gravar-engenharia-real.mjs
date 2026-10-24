@@ -92,7 +92,7 @@ async function flush(ops) {
 }
 
 let proc = 0, papelOk = 0, coresOk = 0, aprovOk = 0, medidasOk = 0, fmtOk = 0, gravados = 0
-let etapasOk = 0, maquinaOk = 0, etapasSemDepara = 0
+let etapasOk = 0, maquinaOk = 0, etapasSemDepara = 0, diversosOk = 0
 const lote = []
 for (const l of linhas) {
   proc++
@@ -185,6 +185,39 @@ for (const l of linhas) {
     if (acabRicos.length > 0) { campos.acabamentos_ricos = JSON.stringify(acabRicos); etapasOk++ }
   }
 
+  // MATRIZ (chapas) + MAT.ACABAMENTO (BOPP/laminação) → Material Direto como
+  // itens diversos (valor FIXO). Matriz = qtd × precoUnitario. BOPP = área (m²)
+  // × preço/m², onde área = folhas × formatoCorte. Folhas = ceil(tiragem/aprov)
+  // (sem quebra — o Calcgraf deste tipo usa quebra 0). Fonte: tabela de custo
+  // vigente do Calcgraf (matriz R$110/chapa, BOPP R$0,605/m²).
+  const diversos = []
+  for (const m of (l.matrizes || [])) {
+    const q = Number(m.quantidade) || 0
+    const pu = Number(m.precoUnitario) || 0
+    if (q > 0 && pu > 0) diversos.push({ descricao: m.nome || 'Matriz', quantidade: q, valor: pu, fixo: true })
+  }
+  const matAcab = (l.matAcabamento || [])
+  if (matAcab.length > 0 && plano && plano.aproveitamento > 0) {
+    const tir = Number(l.tiragem) || 0
+    const aprov = Number(plano.aproveitamento) || 1
+    const folhas = Math.ceil(tir / aprov)
+    // formato de corte em metros (do plano "650 x 1225")
+    let lg = 0, al = 0
+    if (typeof plano.formatoFolha === 'string') {
+      const mm = plano.formatoFolha.match(/(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)/)
+      if (mm) { lg = Number(mm[1].replace(',', '.')); al = Number(mm[2].replace(',', '.')) }
+    }
+    const areaM2 = folhas * (lg / 1000) * (al / 1000)
+    for (const ma of matAcab) {
+      const pm2 = Number(ma.precoM2) || 0
+      if (pm2 > 0 && areaM2 > 0) {
+        const valor = Math.round(areaM2 * pm2 * 100) / 100
+        diversos.push({ descricao: ma.nome || 'Mat. Acabamento', quantidade: 1, valor, fixo: true })
+      }
+    }
+  }
+  if (diversos.length > 0) { campos.itens_diversos = JSON.stringify(diversos); diversosOk++ }
+
   if (DRY) continue
   const sets = []; const vals = []; let i = 1
   for (const [k, v] of Object.entries(campos)) { sets.push(`"${k}"=$${i++}`); vals.push(v) }
@@ -197,5 +230,5 @@ if (!DRY && lote.length) gravados += await flush(lote)
 
 const pct = (n) => `${n} (${(100 * n / proc).toFixed(1)}%)`
 console.log('\n===== RESUMO =====')
-console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), maquinaImpressao: pct(maquinaOk), etapasAcabamento: pct(etapasOk), etapasSemDepara, gravados }, null, 2))
+console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), maquinaImpressao: pct(maquinaOk), etapasAcabamento: pct(etapasOk), etapasSemDepara, diversos: pct(diversosOk), gravados }, null, 2))
 try { await client.end() } catch {}

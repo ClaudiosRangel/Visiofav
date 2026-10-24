@@ -57,6 +57,8 @@ for (let i = 0; i < codigos.length; i += 300) blocos.push(codigos.slice(i, i + 3
 const planosPorCod = new Map()
 const tintasPorCod = new Map()
 const etapasPorCod = new Map()
+const matrizPorCod = new Map()
+const matacabPorCod = new Map()
 for (const bloco of blocos) {
   const inList = bloco.join(',')
   // PLANO: resolve nome+preço do suporte casando Itc.CodOrigem=codSuporte e Gramatura
@@ -133,6 +135,38 @@ for (const bloco of blocos) {
     if (!etapasPorCod.has(e.codigo)) etapasPorCod.set(e.codigo, [])
     etapasPorCod.get(e.codigo).push(e)
   }
+  // MATRIZ DE IMPRESSÃO (chapas): quantChapas1 × preço da chapa (Itc MATRIZ
+  // IMPRESSÃO). Entra no Material Direto como custo FIXO por ocorrência.
+  const matrizes = queryJson(`
+    SELECT ai.Codigo AS codigo, ai.quantChapas1 AS qtd, ai.codChapa1 AS codChapa,
+           itc.Descritivo AS nome, det.ValorTotal AS precoUn
+    FROM CalculoAtvImpressao ai
+    OUTER APPLY (SELECT TOP 1 i.Codigo, i.Descritivo FROM Itc i
+      WHERE i.Origem='MATRIZ IMPRESSÃO' AND i.CodOrigem=ai.codChapa1 ORDER BY i.Codigo) itc
+    OUTER APPLY (SELECT TOP 1 d.ValorTotal FROM TabelasCustoDetalhe d
+      WHERE d.CodItc=itc.Codigo AND d.Coluna=1 ORDER BY d.CodTabelaCusto DESC) det
+    WHERE ai.Codigo IN (${inList}) AND ai.quantChapas1 > 0
+  `)
+  for (const m of matrizes) {
+    if (!matrizPorCod.has(m.codigo)) matrizPorCod.set(m.codigo, [])
+    matrizPorCod.get(m.codigo).push(m)
+  }
+  // MAT. ACABAMENTO (BOPP/laminação): preço por m² (Itc MAT.ACABAMENTO). A
+  // quantidade (m²) é calculada no gravador = folhas × formato de corte.
+  const matacab = queryJson(`
+    SELECT ma.Codigo AS codigo, ma.CodMaterial AS codMat,
+           itc.Descritivo AS nome, det.ValorTotal AS precoM2
+    FROM CalculoMatAcabamento ma
+    OUTER APPLY (SELECT TOP 1 i.Codigo, i.Descritivo FROM Itc i
+      WHERE i.Origem='MAT.ACABAMENTO' AND i.CodOrigem=ma.CodMaterial ORDER BY i.Codigo) itc
+    OUTER APPLY (SELECT TOP 1 d.ValorTotal FROM TabelasCustoDetalhe d
+      WHERE d.CodItc=itc.Codigo AND d.Coluna=1 ORDER BY d.CodTabelaCusto DESC) det
+    WHERE ma.Codigo IN (${inList})
+  `)
+  for (const ma of matacab) {
+    if (!matacabPorCod.has(ma.codigo)) matacabPorCod.set(ma.codigo, [])
+    matacabPorCod.get(ma.codigo).push(ma)
+  }
 }
 
 const saidaArr = cabs.map((c) => {
@@ -169,7 +203,16 @@ const saidaArr = cabs.map((c) => {
       tiragem: num(e.tiragem),
       entradas: num(e.entradas),
     }))
-  return { numeroCalcgraf: c.numeroCalcgraf, tiragem: num(c.tiragem), planos, tintas, etapas }
+  const matrizes = (matrizPorCod.get(c.codigo) || []).map((m) => ({
+    nome: str(m.nome),
+    quantidade: num(m.qtd),
+    precoUnitario: num(m.precoUn),
+  }))
+  const matAcabamento = (matacabPorCod.get(c.codigo) || []).map((ma) => ({
+    nome: str(ma.nome),
+    precoM2: num(ma.precoM2),
+  }))
+  return { numeroCalcgraf: c.numeroCalcgraf, tiragem: num(c.tiragem), planos, tintas, etapas, matrizes, matAcabamento }
 })
 
 writeFileSync(saida, JSON.stringify(saidaArr, null, soNumero ? 2 : 0), 'utf8')

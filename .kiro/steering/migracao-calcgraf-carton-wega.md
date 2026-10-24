@@ -166,7 +166,22 @@ C.PROD = 5.229,26 (+ Cr.IPI 87,69 + C.Finan 6,68 − ... = TOTAL 5.148,25).
 - O Vizor migrou o papel a 7,45 (bruto, sem o desconto do crédito) → MD do papel
   sai R$ 568 a mais só no papel. Soma com peso inflado por quebra.
 
-**PLANO PARA O MOTOR BATER (não só ancoragem):**
+### ⛔ CONCLUSÃO FINAL (24/10/2026) — os 3 ajustes do MD são AMARRADOS; o 6,83 é inacessível
+Testado: adicionar BOPP (642,63 = 1.062m²×0,605) + matriz ao MD SEM corrigir o papel
+(7,45→6,83) faz o MD ESTOURAR (4.512 vs Calcgraf 4.113, +399). Porque o papel a
+7,45 já está R$ 568 acima do real (6,83). Os três são amarrados: só fecham JUNTOS
+(papel −568 + matriz +330 + BOPP +582). Como o 6,83 do papel é a caixa-preta
+inacessível (confirmado: NÃO está no banco — Itc 1767 tem 7,45 nas 2 tabelas/4
+colunas; plano com supNcAliqIcms/Ipi/Custo = 0; tela "Aplicação de Crédito" N/D para
+todos os Stora Enzo; cadastro do suporte sem tributação), NÃO dá para fechar o MD.
+**Reverti a gravação de itens_diversos no 12992** (voltou NULL) para não deixar o MD
+inflado. Exportador/gravador estendidos (matriz+BOPP) ficam versionados e PRONTOS
+para quando/se o preço real do papel (6,83) for obtido da PHTech — aí os 3 entram
+juntos. Até lá, a ANCORAGEM é a única forma de diferença zero (e é o padrão de
+mercado para migração de sistema legado fechado). ENCERRADO o esforço de calibração
+do motor cru.
+
+**PLANO PARA O MOTOR BATER (só quando obtiver o preço real do papel na PHTech):**
 1. **Papel**: aplicar crédito PIS/COFINS 9,25% ao preço do material (7,45→6,83) +
    NÃO aplicar quebra quando o cálculo tem quebra 0 (usar as folhas líquidas).
 2. **Matriz** (3×110) e **BOPP** (m²×0,605) → adicionar ao MD como itens.
