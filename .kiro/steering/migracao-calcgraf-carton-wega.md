@@ -135,6 +135,46 @@ A regra do preço do papel pelo cadastro está agora em TRÊS pontos:
 `preservarEngenhariaDoItem` (PUT/calcular do item) + `/calcular` (prévia) +
 nascimento via foto no `de-calculo`.
 
+### 🔑 DECODIFICAÇÃO COMPLETA DO 12992 (24/10/2026) — memória de cálculo + Tabelas de Custo
+O usuário abriu no Calcgraf: (a) a Emissão de Pré-Cálculo, (b) a tela "Tabelas de
+Custo" do próprio cálculo, (c) o Editor de Planos. Com isso TODOS os componentes
+ficaram com FONTE conhecida. Memória do 12992 (tiragem 4.000, folha 650×1225,
+aprov 3, 1.334 folhas, Quebra 0% / Apara 14,1%):
+
+**MATERIAL DIRETO = R$ 4.113,94**
+- Papel Stora Enzo Bobina 415: 440,81 kg × **R$ 6,83** = **R$ 3.010,75**.
+  (peso = 1334×0,65×1,225×415/1000 = 440,8 kg — SEM quebra de impressão.)
+- Matriz RVU: 3 PC × R$ 110 (tabela) / R$ 100 (memória) = R$ 300-330.
+- Tinta (partida FIXA 0,20 kg + variável): Pantone 01 0,20+1,36kg×65=101,16;
+  02 0,20+0,29×90=44,16; 03 0,20+0,29×155=76,05 → R$ 221,37. (preços 65/90/155 na
+  memória; a tela Tabelas mostra 71,50/99/170,50 — versões diferentes.)
+- BOPP Brilho (laminação): 1.057,86 m² × R$ 0,55 (mem) / 0,605 (tabela) = R$ 581,82.
+
+**CUSTO DE TRANSFORMAÇÃO = R$ 1.115,32** (tempos em BLOCOS h:mm, não fórmula contínua)
+- Impressão Roland: acerto **04:30** + produção **01:00** × R$140/h = R$ 770,00.
+- Cortadeira: 00:15 + 00:33 × 113,21 = R$ 89,94.
+- Laminação maior (hora-máq): 00:00 + 01:40 × 60 = R$ 100,00.
+- Guilhotina: 00:00 + 02:00 × 77,69 = R$ 155,38.
+C.PROD = 5.229,26 (+ Cr.IPI 87,69 + C.Finan 6,68 − ... = TOTAL 5.148,25).
+
+**🎯 CAUSA RAIZ DO PREÇO DO PAPEL ERRADO (o grande achado):**
+- O Calcgraf tem 2 TabelasCusto: **1 "Padrão"** (val. 2004→02/12/2024) e **2 "Teste"**
+  (val. 03/12/2024→, a VIGENTE). O 12992 (2026) usa a "Teste".
+- O `ValorTotal` do papel 415 é 7,45 em AMBAS. Mas a memória/tela mostra **6,83**.
+  **6,83 = 7,45 ÷ 1,0925** → o Calcgraf DESCONTA o crédito de **PIS/COFINS 9,25%**
+  do custo do material direto (papel). ESSE é o fator que faltava.
+- O Vizor migrou o papel a 7,45 (bruto, sem o desconto do crédito) → MD do papel
+  sai R$ 568 a mais só no papel. Soma com peso inflado por quebra.
+
+**PLANO PARA O MOTOR BATER (não só ancoragem):**
+1. **Papel**: aplicar crédito PIS/COFINS 9,25% ao preço do material (7,45→6,83) +
+   NÃO aplicar quebra quando o cálculo tem quebra 0 (usar as folhas líquidas).
+2. **Matriz** (3×110) e **BOPP** (m²×0,605) → adicionar ao MD como itens.
+3. **Tinta**: partida fixa 0,20 kg/cor + variável por cobertura.
+4. **Impressão**: acerto/produção em blocos (o cálculo traz os tempos reais).
+A diferença PIS/COFINS no papel é GERAL (afeta todos os cálculos), não só o 12992
+— tratar como correção de preço de material, não caso isolado.
+
 ### Diferença residual de 8,8% — DECOMPOSTA do banco Calcgraf (12992, tiragem 4.000)
 `CalculoResAgrupamento` (Codigo=12992) — fonte de verdade do Calcgraf:
 - **Agrup 1 (Custo Transformação):** fixo 658,30 + unit 0,10495×4000 = **R$ 1.078,11**.
