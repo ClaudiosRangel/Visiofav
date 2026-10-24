@@ -37,6 +37,27 @@ custoProducao` (foto). Commit `5ed55c547`:
   ao puxar já está zerado para todos pela ancoragem.
 - Plano/decomposição completa em `docs/calcgraf-zerar-diferenca-plano.md`.
 
+### Enviar Proposta travava em orçamento de repetição — CORRIGIDO (commit back `07820eea3`)
+Erro "Calcule o preço do orçamento antes de enviar (etapa Revisão)". Causa: a rota
+`POST /:id/enviar` validava `orcamento.precoVenda` + `orcamento.resultadoCalculo`
+(campos do cabeçalho do modelo SINGLE-item antigo), que ficam NULL em orçamento
+MULTI-item (repetição puxada de cálculo) — o preço vive no `valorTotalConsolidado`
++ nos itens. Fix: aceita precificado quando (single) cabeçalho tem preço OU
+(multi) tem itens E `valorTotalConsolidado > 0`.
+
+### Plano "Base" aparece em "Detalhes do Cálculo" mas NÃO na seção "Planos do Cálculo — Item"
+NÃO é bug de dado faltando. `plano_calculo_grafico` tem FK **`item_id`** (planos
+são por ITEM de orçamento), não por cálculo. O cálculo migrado NÃO tem
+`PlanoCalculoGrafico` próprios — o "plano Base" exibido em "Detalhes do Cálculo"
+vem da FOTO RICA (JSON `resultado_calculo`), só exibição. Para orçamento de PLANO
+ÚNICO, o item carrega toda a engenharia do plano Base direto (papel/formato/cores)
+e a seção "Planos do Cálculo" fica vazia (correto — planos só existem p/ múltiplos:
+frente/costa, tampa/caixa). Criar um plano "Base" no item ao puxar é incremento
+ADITIVO possível, MAS risco: se o item passar a ter plano, o motor calcula por
+`somaPlanos` (não o item achatado) — poderia reintroduzir divergência. NÃO fazer
+sem revalidar a ancoragem. A ancoragem do custo (valor real Calcgraf) independe de
+planos.
+
 ### Ancoragem nos 3 momentos (chamar/editar/salvar) — VALIDADO (commit back `ca085f1c3`, front `59708cc`)
 O usuário mostrou que ao SALVAR o item o valor caía de 5.192 → 4.845 (o recálculo
 do motor sobrescrevia a âncora). RESOLVIDO: helper `ancorarCustoCalcgraf(empresaId,
