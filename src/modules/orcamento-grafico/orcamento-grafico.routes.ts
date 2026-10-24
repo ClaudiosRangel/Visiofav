@@ -484,6 +484,59 @@ async function preservarEngenhariaDoItem(body: ItemOrcamentoBody, itemId: string
   }
 }
 
+/**
+ * ANCORAGEM CALCGRAF (diferença zero no orçamento de repetição).
+ *
+ * Quando o item veio de um cálculo da biblioteca (`calculoGraficoOrigemId`), o
+ * custo de produção e o preço de venda do Calcgraf são a FONTE DE VERDADE — o
+ * Calcgraf não expõe o custo por atividade (fórmula de acerto em Delphi fechado,
+ * irreprodutível ao centavo), então o motor do Vizor recalcula ~5% abaixo. Para o
+ * valor BATER 100% com o Calcgraf ao chamar/editar/salvar o item, projetamos o
+ * custo/preço REAIS do cálculo-origem na RAIZ do `resultado` ANTES de gravar.
+ *
+ * Isso NÃO altera a engenharia (papel/cores/etapas continuam reais e editáveis);
+ * apenas ancora os TOTAIS. Se o cálculo-origem não for encontrado (item não veio
+ * de repetição), o `resultado` segue inalterado (recálculo normal do motor).
+ *
+ * Retorna o mesmo objeto `resultado` (mutado) para encadear. Não lança erro.
+ */
+async function ancorarCustoCalcgraf(
+  empresaId: string,
+  itemId: string,
+  resultado: ResultadoOrcamento,
+): Promise<ResultadoOrcamento> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ calculo_grafico_origem_id: string | null }>>(
+      `SELECT calculo_grafico_origem_id FROM item_orcamento_grafico WHERE id = $1`,
+      itemId,
+    )
+    const origemId = rows[0]?.calculo_grafico_origem_id
+    if (!origemId) return resultado
+
+    const calc = await prisma.calculoGrafico.findFirst({
+      where: { id: origemId, empresaId },
+      select: { custoProducao: true, valorTotal: true, resultadoCalculo: true },
+    })
+    if (!calc) return resultado
+
+    const custos = (calc.resultadoCalculo as { custos?: { custoProducao?: number } } | null)?.custos
+    const custoReal = Number(custos?.custoProducao ?? calc.custoProducao ?? 0)
+    const valorReal = Number(calc.valorTotal ?? 0)
+
+    // Projeta os totais reais na RAIZ (fechamentoDoResultado lê daí).
+    if (custoReal > 0) {
+      ;(resultado as { custoProducao?: number }).custoProducao = custoReal
+      ;(resultado as { custoTotal?: number }).custoTotal = custoReal
+    }
+    if (valorReal > 0) {
+      ;(resultado as { precoVenda?: number }).precoVenda = valorReal
+    }
+  } catch {
+    /* sem ancoragem: segue com o recálculo do motor */
+  }
+  return resultado
+}
+
 function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrcamento) {
   const fech = fechamentoDoResultado(resultado, body.margemSelecionada)
   return {
@@ -4320,6 +4373,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       throw err
     }
 
+    // Ancora o custo/preço no valor REAL do Calcgraf quando o item veio de um
+    // cálculo da biblioteca (diferença zero ao salvar — não deixa o recálculo do
+    // motor sobrescrever o valor fiel do Calcgraf).
+    await ancorarCustoCalcgraf(user.empresaId, itemId, resultado)
+
     const item = await prisma.itemOrcamentoGrafico.update({
       where: { id: itemId },
       data: dadosPersistenciaItem(body, resultado),
@@ -4392,6 +4450,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
     }
+
+    // Ancora o custo/preço no valor REAL do Calcgraf (item de repetição) — a
+    // prévia de edição (StepRevisao) e o valor persistido batem com o Calcgraf.
+    await ancorarCustoCalcgraf(user.empresaId, itemId, resultado)
 
     const fech = fechamentoDoResultado(resultado, body.margemSelecionada)
     // Regrava também o formato de corte/aproveitamento (não perder na atualização).
