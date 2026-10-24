@@ -166,7 +166,34 @@ C.PROD = 5.229,26 (+ Cr.IPI 87,69 + C.Finan 6,68 − ... = TOTAL 5.148,25).
 - O Vizor migrou o papel a 7,45 (bruto, sem o desconto do crédito) → MD do papel
   sai R$ 568 a mais só no papel. Soma com peso inflado por quebra.
 
-### ⛔ CONCLUSÃO FINAL (24/10/2026) — os 3 ajustes do MD são AMARRADOS; o 6,83 é inacessível
+### 🏆 ACHADO QUE RESOLVE DE VERDADE (24/10/2026) — tabela `CalculoSTC`
+A caixa-preta NÃO era caixa-preta: o Calcgraf grava o CUSTO FINAL DE CADA
+COMPONENTE, por cálculo, na tabela **`CalculoSTC`** (eu tinha olhado todas as
+outras tabelas de resultado, menos essa). Colunas-chave: `CodigoItc`, `Descricao`,
+`ValorTotal` (custo final do item), `ManValorUnitario` (−1 = não editado),
+`AliqCredIcms`/`AliqCredIpi`, `ValorCm`, `QuantFixa`/`QuantVariavel`. O `Itc.Origem`
+do CodigoItc classifica (SUPORTE/TINTA/CENTRO DE CUSTO/MAT.ACABAMENTO/MATRIZ IMPRESSÃO).
+
+**12992 — CalculoSTC (soma = R$ 5.192,05 EXATO, decomposto por item):**
+- Papel Stora Enzo 415: 3.010,75 · Impressão Roland: 732,79 · BOPP Brilho: 581,82
+- Matriz RVU: 300,00 · Guilhotina: 155,38 · Pantone 01: 101,16 · Laminação/Plast: 100,00
+- Cortadeira: 89,94 · Pantone 03: 76,05 · Pantone 02: 44,16
+→ O "6,83 do papel" e a "fórmula de acerto da impressão" (que pareciam caixa-preta)
+ESTÃO aqui como valor final cravado. NÃO precisa reproduzir fórmula nenhuma.
+
+**PLANO NOVO (muito melhor que ancorar só o total):** exportar `CalculoSTC` por
+cálculo e gravar o custo REAL de cada componente como a engenharia/resultado do
+item (papel/tinta/impressão/acabamentos). O recálculo passa a bater ITEM A ITEM,
+não só o total; vale para os 7.951; zero adivinhação. Exportador:
+`SELECT s.CodigoItc, i.Origem, s.Descricao, s.ValorTotal, s.QuantFixa, s.QuantVariavel,
+s.ValorCm FROM CalculoSTC s LEFT JOIN Itc i ON i.Codigo=s.CodigoItc WHERE s.Codigo=<maxCodigo>`.
+Mapear Origem → bloco do resultado (SUPORTE=papel, TINTA=tinta, CENTRO DE CUSTO=
+máquina/CT, MAT.ACABAMENTO/MATRIZ IMPRESSÃO=MD). A ANCORAGEM do total continua
+como rede de segurança; o STC dá o detalhamento fiel.
+ATENÇÃO sqlcmd: `-W -s "|"` CORROMPE a saída (título do terminal). Usar `-i arq.sql
+-o arq.out` SEM `-s`, ou ler via `pg` quando for exportar em lote.
+
+### ⛔ (SUPERADO pelo achado do CalculoSTC acima) os 3 ajustes do MD são AMARRADOS; o 6,83 é inacessível
 Testado: adicionar BOPP (642,63 = 1.062m²×0,605) + matriz ao MD SEM corrigir o papel
 (7,45→6,83) faz o MD ESTOURAR (4.512 vs Calcgraf 4.113, +399). Porque o papel a
 7,45 já está R$ 568 acima do real (6,83). Os três são amarrados: só fecham JUNTOS
