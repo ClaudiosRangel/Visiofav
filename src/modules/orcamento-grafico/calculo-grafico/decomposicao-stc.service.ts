@@ -158,3 +158,62 @@ export function aplicarDecomposicaoStc(resultado: ResultadoOrcamento, custosRaw:
 
   return resultado
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Memória STC para DEMONSTRAÇÃO (read-only) — spec configurador-grafico-calcgraf
+// (Req 5). Deriva MD/CT/SE a partir da Origem de cada componente (SE =
+// SERVIÇO EXTERNO; CT = CENTRO DE CUSTO; demais = MD) e soma o custo de produção.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type GrupoMemoria = 'MD' | 'CT' | 'SE'
+
+export interface ComponenteMemoria {
+  origem: string
+  grupo: GrupoMemoria
+  descricao: string
+  valorTotal: number
+}
+
+export interface MemoriaStc {
+  temMemoria: boolean
+  materialDireto: number
+  custoTransformacao: number
+  servicoExterno: number
+  custoProducao: number
+  componentes: ComponenteMemoria[]
+}
+
+/** Grupo (MD/CT/SE) a partir da Origem do componente (normaliza acento). */
+function grupoMemoriaDaOrigem(origem: string): GrupoMemoria {
+  const u = (origem ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim()
+  if (u === 'CENTRO DE CUSTO') return 'CT'
+  if (u === 'SERVICO EXTERNO') return 'SE'
+  return 'MD'
+}
+
+/**
+ * Monta a memória de custo (SAÍDA, read-only) a partir do JSON `custosCalcgraf`.
+ * Quando não há decomposição, retorna `temMemoria:false` com zeros. PURO.
+ */
+export function montarMemoriaStc(custosRaw: unknown): MemoriaStc {
+  const custos = normalizarCustosStc(custosRaw)
+  if (!custos) {
+    return { temMemoria: false, materialDireto: 0, custoTransformacao: 0, servicoExterno: 0, custoProducao: 0, componentes: [] }
+  }
+  const componentes: ComponenteMemoria[] = custos.componentes.map((k) => ({
+    origem: k.origem,
+    grupo: grupoMemoriaDaOrigem(k.origem),
+    descricao: limparDescStc(k.descricao),
+    valorTotal: r2(k.valorTotal),
+  }))
+  const soma = (g: GrupoMemoria) => r2(componentes.filter((c) => c.grupo === g).reduce((s, c) => s + c.valorTotal, 0))
+  const materialDireto = soma('MD')
+  const custoTransformacao = soma('CT')
+  const servicoExterno = soma('SE')
+  const custoProducao = r2(materialDireto + custoTransformacao + servicoExterno)
+  return { temMemoria: true, materialDireto, custoTransformacao, servicoExterno, custoProducao, componentes }
+}

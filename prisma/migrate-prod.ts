@@ -5041,6 +5041,67 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "custos_calcgraf" JSONB`)
   console.log('✅ Orçamento Repetição: custos_calcgraf (decomposição CalculoSTC) em calculo_grafico')
 
+  // ── Configurador Gráfico (paridade Calcgraf) — spec configurador-grafico-calcgraf ──
+  // Crédito fiscal do papel (PIS/COFINS) parametrizável por papel.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "credito_pis_cofins_percent" DECIMAL(5,2)`)
+  // Tabela de custo por vigência (versões) — bloqueio de sobreposição é na app.
+  await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "tabela_custo_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "nome" VARCHAR(100) NOT NULL,
+    "vigencia_inicio" DATE NOT NULL,
+    "vigencia_fim" DATE,
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tabela_custo_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_tabela_custo_graf_empresa_vig" ON "tabela_custo_grafico"("empresa_id","vigencia_inicio")`)
+  await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "tabela_custo_grafico_item" (
+    "id" TEXT NOT NULL,
+    "tabela_id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "item_tipo" VARCHAR(20) NOT NULL,
+    "item_id" TEXT,
+    "item_codigo" VARCHAR(60),
+    "item_descricao" VARCHAR(200),
+    "coluna" INTEGER NOT NULL,
+    "valor_total" DECIMAL(14,4),
+    "valor_direto" DECIMAL(14,4),
+    "valor_depreciacao" DECIMAL(14,4),
+    "valor_administracao" DECIMAL(14,4),
+    "valor_outros" DECIMAL(14,4),
+    "valor_frete_kg" DECIMAL(14,4),
+    CONSTRAINT "tabela_custo_grafico_item_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_tabela_custo_item_tabela" ON "tabela_custo_grafico_item"("tabela_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_tabela_custo_item_emp_tipo" ON "tabela_custo_grafico_item"("empresa_id","item_tipo")`)
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE "tabela_custo_grafico_item" ADD CONSTRAINT "tabela_custo_item_tabela_fk" FOREIGN KEY ("tabela_id") REFERENCES "tabela_custo_grafico"("id") ON DELETE CASCADE`) } catch {}
+  // Tributação por operação.
+  await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "tributacao_grafica" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "nome" VARCHAR(60) NOT NULL,
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "aliquota_imposto" DECIMAL(6,2) NOT NULL DEFAULT 0,
+    "aliquota_ipi" DECIMAL(6,2) NOT NULL DEFAULT 0,
+    "pis_cofins_percent" DECIMAL(6,2) NOT NULL DEFAULT 0,
+    "comissao_percent" DECIMAL(6,2) NOT NULL DEFAULT 0,
+    "flag_cred_icms" BOOLEAN NOT NULL DEFAULT false,
+    "flag_cred_ipi" BOOLEAN NOT NULL DEFAULT false,
+    "flag_cred_pis_cofins" BOOLEAN NOT NULL DEFAULT false,
+    "flag_papel_imune" BOOLEAN NOT NULL DEFAULT false,
+    "prazo_financiamento" INTEGER NOT NULL DEFAULT 0,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tributacao_grafica_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_tributacao_grafica_empresa" ON "tributacao_grafica"("empresa_id","ativo")`)
+  console.log('✅ Configurador Gráfico: credito_pis_cofins_percent + tabela_custo_grafico(+item) + tributacao_grafica')
+
   // ── Fase 4: extensão aditiva da OP (frente D) ────────────────────────────────
   for (const [col, tipo] of [
     ['orcamento_item_id','TEXT'],['via','VARCHAR(20)'],

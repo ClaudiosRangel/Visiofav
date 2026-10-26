@@ -31,6 +31,7 @@ import {
   garantirEngenhariaCompleta,
   CalculoGraficoError,
 } from './calculo-grafico.service'
+import { montarMemoriaStc } from './decomposicao-stc.service'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas Zod reutilizados (shape de engenharia e campos de biblioteca)
@@ -239,6 +240,28 @@ export async function calculoGraficoRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Cálculo não encontrado' })
     }
     return calc
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 2.1 GET /:id/memoria-stc — DEMONSTRAÇÃO (read-only) da memória de custo
+  //     registrada no CalculoSTC (papel/tinta/impressão/acabamentos/matriz),
+  //     agrupada em MD/CT/SE e somando o custo de produção. Liga cada componente
+  //     à Origem. NÃO edita nada. Spec configurador-grafico-calcgraf (Req 5).
+  //     empresaId do cálculo EXPLÍCITO (obterCalculoGrafico já filtra).
+  // ───────────────────────────────────────────────────────────────────────────
+  app.get('/:id/memoria-stc', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string() }).parse(request.params)
+
+    const calc = await obterCalculoGrafico(user.empresaId, id)
+    if (!calc) {
+      return reply.status(404).send({ message: 'Cálculo não encontrado' })
+    }
+    const memoria = montarMemoriaStc((calc as { custosCalcgraf?: unknown }).custosCalcgraf)
+    return {
+      numeroCalcgraf: (calc as { numeroCalcgraf?: number | null }).numeroCalcgraf ?? null,
+      ...memoria,
+    }
   })
 
   // ───────────────────────────────────────────────────────────────────────────

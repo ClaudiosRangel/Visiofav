@@ -4103,10 +4103,86 @@ model PrecoMateriaPrima {
   suporteId      String?  @map("suporte_id")
   gramatura      Decimal? @db.Decimal(6, 2)
   densidadeTinta Decimal? @map("densidade_tinta") @db.Decimal(6, 3)
+  // Crédito de PIS/COFINS (%) descontado do custo do material direto, como o
+  // Calcgraf faz (origem: TributacaoVenda.FlagCredPisCofins). Null/0 = sem
+  // crédito. Preço líquido = precoUnitario / (1 + creditoPisCofinsPercent/100).
+  // Spec configurador-grafico-calcgraf. Parametrizável por papel (o % real que
+  // reproduz o custo do Calcgraf nem sempre é 9,25% — ex.: 12992 ≈ 9,08%).
+  creditoPisCofinsPercent Decimal? @map("credito_pis_cofins_percent") @db.Decimal(5, 2)
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 
   @@map("preco_materia_prima")
+}
+
+// ── Configurador Gráfico (paridade Calcgraf) — spec configurador-grafico-calcgraf ──
+
+/// Versão de tabela de custo gráfico com validade por período (paridade
+/// TabelasCusto do Calcgraf). O salvamento bloqueia vigência SOBREPOSTA na mesma
+/// empresa, então a seleção por data retorna no máximo uma versão vigente.
+model TabelaCustoGrafico {
+  id             String    @id @default(uuid())
+  empresaId      String    @map("empresa_id")
+  nome           String    @db.VarChar(100)
+  vigenciaInicio DateTime  @map("vigencia_inicio") @db.Date
+  vigenciaFim    DateTime? @map("vigencia_fim") @db.Date // null = em aberto (+∞)
+  ativo          Boolean   @default(true)
+  criadoEm       DateTime  @default(now()) @map("criado_em")
+  atualizadoEm   DateTime  @updatedAt @map("atualizado_em")
+
+  itens TabelaCustoGraficoItem[]
+
+  @@index([empresaId, vigenciaInicio])
+  @@map("tabela_custo_grafico")
+}
+
+/// Valor de um item de custo numa versão de tabela, por COLUNA (1..4) e por tipo
+/// de valor (as 6 colunas de valor do TabelasCustoDetalhe do Calcgraf).
+model TabelaCustoGraficoItem {
+  id            String  @id @default(uuid())
+  tabelaId      String  @map("tabela_id")
+  empresaId     String  @map("empresa_id") // denormalizado p/ filtro multi-tenant
+  itemTipo      String  @map("item_tipo") @db.VarChar(20) // SUPORTE|TINTA|MAT_ACABAMENTO|CENTRO_CUSTO|...
+  itemId        String? @map("item_id")
+  itemCodigo    String? @map("item_codigo") @db.VarChar(60)
+  itemDescricao String? @map("item_descricao") @db.VarChar(200)
+  coluna        Int // 1..4
+
+  valorTotal         Decimal? @map("valor_total") @db.Decimal(14, 4)
+  valorDireto        Decimal? @map("valor_direto") @db.Decimal(14, 4)
+  valorDepreciacao   Decimal? @map("valor_depreciacao") @db.Decimal(14, 4)
+  valorAdministracao Decimal? @map("valor_administracao") @db.Decimal(14, 4)
+  valorOutros        Decimal? @map("valor_outros") @db.Decimal(14, 4)
+  valorFreteKg       Decimal? @map("valor_frete_kg") @db.Decimal(14, 4)
+
+  tabela TabelaCustoGrafico @relation(fields: [tabelaId], references: [id], onDelete: Cascade)
+
+  @@index([tabelaId])
+  @@index([empresaId, itemTipo])
+  @@map("tabela_custo_grafico_item")
+}
+
+/// Tributação por operação (paridade TributacaoVenda do Calcgraf). Alimenta o CEV
+/// e os flags de crédito (incl. PIS/COFINS do papel e papel imune).
+model TributacaoGrafica {
+  id                 String   @id @default(uuid())
+  empresaId          String   @map("empresa_id")
+  nome               String   @db.VarChar(60)
+  ativo              Boolean  @default(true)
+  aliquotaImposto    Decimal  @default(0) @map("aliquota_imposto") @db.Decimal(6, 2)
+  aliquotaIpi        Decimal  @default(0) @map("aliquota_ipi") @db.Decimal(6, 2)
+  pisCofinsPercent   Decimal  @default(0) @map("pis_cofins_percent") @db.Decimal(6, 2)
+  comissaoPercent    Decimal  @default(0) @map("comissao_percent") @db.Decimal(6, 2)
+  flagCredIcms       Boolean  @default(false) @map("flag_cred_icms")
+  flagCredIpi        Boolean  @default(false) @map("flag_cred_ipi")
+  flagCredPisCofins  Boolean  @default(false) @map("flag_cred_pis_cofins")
+  flagPapelImune     Boolean  @default(false) @map("flag_papel_imune")
+  prazoFinanciamento Int      @default(0) @map("prazo_financiamento")
+  criadoEm           DateTime @default(now()) @map("criado_em")
+  atualizadoEm       DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, ativo])
+  @@map("tributacao_grafica")
 }
 
 // Parâmetros de Perda por Processo
