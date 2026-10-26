@@ -1814,15 +1814,26 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       const ultimoApt = ultimoApontamentoPorEtapa.get(etapaAtual?.id || '')
       // Motivo da parada: do último apontamento tipo PARADA se o status é PAUSADA
       let motivoParada: string | null = null
-      if (status === 'PARADA' && ultimoApt?.motivoParada) {
-        const motivos: Record<string, string> = {
-          MANUTENCAO: 'Manutenção',
-          FALTA_MATERIAL: 'Falta Material',
-          ACERTO_MAQUINA: 'Acerto Máquina',
-          TROCA_TURNO: 'Troca Turno',
-          OUTRO: 'Outro',
+      // Tempo da PARADA ATUAL (R3, pedido do Caio): minutos desde o último
+      // apontamento de PARADA — NÃO o tempo total na etapa. Só quando PARADA.
+      let tempoParadaMinutos: number | null = null
+      if (status === 'PARADA' && ultimoApt) {
+        if (ultimoApt.motivoParada) {
+          const motivos: Record<string, string> = {
+            MANUTENCAO: 'Manutenção',
+            FALTA_MATERIAL: 'Falta Material',
+            ACERTO_MAQUINA: 'Acerto Máquina',
+            TROCA_TURNO: 'Troca Turno',
+            OUTRO: 'Outro',
+          }
+          motivoParada = motivos[ultimoApt.motivoParada] || ultimoApt.motivoParada
         }
-        motivoParada = motivos[ultimoApt.motivoParada] || ultimoApt.motivoParada
+        if (ultimoApt.dataHora) {
+          tempoParadaMinutos = Math.max(
+            0,
+            Math.round((agora.getTime() - new Date(ultimoApt.dataHora).getTime()) / 60000),
+          )
+        }
       }
 
       return {
@@ -1833,6 +1844,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         etapaAtual: etapaAtualData,
         ultimoApontamento: ultimoApt?.dataHora?.toISOString() || null,
         motivoParada,
+        // Minutos decorridos desde o início da parada atual (null quando não parada).
+        tempoParadaMinutos,
+        // Instante em que a parada atual começou (para o front animar o cronômetro).
+        paradaDesde: status === 'PARADA' && ultimoApt?.dataHora ? ultimoApt.dataHora.toISOString() : null,
       }
     })
 
@@ -1841,10 +1856,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const maquinasParadas = maquinas.filter(m => m.status === 'PARADA').length
     const maquinasOciosas = maquinas.filter(m => m.status === 'OCIOSA').length
 
-    // Alertas: paradas > 60 min
+    // Alertas: paradas há mais de 60 min (usa o tempo da PARADA atual, R3).
     let alertasParada = 0
     for (const m of maquinas) {
-      if (m.status === 'PARADA' && m.etapaAtual && m.etapaAtual.tempoNaEtapa > 60) {
+      if (m.status === 'PARADA' && (m.tempoParadaMinutos ?? 0) > 60) {
         alertasParada++
       }
     }

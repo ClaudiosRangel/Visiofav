@@ -209,15 +209,33 @@ export async function dadosDiariosPorCentro(empresaId: string, ano: number, mes:
   return { centros, dias, metaQuantidade: meta ? Number(meta.metaQuantidadeDia) : null }
 }
 
-export interface ParetoItemDTO { codigo: string; descricao: string; ocorrencias: number }
+// `minutos` = total de minutos de parada do motivo no período (pedido do Caio:
+// "Acerto de Máquina – 500 min em Outubro"). `ocorrencias` = nº de paradas
+// (mantido para contexto). Ordenação por minutos (desc).
+export interface ParetoItemDTO { codigo: string; descricao: string; minutos: number; ocorrencias: number }
 
-/** Pareto de paradas do mês por código cadastrado (fallback motivoParada) (Req 5.7). */
+/**
+ * Pareto de paradas do mês por código cadastrado (fallback motivoParada).
+ * Soma o TOTAL DE MINUTOS por motivo (R4) + conta as ocorrências. Minutos nulos
+ * contam como 0 na soma (a ocorrência ainda é contada). (Req 4.1–4.4)
+ */
 export async function paretoParadas(empresaId: string, ano: number, mes: number): Promise<ParetoItemDTO[]> {
   const { inicio, fim } = intervaloMes(ano, mes)
   const apts = (await buscarApontamentosMes(empresaId, inicio, fim)).filter((a) => a.tipo === 'PARADA')
   const codigos = await prisma.codigoParada.findMany({ where: { empresaId } })
   const descPorId = new Map(codigos.map((c) => [c.id, { codigo: c.codigo, descricao: c.descricao }]))
-  const cont = new Map<string, { codigo: string; descricao: string; n: number }>()
+  return paretoParadasPuro(apts, descPorId)
+}
+
+/**
+ * Núcleo PURO do Pareto (testável sem Prisma). Soma minutos por motivo e conta
+ * ocorrências; ordena por minutos desc (empate → mais ocorrências).
+ */
+export function paretoParadasPuro(
+  apts: Array<{ codigoParadaId?: string | null; motivoParada?: string | null; tempoParadaMinutos: number | null }>,
+  descPorId: Map<string, { codigo: string; descricao: string }>,
+): ParetoItemDTO[] {
+  const cont = new Map<string, { codigo: string; descricao: string; minutos: number; n: number }>()
   for (const a of apts) {
     let codigo: string, descricao: string
     if (a.codigoParadaId && descPorId.has(a.codigoParadaId)) {
@@ -227,11 +245,15 @@ export async function paretoParadas(empresaId: string, ano: number, mes: number)
       codigo = a.motivoParada ?? 'OUTRO'; descricao = a.motivoParada ?? 'Outro'
     }
     const k = `${codigo}::${descricao}`
-    const e = cont.get(k) ?? { codigo, descricao, n: 0 }
+    const e = cont.get(k) ?? { codigo, descricao, minutos: 0, n: 0 }
+    const min = Number(a.tempoParadaMinutos)
+    e.minutos += Number.isFinite(min) && min > 0 ? min : 0
     e.n++
     cont.set(k, e)
   }
-  return [...cont.values()].map((e) => ({ codigo: e.codigo, descricao: e.descricao, ocorrencias: e.n })).sort((a, b) => b.ocorrencias - a.ocorrencias)
+  return [...cont.values()]
+    .map((e) => ({ codigo: e.codigo, descricao: e.descricao, minutos: e.minutos, ocorrencias: e.n }))
+    .sort((a, b) => b.minutos - a.minutos || b.ocorrencias - a.ocorrencias)
 }
 
 export interface OpsEmitidasDTO { ano: number; meses: number[] } // meses[0..11]
