@@ -59,8 +59,26 @@ const tintasPorCod = new Map()
 const etapasPorCod = new Map()
 const matrizPorCod = new Map()
 const matacabPorCod = new Map()
+const stcPorCod = new Map()
 for (const bloco of blocos) {
   const inList = bloco.join(',')
+  // CalculoSTC: custo FINAL de CADA componente, por cálculo. A soma bate EXATO
+  // com o custo do Calcgraf (ex.: 12992 = R$ 5.192,05). Classificação do item
+  // pelo Itc.Origem (SUPORTE=papel, TINTA=tinta, CENTRO DE CUSTO=máquina/CT,
+  // MAT.ACABAMENTO/MATRIZ IMPRESSÃO=Material Direto). É a fonte que permite o
+  // item puxado bater item a item (não só o total ancorado).
+  const stc = queryJson(`
+    SELECT s.Codigo AS codigo, s.CodigoItc AS codItc, i.Origem AS origem,
+           s.Descricao AS descricao, s.ValorTotal AS valorTotal,
+           s.QuantFixa AS quantFixa, s.QuantVariavel AS quantVariavel,
+           s.ValorCm AS valorCm
+    FROM CalculoSTC s LEFT JOIN Itc i ON i.Codigo = s.CodigoItc
+    WHERE s.Codigo IN (${inList})
+  `)
+  for (const r of stc) {
+    if (!stcPorCod.has(r.codigo)) stcPorCod.set(r.codigo, [])
+    stcPorCod.get(r.codigo).push(r)
+  }
   // PLANO: resolve nome+preço do suporte casando Itc.CodOrigem=codSuporte e Gramatura
   const planos = queryJson(`
     SELECT p.Codigo AS codigo, p.nomePlano AS nomePlano, p.aproveitamento AS aproveitamento,
@@ -212,7 +230,31 @@ const saidaArr = cabs.map((c) => {
     nome: str(ma.nome),
     precoM2: num(ma.precoM2),
   }))
-  return { numeroCalcgraf: c.numeroCalcgraf, tiragem: num(c.tiragem), planos, tintas, etapas, matrizes, matAcabamento }
+  // Decomposição real por componente (CalculoSTC). Classifica cada item em
+  // MD (material direto) ou CT (custo de transformação) pelo Itc.Origem, e
+  // acumula os totais. A soma = custo do Calcgraf (rede item a item).
+  const CT_ORIGENS = new Set(['CENTRO DE CUSTO'])
+  const componentes = (stcPorCod.get(c.codigo) || [])
+    .map((r) => {
+      const origem = str(r.origem) || 'INDEFINIDO'
+      return {
+        origem,
+        grupo: CT_ORIGENS.has(origem) ? 'CT' : 'MD',
+        descricao: str(r.descricao),
+        valorTotal: num(r.valorTotal) ?? 0,
+        quantFixa: num(r.quantFixa),
+        quantVariavel: num(r.quantVariavel),
+        valorCm: num(r.valorCm),
+      }
+    })
+    .sort((a, b) => b.valorTotal - a.valorTotal)
+  const r2 = (x) => Math.round(x * 100) / 100
+  const materialDireto = r2(componentes.filter((k) => k.grupo === 'MD').reduce((s, k) => s + k.valorTotal, 0))
+  const custoTransformacao = r2(componentes.filter((k) => k.grupo === 'CT').reduce((s, k) => s + k.valorTotal, 0))
+  const custosCalcgraf = componentes.length
+    ? { materialDireto, custoTransformacao, custoProducao: r2(materialDireto + custoTransformacao), componentes }
+    : null
+  return { numeroCalcgraf: c.numeroCalcgraf, tiragem: num(c.tiragem), planos, tintas, etapas, matrizes, matAcabamento, custosCalcgraf }
 })
 
 writeFileSync(saida, JSON.stringify(saidaArr, null, soNumero ? 2 : 0), 'utf8')

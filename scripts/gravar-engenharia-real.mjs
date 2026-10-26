@@ -81,7 +81,9 @@ function resolverPapel(nomeSuporte, gram) {
   return cands.length === 1 ? cands[0] : undefined
 }
 
-let linhas = JSON.parse(readFileSync(join('cartoon', 'export', 'EngenhariaCalcgraf.json'), 'utf8'))
+const idxArq = process.argv.indexOf('--arquivo')
+const ARQUIVO = idxArq >= 0 ? process.argv[idxArq + 1] : join('cartoon', 'export', 'EngenhariaCalcgraf.json')
+let linhas = JSON.parse(readFileSync(ARQUIVO, 'utf8'))
 if (SO_NUMERO) linhas = linhas.filter((l) => Number(l.numeroCalcgraf) === SO_NUMERO)
 console.log(`Papel cadastro: ${papeis.length} | cálculos a gravar: ${linhas.length}${DRY ? ' (DRY)' : ''}`)
 
@@ -92,7 +94,7 @@ async function flush(ops) {
 }
 
 let proc = 0, papelOk = 0, coresOk = 0, aprovOk = 0, medidasOk = 0, fmtOk = 0, gravados = 0
-let etapasOk = 0, maquinaOk = 0, etapasSemDepara = 0, diversosOk = 0
+let etapasOk = 0, maquinaOk = 0, etapasSemDepara = 0, diversosOk = 0, stcOk = 0
 const lote = []
 for (const l of linhas) {
   proc++
@@ -218,6 +220,15 @@ for (const l of linhas) {
   }
   if (diversos.length > 0) { campos.itens_diversos = JSON.stringify(diversos); diversosOk++ }
 
+  // DECOMPOSIÇÃO REAL POR COMPONENTE (CalculoSTC) — fonte de verdade item a item
+  // do custo do Calcgraf. Gravada como JSON `custos_calcgraf`; a ancoragem do
+  // backend projeta MD/CT + detalhe por componente no item puxado (bate item a
+  // item, não só o total). NÃO toca a foto nem a engenharia editável.
+  if (l.custosCalcgraf && Array.isArray(l.custosCalcgraf.componentes) && l.custosCalcgraf.componentes.length) {
+    campos.custos_calcgraf = JSON.stringify(l.custosCalcgraf)
+    stcOk++
+  }
+
   if (DRY) continue
   const sets = []; const vals = []; let i = 1
   for (const [k, v] of Object.entries(campos)) { sets.push(`"${k}"=$${i++}`); vals.push(v) }
@@ -230,5 +241,5 @@ if (!DRY && lote.length) gravados += await flush(lote)
 
 const pct = (n) => `${n} (${(100 * n / proc).toFixed(1)}%)`
 console.log('\n===== RESUMO =====')
-console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), maquinaImpressao: pct(maquinaOk), etapasAcabamento: pct(etapasOk), etapasSemDepara, diversos: pct(diversosOk), gravados }, null, 2))
+console.log(JSON.stringify({ modo: DRY ? 'DRY' : 'APPLY', processados: proc, papelResolvido: pct(papelOk), aproveitamento: pct(aprovOk), medidas: pct(medidasOk), formatoFolha: pct(fmtOk), coresComPreco: pct(coresOk), maquinaImpressao: pct(maquinaOk), etapasAcabamento: pct(etapasOk), etapasSemDepara, diversos: pct(diversosOk), custosCalcgrafStc: pct(stcOk), gravados }, null, 2))
 try { await client.end() } catch {}

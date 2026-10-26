@@ -5034,6 +5034,13 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "codigo_calcgraf" INTEGER`)
   console.log('✅ Orçamento Repetição: cliente_doc/cliente_codigo/engenharia_completa/engenharia_pendentes em calculo_grafico + tipo em orcamento_grafico + codigo_calcgraf em cliente')
 
+  // ── Decomposição real de custo por componente (tabela CalculoSTC do Calcgraf) ──
+  // JSON com MD/CT/custoProducao + lista de componentes (papel/tinta/impressão/
+  // acabamentos/matriz). A soma bate EXATO com o Calcgraf (ex.: 12992 =
+  // R$ 5.192,05). Usado pela ancoragem para projetar a decomposição item a item.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "custos_calcgraf" JSONB`)
+  console.log('✅ Orçamento Repetição: custos_calcgraf (decomposição CalculoSTC) em calculo_grafico')
+
   // ── Fase 4: extensão aditiva da OP (frente D) ────────────────────────────────
   for (const [col, tipo] of [
     ['orcamento_item_id','TEXT'],['via','VARCHAR(20)'],

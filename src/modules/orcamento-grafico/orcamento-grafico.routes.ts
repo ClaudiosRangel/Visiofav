@@ -36,6 +36,7 @@ import {
   garantirEngenhariaCompleta,
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
+import { aplicarDecomposicaoStc } from './calculo-grafico/decomposicao-stc.service'
 
 /**
  * Extrai os parâmetros customizados (com defaults) de um TipoEmbalagem para o
@@ -515,7 +516,7 @@ async function ancorarCustoCalcgraf(
 
     const calc = await prisma.calculoGrafico.findFirst({
       where: { id: origemId, empresaId },
-      select: { custoProducao: true, valorTotal: true, resultadoCalculo: true },
+      select: { custoProducao: true, valorTotal: true, resultadoCalculo: true, custosCalcgraf: true },
     })
     if (!calc) return resultado
 
@@ -531,6 +532,13 @@ async function ancorarCustoCalcgraf(
     if (valorReal > 0) {
       ;(resultado as { precoVenda?: number }).precoVenda = valorReal
     }
+
+    // DECOMPOSIÇÃO REAL POR COMPONENTE (CalculoSTC). Além de ancorar o TOTAL,
+    // projetamos a decomposição item a item do Calcgraf (papel/tinta/impressão/
+    // acabamentos/matriz) — para o item puxado EXIBIR e bater componente a
+    // componente, não só o total. MD/CT vêm da soma dos componentes por grupo;
+    // os detalhes alimentam as seções papel/tinta/máquinas/acabamentos.
+    aplicarDecomposicaoStc(resultado, calc.custosCalcgraf)
   } catch {
     /* sem ancoragem: segue com o recálculo do motor */
   }

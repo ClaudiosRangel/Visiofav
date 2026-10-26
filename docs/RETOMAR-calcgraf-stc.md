@@ -32,6 +32,44 @@ MAT.ACABAMENTO/MATRIZ IMPRESSÃO=Material Direto.
 > componente vindo do CalculoSTC, batendo item a item com o Calcgraf. Validar no
 > 12992 (soma = R$ 5.192,05). Manter a ancoragem como rede de segurança."
 
+## ✅ ESTADO (implementado — falta só gravar em produção + validar na API)
+Implementado nesta sessão (back, LOCAL/não commitado conforme política do usuário):
+1. **Schema**: coluna `CalculoGrafico.custosCalcgraf` (Json, `custos_calcgraf`) +
+   `migrate-prod.ts` idempotente (`ADD COLUMN IF NOT EXISTS`). Roda no deploy.
+2. **Exportador** (`scripts/exportar-engenharia-calcgraf.mjs`): bloco `custosCalcgraf`
+   por cálculo lendo `CalculoSTC` + `Itc.Origem` (MD/CT + componentes). VALIDADO
+   no 12992: MD 4.113,94 + CT 1.078,11 = **5.192,05 EXATO**.
+3. **Gravador** (`scripts/gravar-engenharia-real.mjs`): grava `custos_calcgraf`
+   no `calculo_grafico` (flag `--arquivo <json>` para alvo único; resumo mostra
+   `custosCalcgrafStc`).
+4. **Backend**: módulo puro `calculo-grafico/decomposicao-stc.service.ts`
+   (`aplicarDecomposicaoStc`/`normalizarCustosStc`/`limparDescStc`). A
+   `ancorarCustoCalcgraf` (orcamento-grafico.routes.ts) agora, além de ancorar o
+   TOTAL, projeta MD/CT + detalhe por componente (papel/tinta por cor/máquinas/
+   acabamentos) no `resultado` do item puxado — bate ITEM A ITEM.
+5. **Testes**: `decomposicao-stc.service.test.ts` (golden 12992 + não-regressão +
+   fast-check) — **14/14**. Suíte orcamento-grafico inteira: **242 passed** (0 falhas).
+
+### ✅ GRAVADO EM PRODUÇÃO (26/10/2026)
+- Coluna `custos_calcgraf` criada no Neon (`ADD COLUMN IF NOT EXISTS`).
+- Export completo (`exportar-engenharia-calcgraf.mjs`) + grava via
+  **`scripts/gravar-custos-stc.mjs`** (dedicado, UPDATE em lote `FROM (VALUES)`,
+  ~1 min) → **7.926/7.951** cálculos com `custos_calcgraf` (25 sem linha STC).
+  VERIFICADO: 12992 soma 10 componentes = **5.192,05 EXATO** no banco.
+- API (código antigo no ar): puxar 12992 → item `custoProducao` = 5.192,05
+  (ancoragem OK). A decomposição item a item (MD 4.113,94/CT 1.078,11 +
+  `resultado.custosCalcgraf`) entra ao DEPLOYAR o backend novo (hoje o recalc usa
+  motor antigo MD 3.870,22/CT 975,63). Provado pelos 14/14 testes locais.
+
+### FALTA
+- **Deploy**: commit único com `schema.prisma` + `migrate-prod.ts` + código
+  (decomposicao-stc.service.ts, ancoragem, exportador/gravador). Push → Render.
+- **Reconferir na tela** após o deploy (puxar 12992, abrir item, ver a
+  decomposição com papel 3.010,75 / tintas 221,37 / Roland 732,79 / ... ).
+- **Front** (opcional): a seção "Decomposição do Custo" já lê MD/CT/C.Prod; o
+  detalhe por componente vem em `resultado.custosCalcgraf` (exibir se quiser o
+  quadro completo estilo memória Calcgraf).
+
 ## PLANO DE IMPLEMENTAÇÃO (passos)
 1. **Exportador** (`scripts/exportar-engenharia-calcgraf.mjs` — já traz etapas/
    matriz/BOPP): adicionar um bloco `custosStc[]` por cálculo lendo
