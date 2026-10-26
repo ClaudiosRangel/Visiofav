@@ -323,9 +323,17 @@ export async function usuarioRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Vínculo com empresa não encontrado' })
     }
 
-    // If all 5 modules selected, store as "*"
-    const ALL_MODULES = ['WMS', 'COMPRAS', 'VENDAS', 'FINANCEIRO', 'FISCAL']
-    const allSelected = ALL_MODULES.every((m) => modulos.includes(m))
+    // Lista canônica de módulos concedíveis a um usuário (mesma da tela
+    // Configurador → Usuários). Inclui Orçamento Gráfico e Portal Representante.
+    // Só colapsa para "*" (acesso total) quando TODOS estão marcados — senão
+    // grava a lista explícita (o `*` é expandido para todos os módulos da
+    // empresa na leitura, então colapsar cedo demais concederia acesso além do
+    // que foi marcado).
+    const ALL_MODULES = [
+      'WMS', 'COMPRAS', 'VENDAS', 'FINANCEIRO', 'FISCAL', 'PCP',
+      'ORCAMENTO_GRAFICO', 'PORTAL_REPRESENTANTE',
+    ]
+    const allSelected = modulos.length > 0 && ALL_MODULES.every((m) => modulos.includes(m))
     const modulosStr = allSelected ? '*' : modulos.join(',')
 
     await prisma.usuarioEmpresa.update({
