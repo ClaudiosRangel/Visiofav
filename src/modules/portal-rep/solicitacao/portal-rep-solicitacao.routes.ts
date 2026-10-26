@@ -15,6 +15,7 @@
 
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { prisma } from '../../../lib/prisma'
 import { portalRepAuth } from '../auth/portal-rep-auth.middleware'
 import {
   criarSolicitacao,
@@ -24,6 +25,11 @@ import {
   aprovarSolicitacaoRep,
   recusarSolicitacaoRep,
 } from './portal-rep-solicitacao.service'
+import {
+  listarAmostras,
+  aprovarAmostra,
+  reprovarAmostra,
+} from '../../orcamento-grafico/handoff-comercial/amostra.service'
 
 // ─── Schemas Zod ────────────────────────────────────────────────────────────────
 
@@ -164,6 +170,45 @@ export async function portalRepSolicitacaoRoutes(app: FastifyInstance) {
       const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
       if (err.code) response.code = err.code
       return reply.status(statusCode).send(response)
+    }
+  })
+
+  // ─── Aprovação de Amostra pelo cliente via portal (R5.7) ──────────────────
+  // O representante lista as amostras do orçamento vinculado à solicitação e
+  // aprova/reprova em nome do cliente. Isolamento por empresaId do token.
+  app.get('/:id/amostras', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const { empresaId, vendedorId } = request.portalRepUser
+    // Garante que a solicitação é do vendedor e pega o orçamento vinculado.
+    const sol = await prisma.solicitacaoOrcamentoRep.findFirst({
+      where: { id, empresaId, vendedorId },
+      select: { orcamentoGraficoId: true },
+    })
+    if (!sol?.orcamentoGraficoId) return reply.status(404).send({ message: 'Solicitação/orçamento não encontrado' })
+    return listarAmostras(empresaId, { orcamentoId: sol.orcamentoGraficoId })
+  })
+
+  app.post('/amostras/:amostraId/aprovar', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { amostraId } = z.object({ amostraId: z.string().uuid() }).parse(request.params)
+    const body = z.object({ aprovadoPor: z.string().min(1).max(200) }).parse(request.body)
+    const { empresaId } = request.portalRepUser
+    try {
+      const r = await aprovarAmostra(empresaId, amostraId, body.aprovadoPor)
+      return reply.status(200).send(r)
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ message: err.message, code: err.code })
+    }
+  })
+
+  app.post('/amostras/:amostraId/reprovar', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { amostraId } = z.object({ amostraId: z.string().uuid() }).parse(request.params)
+    const body = z.object({ motivoReprova: z.string().min(1) }).parse(request.body)
+    const { empresaId } = request.portalRepUser
+    try {
+      const r = await reprovarAmostra(empresaId, amostraId, body.motivoReprova)
+      return reply.status(200).send(r)
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ message: err.message, code: err.code })
     }
   })
 }

@@ -40,6 +40,16 @@ import { aplicarDecomposicaoStc, normalizarCustosStc } from './calculo-grafico/d
 import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
+  solicitarAmostra,
+  avancarStatusAmostra,
+  aprovarAmostra,
+  reprovarAmostra,
+  listarAmostras,
+  AmostraError,
+} from './handoff-comercial/amostra.service'
+import { gerarEncaixeSvg, gerarEncaixePdf, EncaixeError } from './handoff-comercial/encaixe-download.service'
+import { liberarPedidoParaPcp, LiberacaoError } from './handoff-comercial/liberar-pedido-pcp.service'
+import {
   criarNotificacaoComercial,
   listarNotificacoesComercial,
   marcarNotificacaoLida,
@@ -970,6 +980,14 @@ function reconstruirBodyDoPlano(plano: any): PlanoBody {
 }
 
 export async function orcamentoGraficoRoutes(app: FastifyInstance) {
+  // Aceita token via query (?token=) para abrir SVG/PDF do encaixe em nova aba
+  // do navegador (sem header Authorization). Mesmo padrão dos outros PDFs.
+  app.addHook('onRequest', async (request) => {
+    const q = request.query as { token?: string } | undefined
+    if (q?.token && !request.headers.authorization) {
+      request.headers.authorization = `Bearer ${q.token}`
+    }
+  })
   app.addHook('onRequest', authenticate)
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3228,8 +3246,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.post('/:id/converter', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({
+      descontoPercent: z.coerce.number().min(0).max(100).optional(),
+      gateAprovado: z.boolean().optional(),
+    }).parse(request.body ?? {})
     try {
-      const r = await converterOrcamentoEmPedido(user.empresaId, id, user.id)
+      const r = await converterOrcamentoEmPedido(user.empresaId, id, user.id, {
+        descontoPercent: body.descontoPercent,
+        gateAprovado: body.gateAprovado,
+      })
       return reply.status(201).send(r)
     } catch (err) {
       if (err instanceof ConversaoError) {
@@ -3278,6 +3303,119 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const user = request.user as { empresaId: string }
     return { marcadas: await marcarTodasLidas(user.empresaId) }
   })
+
+  // ─── Exigência de amostra por orçamento (override) — R5.2 ────────────────
+  app.patch('/:id/exige-amostra', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ exigeAmostra: z.boolean().nullable() }).parse(request.body)
+    const orc = await prisma.orcamentoGrafico.findFirst({ where: { id, empresaId: user.empresaId }, select: { id: true } })
+    if (!orc) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+    await prisma.orcamentoGrafico.update({ where: { id }, data: { exigeAmostra: body.exigeAmostra } as never })
+    return { id, exigeAmostra: body.exigeAmostra }
+  })
+
+  // ─── Aprovação de Amostra/Modelo (R5) ────────────────────────────────────
+  const amostraErr = (reply: import('fastify').FastifyReply, err: unknown) => {
+    if (err instanceof AmostraError) return reply.status(err.statusCode).send({ message: err.message, code: err.code })
+    throw err
+  }
+
+  app.get('/amostras', async (request) => {
+    const user = request.user as { empresaId: string }
+    const q = z.object({ orcamentoId: z.string().uuid().optional(), pedidoVendaId: z.string().uuid().optional() }).parse(request.query)
+    return listarAmostras(user.empresaId, q)
+  })
+
+  app.post('/amostras', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const body = z.object({
+      orcamentoId: z.string().uuid().optional(),
+      pedidoVendaId: z.string().uuid().optional(),
+      tipo: z.enum(['DIGITAL', 'FISICA', 'FACA']),
+    }).parse(request.body)
+    try { return reply.status(201).send(await solicitarAmostra(user.empresaId, body)) }
+    catch (err) { return amostraErr(reply, err) }
+  })
+
+  app.patch('/amostras/:id/status', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({
+      status: z.enum(['EM_PRODUCAO_AMOSTRA', 'ENVIADA_CLIENTE']),
+      anexoUrl: z.string().optional().nullable(),
+    }).parse(request.body)
+    try { return await avancarStatusAmostra(user.empresaId, id, body.status, body.anexoUrl) }
+    catch (err) { return amostraErr(reply, err) }
+  })
+
+  app.post('/amostras/:id/aprovar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ aprovadoPor: z.string().min(1).max(200).optional() }).parse(request.body ?? {})
+    try { return await aprovarAmostra(user.empresaId, id, body.aprovadoPor || user.id) }
+    catch (err) { return amostraErr(reply, err) }
+  })
+
+  app.post('/amostras/:id/reprovar', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ motivoReprova: z.string().min(1) }).parse(request.body)
+    try { return await reprovarAmostra(user.empresaId, id, body.motivoReprova) }
+    catch (err) { return amostraErr(reply, err) }
+  })
+
+  // ─── Download da imagem do encaixe/imposição (R11) ────────────────────────
+  // Por ITEM do orçamento (itemId) OU cabeçalho single-item (itemId omitido).
+  const encaixeErr = (reply: import('fastify').FastifyReply, err: unknown) => {
+    if (err instanceof EncaixeError) return reply.status(err.statusCode).send({ message: err.message, code: err.code })
+    throw err
+  }
+  // ─── Liberação do pedido (vindo de orçamento gráfico) para o PCP (R7) ─────
+  app.post('/pedidos/:pedidoId/liberar-pcp', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { pedidoId } = z.object({ pedidoId: z.string().uuid() }).parse(request.params)
+    try {
+      return reply.status(200).send(await liberarPedidoParaPcp(user.empresaId, pedidoId, user.id))
+    } catch (err) {
+      if (err instanceof LiberacaoError) {
+        return reply.status(err.statusCode).send({ message: err.message, code: err.code })
+      }
+      throw err
+    }
+  })
+
+  app.get('/:id/encaixe.svg', async (request, reply) => encaixeSvgHandler(request, reply, undefined))
+  app.get('/:id/itens/:itemId/encaixe.svg', async (request, reply) => {
+    const { itemId } = z.object({ itemId: z.string().uuid() }).parse(request.params)
+    return encaixeSvgHandler(request, reply, itemId)
+  })
+  app.get('/:id/encaixe.pdf', async (request, reply) => encaixePdfHandler(request, reply, undefined))
+  app.get('/:id/itens/:itemId/encaixe.pdf', async (request, reply) => {
+    const { itemId } = z.object({ itemId: z.string().uuid() }).parse(request.params)
+    return encaixePdfHandler(request, reply, itemId)
+  })
+
+  async function encaixeSvgHandler(request: any, reply: any, itemId?: string) {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      const svg = await gerarEncaixeSvg(user.empresaId, id, itemId)
+      reply.header('Content-Type', 'image/svg+xml')
+      reply.header('Content-Disposition', `inline; filename="encaixe-${id}${itemId ? '-' + itemId : ''}.svg"`)
+      return reply.send(svg)
+    } catch (err) { return encaixeErr(reply, err) }
+  }
+  async function encaixePdfHandler(request: any, reply: any, itemId?: string) {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      const pdf = await gerarEncaixePdf(user.empresaId, id, itemId)
+      reply.header('Content-Type', 'application/pdf')
+      reply.header('Content-Disposition', `inline; filename="encaixe-${id}${itemId ? '-' + itemId : ''}.pdf"`)
+      return reply.send(pdf)
+    } catch (err) { return encaixeErr(reply, err) }
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RECUSAR ORÇAMENTO (POST /:id/recusar)

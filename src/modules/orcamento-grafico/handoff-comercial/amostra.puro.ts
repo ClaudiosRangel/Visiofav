@@ -39,3 +39,13 @@ export function amostraExigida(
   const t = normalizarTipoOp(tipoOp)
   return t === 'NOVO' || t === 'ALTERACAO'
 }
+
+/**
+ * Próxima rodada de amostra (R5.5). PURA. Reprovar/nova solicitação sempre
+ * incrementa a partir da maior rodada existente (nunca decresce). `null`/0/
+ * negativo (sem rodada anterior) → 1.
+ */
+export function proximaRodada(ultimaRodada: number | null | undefined): number {
+  const n = Number(ultimaRodada)
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) + 1 : 1
+}

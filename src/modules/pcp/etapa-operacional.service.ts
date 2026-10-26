@@ -397,6 +397,43 @@ export async function concluirEtapa(etapaId: string, empresaId: string, usuarioI
       console.error('[PCP] Erro ao atualizar quantidade produzida da OP na conclusão:', err)
     }
 
+    // Gatilho de faturamento (R8 — hand-off comercial): se a OP veio de um
+    // orçamento gráfico, marca o pedido vinculado como EFETIVADO (pronto p/
+    // faturar) e notifica o comercial. Best-effort, aditivo, não interrompe.
+    try {
+      const opInfo = await prisma.ordemProducao.findUnique({
+        where: { id: etapa.ordemProducaoId },
+        select: { orcamentoItemId: true },
+      })
+      if (opInfo?.orcamentoItemId) {
+        const item = await prisma.itemOrcamentoGrafico.findUnique({
+          where: { id: opInfo.orcamentoItemId },
+          select: { orcamentoId: true },
+        })
+        if (item?.orcamentoId) {
+          const pedido = await prisma.pedidoVenda.findFirst({
+            where: { empresaId, orcamentoOrigemId: item.orcamentoId, status: { in: ['CONFIRMADO', 'EM_SEPARACAO'] } },
+            select: { id: true, numero: true },
+          })
+          if (pedido) {
+            await prisma.pedidoVenda.update({ where: { id: pedido.id }, data: { status: 'EFETIVADO' } })
+            await prisma.notificacaoComercial.create({
+              data: {
+                empresaId,
+                tipo: 'PEDIDO_EFETIVADO',
+                titulo: `Pedido ${pedido.numero} pronto para faturar`,
+                mensagem: `A produção do pedido ${pedido.numero} foi concluída. Pronto para emissão de NF-e.`,
+                referenciaTipo: 'PEDIDO_VENDA',
+                referenciaId: pedido.id,
+              },
+            })
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[PCP→Comercial] Erro no gatilho de faturamento (não bloqueia):', err)
+    }
+
     try {
       // empresaId sempre da OP (etapa.ordemProducao.empresaId), nunca do
       // usuário logado — já garantido pelo filtro na busca da etapa acima,

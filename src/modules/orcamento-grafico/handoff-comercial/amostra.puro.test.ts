@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
-import { amostraExigida, normalizarTipoOp, type ConfigAmostra } from './amostra.puro'
+import { amostraExigida, normalizarTipoOp, proximaRodada, type ConfigAmostra } from './amostra.puro'
 
 describe('amostraExigida (R5 — Property 4)', () => {
   it('SEMPRE → true; NUNCA → false (ignora override/tipoOp)', () => {
@@ -42,6 +42,26 @@ describe('amostraExigida (R5 — Property 4)', () => {
           expect(amostraExigida('QUANDO_MARCADO', override, tipoOp)).toBe(override)
         },
       ),
+    )
+  })
+})
+
+describe('proximaRodada (R5 — Property 6: rodada monotônica)', () => {
+  it('sem rodada anterior → 1', () => {
+    expect(proximaRodada(null)).toBe(1)
+    expect(proximaRodada(undefined)).toBe(1)
+    expect(proximaRodada(0)).toBe(1)
+    expect(proximaRodada(-5)).toBe(1)
+  })
+  it('incrementa a partir da maior', () => {
+    expect(proximaRodada(1)).toBe(2)
+    expect(proximaRodada(3)).toBe(4)
+  })
+  it('P6: nunca decresce (próxima > anterior quando >= 1)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 9999 }), (n) => {
+        expect(proximaRodada(n)).toBeGreaterThan(n)
+      }),
     )
   })
 })

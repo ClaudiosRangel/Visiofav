@@ -14,6 +14,7 @@
 import { prisma } from '../../../lib/prisma'
 import { resolverProdutoDoItemGrafico } from './sku-sob-demanda.service'
 import { amostraExigida, type ConfigAmostra } from './amostra.puro'
+import { avaliarGateMargem, type RegraGate } from './gate-margem.puro'
 
 export class ConversaoError extends Error {
   constructor(public statusCode: number, message: string, public code?: string) {
@@ -58,7 +59,16 @@ export async function converterOrcamentoEmPedido(
   empresaId: string,
   orcamentoId: string,
   usuarioId: string,
-  opcoes?: { margemAplicada?: number | null; aprovadaPor?: string | null },
+  opcoes?: {
+    margemAplicada?: number | null
+    aprovadaPor?: string | null
+    // Desconto (%) aplicado na conversão — alimenta o gate de margem (R6).
+    // Default 0 → nunca dispara gate. A rota passa quando o comercial aplicar.
+    descontoPercent?: number
+    // Quando o gate foi aprovado previamente (solicitacaoAprovacao resolvida),
+    // a rota passa a autorização para não bloquear de novo.
+    gateAprovado?: boolean
+  },
 ): Promise<ResultadoConversao> {
   const orcamento = await prisma.orcamentoGrafico.findFirst({
     where: { id: orcamentoId, empresaId },
@@ -110,6 +120,40 @@ export async function converterOrcamentoEmPedido(
     })
     if (amostraOk === 0) {
       throw new ConversaoError(409, 'Amostra exigida e ainda não aprovada', 'AMOSTRA_PENDENTE')
+    }
+  }
+
+  // Gate de margem/desconto (R6): se o desconto aplicado dispara uma regra de
+  // alçada e o gate ainda não foi aprovado, bloqueia e abre SolicitacaoAprovacao.
+  const descontoPercent = opcoes?.descontoPercent ?? 0
+  if (descontoPercent > 0 && !opcoes?.gateAprovado) {
+    const regras = await prisma.regraAprovacao.findMany({
+      where: { empresaId, ativo: true, tipo: 'DESCONTO' },
+      select: { tipo: true, condicao: true, valor: true, aprovadorId: true, ativo: true },
+    })
+    const gate = avaliarGateMargem(
+      descontoPercent,
+      regras.map((r) => ({ ...r, valor: Number(r.valor) })) as RegraGate[],
+    )
+    if (gate.exigeAprovacao) {
+      // Abre solicitação de aprovação (reusa o modelo do módulo Vendas).
+      const regra = await prisma.regraAprovacao.findFirst({
+        where: { empresaId, ativo: true, tipo: 'DESCONTO', aprovadorId: gate.aprovadorId },
+        select: { id: true },
+      })
+      if (regra) {
+        await prisma.solicitacaoAprovacao.create({
+          data: {
+            empresaId,
+            regraId: regra.id,
+            solicitanteId: usuarioId,
+            aprovadorId: gate.aprovadorId as string,
+            status: 'PENDENTE',
+            motivo: `Conversão do orçamento ${orcamentoId} com desconto ${descontoPercent}% (acima da alçada)`,
+          },
+        })
+      }
+      throw new ConversaoError(409, 'Desconto acima da alçada — aprovação necessária', 'MARGEM_PENDENTE')
     }
   }
 

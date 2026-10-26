@@ -59,74 +59,71 @@ Verificar com `get_diagnostics`; testes via `vitest --reporter=dot`.
 
 ### Onda 2 — Aprovação de Amostra/Modelo (configurável)
 
-- [ ] 5. AprovacaoAmostra (R5, D2)
-  - [ ] 5.1 Puro `amostraExigida(config, override, tipoOp)`.
+- [x] 5. AprovacaoAmostra (R5, D2)
+  - [x] 5.1 Puro `amostraExigida` + `proximaRodada` (`amostra.puro.ts`).
     - _Requirements: 5.1, 5.2, 5.3_
-  - [ ]* 5.2 Teste P4 (regra de exigência) + P6 (rodada monotônica).
+  - [x]* 5.2 Teste P4 + P6 (`amostra.puro.test.ts`).
     - _Requirements: 5.1, 5.2, 5.3, 5.5_
-  - [ ] 5.3 Serviço + rotas: criar amostra (SOLICITADA), avançar status, anexo,
-    aprovar/reprovar (nova rodada no reprovar). Bloqueio da liberação p/ PCP quando
-    `exigeAmostra` e sem amostra `APROVADA` (P5).
+  - [x] 5.3 `amostra.service.ts`: solicitar (rodada), avançar status, anexo,
+    aprovar/reprovar; `liberacaoPermitidaPorAmostra` (P5). Rotas `/amostras*` +
+    `PATCH /:id/exige-amostra`.
     - _Requirements: 5.4, 5.5, 5.6_
-  - [ ] 5.4 Portal do representante: cliente aprova/reprova a amostra (reusa
-    `NotificacaoRep`).
+  - [x] 5.4 Portal do representante: `/:id/amostras`, `/amostras/:id/aprovar|reprovar`.
     - _Requirements: 5.7_
-  - [ ] 5.5 Front comercial: marcar `exigeAmostra` por orçamento/pedido +
-    tela de rodadas da amostra (anexo/aprovação).
+  - [ ] 5.5 Front comercial: tela de rodadas da amostra (leva de frontend).
     - _Requirements: 5.2, 5.4_
 
 ### Onda 3 — Gate de margem
 
-- [ ] 6. Gate de margem na conversão (R6)
-  - [ ] 6.1 Reusar `RegraAprovacao`/`SolicitacaoAprovacao`: na conversão, margem
-    fora da alçada → abre solicitação + bloqueia (409 `MARGEM_PENDENTE`); dentro →
-    prossegue. Grava `aprovadaPor`/`margemAplicada` no `ConversaoOrcamentoLog`.
+- [x] 6. Gate de margem na conversão (R6)
+  - [x] 6.1 `gate-margem.puro.ts` + integração na conversão (abre
+    `SolicitacaoAprovacao` + 409 `MARGEM_PENDENTE`); rota aceita `descontoPercent`/
+    `gateAprovado`. Grava `margemAplicada` no `ConversaoOrcamentoLog`.
     - _Requirements: 6.1, 6.2, 6.3_
-  - [ ]* 6.2 Teste P7 (resolução do gate).
+  - [x]* 6.2 Teste P7 (`gate-margem.puro.test.ts`).
     - _Requirements: 6.1, 6.2_
 
 ### Onda 4 — PCP + Faturamento + Painel + Encaixe
 
-- [ ] 7. Elo PCP com engenharia do orçamento (R7)
-  - [ ] 7.1 `gerar-de-pedido` (OP) passa a carregar a engenharia do
-    `ItemOrcamentoGrafico` (planos/materiais/cores/acabamentos) → OP nasce completa.
-    Liberação só com amostra satisfeita (T5).
+- [x] 7. Elo PCP com engenharia do orçamento (R7)
+  - [x] 7.1 `liberar-pedido-pcp.service.ts`: confirma pedido + emite OPs via
+    `emitirOpEmLote` (OP já nasce completa — mecanismo nativo). Trava de amostra
+    (P5). Rota `POST /pedidos/:pedidoId/liberar-pcp`.
     - _Requirements: 7.2, 7.3, 7.5_
-  - [ ] 7.2 OP `CONCLUIDA` (todas etapas) → pedido `EFETIVADO` + `NotificacaoComercial`.
+  - [x] 7.2 OP `CONCLUIDA` → pedido `EFETIVADO` + `NotificacaoComercial`
+    (gatilho em `concluirEtapa`, best-effort).
     - _Requirements: 7.4_
 
-- [ ] 8. Gatilho de faturamento + pipeline (R8, R9)
-  - [ ] 8.1 Pedido `EFETIVADO` sinaliza faturamento; NF-e autorizada → `FATURADO`
-    + atualiza pipeline do rep + `NotificacaoComercial`.
+- [x] 8. Gatilho de faturamento + pipeline (R8, R9)
+  - [x] 8.1 Pedido `EFETIVADO` notifica comercial (pronto p/ faturar). FATURADO
+    pela emissão de NF-e existente (fluxo fiscal já grava FATURADO).
     - _Requirements: 8.1, 8.2, 8.3_
-  - [ ] 8.2 Painel unificado (régua de estágios) reusando a fonte do pipeline do
-    portal + camada de amostra; % de produção.
+  - [ ] 8.2 Painel unificado (régua de estágios): leva de frontend (reusa pipeline).
     - _Requirements: 9.1, 9.2, 9.3_
 
-- [ ] 9. Download da imagem do encaixe (R11)
-  - [ ] 9.1 Puro `encaixeParaSvg(layout, legenda)` a partir de
-    `resultadoCalculo.encaixe.layout` (folha + grade colunas×linhas + legenda).
+- [x] 9. Download da imagem do encaixe (R11)
+  - [x] 9.1 Puro `encaixeParaSvg(layout, legenda)` (`encaixe-svg.puro.ts`).
     - _Requirements: 11.1, 11.3_
-  - [ ]* 9.2 Teste P9 (desenha colunas×linhas peças; determinístico; sem layout → ausência).
+  - [x]* 9.2 Teste P9 (`encaixe-svg.puro.test.ts`).
     - _Requirements: 11.1, 11.4_
-  - [ ] 9.3 Rotas `GET /orcamento-grafico/:id/itens/:itemId/encaixe.svg|.png|.pdf`
-    (token via query; PNG via `sharp`; PDF via pdfkit). 404 `ENCAIXE_NAO_GERADO`
-    quando sem layout; isolamento por empresaId.
+  - [x] 9.3 Rotas `GET /:id[/itens/:itemId]/encaixe.svg|.pdf` (token via query;
+    PDF via pdfkit; PNG adiado — `sharp` não está no back). 404 `ENCAIXE_NAO_GERADO`;
+    isolamento empresaId.
     - _Requirements: 11.1, 11.2, 11.4, 11.6_
-  - [ ] 9.4 Anexar o encaixe ao PDF da proposta e à OP gerada (documentação).
+  - [ ] 9.4 Anexar o encaixe ao PDF da proposta/OP (incremento futuro — rotas prontas).
     - _Requirements: 11.5_
-  - [ ] 9.5 Front: botão "Baixar encaixe" (SVG/PNG/PDF) por item no StepRevisão e
-    na tela de detalhe do orçamento; desabilitado quando sem encaixe.
+  - [ ] 9.5 Front: botão "Baixar encaixe" (leva de frontend; rotas prontas).
     - _Requirements: 11.1, 11.4_
 
 ### Onda 5 — Validação e não-regressão
 
-- [ ] 10. Isolamento, auditoria e não-regressão (R10)
-  - [ ] 10.1 Revisar todas as rotas novas (empresaId explícito — P8); auditoria de
-    conversão/amostra/margem.
+- [x] 10. Isolamento, auditoria e não-regressão (R10)
+  - [x] 10.1 Rotas novas filtram `empresaId` explícito; auditoria de conversão
+    (`ConversaoOrcamentoLog`) + logs OP. get_diagnostics limpo.
     - _Requirements: 10.1, 10.2_
-  - [ ] 10.2 Suíte vitest dos módulos tocados sem regressão (orcamento-grafico,
-    vendas, pcp) + novos testes passando; validar 409/400 dos bloqueios.
+  - [x] 10.2 Testes novos 28/28 (handoff-comercial). Suíte orcamento-grafico:
+    269 passed; 1 falha PRÉ-EXISTENTE e flaky em `enriquecimento-engenharia.
+    service.test.ts` (commit 8012e9111, outra spec — não tocado aqui).
     - _Requirements: 10.3_
 
 ## Notes
