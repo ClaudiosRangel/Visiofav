@@ -245,6 +245,20 @@ export interface ProdutividadeLinhaDTO {
 }
 
 /**
+ * Produtividade cruzada OPERADOR × MÁQUINA (R5 — pedido #5 do Caio). Cada
+ * operador traz a lista de máquinas em que apontou produção, com a quantidade
+ * por máquina. Permite ver "o operador X produziu Y na máquina A e Z na
+ * máquina B". Quando `operadorId` é informado no filtro, retorna só esse
+ * operador (quebra por máquina).
+ */
+export interface ProdutividadeOperadorMaquinaDTO {
+  operadorId: string
+  operadorNome: string
+  totalQuantidade: number
+  maquinas: { centroId: string; centroDescricao: string; quantidade: number }[]
+}
+
+/**
  * Produtividade por operador OU por máquina, agrupada por mês civil (-3h).
  * Req 4. Apontamento sem funcionarioId cai em "Sem operador".
  */
@@ -320,6 +334,87 @@ export async function agregarProdutividade(
       nome: g.nome,
       meses: [...g.meses.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([mes, quantidade]) => ({ mes, quantidade })),
       totalQuantidade: g.total,
+    }))
+    .sort((a, b) => b.totalQuantidade - a.totalQuantidade)
+}
+
+/**
+ * Produtividade OPERADOR × MÁQUINA (R5). Agrupa a produção apontada por
+ * operador e, dentro de cada operador, por máquina (centro). Respeita o
+ * filtro (período/centro/operador/tipoProcesso) e o isolamento multi-tenant
+ * por `empresaId` da OP real. Resolve o nome do operador (Usuario ou
+ * Funcionario) e o nome da máquina.
+ */
+export async function agregarProdutividadeOperadorMaquina(
+  empresaId: string,
+  filtro: FiltroApontamentos,
+): Promise<ProdutividadeOperadorMaquinaDTO[]> {
+  const { inicio, fim } = resolverPeriodo(filtro)
+  const apontamentos = await prisma.apontamentoEtapa.findMany({
+    where: { ...whereApontamentos(empresaId, filtro, inicio, fim), tipo: 'PRODUCAO' },
+    select: {
+      funcionarioId: true,
+      quantidadeProduzida: true,
+      etapaOrdemProducao: {
+        select: { centroProducao: { select: { id: true, descricao: true } } },
+      },
+    },
+  })
+
+  interface AccMaquina {
+    centroId: string
+    centroDescricao: string
+    quantidade: number
+  }
+  interface AccOperador {
+    operadorId: string
+    total: number
+    maquinas: Map<string, AccMaquina>
+  }
+  const operadores = new Map<string, AccOperador>()
+  const operadorIds = new Set<string>()
+
+  for (const a of apontamentos) {
+    const qtd = Number(a.quantidadeProduzida)
+    const operadorId = a.funcionarioId ?? 'sem-operador'
+    if (a.funcionarioId) operadorIds.add(a.funcionarioId)
+    const c = a.etapaOrdemProducao?.centroProducao
+    const centroId = c?.id ?? 'sem-centro'
+    const centroDescricao = c?.descricao ?? 'Sem centro'
+
+    let op = operadores.get(operadorId)
+    if (!op) {
+      op = { operadorId, total: 0, maquinas: new Map() }
+      operadores.set(operadorId, op)
+    }
+    op.total += qtd
+    let m = op.maquinas.get(centroId)
+    if (!m) {
+      m = { centroId, centroDescricao, quantidade: 0 }
+      op.maquinas.set(centroId, m)
+    }
+    m.quantidade += qtd
+  }
+
+  // Resolve nomes de operador (Usuario ou Funcionario).
+  const nomePorId = new Map<string, string>()
+  if (operadorIds.size > 0) {
+    const ids = [...operadorIds]
+    const [usuarios, funcionarios] = await Promise.all([
+      prisma.usuario.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true } }),
+      prisma.funcionario.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true } }),
+    ])
+    for (const f of funcionarios) nomePorId.set(f.id, f.nome)
+    for (const u of usuarios) if (!nomePorId.has(u.id)) nomePorId.set(u.id, u.nome)
+  }
+
+  return [...operadores.values()]
+    .map((op) => ({
+      operadorId: op.operadorId,
+      operadorNome:
+        op.operadorId === 'sem-operador' ? 'Sem operador' : nomePorId.get(op.operadorId) ?? op.operadorId,
+      totalQuantidade: op.total,
+      maquinas: [...op.maquinas.values()].sort((a, b) => b.quantidade - a.quantidade),
     }))
     .sort((a, b) => b.totalQuantidade - a.totalQuantidade)
 }

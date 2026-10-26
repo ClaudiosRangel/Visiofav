@@ -13,8 +13,10 @@ import {
   paretoParadas,
   opsEmitidasPorMes,
   trabalhosEmMaquina,
+  producaoFinanceiraPorMaquina,
 } from './relatorio-producao.service'
 import { agregarProdutividade } from '../apontamentos-bi/apontamentos-bi.service'
+import { perfilGuard } from '../../../middleware/perfil-guard'
 import { gerarRelatorioMensalPdf } from './relatorio-producao-pdf.service'
 
 const anoMesSchema = z.object({
@@ -80,6 +82,18 @@ export async function relatorioProducaoRoutes(app: FastifyInstance) {
     const q = z.object({ data: z.string(), centroId: z.string().uuid().optional() }).parse(request.query)
     return trabalhosEmMaquina(user.empresaId, q.data, q.centroId)
   })
+
+  // R$ por máquina + KG fabricado por máquina (R7 — pedido #7 do Caio).
+  // ACESSO RESTRITO: só SUPER_ADMIN (bypass), ADMIN e SUPERVISOR. OPERADOR → 403.
+  app.get(
+    '/gerencial/producao-financeira-maquina',
+    { preHandler: [perfilGuard('ADMIN', 'SUPERVISOR')] },
+    async (request) => {
+      const user = request.user as { empresaId: string }
+      const { ano, mes } = anoMesSchema.parse(request.query)
+      return producaoFinanceiraPorMaquina(user.empresaId, ano, mes)
+    },
+  )
 
   // PDF do relatório mensal.
   app.get('/gerencial/producao-mensal.pdf', async (request, reply) => {

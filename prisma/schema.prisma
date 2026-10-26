@@ -3383,6 +3383,11 @@ model OrdemProducao {
   faturamentoFichaTecnica  String?  @map("faturamento_ficha_tecnica") @db.VarChar(60)
   faturamentoQtdPorAcabado Decimal? @map("faturamento_qtd_por_acabado") @db.Decimal(12, 4)
 
+  // ── R8 (apontamentos-melhorias-caio): liberação do "cartão" (bobina/cartão
+  // encomendado) por gestão para a OP entrar na fila de corte. Auditável. ──
+  cartaoLiberadoEm    DateTime? @map("cartao_liberado_em")
+  cartaoLiberadoPorId String?   @map("cartao_liberado_por_id")
+
   itens               ItemOrdemProducao[]
   etapas              EtapaOrdemProducao[]
   apontamentos        ApontamentoProducao[]

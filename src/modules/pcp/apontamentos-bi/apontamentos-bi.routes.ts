@@ -10,6 +10,7 @@ import { authenticate } from '../../../middleware/authenticate'
 import {
   agregarDashboard,
   agregarProdutividade,
+  agregarProdutividadeOperadorMaquina,
   listarHistorico,
   type FiltroApontamentos,
 } from './apontamentos-bi.service'
@@ -42,11 +43,17 @@ export async function apontamentosBiRoutes(app: FastifyInstance) {
     return agregarDashboard(user.empresaId, filtro)
   })
 
-  // ─── Produtividade por operador|máquina por mês (Req 4) ───────────────────
+  // ─── Produtividade por operador|máquina por mês (Req 4) + operador×máquina (R5) ─
   app.get('/apontamentos-bi/produtividade', async (request) => {
     const user = request.user as { empresaId: string }
-    const q = filtroSchema.extend({ por: z.enum(['operador', 'maquina']).default('operador') }).parse(request.query)
+    const q = filtroSchema
+      .extend({ por: z.enum(['operador', 'maquina', 'operador-maquina']).default('operador') })
+      .parse(request.query)
     const { por, ...filtro } = q
+    if (por === 'operador-maquina') {
+      // R5 — pedido #5 do Caio: quebra por máquina dentro de cada operador.
+      return agregarProdutividadeOperadorMaquina(user.empresaId, filtro as FiltroApontamentos)
+    }
     return agregarProdutividade(user.empresaId, filtro as FiltroApontamentos, por)
   })
 

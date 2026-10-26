@@ -5395,6 +5395,15 @@ async function seedMateriaisFromOPs() {
     if (!String(e?.message).includes('already exists')) throw e
   }
   console.log('✅ Exceções de calendário: excecao_turno criada')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // R8 (spec apontamentos-melhorias-caio) — liberação do "cartão" (bobina/
+  // cartão encomendado) por gestão para a OP entrar na fila de corte.
+  // Auditável (quem/quando). Aditivo. Idempotente.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "cartao_liberado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "cartao_liberado_por_id" TEXT`)
+  console.log('✅ Apontamentos Caio (R8): ordem_producao.cartao_liberado_em/por_id')
 }
 
 main()

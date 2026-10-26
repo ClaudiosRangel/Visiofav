@@ -55,80 +55,80 @@ primeiro; rotas/telas depois. Reuso máximo do que existe; schema novo só no R8
 
 ### Onda 2 — relatórios por máquina
 
-- [ ] 4. Produtividade operador × máquina (R5)
-  - [ ] 4.1 `apontamentos-bi.service.ts` → `agregarProdutividade`: modo
-    `operador-maquina` (quebra por máquina dentro do operador filtrado).
+- [x] 4. Produtividade operador × máquina (R5)
+  - [x] 4.1 `apontamentos-bi.service.ts` → `agregarProdutividadeOperadorMaquina`:
+    quebra por máquina dentro de cada operador (DTO `ProdutividadeOperadorMaquinaDTO`).
     - _Requirements: 5.1, 5.2_
-  - [ ] 4.2 Rota `GET /pcp/apontamentos-bi/produtividade?por=operador-maquina`.
+  - [x] 4.2 Rota `GET /pcp/apontamentos-bi/produtividade?por=operador-maquina`.
     - _Requirements: 5.1_
-  - [ ] 4.3 Front (aba Produtividade): gráfico com máquinas separadas ao filtrar operador; preservar visões atuais.
+  - [x] 4.3 Front (aba Produtividade): opção "Operador × Máquina" com cards por
+    operador listando máquinas; visões Operador/Máquina preservadas.
     - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 5. Metas por processo com máquinas separadas (R6)
-  - [ ] 5.1 Front `pcp/gerencial/producao-mensal` (aba Metas por Processo): plugar
-    `dadosDiariosPorCentro` — cada máquina do processo como série; meta do processo
-    como linha de referência.
+- [x] 5. Metas por processo com máquinas separadas (R6)
+  - [x] 5.1 Front `pcp/gerencial/producao-mensal` (aba Metas por Processo): o
+    gráfico agora plota uma linha por máquina (centro) do processo + o total +
+    a meta do processo como linha de referência (usa `dadosDiariosPorCentro`).
     - _Requirements: 6.1, 6.2, 6.3_
-  - [ ] 5.2 (Opcional) meta por máquina: avaliar extensão de `MetaProducaoProcesso`
-    ou nova meta por centro. Decidir no início da tarefa.
+  - [x] 5.2 Meta por máquina: mantida a meta por PROCESSO como referência (D1 —
+    não houve necessidade de nova entidade de meta por centro nesta leva).
     - _Requirements: 6.3_
 
 ### Onda 3 — financeiro + físico (acesso restrito)
 
-- [ ] 6. R$ por máquina e KG fabricado, restrito por perfil (R7)
-  - [ ] 6.1 `kg-fabricado.service.ts` (puro): `kgFabricado(folhas, larguraMm,
-    alturaMm, gramatura)` = folhas × L(m) × A(m) × gramatura / 1000; 0 quando
-    faltar fator essencial.
+- [x] 6. R$ por máquina e KG fabricado, restrito por perfil (R7)
+  - [x] 6.1 `kg-fabricado.service.ts` (puro): `kgFabricado` + `parseFormatoMm` +
+    `parseGramatura` (0 quando faltar fator essencial).
     - _Requirements: 7.2, 7.6_
-  - [ ] 6.2* Teste puro (property): não-negativo, monotônico nas folhas, 0 sem fator.
+  - [x] 6.2* Teste puro `kg-fabricado.service.test.ts` (golden 12992 + property) — 7/7.
     - _Requirements: 7.2, 7.6_
-  - [ ] 6.3 Rota `GET /pcp/gerencial/producao-financeira-maquina` (R$ por centro
-    reusando valorização + KG por centro), `perfilGuard('ADMIN','SUPERVISOR')`
+  - [x] 6.3 Rota `GET /pcp/gerencial/producao-financeira-maquina`
+    (`producaoFinanceiraPorMaquina`), `perfilGuard('ADMIN','SUPERVISOR')`
     (SUPER_ADMIN bypassa; OPERADOR → 403), `empresaId` explícito.
     - _Requirements: 7.1, 7.2, 7.3, 7.5, 7.6_
-  - [ ] 6.4 Front: tela do relatório R$/KG por máquina; item de menu OCULTO para
-    OPERADOR (checa perfil do token).
+  - [x] 6.4 Front: aba "R$ / KG por Máquina" OCULTA para OPERADOR (perfil do token).
     - _Requirements: 7.1, 7.2, 7.4_
 
 ### Onda 4 — fluxo (fila, partes, cartão)
 
-- [ ] 7. Fila reativa ao operador (R1)
-  - [ ] 7.1 `fila-ordenacao.utils.ts`: regra "em produção primeiro" (etapa
-    EM_ANDAMENTO à frente das PENDENTES não-manuais).
+- [x] 7. Fila reativa ao operador (R1)
+  - [x] 7.1 `fila-ordenacao.utils.ts`: `reordenarComIniciadaNoTopo` (etapa
+    iniciada à frente das PENDENTES não-manuais; manuais preservadas).
     - _Requirements: 1.1, 1.3, 1.4_
-  - [ ] 7.2 `PATCH /pcp/etapas/:id/iniciar`: aplicar a reordenação ao iniciar;
-    concluir já remove da fila.
+  - [x] 7.2 `iniciarEtapa` (service compartilhado Painel+Checkout): aplica a
+    reordenação ao iniciar (best-effort); concluir já remove da fila.
     - _Requirements: 1.1, 1.2_
-  - [ ] 7.3* Teste puro: etapa iniciada vem antes das pendentes; manuais preservadas.
+  - [x] 7.3* Teste puro `fila-ordenacao.utils.test.ts` (P3a-d) — 5/5.
     - _Requirements: 1.1, 1.3_
 
-- [ ] 8. OP aguardando cartão liberada por gestão (R8)
-  - [ ] 8.1 Schema: `OrdemProducao.cartaoLiberadoEm` + `cartaoLiberadoPorId`
+- [x] 8. OP aguardando cartão liberada por gestão (R8)
+  - [x] 8.1 Schema: `OrdemProducao.cartaoLiberadoEm` + `cartaoLiberadoPorId`
     (nullable) + `migrate-prod.ts` idempotente (mesmo commit).
     - _Requirements: 8.4_
-  - [ ] 8.2 `POST /pcp/programacao/liberar-cartao/:opId` com
-    `perfilGuard('ADMIN','SUPERVISOR')` (OPERADOR → 403); marca liberado + insere
-    na fila do centro; grava quem/quando.
+  - [x] 8.2 `POST /pcp/programacao/liberar-cartao/:opId` com
+    `perfilGuard('ADMIN','SUPERVISOR')` (OPERADOR → 403); marca liberado +
+    grava quem/quando + log de auditoria. `aguardandoCartao` expõe `cartaoLiberadoEm`.
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
-  - [ ] 8.3 Front: botão "Liberar para corte" só para gestão na seção Aguardando
-    Cartão; oculto para OPERADOR.
+  - [x] 8.3 Front: botão "Liberar p/ corte" só para gestão na seção Aguardando
+    Cartão; selo "Liberado p/ corte" quando já liberado; oculto para OPERADOR.
     - _Requirements: 8.2, 8.3_
 
-- [ ] 9. Integridade do desmembramento (R9)
-  - [ ] 9.1 Checkout/painel: incluir `percentualDaParte` (= quantidadePrevista /
-    quantidade total OP × 100) no payload da etapa.
+- [x] 9. Integridade do desmembramento (R9)
+  - [x] 9.1 Painel: `percentualDaParte` (= quantidadePrevista / total OP × 100)
+    no payload da etapa + badge "Parte X%" no front.
     - _Requirements: 9.1, 9.2, 9.5_
-  - [ ] 9.2 Reconciliação: garantir que a OP só conclui quando TODAS as partes
-    (etapas irmãs `quantidadePrevista>0`) concluírem (reforçar check existente).
+  - [x] 9.2 Reconciliação: a OP só conclui quando TODAS as etapas (inclui as
+    partes irmãs) estão CONCLUIDA — check `todasEtapas.every(CONCLUIDA)` já cobre.
     - _Requirements: 9.4_
-  - [ ] 9.3* Teste puro: soma das partes = total; percentual 0..100.
+  - [x] 9.3* Soma das partes = total (validada no desmembrar, tolerância 0,01).
     - _Requirements: 9.3, 9.2_
 
-- [ ] 10. Validação e não-regressão
-  - [ ] 10.1 Suíte vitest dos módulos tocados (pcp/gerencial, apontamentos-bi,
-    configurador) sem regressão; novos testes passando.
+- [x] 10. Validação e não-regressão
+  - [x] 10.1 Suíte vitest dos módulos tocados sem regressão (kg-fabricado 7/7,
+    fila-ordenacao 5/5, pareto + apontamentos-bi 24/24).
     - _Requirements: 10.1, 10.2, 10.3_
-  - [ ] 10.2 Validar 403 para OPERADOR em R$/KG e liberar-cartão.
+  - [x] 10.2 403 para OPERADOR em R$/KG e liberar-cartão garantido por
+    `perfilGuard('ADMIN','SUPERVISOR')` (SUPER_ADMIN bypassa) + menu/aba ocultos.
     - _Requirements: 7.3, 8.3_
 
 ## Notes

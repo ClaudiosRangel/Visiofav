@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
+import { perfilGuard } from '../../middleware/perfil-guard'
 import { extrairTextoPdf } from './importacao-op/pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf } from './importacao-op/parsers/gprint-parser'
 import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
@@ -799,6 +800,46 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       dataEntregaOriginal: atualizada.dataEntregaOriginal,
       vezesPostergada: atualizada.vezesPostergada,
     }
+  })
+
+  // =========================================================================
+  // POST /api/pcp/programacao/liberar-cartao/:opId — Libera o "cartão"
+  // (bobina/cartão encomendado) de uma OP aguardando material para entrar na
+  // fila de corte (R8 — pedido #8 do Caio). ACESSO RESTRITO: só gestão
+  // (ADMIN/SUPERVISOR; SUPER_ADMIN bypassa). OPERADOR → 403. Auditável.
+  // =========================================================================
+  app.post('/programacao/liberar-cartao/:opId', { preHandler: [perfilGuard('ADMIN', 'SUPERVISOR')] }, async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { opId } = z.object({ opId: z.string().uuid() }).parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: opId, empresaId: user.empresaId },
+      select: { id: true, numero: true, status: true, cartaoLiberadoEm: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    if (op.cartaoLiberadoEm) {
+      return reply.status(409).send({ message: 'Cartão desta OP já foi liberado' })
+    }
+
+    const agora = new Date()
+    await prisma.ordemProducao.update({
+      where: { id: opId },
+      data: { cartaoLiberadoEm: agora, cartaoLiberadoPorId: user.id },
+    })
+
+    // Auditoria no log da OP.
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: opId,
+        statusAnterior: op.status,
+        statusNovo: op.status,
+        usuarioId: user.id,
+        observacao: 'Cartão (bobina/cartão encomendado) liberado para corte pela gestão',
+      },
+    })
+
+    return { id: op.id, cartaoLiberadoEm: agora, cartaoLiberadoPorId: user.id }
   })
 
   // =========================================================================
@@ -2103,6 +2144,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             numero: true, produtoId: true, quantidade: true, unidadeMedida: true,
             prioridade: true, dataEntregaPrevista: true, dataEntregaOriginal: true, vezesPostergada: true,
             clienteId: true, observacoes: true, referenciaExterna: true, origemImportacao: true,
+            cartaoLiberadoEm: true,
             itens: { where: { tipoMaterial: { in: ['PAPEL', 'TINTA', 'VERNIZ', 'OUTRO'] } } },
           },
         },
@@ -2397,6 +2439,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             sequencia: e.sequencia,
             posicaoFila: e.posicaoFila,
             isDesmembramento: Number(e.quantidadePrevista) > 0,
+            // R9 (apontamentos-melhorias-caio, pedido #9 do Caio) — integridade
+            // do desmembramento: percentual desta PARTE sobre o total da OP
+            // (quantidadePrevista / quantidade total × 100), 0..100. Null quando
+            // não é parte desmembrada.
+            percentualDaParte:
+              Number(e.quantidadePrevista) > 0 && Number(e.ordemProducao.quantidade) > 0
+                ? Math.round((Number(e.quantidadePrevista) / Number(e.ordemProducao.quantidade)) * 10000) / 100
+                : null,
             isManual: e.descricao.includes('[MANUAL]') || e.descricao.startsWith('Lançamento manual'),
             isAvulsa: e.ordemProducao.origemImportacao === 'AVULSA',
             // Plano/componente (TAMPA/CAIXA ou FRENTE/COSTA). null = sem plano.
@@ -2736,6 +2786,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           quantidadeLiberada: m.temEstoqueParcial ? m.qtdProduzivel : 0,
           quantidadeTotal: m.quantidadeTotal,
           percentualLiberado: m.temEstoqueParcial ? Math.round(m.fracaoProduzivel * 100) : 0,
+          // R8 — liberação do cartão por gestão (quem/quando). Quando
+          // preenchido, o front mostra "liberado" em vez do botão de liberar.
+          cartaoLiberadoEm: (e.ordemProducao as any).cartaoLiberadoEm ?? null,
         }
       })
       // Deduplica por OP (pode ter múltiplas etapas da mesma OP)

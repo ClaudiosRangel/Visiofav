@@ -8,6 +8,7 @@
 import { prisma } from '../../../lib/prisma'
 import { baseContagem } from '../base-contagem.service'
 import { valorizar, horasPorVelocidade, dataCivilBrasilia, mesCivilBrasilia } from '../apontamentos-bi/apontamentos-valorizacao.service'
+import { kgFabricado, parseFormatoMm, parseGramatura } from './kg-fabricado.service'
 
 /** Intervalo [inicio, fim] de um mês (1-12) e ano. */
 export function intervaloMes(ano: number, mes: number): { inicio: Date; fim: Date } {
@@ -321,4 +322,127 @@ export async function trabalhosEmMaquina(empresaId: string, dataIso: string, cen
     })
   }
   return out
+}
+
+export interface ProducaoFinanceiraMaquinaDTO {
+  centroId: string
+  centroDescricao: string
+  tipoProcessoCodigo: string | null
+  base: 'UNIDADE' | 'TIRAGEM'
+  produzido: number
+  valorRs: number
+  kgFabricado: number
+}
+
+/**
+ * R$ por máquina + KG fabricado por máquina no mês (R7 — pedido #7 do Caio).
+ * ACESSO RESTRITO (perfilGuard ADMIN/SUPERVISOR na rota; OPERADOR → 403).
+ *
+ * - R$: reusa a valorização por custo já usada no relatório gerencial
+ *   (`valorApontamento`): custoHora × horas (velocidade) com fallback.
+ * - KG: só para base TIRAGEM (folhas). O formato/gramatura vêm do PLANO da
+ *   etapa (formato) e das observações da OP (tags [Formato]/[Bobina]). Quando
+ *   faltam, o KG daquela máquina fica 0 (relatório segue — Req 7.6).
+ * Isolamento por empresaId explícito da OP real.
+ */
+export async function producaoFinanceiraPorMaquina(
+  empresaId: string,
+  ano: number,
+  mes: number,
+): Promise<ProducaoFinanceiraMaquinaDTO[]> {
+  const { inicio, fim } = intervaloMes(ano, mes)
+  const rows = await prisma.apontamentoEtapa.findMany({
+    where: {
+      empresaId,
+      tipo: 'PRODUCAO',
+      dataHora: { gte: inicio, lte: fim },
+      etapaOrdemProducao: {
+        ordemProducao: { empresaId },
+        centroProducao: { status: true, disponivelProgramacao: true },
+      },
+    },
+    select: {
+      quantidadeProduzida: true,
+      setupDuracaoMinutos: true,
+      etapaOrdemProducao: {
+        select: {
+          tempoOperacaoCalculado: true,
+          plano: { select: { formato: true } },
+          centroProducao: {
+            select: {
+              id: true, descricao: true, custoHora: true, velocidade: true,
+              tipoProcesso: { select: { codigo: true } },
+            },
+          },
+          ordemProducao: { select: { observacoes: true } },
+        },
+      },
+    },
+  })
+
+  interface Acc {
+    centroId: string
+    centroDescricao: string
+    tipoProcessoCodigo: string | null
+    produzido: number
+    valorRs: number
+    kg: number
+  }
+  const porCentro = new Map<string, Acc>()
+
+  for (const r of rows) {
+    const etapa = r.etapaOrdemProducao
+    const c = etapa?.centroProducao
+    if (!c) continue
+    const tipoProcessoCodigo = c.tipoProcesso?.codigo ?? null
+    const base = baseContagem(tipoProcessoCodigo ?? '')
+    const q = Number(r.quantidadeProduzida)
+
+    // R$ por custo (mesma regra do relatório gerencial).
+    const velocidade = c.velocidade != null ? Number(c.velocidade) : null
+    const custoHora = c.custoHora != null ? Number(c.custoHora) : null
+    const horas =
+      horasPorVelocidade(q, velocidade) ??
+      (etapa?.tempoOperacaoCalculado != null
+        ? Number(etapa.tempoOperacaoCalculado)
+        : r.setupDuracaoMinutos ?? 0) / 60
+    const valorRs = valorizar({ tempoProdutivoHoras: horas, custoHora, quantidade: q })
+
+    // KG: só faz sentido para base TIRAGEM (folhas).
+    let kg = 0
+    if (base === 'TIRAGEM') {
+      const obs = etapa?.ordemProducao?.observacoes ?? null
+      const fmt = parseFormatoMm(etapa?.plano?.formato ?? null) ?? parseFormatoMmTag(obs)
+      const gramatura = parseGramatura(obs)
+      if (fmt && gramatura) kg = kgFabricado(q, fmt.larguraMm, fmt.alturaMm, gramatura)
+    }
+
+    let acc = porCentro.get(c.id)
+    if (!acc) {
+      acc = { centroId: c.id, centroDescricao: c.descricao, tipoProcessoCodigo, produzido: 0, valorRs: 0, kg: 0 }
+      porCentro.set(c.id, acc)
+    }
+    acc.produzido += q
+    acc.valorRs += valorRs
+    acc.kg += kg
+  }
+
+  return [...porCentro.values()]
+    .map((a) => ({
+      centroId: a.centroId,
+      centroDescricao: a.centroDescricao,
+      tipoProcessoCodigo: a.tipoProcessoCodigo,
+      base: baseContagem(a.tipoProcessoCodigo ?? ''),
+      produzido: a.produzido,
+      valorRs: Math.round(a.valorRs * 100) / 100,
+      kgFabricado: Math.round(a.kg * 100) / 100,
+    }))
+    .sort((a, b) => b.valorRs - a.valorRs)
+}
+
+/** Extrai o formato da tag [Formato] das observações da OP (ex.: "600 x 910"). */
+function parseFormatoMmTag(obs: string | null): { larguraMm: number; alturaMm: number } | null {
+  if (!obs) return null
+  const m = obs.match(/\[Formato\]\s*(.+?)(?:\n|$)/)
+  return m ? parseFormatoMm(m[1].trim()) : null
 }

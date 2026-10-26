@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma'
 import { integracaoWmsAutomaticaAtiva } from './configuracao-pcp.routes'
 import { criarEntradaProducao } from './pcp-wms-integration.service'
+import { reordenarComIniciadaNoTopo, type EtapaParaOrdenar } from './fila-ordenacao.utils'
 
 /**
  * Funções puras de negócio dos 4 handlers operacionais de
@@ -122,7 +123,57 @@ export async function iniciarEtapa(etapaId: string, empresaId: string, funcionar
     })
   }
 
+  // R1 (apontamentos-melhorias-caio) — fila reativa ao operador: ao iniciar,
+  // a etapa vai para a frente das PENDENTES não-manuais do mesmo centro ("o
+  // que está em produção vem primeiro"). Só reordena quando a etapa tem
+  // centro definido. Posições manuais (drag-and-drop) são preservadas pela
+  // função pura. Falha aqui não deve impedir o início (best-effort).
+  if (etapa.centroProducaoId) {
+    try {
+      await reordenarFilaIniciada(empresaId, etapa.centroProducaoId, etapaId)
+    } catch {
+      // não bloqueia o início da etapa
+    }
+  }
+
   return atualizada
+}
+
+/**
+ * Aplica a reordenação R1 (etapa iniciada ao topo) persistindo a nova
+ * `posicaoFila` das etapas ativas do centro. Pura+persistência isolada para
+ * ser reusada por iniciar (Painel e Checkout compartilham este service).
+ */
+async function reordenarFilaIniciada(empresaId: string, centroProducaoId: string, etapaIniciadaId: string) {
+  const ativas = await prisma.etapaOrdemProducao.findMany({
+    where: {
+      centroProducaoId,
+      status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
+      ordemProducao: { empresaId, status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] } },
+    },
+    select: {
+      id: true,
+      posicaoFila: true,
+      ordemManual: true,
+      ordemProducao: { select: { numero: true, dataEntregaPrevista: true } },
+    },
+  })
+  if (ativas.length === 0) return
+
+  const paraOrdenar: EtapaParaOrdenar[] = ativas.map((e) => ({
+    id: e.id,
+    posicaoFila: e.posicaoFila,
+    ordemManual: e.ordemManual ?? false,
+    opNumero: e.ordemProducao?.numero ?? 0,
+    dataEntregaPrevista: e.ordemProducao?.dataEntregaPrevista ?? null,
+  }))
+
+  const novas = reordenarComIniciadaNoTopo(paraOrdenar, etapaIniciadaId)
+  await prisma.$transaction(
+    [...novas.entries()].map(([id, posicaoFila]) =>
+      prisma.etapaOrdemProducao.update({ where: { id }, data: { posicaoFila } }),
+    ),
+  )
 }
 
 /**
