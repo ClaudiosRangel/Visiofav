@@ -190,6 +190,41 @@ s.ValorCm FROM CalculoSTC s LEFT JOIN Itc i ON i.Codigo=s.CodigoItc WHERE s.Codi
 Mapear Origem → bloco do resultado (SUPORTE=papel, TINTA=tinta, CENTRO DE CUSTO=
 máquina/CT, MAT.ACABAMENTO/MATRIZ IMPRESSÃO=MD). A ANCORAGEM do total continua
 como rede de segurança; o STC dá o detalhamento fiel.
+
+### ✅ IMPORTAÇÃO DO CalculoSTC — IMPLEMENTADA (26/10/2026, LOCAL/não commitado)
+O plano acima FOI FEITO (back). Guia detalhado em `docs/RETOMAR-calcgraf-stc.md`.
+- **Schema**: `CalculoGrafico.custosCalcgraf` (Json `custos_calcgraf`) +
+  `migrate-prod.ts` idempotente (`ADD COLUMN IF NOT EXISTS`). Roda no deploy.
+- **Exportador** `exportar-engenharia-calcgraf.mjs`: bloco `custosCalcgraf` lendo
+  `CalculoSTC` + `Itc.Origem` → `{ materialDireto, custoTransformacao,
+  custoProducao, componentes[{origem,grupo:MD|CT,descricao,valorTotal,quantFixa,
+  quantVariavel,valorCm}] }`. VALIDADO 12992: MD 4.113,94 + CT 1.078,11 =
+  **5.192,05 EXATO** (papel 3.010,75 · Roland 732,79 · BOPP 581,82 · matriz 300 ·
+  guilhotina 155,38 · Pantones 221,37 · laminação 100 · cortadeira 89,94).
+- **Gravador** `gravar-engenharia-real.mjs`: grava `custos_calcgraf` (flag
+  `--arquivo <json>` p/ alvo único). NÃO toca foto/engenharia editável.
+- **Backend**: módulo PURO `orcamento-grafico/calculo-grafico/decomposicao-stc.service.ts`
+  (`aplicarDecomposicaoStc`/`normalizarCustosStc`/`limparDescStc`). A
+  `ancorarCustoCalcgraf` agora projeta, além do TOTAL, MD/CT + detalhe por
+  componente (papel/tinta por cor/máquinas/acabamentos) no `resultado` do item
+  puxado — bate ITEM A ITEM. Decomposição crua anexada em `resultado.custosCalcgraf`.
+- **Testes**: `decomposicao-stc.service.test.ts` (golden 12992 + não-regressão +
+  fast-check 2 props) = 14/14; suíte orcamento-grafico inteira = 242 passed / 0 falhas.
+- **GRAVADO EM PRODUÇÃO (26/10/2026)**: `custos_calcgraf` populado para **7.926
+  dos 7.951** cálculos da Wega no Neon (os 25 restantes não têm linha em
+  CalculoSTC). Coluna criada via `ADD COLUMN IF NOT EXISTS`. Export completo
+  (`exportar-engenharia-calcgraf.mjs`, 38 MB) + grava rápida via script dedicado
+  `scripts/gravar-custos-stc.mjs` (UPDATE em lote `FROM (VALUES ...)` por 300 —
+  ~1 min; o `gravar-engenharia-real.mjs` inteiro é lento/frágil p/ só o STC).
+  VERIFICADO no banco: 12992 = soma dos 10 componentes **5.192,05 EXATO**.
+- **VALIDAÇÃO API (produção, código ANTIGO ainda no ar)**: puxar 12992 →
+  `custoProducao` do item = **5.192,05** (ancoragem do total OK, não-regressivo).
+  MD/CT e `resultado.custosCalcgraf` só aparecem **após o deploy** do backend novo
+  (hoje o recalc usa o motor antigo: MD 3.870,22 / CT 975,63). A projeção item a
+  item (MD 4.113,94 / CT 1.078,11 + detalhe) está provada pelos 14/14 testes
+  locais contra exatamente esse dado — entra no ar ao deployar.
+- **FALTA**: deploy (schema.prisma + migrate-prod.ts + código no MESMO commit) e
+  reconferir na tela após o Render subir. Dados já estão em produção.
 ATENÇÃO sqlcmd: `-W -s "|"` CORROMPE a saída (título do terminal). Usar `-i arq.sql
 -o arq.out` SEM `-s`, ou ler via `pg` quando for exportar em lote.
 

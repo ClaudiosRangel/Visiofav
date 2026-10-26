@@ -4380,6 +4380,18 @@ model CalculoGrafico {
   itensFornecidos Json? @map("itens_fornecidos")
   camposLivres    Json? @map("campos_livres")
 
+  // ── Decomposição REAL de custo por componente (tabela CalculoSTC do Calcgraf) ──
+  // Cada linha de `CalculoSTC` grava o custo final de um componente do cálculo
+  // (papel/tinta/impressão/acabamentos/matriz), classificado por `Itc.Origem`.
+  // Para os migrados, a SOMA dos componentes bate EXATO com o custo do Calcgraf
+  // (ex.: 12992 = R$ 5.192,05). Estrutura:
+  //   { origem, materialDireto, custoTransformacao, custoProducao,
+  //     componentes: [{ origem, grupo:'MD'|'CT', descricao, valorTotal,
+  //                     quantFixa, quantVariavel, valorCm }] }
+  // Usado pela ancoragem para projetar MD/CT + detalhe por componente no item
+  // puxado (bate item a item, não só o total). Aditivo; null em cálculos novos.
+  custosCalcgraf    Json?    @map("custos_calcgraf")
+
   // ── Tiragem e FOTO congelada ──
   quantidade        Int
   resultadoCalculo  Json?    @map("resultado_calculo") // FOTO congelada (Req 4) — não recalcular
