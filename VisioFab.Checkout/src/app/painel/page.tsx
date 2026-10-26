@@ -134,6 +134,15 @@ export default function PainelPage() {
   // Requisições de Corte (RC) na fila deste centro (quando é Cortadeira/Guilhotina).
   const [rcs, setRcs] = useState<RcCheckout[]>([])
   const [processandoRc, setProcessandoRc] = useState<string | null>(null)
+  // Resumo da última RC concluída (histórico de conclusão, R2 da spec
+  // apontamentos-melhorias-caio): a RC não tem ApontamentoEtapa (só datas de
+  // corte/guilhotina), então ao concluir mostramos um resumo do que foi
+  // registrado — espelha a intenção "ver o histórico ao concluir".
+  const [resumoRcConcluida, setResumoRcConcluida] = useState<{
+    numero: string
+    etapa: string
+    folhas: number | null
+  } | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -196,8 +205,22 @@ export default function PainelPage() {
   async function acaoRc(rcId: string, acao: string, body?: Record<string, unknown>) {
     if (processandoRc) return
     setProcessandoRc(rcId)
+    const rcAtual = rcs.find((r) => r.id === rcId)
     try {
       await checkoutApiClient.patch(`/rcs/${rcId}/${acao}`, body ?? {})
+      // Ao CONCLUIR (corte ou guilhotina), guarda um resumo do que foi
+      // registrado para exibir como "histórico de conclusão" (R2).
+      if (acao === 'concluir-corte' || acao === 'concluir-guilhotina') {
+        const folhasBody =
+          acao === 'concluir-corte'
+            ? (body?.qtdFolhasCortadeira as number | undefined)
+            : (body?.qtdFolhasGuilhotina as number | undefined)
+        setResumoRcConcluida({
+          numero: rcAtual?.numeroExibicao ?? 'RC',
+          etapa: acao === 'concluir-corte' ? 'Corte' : 'Guilhotina',
+          folhas: folhasBody ?? null,
+        })
+      }
       await buscarRcs()
     } catch {
       // silencioso — o card recarrega no próximo refresh
@@ -287,6 +310,27 @@ export default function PainelPage() {
           <Link href="/identificar-operador" className={styles.operadorBannerLink}>
             Identificar-se
           </Link>
+        </div>
+      )}
+
+      {/* Resumo da última conclusão de RC (R2 — histórico ao concluir). Como a
+          RC não registra apontamentos individuais, mostramos o que foi
+          registrado na conclusão (estágio + folhas). Dispensável com um toque. */}
+      {resumoRcConcluida && (
+        <div className={styles.operadorBanner} style={{ borderLeft: '4px solid #2f9e44' }}>
+          <span>
+            ✓ {resumoRcConcluida.numero} — {resumoRcConcluida.etapa} concluído
+            {resumoRcConcluida.folhas != null
+              ? `: ${resumoRcConcluida.folhas.toLocaleString('pt-BR')} folhas`
+              : ''}
+          </span>
+          <button
+            type="button"
+            className={styles.operadorBannerLink}
+            onClick={() => setResumoRcConcluida(null)}
+          >
+            Fechar
+          </button>
         </div>
       )}
 

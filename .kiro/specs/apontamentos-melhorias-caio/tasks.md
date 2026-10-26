@@ -39,7 +39,10 @@ primeiro; rotas/telas depois. Reuso máximo do que existe; schema novo só no R8
 - [x] 2. Histórico do apontamento ao concluir (R2)
   - [x] 2.1 Front: componente `HistoricoEtapaModal` aberto ao concluir no Painel de Programação (direta e via finalizar-apontamento). Consome `GET /pcp/etapas/:id/apontamentos` com totais.
     - _Requirements: 2.1, 2.2_
-  - [ ] 2.2 Front Checkout: mesmo histórico ao concluir a etapa/RC. (pendente)
+  - [x] 2.2 Front Checkout: histórico ao concluir. A tela `etapa/[id]` já exibe
+    o histórico de apontamentos e recarrega ao concluir (`buscarHistorico`). No
+    `painel` (RC não tem ApontamentoEtapa), ao concluir corte/guilhotina mostra um
+    resumo da conclusão (estágio + folhas) — espelha a intenção de "ver ao concluir".
     - _Requirements: 2.1, 2.2_
   - [x] 2.3 Isolamento `empresaId` na rota de histórico (já filtra).
     - _Requirements: 2.3_
