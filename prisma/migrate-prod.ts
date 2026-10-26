@@ -5404,6 +5404,60 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "cartao_liberado_em" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "cartao_liberado_por_id" TEXT`)
   console.log('✅ Apontamentos Caio (R8): ordem_producao.cartao_liberado_em/por_id')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Hand-off Comercial do Orçamento Gráfico (spec orcamento-grafico-handoff-
+  // comercial). Aditivo e idempotente. Overrides de amostra + 3 tabelas novas.
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "exige_amostra" BOOLEAN`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_venda" ADD COLUMN IF NOT EXISTS "exige_amostra" BOOLEAN NOT NULL DEFAULT false`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "aprovacao_amostra" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "orcamento_id" TEXT,
+    "pedido_venda_id" TEXT,
+    "tipo" VARCHAR(12) NOT NULL,
+    "status" VARCHAR(24) NOT NULL,
+    "rodada" INTEGER NOT NULL DEFAULT 1,
+    "anexo_url" TEXT,
+    "aprovado_por" TEXT,
+    "aprovado_em" TIMESTAMP(3),
+    "motivo_reprova" TEXT,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "aprovacao_amostra_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "aprovacao_amostra_empresa_id_orcamento_id_idx" ON "aprovacao_amostra"("empresa_id","orcamento_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "aprovacao_amostra_empresa_id_pedido_venda_id_idx" ON "aprovacao_amostra"("empresa_id","pedido_venda_id")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "notificacao_comercial" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "tipo" VARCHAR(40) NOT NULL,
+    "titulo" VARCHAR(200) NOT NULL,
+    "mensagem" TEXT NOT NULL,
+    "referencia_tipo" VARCHAR(30),
+    "referencia_id" TEXT,
+    "lida" BOOLEAN NOT NULL DEFAULT false,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "notificacao_comercial_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "notificacao_comercial_empresa_id_lida_criado_em_idx" ON "notificacao_comercial"("empresa_id","lida","criado_em")`)
+
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "conversao_orcamento_log" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "orcamento_id" TEXT NOT NULL,
+    "pedido_venda_id" TEXT NOT NULL,
+    "usuario_id" TEXT NOT NULL,
+    "margem_aplicada" DECIMAL(5,2),
+    "aprovada_por" TEXT,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "conversao_orcamento_log_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "conversao_orcamento_log_empresa_id_orcamento_id_idx" ON "conversao_orcamento_log"("empresa_id","orcamento_id")`)
+  console.log('✅ Hand-off Comercial: exige_amostra (orc/pedido) + aprovacao_amostra, notificacao_comercial, conversao_orcamento_log')
 }
 
 main()

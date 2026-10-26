@@ -37,6 +37,15 @@ import {
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 import { aplicarDecomposicaoStc, normalizarCustosStc } from './calculo-grafico/decomposicao-stc.service'
+import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
+import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
+import {
+  criarNotificacaoComercial,
+  listarNotificacoesComercial,
+  marcarNotificacaoLida,
+  marcarTodasLidas,
+  contarNaoLidasComercial,
+} from './handoff-comercial/notificacao-comercial.service'
 
 /**
  * Extrai os parâmetros customizados (com defaults) de um TipoEmbalagem para o
@@ -3186,7 +3195,88 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       select: orcamentoGraficoSelect,
     })
 
+    // Hand-off comercial (R4): ao aprovar, notifica o setor comercial que há um
+    // orçamento a converter em pedido. Best-effort (não quebra a aprovação).
+    try {
+      await criarNotificacaoComercial({
+        empresaId: user.empresaId,
+        tipo: 'ORCAMENTO_APROVADO',
+        titulo: `Orçamento ${atualizado.numero} aprovado`,
+        mensagem: `O orçamento ${atualizado.numero} foi aprovado e está pronto para conversão em pedido.`,
+        referenciaTipo: 'ORCAMENTO_GRAFICO',
+        referenciaId: id,
+      })
+    } catch {
+      // não bloqueia a aprovação
+    }
+
     return atualizado
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONVERTER ORÇAMENTO EM PEDIDO (POST /:id/converter) — hand-off comercial
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /api/orcamento-grafico/:id/converter
+   * Converte um orçamento APROVADO em PedidoVenda COMPLETO (itens + SKU sob
+   * demanda), move o orçamento para CONVERTIDO e grava auditoria. Bloqueia
+   * quando falta cliente/tabela de preço, quando a amostra é exigida e não
+   * aprovada, ou quando a margem está fora da alçada (gate — onda 3).
+   * Spec orcamento-grafico-handoff-comercial.
+   */
+  app.post('/:id/converter', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      const r = await converterOrcamentoEmPedido(user.empresaId, id, user.id)
+      return reply.status(201).send(r)
+    } catch (err) {
+      if (err instanceof ConversaoError) {
+        return reply.status(err.statusCode).send({ message: err.message, code: err.code })
+      }
+      throw err
+    }
+  })
+
+  // ─── Caixa "Orçamentos a converter" (R4) ─────────────────────────────────
+  app.get('/a-converter', async (request) => {
+    const user = request.user as { empresaId: string }
+    const q = z.object({
+      clienteId: z.string().uuid().optional(),
+      vendedorId: z.string().uuid().optional(),
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
+    }).parse(request.query)
+    return listarOrcamentosAConverter(user.empresaId, q)
+  })
+
+  // ─── Notificações do comercial (R4) ──────────────────────────────────────
+  app.get('/comercial/notificacoes', async (request) => {
+    const user = request.user as { empresaId: string }
+    const q = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      pageSize: z.coerce.number().int().min(1).max(200).default(50),
+    }).parse(request.query)
+    return listarNotificacoesComercial(user.empresaId, q)
+  })
+
+  app.get('/comercial/notificacoes/count-nao-lidas', async (request) => {
+    const user = request.user as { empresaId: string }
+    return { naoLidas: await contarNaoLidasComercial(user.empresaId) }
+  })
+
+  app.put('/comercial/notificacoes/:id/lida', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const ok = await marcarNotificacaoLida(user.empresaId, id)
+    if (!ok) return reply.status(404).send({ message: 'Notificação não encontrada' })
+    return { ok: true }
+  })
+
+  app.put('/comercial/notificacoes/ler-todas', async (request) => {
+    const user = request.user as { empresaId: string }
+    return { marcadas: await marcarTodasLidas(user.empresaId) }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════

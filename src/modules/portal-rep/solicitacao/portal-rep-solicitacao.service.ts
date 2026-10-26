@@ -1,5 +1,6 @@
 import { prisma } from '../../../lib/prisma'
 import { PortalRepUser } from '../auth/portal-rep-auth.middleware'
+import { criarNotificacaoComercial } from '../../orcamento-grafico/handoff-comercial/notificacao-comercial.service'
 
 /**
  * Serviço de Solicitação de Orçamento do Portal do Representante.
@@ -454,6 +455,21 @@ export async function aprovarSolicitacaoRep(
     },
     select: SOLICITACAO_SELECT,
   })
+
+  // Hand-off comercial (R4): notifica o comercial que o cliente aprovou (via
+  // portal) um orçamento. Best-effort — não quebra a aprovação do portal.
+  try {
+    await criarNotificacaoComercial({
+      empresaId,
+      tipo: 'ORCAMENTO_APROVADO',
+      titulo: `Orçamento ${orcamento.numero ?? ''} aprovado (portal)`.trim(),
+      mensagem: `O representante aprovou em nome do cliente (${aprovadoPor.trim()}). Pedido #${pedido.numero} gerado.`,
+      referenciaTipo: 'ORCAMENTO_GRAFICO',
+      referenciaId: orcamento.id,
+    })
+  } catch {
+    // não bloqueia
+  }
 
   return { solicitacao: atualizada, pedido }
 }
