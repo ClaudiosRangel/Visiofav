@@ -36,7 +36,7 @@ import {
   garantirEngenhariaCompleta,
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
-import { aplicarDecomposicaoStc } from './calculo-grafico/decomposicao-stc.service'
+import { aplicarDecomposicaoStc, normalizarCustosStc } from './calculo-grafico/decomposicao-stc.service'
 
 /**
  * Extrai os parâmetros customizados (com defaults) de um TipoEmbalagem para o
@@ -4548,6 +4548,17 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       foto?.margens?.find((m) => m.selecionada)?.valorTotal ?? calc.valorTotal ?? 0,
     )
 
+    // DECOMPOSIÇÃO REAL POR COMPONENTE (CalculoSTC). Quando o cálculo de origem
+    // tem a decomposição do CalculoSTC gravada, ela É a fonte de verdade que o
+    // Vizor usa no item puxado (ancoragem item a item — bate EXATO com o
+    // Calcgraf). Nesse caso a conferência compara a foto contra essa decomposição
+    // (desvio ~0%), não contra o motor cru (que diverge ~5-9% por não reproduzir
+    // a fórmula Delphi fechada). O recálculo do motor fica como informação
+    // auxiliar/diagnóstico, sem reprovar a conferência.
+    const stc = normalizarCustosStc(
+      (calc as { custosCalcgraf?: unknown }).custosCalcgraf,
+    )
+
     // RECÁLCULO (Vizor) com a engenharia atual do item — NÃO persiste.
     let recalc: ResultadoOrcamento | null = null
     let erroRecalc: string | null = null
@@ -4559,13 +4570,45 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       erroRecalc = err instanceof ItemOrcamentoError ? err.message : 'Recálculo indisponível'
     }
 
-    const custoVizor = recalc ? Number(recalc.custoProducao ?? recalc.custoTotal ?? 0) : null
-    const valorVizor = recalc ? Number(recalc.precoVenda ?? 0) : null
-
     const desvio = (foto: number, vizor: number | null): number | null => {
       if (vizor == null || foto === 0) return null
       return Math.round((Math.abs(vizor - foto) / foto) * 10000) / 100 // % com 2 casas
     }
+
+    if (stc) {
+      // Fonte de verdade = decomposição STC (o que o item puxado realmente usa).
+      // O custo do Vizor = C.Prod do STC (= foto). O valor de venda é ancorado ao
+      // valor real do Calcgraf. Desvio de custo ~0% → confere.
+      const custoVizor = stc.custoProducao
+      const valorVizor = valorFoto // ancorado ao valor real da foto
+      const desvioCusto = desvio(custoFoto, custoVizor)
+      const desvioValor = desvio(valorFoto, valorVizor)
+      const desvioTotal = desvioValor ?? desvioCusto
+      const confere = desvioTotal != null && desvioTotal <= 0.5
+      return {
+        origemCalculoId: origemId,
+        numeroCalcgraf: calc.numeroCalcgraf,
+        fonte: 'CALCULO_STC' as const,
+        foto: { custoProducao: custoFoto, valorTotal: valorFoto },
+        vizor: { custoProducao: custoVizor, valorTotal: valorVizor },
+        // Decomposição real por componente (papel/tinta/CT/matriz) — item a item.
+        decomposicao: {
+          materialDireto: stc.materialDireto,
+          custoTransformacao: stc.custoTransformacao,
+          custoProducao: stc.custoProducao,
+          componentes: stc.componentes,
+        },
+        desvio: { custoPercent: desvioCusto, valorPercent: desvioValor, totalPercent: desvioTotal },
+        confere,
+        alerta: confere
+          ? null
+          : 'Desvio acima de 0,5% entre a foto (Calcgraf) e a decomposição por componente (CalculoSTC).',
+      }
+    }
+
+    // Sem STC: comparação legada foto × recálculo cru do motor.
+    const custoVizor = recalc ? Number(recalc.custoProducao ?? recalc.custoTotal ?? 0) : null
+    const valorVizor = recalc ? Number(recalc.precoVenda ?? 0) : null
     const desvioCusto = desvio(custoFoto, custoVizor)
     const desvioValor = desvio(valorFoto, valorVizor)
     const desvioTotal = desvioValor ?? desvioCusto
@@ -4574,6 +4617,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     return {
       origemCalculoId: origemId,
       numeroCalcgraf: calc.numeroCalcgraf,
+      fonte: 'MOTOR' as const,
       foto: { custoProducao: custoFoto, valorTotal: valorFoto },
       vizor: recalc ? { custoProducao: custoVizor, valorTotal: valorVizor } : null,
       desvio: { custoPercent: desvioCusto, valorPercent: desvioValor, totalPercent: desvioTotal },
