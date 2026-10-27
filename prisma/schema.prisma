@@ -3359,6 +3359,8 @@ model OrdemProducao {
   clienteId           String?           @map("cliente_id")
   lote                String?           @db.VarChar(50)
   cor                 String?           @db.VarChar(50)
+  corGantt            String?           @map("cor_gantt") @db.VarChar(9)
+  statusGanttObs      String?           @map("status_gantt_obs") @db.VarChar(120)
   grupoOpId           String?           @map("grupo_op_id")
   quantidadeExcedente Decimal           @default(0) @map("quantidade_excedente") @db.Decimal(12, 4)
   motivoCancelamento  String?           @map("motivo_cancelamento") @db.Text

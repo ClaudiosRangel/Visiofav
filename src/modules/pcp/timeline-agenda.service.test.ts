@@ -305,3 +305,360 @@ describe('Property 2 (exceções): DIA_EXTRA permite produção no sábado', () 
     expect(fim.getHours()).toBe(10)
   })
 })
+
+
+// ─── No-overlap: capacidade finita (spec pcp-gantt-melhorias, Task 2.2) ──────
+// Properties P1–P4 do design (Correctness Properties). vitest + fast-check.
+import fc from 'fast-check'
+import {
+  resolverNoOverlap,
+  type EtapaComInicio,
+  type ResultadoAgenda,
+} from './timeline-agenda.service'
+
+// Turno linear (24/7) para as invariantes de não-sobreposição ficarem limpas:
+// sem turno (null) o motor trata o tempo como linear (fim = inicio + duração).
+// Domínios pequenos e controlados → testes rápidos e estáveis.
+const BASE_MS = new Date('2026-11-02T00:00:00.000Z').getTime() // segunda
+const SEED = 20261102 // seed fixa → determinismo dos próprios testes
+
+/** Gera uma etapa pura, num único centro C1, SEM turno (linear). */
+function arbEtapaLinear(idPrefix: string) {
+  return fc.record({
+    idx: fc.integer({ min: 0, max: 999 }),
+    offsetMin: fc.integer({ min: 0, max: 60 * 24 * 3 }), // início dentro de ~3 dias
+    setup: fc.integer({ min: 0, max: 60 }),
+    operacao: fc.integer({ min: 0, max: 240 }),
+    fila: fc.integer({ min: 1, max: 6 }),
+    sequencia: fc.integer({ min: 1, max: 6 }),
+  }).map(({ idx, offsetMin, setup, operacao, fila, sequencia }): EtapaComInicio => ({
+    etapa: {
+      id: `${idPrefix}-${idx}`,
+      ordemProducaoId: `op-${idPrefix}-${idx}`,
+      centroProducaoId: 'C1',
+      posicaoFila: fila,
+      sequencia,
+      tempoSetupMinutos: setup,
+      tempoOperacaoMinutos: operacao,
+      tempoEsperaMinutos: 0,
+      status: 'PENDENTE',
+      dataInicioReal: null,
+      dataFimReal: null,
+      turno: null,
+      agendaTravada: false,
+      inicioAgendadoManual: null,
+    },
+    inicio: new Date(BASE_MS + offsetMin * 60000),
+  }))
+}
+
+/** Conjunto de 1..6 etapas lineares no MESMO centro, ids únicos. */
+function arbConjuntoLinear(idPrefix: string) {
+  return fc.array(arbEtapaLinear(idPrefix), { minLength: 1, maxLength: 6 }).map((arr) =>
+    // dedup por id (o map de idx pode colidir) — garante ids únicos
+    Array.from(new Map(arr.map((e) => [e.etapa.id, e])).values()),
+  )
+}
+
+/** Duração total de uma etapa (setup + operação). */
+function durMin(e: EtapaComInicio['etapa']): number {
+  return (Number(e.tempoSetupMinutos) || 0) + (Number(e.tempoOperacaoMinutos) || 0)
+}
+
+describe('No-overlap — Property 2: sem sobreposição na mesma raia', () => {
+  it('resolverNoOverlap (linear) nunca deixa par de não-travadas com [ini,fim) sobreposto', () => {
+    // **Validates: Requirements 4.2**
+    fc.assert(
+      fc.property(arbConjuntoLinear('p2'), (conjunto) => {
+        const mapa = resolverNoOverlap(conjunto, null, [])
+        // Monta intervalos [ini, fim) a partir do início resolvido + duração (linear).
+        const intervalos = conjunto.map(({ etapa }) => {
+          const ini = mapa.get(etapa.id)!.getTime()
+          return { id: etapa.id, ini, fim: ini + durMin(etapa) * 60000 }
+        })
+        // Toda etapa recebida deve ter saída.
+        for (const { etapa } of conjunto) {
+          if (!mapa.has(etapa.id)) return false
+        }
+        // Nenhum par com interseção de duração > 0 (fim==inicio NÃO sobrepõe).
+        for (let i = 0; i < intervalos.length; i++) {
+          for (let j = i + 1; j < intervalos.length; j++) {
+            const a = intervalos[i]
+            const b = intervalos[j]
+            const sobrepoe = a.ini < b.fim && b.ini < a.fim // estritamente > 0 de interseção
+            if (sobrepoe) return false
+          }
+        }
+        return true
+      }),
+      { numRuns: 300, seed: SEED },
+    )
+  })
+
+  it('calcularAgenda (linear, mesmo centro) não gera sobreposição entre etapas não-travadas', () => {
+    // **Validates: Requirements 4.2**
+    // Gera várias etapas PENDENTES no mesmo centro SEM turno; cada uma é sua própria OP
+    // (para isolar a regra de capacidade do centro da cascata intra-OP).
+    const arb = fc.array(
+      fc.record({
+        idx: fc.integer({ min: 0, max: 999 }),
+        setup: fc.integer({ min: 0, max: 60 }),
+        operacao: fc.integer({ min: 0, max: 240 }),
+        fila: fc.integer({ min: 1, max: 6 }),
+      }),
+      { minLength: 1, maxLength: 6 },
+    )
+    fc.assert(
+      fc.property(arb, (specs) => {
+        const unico = Array.from(new Map(specs.map((s) => [s.idx, s])).values())
+        const etapas: EtapaAgenda[] = unico.map((s) =>
+          etapa({
+            id: `ca-${s.idx}`,
+            ordemProducaoId: `op-ca-${s.idx}`,
+            centroProducaoId: 'C1',
+            posicaoFila: s.fila,
+            sequencia: 1,
+            tempoSetupMinutos: s.setup,
+            tempoOperacaoMinutos: s.operacao,
+            turno: null,
+          }),
+        )
+        const r = calcularAgenda(etapas, AGORA, { noOverlap: true })
+        const intervalos = etapas.map((e) => {
+          const res = r.get(e.id)!
+          return { ini: res.inicioPrevisto.getTime(), fim: res.fimPrevisto.getTime() }
+        })
+        for (let i = 0; i < intervalos.length; i++) {
+          for (let j = i + 1; j < intervalos.length; j++) {
+            const a = intervalos[i]
+            const b = intervalos[j]
+            if (a.ini < b.fim && b.ini < a.fim) return false
+          }
+        }
+        return true
+      }),
+      { numRuns: 300, seed: SEED },
+    )
+  })
+})
+
+describe('No-overlap — Property 1: não-regressão (sem colisão ⇒ saída idêntica)', () => {
+  it('etapas sequenciais com folga: noOverlap:true == noOverlap:false', () => {
+    // **Validates: Requirements 4.5, 10.1**
+    // Constrói etapas JÁ sequenciais com folga no mesmo centro (uma por OP),
+    // ordenadas por posicaoFila; por construção não há colisão → as duas
+    // execuções (com e sem no-overlap) devem produzir inícios/fins idênticos.
+    const arb = fc.array(fc.integer({ min: 0, max: 240 }), { minLength: 1, maxLength: 6 })
+    fc.assert(
+      fc.property(arb, fc.integer({ min: 30, max: 120 }), (duracoes, folgaMin) => {
+        // Monta a cadeia: cada etapa começa após o fim da anterior + folga.
+        const etapas: EtapaAgenda[] = []
+        let cursor = AGORA.getTime()
+        duracoes.forEach((op, i) => {
+          const dur = op
+          etapas.push(
+            etapa({
+              id: `nr-${i}`,
+              ordemProducaoId: `op-nr-${i}`,
+              centroProducaoId: 'C1',
+              posicaoFila: i + 1,
+              sequencia: 1,
+              tempoSetupMinutos: 0,
+              tempoOperacaoMinutos: dur,
+              turno: null,
+              agendaTravada: true, // trava na posição sequencial com folga
+              inicioAgendadoManual: new Date(cursor),
+            }),
+          )
+          cursor += (dur + folgaMin) * 60000 // folga garante zero colisão
+        })
+        const comOverlap = calcularAgenda(etapas, AGORA, { noOverlap: true })
+        const semOverlap = calcularAgenda(etapas, AGORA, { noOverlap: false })
+        for (const e of etapas) {
+          const a = comOverlap.get(e.id)!
+          const b = semOverlap.get(e.id)!
+          if (a.inicioPrevisto.getTime() !== b.inicioPrevisto.getTime()) return false
+          if (a.fimPrevisto.getTime() !== b.fimPrevisto.getTime()) return false
+        }
+        return true
+      }),
+      { numRuns: 300, seed: SEED },
+    )
+  })
+
+  it('etapa única por centro: noOverlap não altera nada', () => {
+    // **Validates: Requirements 4.5, 10.1**
+    const arb = fc.record({
+      setup: fc.integer({ min: 0, max: 60 }),
+      operacao: fc.integer({ min: 0, max: 240 }),
+      offsetMin: fc.integer({ min: 0, max: 60 * 24 }),
+    })
+    fc.assert(
+      fc.property(arb, ({ setup, operacao, offsetMin }) => {
+        const e = etapa({
+          id: 'u1',
+          ordemProducaoId: 'op-u1',
+          centroProducaoId: 'C1',
+          posicaoFila: 1,
+          sequencia: 1,
+          tempoSetupMinutos: setup,
+          tempoOperacaoMinutos: operacao,
+          turno: null,
+          agendaTravada: true,
+          inicioAgendadoManual: new Date(BASE_MS + offsetMin * 60000),
+        })
+        const com = calcularAgenda([e], AGORA, { noOverlap: true })
+        const sem = calcularAgenda([e], AGORA, { noOverlap: false })
+        return (
+          com.get('u1')!.inicioPrevisto.getTime() === sem.get('u1')!.inicioPrevisto.getTime() &&
+          com.get('u1')!.fimPrevisto.getTime() === sem.get('u1')!.fimPrevisto.getTime()
+        )
+      }),
+      { numRuns: 200, seed: SEED },
+    )
+  })
+})
+
+describe('No-overlap — Property 3: travadas preservadas', () => {
+  it('resolverNoOverlap devolve a travada exatamente no início recebido (ponto fixo)', () => {
+    // **Validates: Requirements 4.3**
+    // Mistura etapas travadas (ponto fixo) e não travadas no mesmo centro linear.
+    // A saída de cada travada deve ser IDÊNTICA ao início recebido (não se move).
+    const arbItem = fc.record({
+      idx: fc.integer({ min: 0, max: 999 }),
+      offsetMin: fc.integer({ min: 0, max: 60 * 24 * 3 }),
+      operacao: fc.integer({ min: 0, max: 240 }),
+      travada: fc.boolean(),
+    })
+    fc.assert(
+      fc.property(fc.array(arbItem, { minLength: 1, maxLength: 6 }), (specs) => {
+        const unico = Array.from(new Map(specs.map((s) => [s.idx, s])).values())
+        const conjunto: EtapaComInicio[] = unico.map((s) => {
+          const inicio = new Date(BASE_MS + s.offsetMin * 60000)
+          return {
+            etapa: {
+              id: `p3-${s.idx}`,
+              ordemProducaoId: `op-p3-${s.idx}`,
+              centroProducaoId: 'C1',
+              posicaoFila: 1,
+              sequencia: 1,
+              tempoSetupMinutos: 0,
+              tempoOperacaoMinutos: s.operacao,
+              tempoEsperaMinutos: 0,
+              status: 'PENDENTE',
+              dataInicioReal: null,
+              dataFimReal: null,
+              turno: null,
+              agendaTravada: s.travada,
+              inicioAgendadoManual: s.travada ? inicio : null,
+            },
+            inicio,
+          }
+        })
+        const mapa = resolverNoOverlap(conjunto, null, [])
+        for (const { etapa: e, inicio } of conjunto) {
+          if (e.agendaTravada && e.inicioAgendadoManual) {
+            if (mapa.get(e.id)!.getTime() !== inicio.getTime()) return false
+          }
+        }
+        return true
+      }),
+      { numRuns: 300, seed: SEED },
+    )
+  })
+
+  it('calcularAgenda: etapa travada começa em ajustarParaTurno(ancora)', () => {
+    // **Validates: Requirements 4.3**
+    // Com turno comercial, a travada fica no snap da âncora ao próximo horário válido.
+    const arb = fc.record({
+      offsetMin: fc.integer({ min: 0, max: 60 * 24 * 5 }),
+      operacao: fc.integer({ min: 0, max: 240 }),
+    })
+    fc.assert(
+      fc.property(arb, ({ offsetMin, operacao }) => {
+        const ancora = new Date(BASE_MS + offsetMin * 60000)
+        const e = etapaCom({
+          id: 't1',
+          ordemProducaoId: 'op-t1',
+          posicaoFila: 1,
+          sequencia: 1,
+          tempoOperacaoMinutos: operacao,
+          agendaTravada: true,
+          inicioAgendadoManual: ancora,
+        })
+        const r = calcularAgenda([e], AGORA, { noOverlap: true })
+        const esperado = ajustarParaTurno(ancora, T_COM, [])
+        return r.get('t1')!.inicioPrevisto.getTime() === esperado.getTime()
+      }),
+      { numRuns: 200, seed: SEED },
+    )
+  })
+})
+
+describe('No-overlap — Property 4: determinismo', () => {
+  it('calcularAgenda com no-overlap: duas execuções idênticas ⇒ saída idêntica', () => {
+    // **Validates: Requirements 4.6**
+    const arbItem = fc.record({
+      idx: fc.integer({ min: 0, max: 999 }),
+      offsetMin: fc.integer({ min: 0, max: 60 * 24 * 3 }),
+      setup: fc.integer({ min: 0, max: 60 }),
+      operacao: fc.integer({ min: 0, max: 240 }),
+      fila: fc.integer({ min: 1, max: 6 }),
+      travada: fc.boolean(),
+    })
+    fc.assert(
+      fc.property(fc.array(arbItem, { minLength: 1, maxLength: 6 }), (specs) => {
+        const unico = Array.from(new Map(specs.map((s) => [s.idx, s])).values())
+        const build = (): EtapaAgenda[] =>
+          unico.map((s) => {
+            const ancora = new Date(BASE_MS + s.offsetMin * 60000)
+            return etapa({
+              id: `d-${s.idx}`,
+              ordemProducaoId: `op-d-${s.idx}`,
+              centroProducaoId: 'C1',
+              posicaoFila: s.fila,
+              sequencia: 1,
+              tempoSetupMinutos: s.setup,
+              tempoOperacaoMinutos: s.operacao,
+              turno: null,
+              agendaTravada: s.travada,
+              inicioAgendadoManual: s.travada ? ancora : null,
+            })
+          })
+        const r1 = calcularAgenda(build(), AGORA, { noOverlap: true })
+        const r2 = calcularAgenda(build(), AGORA, { noOverlap: true })
+        const ids = unico.map((s) => `d-${s.idx}`)
+        for (const id of ids) {
+          const a = r1.get(id)!
+          const b = r2.get(id)!
+          if (a.inicioPrevisto.getTime() !== b.inicioPrevisto.getTime()) return false
+          if (a.fimPrevisto.getTime() !== b.fimPrevisto.getTime()) return false
+        }
+        return true
+      }),
+      { numRuns: 300, seed: SEED },
+    )
+  })
+})
+
+// Golden com turno real: no-overlap respeita o turno ao recalcular o fim da
+// etapa empurrada (caso real, complementa as properties lineares da P2).
+describe('No-overlap — golden com turno (empurrão respeita expediente)', () => {
+  it('duas etapas não-travadas colidindo num centro com turno comercial não se sobrepõem', () => {
+    // Centro T_COM (08:00–17:00 seg-sex). Duas etapas PENDENTES de 240min, mesma fila.
+    const e1 = etapaCom({
+      id: 'g1', ordemProducaoId: 'op-g1', posicaoFila: 1, sequencia: 1, tempoOperacaoMinutos: 240,
+    })
+    const e2 = etapaCom({
+      id: 'g2', ordemProducaoId: 'op-g2', posicaoFila: 2, sequencia: 1, tempoOperacaoMinutos: 240,
+    })
+    const agoraLocal = new Date('2026-11-02T08:00:00') // segunda 08:00 local
+    const r = calcularAgenda([e1, e2], agoraLocal, { noOverlap: true })
+    const a: ResultadoAgenda = r.get('g1')!
+    const b: ResultadoAgenda = r.get('g2')!
+    const sobrepoe = a.inicioPrevisto < b.fimPrevisto && b.inicioPrevisto < a.fimPrevisto
+    expect(sobrepoe).toBe(false)
+    // g2 começa a partir do fim de g1 (empurrão por capacidade finita).
+    expect(b.inicioPrevisto.getTime()).toBeGreaterThanOrEqual(a.fimPrevisto.getTime())
+  })
+})

@@ -1288,3 +1288,89 @@ sobrescreve ajuste manual).
 
 ### Estado final: módulo gerencial 100% das imagens entregue.
 Nada pendente das planilhas da reunião. Evoluções futuras só se o usuário pedir.
+
+---
+
+## 15. Melhorias no Gantt de Produção (spec pcp-gantt-melhorias)
+
+Spec `.kiro/specs/pcp-gantt-melhorias/`. Evolução **ADITIVA e NÃO-REGRESSIVA**
+do Gantt `/pcp/gantt` ao padrão de APS/MES de mercado (Bryntum/DHTMLX stack
+layout + event color + dependency lines; Preactor/Opcenter capacidade finita;
+MS Project zoom ancorado/setas FS). Sem usar as features novas, motor e render
+continuam idênticos aos de hoje. Backend e frontend são repos SEPARADOS.
+
+### 15.1 Schema (`VisioFab.Wms.Back`)
+
+`OrdemProducao` ganhou DOIS campos **dedicados ao Gantt** (NÃO confundir com o
+campo existente `cor`, que é da impressão gráfica):
+- `corGantt` (`cor_gantt`, VARCHAR(9), nullable) — cor hex da OP no Gantt.
+- `statusGanttObs` (`status_gantt_obs`, VARCHAR(120), nullable) — observação de
+  status exibida no Gantt.
+
+`migrate-prod.ts` idempotente: dois `ALTER TABLE ordem_producao ADD COLUMN IF
+NOT EXISTS ...`. Migração local NÃO rodou (Postgres local off) — roda no deploy
+do Render (idempotência garantida por `IF NOT EXISTS`). Schema + migrate-prod
+no MESMO commit (steering database-migrations).
+
+### 15.2 Backend — motor no-overlap + rotas
+
+- **Motor puro** `timeline-agenda.service.ts`: nova função `resolverNoOverlap`
+  (capacidade finita = 1 operação por máquina por vez; etapas **travadas** =
+  pontos fixos; etapas não-travadas empurradas para o 1º instante livre
+  respeitando turno/exceções). Flag `noOverlap` em `calcularAgenda` (default
+  `true` na rota). **NÃO-REGRESSÃO**: sem colisão, a saída é idêntica à atual
+  (`max(inicio, cursorLivre) == inicio`). Testes `timeline-agenda.service.test.ts`
+  = **31/31** verdes (Properties 1–4 do no-overlap via fast-check: sem colisão ⇒
+  saída idêntica; nunca há sobreposição na mesma raia; travadas preservadas;
+  determinismo).
+- `GET /pcp/timeline` (`timeline-producao.routes.ts`): expõe `corGantt`/
+  `statusObs` por OP (aditivo no `select` e no payload).
+- Rota NOVA `PATCH /api/pcp/ordens-producao/:id/gantt` (body `{ corGantt?,
+  statusGanttObs? }`): grava cor/status; cor validada por regex hex
+  (`^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$` ou null); permissão `podeMover`;
+  isolamento `empresaId` EXPLÍCITO (`findFirst({ id, empresaId })` → 404 em
+  cross-empresa); grava `LogOrdemProducao`.
+
+### 15.3 Frontend (`/pcp/gantt/page.tsx` + novo `gantt-layout.ts`)
+
+- **Helpers puros** `gantt-layout.ts`: `empilharBarras` (lane assignment /
+  interval partitioning → `subLinha`/`maxSubLinhas`), `ocupacaoPorDia`,
+  `minutosUteisDoDia`, `xInicio`, `xFim`. Testes **17/17** (vitest + fast-check).
+  NOTA operacional: no front, rodar vitest com `--pool=threads` (o pool padrão
+  "forks" dá timeout nesta máquina).
+- **Req 2** — abre ancorado no "agora" (auto-scroll na 1ª carga via flag
+  `jaAncorou` + botão **"Hoje"**) + zoom contínuo ancorado no centro (botões
+  −/+; `pixelsPorMinuto` como estado contínuo). Auto-refresh 60s NÃO reseta
+  scroll/zoom. (Ctrl+wheel ancorado no cursor ficou como follow-up — ver 15.4.)
+- **Req 3** — cor única padrão (`COR_PADRAO = #4C6EF5`, substitui o antigo ciclo
+  de 20 cores) + editor (Modal com `ColorInput` + status) por OP, aplicada a
+  TODAS as barras da OP; status renderizado no tooltip + dot discreto no bloco.
+- **Req 4** — empilhamento visual por sub-linhas (nunca sobrepõe barras na mesma
+  raia) + empurrão automático (motor no-overlap) + botão **"Resolver conflitos"**
+  (reaplica a fila via `PATCH /pcp/etapas/reordenar`).
+- **Req 5** — filtros por máquina/processo/indicador (visual-only) + foco da OP
+  (clicar realça, demais `opacity 0.25`) + setas de dependência reais (overlay
+  SVG com bezier + marker, suporta dependência "para trás").
+- **Req 6** — toggle **"Reagendar | Reordenar fila"**; em "Reordenar fila" o drag
+  troca a ordem da fila (`PATCH /pcp/etapas/reordenar`), coexistindo com âncoras
+  e com o drag temporal (não se anulam).
+- **Req 7** — mini-faixa de ocupação/carga por máquina no rótulo da raia (média
+  do período, via `ocupacaoPorDia`, sem query extra): verde <70% / âmbar 70–100%
+  / vermelho >100%.
+- **Req 8** — `/pcp/timeline/gantt` virou `redirect('/pcp/gantt')` (tela oficial
+  única do Gantt); `/pcp/timeline` (lista) preservada como visão complementar e
+  passou a apontar para `/pcp/gantt`.
+- **Req 9** — virtualização vertical das raias (render só as visíveis + buffer de
+  600px) para performance com muitos centros.
+
+### 15.4 Verificação e pendências
+
+- **Verificação**: backend **31/31** testes do motor + `get_diagnostics` limpo +
+  `prisma generate` OK; frontend `get_diagnostics` limpo + `npm run build` (Next)
+  ✓ Compiled (351 páginas geradas). Migração local não rodou (Postgres off) —
+  roda no Render.
+- **Follow-up conhecido**: Ctrl+wheel de zoom ancorado no cursor (a infra já está
+  pronta em `aplicarZoom`; só faltou plugar o handler do wheel).
+- **Commits**: ficam com o usuário (política do projeto — repos separados; no
+  back, schema + migrate-prod no mesmo commit). Divisão: back = schema + migrate
+  + motor + rotas; front = UI.

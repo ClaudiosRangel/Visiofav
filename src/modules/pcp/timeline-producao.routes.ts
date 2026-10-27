@@ -4,6 +4,9 @@ import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { calcularAgenda, type EtapaAgenda } from './timeline-agenda.service'
+import { getPermissoes, verificarPermissaoAcao } from './permissoes-pcp.routes'
+
+const idSchema = z.object({ id: z.string().uuid() })
 
 /**
  * Timeline de Produção — Visão preditiva de cascata de tempos por OP.
@@ -87,6 +90,10 @@ interface OpTimeline {
   // Indicador geral
   indicadorGeral: 'NO_TEMPO' | 'ADIANTADO' | 'ATRASADO' | 'RISCO_ENTREGA' | 'CONCLUIDO'
   percentualConcluido: number
+  // Cor/observação de status do Gantt, por OP (spec pcp-gantt-melhorias).
+  // Aditivos: null quando não definidos (aplica a cor padrão no front).
+  corGantt: string | null
+  statusObs: string | null
   // Etapas
   etapas: EtapaTimeline[]
 }
@@ -215,6 +222,9 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
         observacoes: true,
         clienteId: true,
         produtoId: true,
+        // Cor/observação de status do Gantt, por OP (spec pcp-gantt-melhorias).
+        corGantt: true,
+        statusGanttObs: true,
         etapas: {
           orderBy: { sequencia: 'asc' },
           select: {
@@ -500,6 +510,8 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
         diferencaEntregaMinutos,
         indicadorGeral,
         percentualConcluido,
+        corGantt: op.corGantt ?? null,
+        statusObs: op.statusGanttObs ?? null,
         etapas: etapasTimeline,
       }
     })
@@ -585,5 +597,101 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ resumo: { ...resumo, conflitos: conflitos.length }, timeline, conflitos, excecoesPorCentro })
+  })
+
+  /**
+   * PATCH /api/pcp/ordens-producao/:id/gantt
+   *
+   * Define a cor e/ou a observação de status visual de uma OP no Gantt
+   * (spec pcp-gantt-melhorias, Req 3). Campos aditivos e dedicados ao Gantt
+   * (`corGantt`/`statusGanttObs`) — NÃO tocam o campo `cor` (impressão gráfica).
+   *
+   * - Body parcial: só os campos presentes entram no `update` (undefined =
+   *   não altera; null = limpa o valor).
+   * - `corGantt`: hex #RRGGBB ou #RRGGBBAA (validado por regex), ou null.
+   * - `statusGanttObs`: texto curto (≤120), ou null.
+   *
+   * Permissão: ação `podeMover` (planejador), mesmo nível das demais ações de
+   * reorganização de agenda/fila do PCP. ADMIN/SUPER_ADMIN sempre passam.
+   *
+   * Multi-tenant: `findFirst({ id, empresaId })` — OP de outra empresa (ou
+   * inexistente) retorna 404, nunca vaza entre empresas (steering
+   * ATENCAO-pontos-verificar §2.1 — não confiar só no prismaScoped).
+   */
+  app.patch('/ordens-producao/:id/gantt', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idSchema.parse(request.params)
+
+    const corRegex = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+    const body = z
+      .object({
+        corGantt: z
+          .string()
+          .regex(corRegex, 'Cor inválida: use #RRGGBB ou #RRGGBBAA')
+          .nullable()
+          .optional(),
+        statusGanttObs: z.string().max(120).nullable().optional(),
+      })
+      .parse(request.body)
+
+    // Permissão nível OP: ação `podeMover` (planejador/admin). ADMIN/SUPER_ADMIN
+    // bypassam; demais consultam as permissões granulares por tipo de processo
+    // (mesma abordagem do helper `verificarPermissaoOp` de etapa-operacional).
+    if (user.perfil !== 'SUPER_ADMIN' && user.perfil !== 'ADMIN') {
+      const permissoes = await getPermissoes(user.empresaId, user.id)
+      const etapa = await prisma.etapaOrdemProducao.findFirst({
+        where: { ordemProducaoId: id, ordemProducao: { empresaId: user.empresaId } },
+        select: { centroProducao: { select: { tipoProcessoId: true } } },
+        orderBy: { sequencia: 'asc' },
+      })
+      const tipoProcessoId = etapa?.centroProducao?.tipoProcessoId || null
+      if (!verificarPermissaoAcao(permissoes, 'podeMover', tipoProcessoId)) {
+        return reply.status(403).send({ message: 'Sem permissão para alterar a cor/status do Gantt' })
+      }
+    }
+
+    // Isolamento multi-tenant: a OP precisa ser da empresa do usuário.
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, status: true },
+    })
+    if (!op) {
+      return reply.status(404).send({ message: 'Ordem de produção não encontrada' })
+    }
+
+    // Monta o update só com os campos presentes no body (undefined não entra).
+    const data: { corGantt?: string | null; statusGanttObs?: string | null } = {}
+    if (body.corGantt !== undefined) data.corGantt = body.corGantt
+    if (body.statusGanttObs !== undefined) data.statusGanttObs = body.statusGanttObs
+
+    const atualizada = await prisma.ordemProducao.update({
+      where: { id: op.id },
+      data,
+      select: { id: true, corGantt: true, statusGanttObs: true },
+    })
+
+    // Auditoria (padrão /agendar): status não muda — registra a mudança visual.
+    const partes: string[] = []
+    if (body.corGantt !== undefined) {
+      partes.push(body.corGantt === null ? 'cor removida' : `cor=${body.corGantt}`)
+    }
+    if (body.statusGanttObs !== undefined) {
+      partes.push(body.statusGanttObs === null ? 'status removido' : `status="${body.statusGanttObs}"`)
+    }
+    await prisma.logOrdemProducao.create({
+      data: {
+        ordemProducaoId: op.id,
+        statusAnterior: op.status,
+        statusNovo: op.status,
+        usuarioId: user.id,
+        observacao: `Gantt visual atualizado: ${partes.join('; ') || 'sem alterações'}`,
+      },
+    })
+
+    return reply.send({
+      id: atualizada.id,
+      corGantt: atualizada.corGantt,
+      statusGanttObs: atualizada.statusGanttObs,
+    })
   })
 }

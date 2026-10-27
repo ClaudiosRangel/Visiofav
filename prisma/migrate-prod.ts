@@ -5466,6 +5466,17 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "encaixe_arquivo_nome" VARCHAR(200)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "encaixe_arquivo_em" TIMESTAMP(3)`)
   console.log('✅ Hand-off Comercial: item_orcamento_grafico.encaixe_arquivo (+mime/nome/em)')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Melhorias no Gantt de Produção (spec pcp-gantt-melhorias, Task 1.2).
+  // Cor e observação de status por OP para o Gantt. Aditivo e idempotente
+  // (não toca o campo existente "cor"). Equivalente ao schema.prisma:
+  //   corGantt       String? @map("cor_gantt")        @db.VarChar(9)
+  //   statusGanttObs String? @map("status_gantt_obs") @db.VarChar(120)
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "cor_gantt" VARCHAR(9)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "status_gantt_obs" VARCHAR(120)`)
+  console.log('✅ PCP Gantt: ordem_producao.cor_gantt/status_gantt_obs')
 }
 
 main()

@@ -245,6 +245,99 @@ function duracao(e: EtapaAgenda): number {
   return (Number(e.tempoSetupMinutos) || 0) + (Number(e.tempoOperacaoMinutos) || 0)
 }
 
+/** Opções de cálculo da agenda (aditivas, não-regressivas). */
+export interface OpcoesAgenda {
+  /**
+   * Regra de NÃO-SOBREPOSIÇÃO por máquina (capacidade finita = 1 operação por
+   * vez por centro). Quando ligada, etapas NÃO travadas são empurradas para o
+   * primeiro instante livre da raia (ver `resolverNoOverlap`).
+   *
+   * NÃO-REGRESSÃO (design — Property 1): como o empurrão é
+   * `inicioFinal = max(inicioAtual, cursorLivre)` e, SEM colisão,
+   * `cursorLivre <= inicioAtual`, a saída é IDÊNTICA à de hoje quando não há
+   * sobreposição nas entradas. Por isso o default pode ser `true` com segurança.
+   */
+  noOverlap?: boolean
+}
+
+/** Entrada mínima do no-overlap: início já calculado por etapa de UM centro. */
+export interface EtapaComInicio {
+  etapa: EtapaAgenda
+  inicio: Date
+}
+
+/**
+ * REGRA DE NÃO-SOBREPOSIÇÃO POR MÁQUINA (capacidade finita = 1 operação por vez
+ * por centro) — spec pcp-gantt-melhorias, Requirement 4 (subseção 4b).
+ *
+ * Dado o conjunto de etapas de UM centro com seus inícios já calculados (já
+ * ajustados a turno/exceções por `calcularInicioPorFila`), empurra as etapas
+ * NÃO travadas para o primeiro instante livre, garantindo que não haja
+ * sobreposição temporal `[inicio, fim)` na mesma máquina.
+ *
+ * Determinismo (Req 4.6): percorre em ordem do início efetivo, com desempate
+ * ESTÁVEL por `posicaoFila` → `sequencia` → `id`.
+ *
+ * Regra por etapa (na ordem acima):
+ *  - TRAVADA (`agendaTravada` + `inicioAgendadoManual`): é PONTO FIXO, não se
+ *    move; apenas avança o `cursorLivre` para `max(cursorLivre, fimDela)`. Se
+ *    duas travadas colidirem entre si, ambas são respeitadas como estão (trava
+ *    é decisão humana — nunca movemos uma travada).
+ *  - NÃO travada: `inicioFinal = max(inicioAtual, cursorLivre)`; recalcula o
+ *    fim com `avancar`/`calcularFimComTurno` respeitando turno + exceções;
+ *    `cursorLivre = fim`.
+ *
+ * NÃO-REGRESSÃO (Property 1): sem colisão, `cursorLivre <= inicioAtual` para
+ * toda etapa não travada ⇒ `max(inicioAtual, cursorLivre) == inicioAtual` ⇒
+ * saída idêntica à atual.
+ *
+ * Retorna um mapa `etapaId → inicioFinal` (só para as etapas recebidas).
+ * As travadas voltam com o MESMO início recebido (ponto fixo).
+ */
+export function resolverNoOverlap(
+  etapasDoCentro: EtapaComInicio[],
+  turno: TurnoAgenda | null,
+  excecoes: ExcecaoCalendario[] = [],
+): Map<string, Date> {
+  const resultado = new Map<string, Date>()
+
+  // Ordena por início efetivo; desempate estável por posicaoFila → sequencia → id.
+  const ordenadas = [...etapasDoCentro].sort((a, b) => {
+    const di = a.inicio.getTime() - b.inicio.getTime()
+    if (di !== 0) return di
+    const pa = a.etapa.posicaoFila ?? 999
+    const pb = b.etapa.posicaoFila ?? 999
+    if (pa !== pb) return pa - pb
+    if (a.etapa.sequencia !== b.etapa.sequencia) return a.etapa.sequencia - b.etapa.sequencia
+    return a.etapa.id < b.etapa.id ? -1 : a.etapa.id > b.etapa.id ? 1 : 0
+  })
+
+  let cursorLivre = -Infinity // ms do fim da última etapa alocada no centro
+  const maxIteracoes = ordenadas.length + 1 // guarda defensiva (laço linear, sem retrocesso)
+  let iteracoes = 0
+
+  for (const { etapa: e, inicio } of ordenadas) {
+    if (iteracoes++ > maxIteracoes) break
+
+    if (e.agendaTravada && e.inicioAgendadoManual) {
+      // Ponto fixo: não se move. Apenas estende o cursor.
+      const fim = avancar(inicio, duracao(e), turno, excecoes).getTime()
+      cursorLivre = Math.max(cursorLivre, fim)
+      resultado.set(e.id, inicio)
+      continue
+    }
+
+    // Não travada: empurra para o primeiro instante livre.
+    const iniMs = Math.max(inicio.getTime(), cursorLivre === -Infinity ? inicio.getTime() : cursorLivre)
+    const iniFinal = new Date(iniMs)
+    const fim = avancar(iniFinal, duracao(e), turno, excecoes)
+    cursorLivre = fim.getTime()
+    resultado.set(e.id, iniFinal)
+  }
+
+  return resultado
+}
+
 /**
  * Calcula o `inicioPrevisto` de cada etapa com base na FILA do centro
  * (`posicaoFila`), a partir de `agora`, respeitando o turno — e tratando as
@@ -253,7 +346,11 @@ function duracao(e: EtapaAgenda): number {
  *
  * Retorna um mapa `etapaId → inicioPrevisto`.
  */
-export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<string, Date> {
+export function calcularInicioPorFila(
+  etapas: EtapaAgenda[],
+  agora: Date,
+  opts: OpcoesAgenda = {},
+): Map<string, Date> {
   const inicioPorEtapa = new Map<string, Date>()
 
   // Agrupa por centro.
@@ -336,6 +433,21 @@ export function calcularInicioPorFila(etapas: EtapaAgenda[], agora: Date): Map<s
       inicioPorEtapa.set(e.id, ini)
       cursor = avancar(ini, duracao(e), turno, excecoes)
     }
+
+    // ── Não-sobreposição por máquina (capacidade finita) — spec pcp-gantt-melhorias ──
+    // Aplicada POR CENTRO, sobre os inícios já calculados acima. A integração
+    // aqui (e não em `calcularAgenda`) torna a NÃO-REGRESSÃO trivial de provar:
+    // sem colisão, `resolverNoOverlap` devolve exatamente os mesmos inícios
+    // (`max(inicio, cursorLivre) == inicio`), logo a saída é idêntica à atual.
+    if (opts.noOverlap) {
+      const comInicio: EtapaComInicio[] = []
+      for (const e of fila) {
+        const ini = inicioPorEtapa.get(e.id)
+        if (ini) comInicio.push({ etapa: e, inicio: ini })
+      }
+      const resolvido = resolverNoOverlap(comInicio, turno, excecoes)
+      for (const [id, ini] of resolvido) inicioPorEtapa.set(id, ini)
+    }
   }
 
   return inicioPorEtapa
@@ -390,8 +502,14 @@ export function calcularTimelineOp(
  * agrupando por OP. Retorna um mapa `etapaId → { inicioPrevisto, fimPrevisto }`.
  * É o ponto único que a rota chama.
  */
-export function calcularAgenda(etapas: EtapaAgenda[], agora: Date): Map<string, ResultadoAgenda> {
-  const inicioPorFila = calcularInicioPorFila(etapas, agora)
+export function calcularAgenda(
+  etapas: EtapaAgenda[],
+  agora: Date,
+  opts: OpcoesAgenda = { noOverlap: true },
+): Map<string, ResultadoAgenda> {
+  // Default do app: no-overlap LIGADO. Não-regressivo por construção (Property 1):
+  // sem colisão nas entradas, `resolverNoOverlap` não altera nenhum início.
+  const inicioPorFila = calcularInicioPorFila(etapas, agora, opts)
 
   // Agrupa por OP preservando a ordem de entrada.
   const porOp = new Map<string, EtapaAgenda[]>()
