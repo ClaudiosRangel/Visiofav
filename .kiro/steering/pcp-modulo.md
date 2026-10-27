@@ -1374,3 +1374,35 @@ no MESMO commit (steering database-migrations).
 - **Commits**: ficam com o usuário (política do projeto — repos separados; no
   back, schema + migrate-prod no mesmo commit). Divisão: back = schema + migrate
   + motor + rotas; front = UI.
+
+---
+
+## 16. Correção de cores/tema do Gantt (spec pcp-gantt-tema-cores)
+
+Spec `.kiro/specs/pcp-gantt-tema-cores/`. O cliente reclamou de "preto sobre
+preto" no Gantt (`/pcp/gantt`): a tela tinha sido feita com cores de tema
+ESCURO hardcoded (`var(--mantine-color-dark-7/6/5/4/3)`, `#fff`, `#555`,
+`c="yellow"`, `red-9/red-7`), mas o ERP roda em tema CLARO para este cliente
+(o app tem `ThemeProvider` com `forceColorScheme` — claro OU escuro).
+
+Correção (PURAMENTE VISUAL, nenhuma lógica alterada): troca das cores fixas por
+TOKENS ADAPTATIVOS do Mantine, que seguem o tema ativo — padrão de Gantts
+claros de mercado (DHTMLX Material; RAG do Office Timeline):
+- Fundos: `dark-7`→`--mantine-color-body`; faixa/cabeçalho de grupo
+  `dark-6`→`--mantine-color-default`.
+- Bordas/divisórias (`gray-5`/`dark-4/5`)→`--mantine-color-default-border`.
+- Grade: virada de dia `gray-4` (solid), hora `gray-3` (dashed).
+- Cabeçalho de grupo: `c="yellow"`→texto padrão (`--mantine-color-text`) fw700.
+- Linha "agora" + triângulo de entrega → `red-6`.
+- Pastilhas sobre a barra (passada/cadeado): fundo `#fff`→`body` (borda RAG
+  preservada). Scrollbar `#555`→`gray-5`.
+- Faixa de conflitos: `red-9`/`red-7`→`red-light`/`red-light-color`, textos
+  `red.3`→`red.7` (vermelho CLARO legível no tema claro).
+- `STATUS_BORDER` (RAG) migrado para tons Mantine nível 6 (red/orange/blue/
+  green/teal/gray), harmônicos com o ERP.
+- Texto DENTRO dos blocos permanece BRANCO (contraste sobre a cor saturada da
+  OP — não segue o tema, de propósito).
+
+Verificação: `get_diagnostics` limpo + `npm run build` (Next) OK. Validação
+visual (claro e escuro) fica com o usuário ao subir em produção. Nenhuma outra
+feature do Gantt foi tocada (seção 15).
