@@ -70,8 +70,12 @@ Verificar com `get_diagnostics`; testes via `vitest --reporter=dot`.
     - _Requirements: 5.4, 5.5, 5.6_
   - [x] 5.4 Portal do representante: `/:id/amostras`, `/amostras/:id/aprovar|reprovar`.
     - _Requirements: 5.7_
-  - [ ] 5.5 Front comercial: tela de rodadas da amostra (leva de frontend).
-    - _Requirements: 5.2, 5.4_
+  - [x] 5.5 Front comercial: tela de rodadas da amostra (`AmostrasModal` no
+    detalhe do orçamento) + config da empresa (`comercial.exigir-amostra`:
+    SEMPRE/NUNCA/QUANDO_MARCADO) via Popover na tela "Orçamentos a Converter"
+    (rotas novas `GET/PUT /comercial/config-amostra`). Portal rep:
+    `AmostrasRepSection` (aprovar/reprovar em nome do cliente).
+    - _Requirements: 5.2, 5.4, 5.7_
 
 ### Onda 3 — Gate de margem
 
@@ -98,7 +102,11 @@ Verificar com `get_diagnostics`; testes via `vitest --reporter=dot`.
   - [x] 8.1 Pedido `EFETIVADO` notifica comercial (pronto p/ faturar). FATURADO
     pela emissão de NF-e existente (fluxo fiscal já grava FATURADO).
     - _Requirements: 8.1, 8.2, 8.3_
-  - [ ] 8.2 Painel unificado (régua de estágios): leva de frontend (reusa pipeline).
+  - [x] 8.2 Painel unificado (régua de estágios): endpoint
+    `GET /pedidos/:pedidoId/jornada` (`jornada-pedido.service.ts`, agregação
+    orçamento→amostra→pedido→OPs→faturamento, empresaId explícito) +
+    componente `JornadaPedido` embutido no detalhe do pedido (origem
+    ORCAMENTO_GRAFICO).
     - _Requirements: 9.1, 9.2, 9.3_
 
 - [x] 9. Download da imagem do encaixe (R11)
@@ -112,7 +120,9 @@ Verificar com `get_diagnostics`; testes via `vitest --reporter=dot`.
     - _Requirements: 11.1, 11.2, 11.4, 11.6_
   - [ ] 9.4 Anexar o encaixe ao PDF da proposta/OP (incremento futuro — rotas prontas).
     - _Requirements: 11.5_
-  - [ ] 9.5 Front: botão "Baixar encaixe" (leva de frontend; rotas prontas).
+  - [x] 9.5 Front: botão "Baixar encaixe". No detalhe do orçamento (SVG/PDF por
+    item, via rota com token); no wizard `StepRevisao`, download CLIENT-SIDE
+    (SVG gerado em memória do `encaixe.layout`, sem item persistido).
     - _Requirements: 11.1, 11.4_
 
 ### Onda 5 — Validação e não-regressão

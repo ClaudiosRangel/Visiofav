@@ -49,6 +49,7 @@ import {
 } from './handoff-comercial/amostra.service'
 import { gerarEncaixeSvg, gerarEncaixePdf, EncaixeError } from './handoff-comercial/encaixe-download.service'
 import { liberarPedidoParaPcp, LiberacaoError } from './handoff-comercial/liberar-pedido-pcp.service'
+import { montarJornadaPedido, JornadaError } from './handoff-comercial/jornada-pedido.service'
 import {
   criarNotificacaoComercial,
   listarNotificacoesComercial,
@@ -2211,6 +2212,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     precoUnitario: true,
     margemReal: true,
     status: true,
+    exigeAmostra: true,
     validadeAte: true,
     motivoRecusa: true,
     aprovadoEm: true,
@@ -3313,6 +3315,49 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (!orc) return reply.status(404).send({ message: 'Orçamento não encontrado' })
     await prisma.orcamentoGrafico.update({ where: { id }, data: { exigeAmostra: body.exigeAmostra } as never })
     return { id, exigeAmostra: body.exigeAmostra }
+  })
+
+  // ─── Config da empresa: padrão de exigência de amostra (R5, D2) ──────────
+  // Lê/grava o Parametro `comercial.exigir-amostra` (SEMPRE | NUNCA |
+  // QUANDO_MARCADO). Default QUANDO_MARCADO quando ausente.
+  app.get('/comercial/config-amostra', async (request) => {
+    const user = request.user as { empresaId: string }
+    const p = await prisma.parametro.findFirst({
+      where: { empresaId: user.empresaId, chave: 'comercial.exigir-amostra' },
+      select: { valor: true },
+    })
+    const v = (p?.valor || '').toUpperCase()
+    const modo = v === 'SEMPRE' || v === 'NUNCA' || v === 'QUANDO_MARCADO' ? v : 'QUANDO_MARCADO'
+    return { modo }
+  })
+
+  app.put('/comercial/config-amostra', async (request) => {
+    const user = request.user as { empresaId: string }
+    const body = z.object({ modo: z.enum(['SEMPRE', 'NUNCA', 'QUANDO_MARCADO']) }).parse(request.body)
+    const existente = await prisma.parametro.findFirst({
+      where: { empresaId: user.empresaId, chave: 'comercial.exigir-amostra' },
+      select: { id: true },
+    })
+    if (existente) {
+      await prisma.parametro.update({ where: { id: existente.id }, data: { valor: body.modo } })
+    } else {
+      await prisma.parametro.create({
+        data: { empresaId: user.empresaId, chave: 'comercial.exigir-amostra', valor: body.modo },
+      })
+    }
+    return { modo: body.modo }
+  })
+
+  // ─── Painel de Status Unificado: jornada do pedido (R9) ──────────────────
+  app.get('/pedidos/:pedidoId/jornada', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { pedidoId } = z.object({ pedidoId: z.string().uuid() }).parse(request.params)
+    try {
+      return await montarJornadaPedido(user.empresaId, pedidoId)
+    } catch (err) {
+      if (err instanceof JornadaError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
   })
 
   // ─── Aprovação de Amostra/Modelo (R5) ────────────────────────────────────
