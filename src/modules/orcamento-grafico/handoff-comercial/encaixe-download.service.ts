@@ -77,6 +77,107 @@ export async function gerarEncaixeSvg(empresaId: string, orcamentoId: string, it
   return svg
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// UPLOAD de arquivo de encaixe gerado por aplicativo EXTERNO (R11 — upload +
+// preview). Substitui o download: o encaixe real vem de um software específico
+// de imposição; aqui só armazenamos o arquivo e servimos para visualização.
+// ────────────────────────────────────────────────────────────────────────────
+
+const MIMES_ENCAIXE_ACEITOS = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'application/pdf']
+const LIMITE_ENCAIXE_BYTES = 10 * 1024 * 1024 // 10MB (limite global do @fastify/multipart)
+
+export interface EncaixeArquivoInfo {
+  temArquivo: boolean
+  mime: string | null
+  nome: string | null
+  enviadoEm: Date | null
+}
+
+/** Salva o arquivo de encaixe enviado para um item do orçamento (isolado por empresa). */
+export async function salvarEncaixeArquivo(
+  empresaId: string,
+  orcamentoId: string,
+  itemId: string,
+  arquivo: { buffer: Buffer; mimetype: string; filename: string },
+): Promise<EncaixeArquivoInfo> {
+  if (!MIMES_ENCAIXE_ACEITOS.includes(arquivo.mimetype)) {
+    throw new EncaixeError(400, 'Formato inválido. Envie PNG, JPG, SVG ou PDF do encaixe.', 'MIME_INVALIDO')
+  }
+  if (arquivo.buffer.length > LIMITE_ENCAIXE_BYTES) {
+    throw new EncaixeError(400, 'Arquivo excede o limite de 10MB.', 'ARQUIVO_GRANDE')
+  }
+  const item = await prisma.itemOrcamentoGrafico.findFirst({
+    where: { id: itemId, orcamentoId, empresaId },
+    select: { id: true },
+  })
+  if (!item) throw new EncaixeError(404, 'Item não encontrado')
+
+  const nome = (arquivo.filename || 'encaixe').slice(0, 200)
+  await prisma.itemOrcamentoGrafico.update({
+    where: { id: itemId },
+    data: {
+      encaixeArquivo: arquivo.buffer,
+      encaixeArquivoMime: arquivo.mimetype,
+      encaixeArquivoNome: nome,
+      encaixeArquivoEm: new Date(),
+    } as never,
+  })
+  return { temArquivo: true, mime: arquivo.mimetype, nome, enviadoEm: new Date() }
+}
+
+/** Lê metadados do arquivo de encaixe de um item (sem o binário). */
+export async function obterEncaixeArquivoInfo(
+  empresaId: string,
+  orcamentoId: string,
+  itemId: string,
+): Promise<EncaixeArquivoInfo> {
+  const item = await prisma.itemOrcamentoGrafico.findFirst({
+    where: { id: itemId, orcamentoId, empresaId },
+    select: { encaixeArquivoMime: true, encaixeArquivoNome: true, encaixeArquivoEm: true } as never,
+  }) as { encaixeArquivoMime: string | null; encaixeArquivoNome: string | null; encaixeArquivoEm: Date | null } | null
+  if (!item) throw new EncaixeError(404, 'Item não encontrado')
+  return {
+    temArquivo: !!item.encaixeArquivoMime,
+    mime: item.encaixeArquivoMime,
+    nome: item.encaixeArquivoNome,
+    enviadoEm: item.encaixeArquivoEm,
+  }
+}
+
+/** Serve o binário do arquivo de encaixe enviado (para preview/download). */
+export async function obterEncaixeArquivoBinario(
+  empresaId: string,
+  orcamentoId: string,
+  itemId: string,
+): Promise<{ buffer: Buffer; mime: string; nome: string }> {
+  const item = await prisma.itemOrcamentoGrafico.findFirst({
+    where: { id: itemId, orcamentoId, empresaId },
+    select: { encaixeArquivo: true, encaixeArquivoMime: true, encaixeArquivoNome: true } as never,
+  }) as { encaixeArquivo: Buffer | null; encaixeArquivoMime: string | null; encaixeArquivoNome: string | null } | null
+  if (!item) throw new EncaixeError(404, 'Item não encontrado')
+  if (!item.encaixeArquivo || !item.encaixeArquivoMime) {
+    throw new EncaixeError(404, 'Nenhum arquivo de encaixe enviado para este item', 'SEM_ARQUIVO')
+  }
+  return {
+    buffer: Buffer.from(item.encaixeArquivo),
+    mime: item.encaixeArquivoMime,
+    nome: item.encaixeArquivoNome || 'encaixe',
+  }
+}
+
+/** Remove o arquivo de encaixe enviado de um item. */
+export async function removerEncaixeArquivo(empresaId: string, orcamentoId: string, itemId: string): Promise<void> {
+  const item = await prisma.itemOrcamentoGrafico.findFirst({
+    where: { id: itemId, orcamentoId, empresaId },
+    select: { id: true },
+  })
+  if (!item) throw new EncaixeError(404, 'Item não encontrado')
+  await prisma.itemOrcamentoGrafico.update({
+    where: { id: itemId },
+    data: { encaixeArquivo: null, encaixeArquivoMime: null, encaixeArquivoNome: null, encaixeArquivoEm: null } as never,
+  })
+}
+
 /** Gera o PDF do encaixe (Buffer) desenhando os retângulos com pdfkit. */
 export async function gerarEncaixePdf(empresaId: string, orcamentoId: string, itemId?: string | null): Promise<Buffer> {
   const { layout, legenda } = await resolverEncaixe(empresaId, orcamentoId, itemId)

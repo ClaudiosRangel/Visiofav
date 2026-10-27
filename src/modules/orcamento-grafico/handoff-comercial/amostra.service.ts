@@ -132,6 +132,50 @@ export async function listarAmostras(
 }
 
 /**
+ * Lista TODAS as amostras da empresa para a tela "Amostras / Modelos" do
+ * Comercial, trazendo contexto do orçamento (número/cliente). Filtro opcional
+ * por status. Isolamento por `empresaId`. Só a rodada mais recente por
+ * vínculo (orçamento) interessa para a fila — mas devolvemos todas e o front
+ * agrupa; aqui ordenamos por mais recente.
+ */
+export async function listarAmostrasEmpresa(
+  empresaId: string,
+  filtro?: { status?: string; apenasPendentes?: boolean },
+) {
+  const statusPendentes = ['SOLICITADA', 'EM_PRODUCAO_AMOSTRA', 'ENVIADA_CLIENTE']
+  const where: Record<string, unknown> = { empresaId }
+  if (filtro?.status) where.status = filtro.status
+  else if (filtro?.apenasPendentes) where.status = { in: statusPendentes }
+
+  const amostras = await prisma.aprovacaoAmostra.findMany({
+    where,
+    orderBy: [{ criadoEm: 'desc' }],
+    take: 300,
+    select: {
+      id: true, orcamentoId: true, pedidoVendaId: true, tipo: true,
+      status: true, rodada: true, anexoUrl: true, aprovadoPor: true,
+      aprovadoEm: true, motivoReprova: true, criadoEm: true,
+    },
+  })
+
+  // Enriquecer com número/cliente do orçamento (sem N+1 pesado — 1 query).
+  const orcIds = [...new Set(amostras.map((a) => a.orcamentoId).filter(Boolean) as string[])]
+  const orcs = orcIds.length
+    ? await prisma.orcamentoGrafico.findMany({
+        where: { id: { in: orcIds }, empresaId },
+        select: { id: true, numero: true, clienteNome: true },
+      })
+    : []
+  const mapOrc = new Map(orcs.map((o) => [o.id, o]))
+
+  return amostras.map((a) => ({
+    ...a,
+    orcamentoNumero: a.orcamentoId ? mapOrc.get(a.orcamentoId)?.numero ?? null : null,
+    clienteNome: a.orcamentoId ? mapOrc.get(a.orcamentoId)?.clienteNome ?? null : null,
+  }))
+}
+
+/**
  * Verifica se a liberação do pedido para o PCP está permitida quanto à amostra:
  * se o pedido exige amostra e não há `APROVADA`, retorna { permitido: false }.
  * Usada na liberação (Onda 4) e espelha a regra da conversão.

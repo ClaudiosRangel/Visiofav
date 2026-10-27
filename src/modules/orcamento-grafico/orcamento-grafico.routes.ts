@@ -45,9 +45,13 @@ import {
   aprovarAmostra,
   reprovarAmostra,
   listarAmostras,
+  listarAmostrasEmpresa,
   AmostraError,
 } from './handoff-comercial/amostra.service'
-import { gerarEncaixeSvg, gerarEncaixePdf, EncaixeError } from './handoff-comercial/encaixe-download.service'
+import {
+  gerarEncaixeSvg, gerarEncaixePdf, EncaixeError,
+  salvarEncaixeArquivo, obterEncaixeArquivoInfo, obterEncaixeArquivoBinario, removerEncaixeArquivo,
+} from './handoff-comercial/encaixe-download.service'
 import { liberarPedidoParaPcp, LiberacaoError } from './handoff-comercial/liberar-pedido-pcp.service'
 import { montarJornadaPedido, JornadaError } from './handoff-comercial/jornada-pedido.service'
 import {
@@ -3366,6 +3370,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     throw err
   }
 
+  // Lista geral da empresa (tela "Amostras / Modelos" do Comercial).
+  app.get('/amostras/empresa', async (request) => {
+    const user = request.user as { empresaId: string }
+    const q = z.object({
+      status: z.enum(['SOLICITADA', 'EM_PRODUCAO_AMOSTRA', 'ENVIADA_CLIENTE', 'APROVADA', 'REPROVADA']).optional(),
+      apenasPendentes: z.coerce.boolean().optional(),
+    }).parse(request.query)
+    return listarAmostrasEmpresa(user.empresaId, q)
+  })
+
   app.get('/amostras', async (request) => {
     const user = request.user as { empresaId: string }
     const q = z.object({ orcamentoId: z.string().uuid().optional(), pedidoVendaId: z.string().uuid().optional() }).parse(request.query)
@@ -3461,6 +3475,55 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       return reply.send(pdf)
     } catch (err) { return encaixeErr(reply, err) }
   }
+
+  // ─── UPLOAD do arquivo de encaixe gerado por aplicativo EXTERNO (R11) ─────
+  // O encaixe real é produzido por um software específico de imposição; aqui o
+  // comercial/PCP SOBE o arquivo (PNG/JPG/SVG/PDF) e ele fica disponível para
+  // visualização no item do orçamento. Isolamento por empresaId.
+  app.post('/:id/itens/:itemId/encaixe-arquivo', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(request.params)
+    const file = await (request as any).file?.()
+    if (!file) return reply.status(400).send({ message: 'Nenhum arquivo enviado (multipart/form-data).' })
+    try {
+      const buffer = await file.toBuffer()
+      const info = await salvarEncaixeArquivo(user.empresaId, id, itemId, {
+        buffer, mimetype: file.mimetype, filename: file.filename,
+      })
+      return reply.status(201).send(info)
+    } catch (err) { return encaixeErr(reply, err) }
+  })
+
+  // Metadados (se há arquivo, tipo, nome, data) — usado pela tela para decidir
+  // se mostra o preview e qual visualizador (imagem vs iframe PDF).
+  app.get('/:id/itens/:itemId/encaixe-arquivo/info', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(request.params)
+    try {
+      return await obterEncaixeArquivoInfo(user.empresaId, id, itemId)
+    } catch (err) { return encaixeErr(reply, err) }
+  })
+
+  // Serve o binário enviado (preview inline). Aceita token via query (img/iframe).
+  app.get('/:id/itens/:itemId/encaixe-arquivo', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(request.params)
+    try {
+      const { buffer, mime, nome } = await obterEncaixeArquivoBinario(user.empresaId, id, itemId)
+      reply.header('Content-Type', mime)
+      reply.header('Content-Disposition', `inline; filename="${nome}"`)
+      return reply.send(buffer)
+    } catch (err) { return encaixeErr(reply, err) }
+  })
+
+  app.delete('/:id/itens/:itemId/encaixe-arquivo', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(request.params)
+    try {
+      await removerEncaixeArquivo(user.empresaId, id, itemId)
+      return reply.status(204).send()
+    } catch (err) { return encaixeErr(reply, err) }
+  })
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RECUSAR ORÇAMENTO (POST /:id/recusar)

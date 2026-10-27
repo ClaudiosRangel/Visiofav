@@ -5458,6 +5458,14 @@ async function seedMateriaisFromOPs() {
   )`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "conversao_orcamento_log_empresa_id_orcamento_id_idx" ON "conversao_orcamento_log"("empresa_id","orcamento_id")`)
   console.log('✅ Hand-off Comercial: exige_amostra (orc/pedido) + aprovacao_amostra, notificacao_comercial, conversao_orcamento_log')
+
+  // Arquivo de ENCAIXE/IMPOSIÇÃO enviado por aplicativo externo (R11 — upload +
+  // preview no item do orçamento). Binário no banco (BYTEA), como o PDF de OP.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "encaixe_arquivo" BYTEA`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "encaixe_arquivo_mime" VARCHAR(100)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "encaixe_arquivo_nome" VARCHAR(200)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "encaixe_arquivo_em" TIMESTAMP(3)`)
+  console.log('✅ Hand-off Comercial: item_orcamento_grafico.encaixe_arquivo (+mime/nome/em)')
 }
 
 main()

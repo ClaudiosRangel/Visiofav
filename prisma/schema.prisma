@@ -4387,6 +4387,14 @@ model ItemOrcamentoGrafico {
   // ── Biblioteca de Cálculos: de qual CalculoGrafico este item foi copiado (spec biblioteca-calculos-graficos, Decisão 3.A) ──
   calculoGraficoOrigemId String? @map("calculo_grafico_origem_id")
 
+  // ── Arquivo de ENCAIXE/IMPOSIÇÃO enviado por aplicativo externo específico
+  // (spec orcamento-grafico-handoff-comercial, R11 — upload + preview). O
+  // binário fica no banco (BYTEA), como o PDF de OP. PNG/JPG/SVG/PDF. ──
+  encaixeArquivo     Bytes?    @map("encaixe_arquivo")
+  encaixeArquivoMime String?   @map("encaixe_arquivo_mime") @db.VarChar(100)
+  encaixeArquivoNome String?   @map("encaixe_arquivo_nome") @db.VarChar(200)
+  encaixeArquivoEm   DateTime? @map("encaixe_arquivo_em")
+
   orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
   planos     PlanoCalculoGrafico[]
