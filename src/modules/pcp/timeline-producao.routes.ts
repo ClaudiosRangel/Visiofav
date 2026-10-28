@@ -226,6 +226,14 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
         corGantt: true,
         statusGanttObs: true,
         etapas: {
+          // Só etapas de centros ATIVOS e DISPONÍVEIS para programação entram
+          // no Gantt — mesma regra do painel de Programação e dos demais quadros
+          // do PCP. Sem isso, máquinas inativas/fora de programação apareciam
+          // como raias no Gantt (bug reportado). Etapas sem centro (raras) são
+          // ignoradas depois na montagem (precisam de centroProducao).
+          where: {
+            centroProducao: { status: true, disponivelProgramacao: true },
+          },
           orderBy: { sequencia: 'asc' },
           select: {
             id: true,
@@ -250,6 +258,8 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
               select: {
                 codigo: true,
                 descricao: true,
+                status: true,
+                disponivelProgramacao: true,
                 tipoProcesso: { select: { codigo: true, descricao: true, posicao: true } },
                 turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true, duracaoMinutos: true } },
               },
