@@ -3516,6 +3516,11 @@ model EtapaOrdemProducao {
   recursoId              String?          @map("recurso_id")
   recurso                RecursoProducao? @relation(fields: [recursoId], references: [id])
   status                 String           @default("PENDENTE") @db.VarChar(20) // PENDENTE, EM_ANDAMENTO, CONCLUIDA, PAUSADA
+  // Tiragem (folhas) prevista desta etapa/parte. Preenchida no desmembramento
+  // "qtd+tiragem" (spec pcp-desmembrar-qtd-e-tiragem), em que cada parte tem
+  // quantidade E tiragem próprias (podem diferir entre partes). null = legado
+  // (sem tiragem específica — etapa não resultou desse tipo de desmembramento).
+  tiragemPrevista        Decimal?         @map("tiragem_prevista") @db.Decimal(12, 4)
   dataInicioPrevista     DateTime?        @map("data_inicio_prevista")
   dataFimPrevista        DateTime?        @map("data_fim_prevista")
   dataInicioReal         DateTime?        @map("data_inicio_real")

@@ -5487,6 +5487,15 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "cor_gantt" VARCHAR(9)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "ordem_producao" ADD COLUMN IF NOT EXISTS "status_gantt_obs" VARCHAR(120)`)
   console.log('✅ PCP Gantt: ordem_producao.cor_gantt/status_gantt_obs')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Desmembrar com QUANTIDADE e TIRAGEM por parte (spec pcp-desmembrar-qtd-e-
+  // tiragem). Cada parte do desmembramento guarda a tiragem própria (folhas)
+  // além da quantidade. Aditivo/idempotente; null = legado. Equivalente ao
+  // schema: tiragemPrevista Decimal? @map("tiragem_prevista") @db.Decimal(12,4)
+  // ─────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "tiragem_prevista" DECIMAL(12,4)`)
+  console.log('✅ PCP Desmembrar: etapa_ordem_producao.tiragem_prevista')
 }
 
 main()

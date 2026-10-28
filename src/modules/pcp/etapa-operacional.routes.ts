@@ -375,12 +375,18 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }
 
     const body = z.object({
-      // Base da divisão: QUANTIDADE (unidades da OP, padrão/legado) ou TIRAGEM
-      // (folhas/passagens). Default QUANTIDADE para não quebrar chamadas antigas.
-      base: z.enum(['QUANTIDADE', 'TIRAGEM']).optional().default('QUANTIDADE'),
+      // Base da divisão:
+      //  - QUANTIDADE (unidades da OP, padrão/legado) — valida só a soma de qtd.
+      //  - TIRAGEM (folhas/passagens) — valida só a soma de tiragem.
+      //  - QTD_TIRAGEM (spec pcp-desmembrar-qtd-e-tiragem) — cada parte informa
+      //    quantidade E tiragem; valida AS DUAS somas. Default QUANTIDADE para
+      //    não quebrar chamadas antigas.
+      base: z.enum(['QUANTIDADE', 'TIRAGEM', 'QTD_TIRAGEM']).optional().default('QUANTIDADE'),
       partes: z.array(z.object({
         centroProducaoId: z.string().uuid(),
         quantidade: z.number().positive(),
+        // Tiragem da parte (folhas) — obrigatória só no modo QTD_TIRAGEM.
+        tiragem: z.number().positive().optional(),
         observacao: z.string().optional(),
       })).min(2, 'Informe pelo menos 2 partes para desmembrar'),
     }).parse(request.body)
@@ -400,29 +406,48 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Só é possível desmembrar etapas com status PENDENTE' })
     }
 
-    // Total de referência conforme a base escolhida:
-    //  - QUANTIDADE: quantidade da OP (comportamento legado).
-    //  - TIRAGEM: tiragem resolvida da etapa (plano → [Tiragem] → Qtd/Montagem →
-    //    quantidade), mesma fonte da regra de Base de Contagem (não diverge).
+    // Totais de referência. qtd = quantidade da OP; tiragem = tiragem resolvida
+    // da etapa (plano → [Tiragem] → Qtd/Montagem → quantidade), mesma fonte da
+    // regra de Base de Contagem (não diverge).
     const qtdOp = Number(etapa.ordemProducao.quantidade)
-    const totalReferencia =
-      body.base === 'TIRAGEM'
-        ? tiragemDaEtapa(
-            etapa.ordemProducao.observacoes,
-            Number(etapa.quantidadePrevista) > 0 ? Number(etapa.quantidadePrevista) : qtdOp,
-            etapa.plano?.tiragem != null ? Number(etapa.plano.tiragem) : null,
-          )
-        : qtdOp
+    const totalTiragem = tiragemDaEtapa(
+      etapa.ordemProducao.observacoes,
+      Number(etapa.quantidadePrevista) > 0 ? Number(etapa.quantidadePrevista) : qtdOp,
+      etapa.plano?.tiragem != null ? Number(etapa.plano.tiragem) : null,
+    )
 
+    // Modo QTD_TIRAGEM: valida as DUAS somas (qtd e tiragem) — spec
+    // pcp-desmembrar-qtd-e-tiragem. Cada parte precisa ter quantidade E tiragem.
+    if (body.base === 'QTD_TIRAGEM') {
+      const semTiragem = body.partes.findIndex((p) => p.tiragem == null || p.tiragem <= 0)
+      if (semTiragem >= 0) {
+        return reply.status(400).send({ message: `Informe a tiragem (folhas) da parte ${semTiragem + 1}` })
+      }
+      const somaQtd = body.partes.reduce((acc, p) => acc + p.quantidade, 0)
+      const somaTir = body.partes.reduce((acc, p) => acc + (p.tiragem || 0), 0)
+      if (Math.abs(somaQtd - qtdOp) > 0.01) {
+        return reply.status(400).send({
+          message: `A soma das quantidades (${somaQtd}) deve ser igual ao total da etapa (${qtdOp} un)`,
+        })
+      }
+      if (Math.abs(somaTir - totalTiragem) > 0.01) {
+        return reply.status(400).send({
+          message: `A soma das tiragens (${somaTir}) deve ser igual ao total da etapa (${totalTiragem} folhas)`,
+        })
+      }
+    }
+
+    // Base ÚNICA (QUANTIDADE | TIRAGEM): total de referência conforme a base.
+    const totalReferencia = body.base === 'TIRAGEM' ? totalTiragem : qtdOp
     const unidadeLabel = body.base === 'TIRAGEM' ? 'folhas' : 'un'
 
-    // Valida que a soma das partes = total de referência (na base escolhida).
-    const somaPartes = body.partes.reduce((acc, p) => acc + p.quantidade, 0)
-
-    if (Math.abs(somaPartes - totalReferencia) > 0.01) {
-      return reply.status(400).send({
-        message: `A soma das partes (${somaPartes}) deve ser igual ao total da etapa (${totalReferencia} ${unidadeLabel}, base ${body.base})`,
-      })
+    if (body.base !== 'QTD_TIRAGEM') {
+      const somaPartes = body.partes.reduce((acc, p) => acc + p.quantidade, 0)
+      if (Math.abs(somaPartes - totalReferencia) > 0.01) {
+        return reply.status(400).send({
+          message: `A soma das partes (${somaPartes}) deve ser igual ao total da etapa (${totalReferencia} ${unidadeLabel}, base ${body.base})`,
+        })
+      }
     }
 
     // Remove a etapa original
@@ -439,20 +464,34 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         select: { codigo: true, descricao: true },
       })
 
-      // Rateio do tempo de operação proporcional à fração da parte sobre o
-      // TOTAL de referência (quantidade OU tiragem, conforme a base escolhida).
-      const fracao = totalReferencia > 0 ? parte.quantidade / totalReferencia : 0
+      // Rateio do tempo de operação proporcional à fração da parte. No modo
+      // QTD_TIRAGEM a tiragem dita o tempo de máquina → rateia por tiragem
+      // (fallback quantidade se não houver tiragem total). Nas bases únicas,
+      // rateia pela própria base (comportamento legado preservado).
+      const fracao =
+        body.base === 'QTD_TIRAGEM'
+          ? (totalTiragem > 0 ? (parte.tiragem || 0) / totalTiragem : (qtdOp > 0 ? parte.quantidade / qtdOp : 0))
+          : (totalReferencia > 0 ? parte.quantidade / totalReferencia : 0)
+
+      // Rótulo da descrição conforme o modo (no QTD_TIRAGEM mostra os dois).
+      const rotuloParte =
+        body.base === 'QTD_TIRAGEM'
+          ? `${parte.quantidade} un / ${parte.tiragem} folhas`
+          : `${parte.quantidade} ${unidadeLabel}`
 
       const nova = await prisma.etapaOrdemProducao.create({
         data: {
           ordemProducaoId: etapa.ordemProducaoId,
           sequencia: etapa.sequencia * 10 + i + 1, // ex: seq 3 vira 31, 32
-          descricao: `${etapa.descricao} [${centro?.codigo || 'PARTE'}${i + 1}] (${parte.quantidade} ${unidadeLabel})`,
+          descricao: `${etapa.descricao} [${centro?.codigo || 'PARTE'}${i + 1}] (${rotuloParte})`,
           centroProducaoId: parte.centroProducaoId,
           tempoSetupMinutos: Number(etapa.tempoSetupMinutos),
           tempoOperacaoCalculado: Math.round(Number(etapa.tempoOperacaoCalculado) * fracao * 100) / 100,
           tempoEsperaMinutos: Number(etapa.tempoEsperaMinutos),
           quantidadePrevista: parte.quantidade,
+          // Tiragem prevista: só no modo QTD_TIRAGEM (spec pcp-desmembrar-qtd-e-
+          // tiragem); nas bases únicas permanece null (legado).
+          tiragemPrevista: body.base === 'QTD_TIRAGEM' ? parte.tiragem : null,
           status: 'PENDENTE',
           observacaoOperador: parte.observacao || null,
         },
@@ -468,7 +507,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         statusAnterior: etapa.status,
         statusNovo: etapa.status,
         usuarioId: user.id,
-        observacao: `Etapa "${etapa.descricao}" desmembrada (base ${body.base}) em ${novasEtapas.length} partes: ${novasEtapas.map(e => `${Number(e.quantidadePrevista)} ${unidadeLabel}`).join(', ')}`,
+        observacao:
+          body.base === 'QTD_TIRAGEM'
+            ? `Etapa "${etapa.descricao}" desmembrada (qtd+tiragem) em ${novasEtapas.length} partes: ${novasEtapas.map(e => `${Number(e.quantidadePrevista)} un / ${e.tiragemPrevista != null ? Number(e.tiragemPrevista) : '—'} folhas`).join(', ')}`
+            : `Etapa "${etapa.descricao}" desmembrada (base ${body.base}) em ${novasEtapas.length} partes: ${novasEtapas.map(e => `${Number(e.quantidadePrevista)} ${unidadeLabel}`).join(', ')}`,
       },
     })
 

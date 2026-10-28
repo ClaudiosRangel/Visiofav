@@ -1406,3 +1406,53 @@ claros de mercado (DHTMLX Material; RAG do Office Timeline):
 Verificação: `get_diagnostics` limpo + `npm run build` (Next) OK. Validação
 visual (claro e escuro) fica com o usuário ao subir em produção. Nenhuma outra
 feature do Gantt foi tocada (seção 15).
+
+---
+
+## 17. Backlog do Gantt/PCP — pontos do Caio (decididos, fila)
+
+Pontos levantados pelo cliente (Caio) após a 1ª leva de melhorias do Gantt.
+Decisões já tomadas com o usuário; implementar na ordem/forma abaixo.
+
+### 17.1 ✅ ENTREGUE — Gantt não lista máquina inativa/fora de programação
+`GET /pcp/timeline` passou a filtrar as etapas por `centroProducao.status=true`
+E `disponivelProgramacao=true` (commit back `070aa80a3`). Mesma regra do painel
+de Programação. Era bug objetivo.
+
+### 17.2 ✅ ENTREGUE — Desmembrar informando QUANTIDADE **e** TIRAGEM por parte
+Spec `.kiro/specs/pcp-desmembrar-qtd-e-tiragem/` (4/4 tarefas). O cliente pode,
+ao desmembrar entre máquinas, informar em CADA parte a sua quantidade E a sua
+tiragem (podem ser diferentes entre as partes).
+- **Schema**: `EtapaOrdemProducao` +`tiragemPrevista Decimal? @map("tiragem_prevista")
+  @db.Decimal(12,4)` (nullable; null = base única/legado). migrate-prod idempotente
+  (`ADD COLUMN IF NOT EXISTS`, roda no deploy — Postgres local off).
+- **Rota** `POST /pcp/etapas/:id/desmembrar`: aceita `base: 'QTD_TIRAGEM'` com
+  partes `{ centroProducaoId, quantidade, tiragem, observacao? }`; valida AS DUAS
+  somas (Σqtd==qtdOp, Σtiragem==totalTiragem, tol. 0.01; 400 claro apontando qual
+  soma falhou + 400 se parte sem tiragem); grava `quantidadePrevista` +
+  `tiragemPrevista`; **rateio do tempo por tiragem** (dita o tempo de máquina;
+  fallback quantidade se totalTiragem≤0); descrição "N un / M folhas";
+  `LogOrdemProducao` com as duas bases. `totalTiragem` vem da MESMA
+  `tiragemDaEtapa(...)` da Base de Contagem (seção 12). As bases únicas
+  (`QUANTIDADE`/`TIRAGEM`) ficaram INTOCADAS — não-regressão.
+- **Frontend** (`pcp/programacao/page.tsx`): 3ª opção "Qtd + Tiragem" no
+  `SegmentedControl` do modal → por parte, DOIS `NumberInput` (qtd un + tiragem
+  folhas) + centro; DUAS somas em tempo real (verde quando batem); botão
+  habilita só quando AMBAS batem. As 2 abas existentes inalteradas. Build Next OK.
+- **Commits**: back (schema+migrate+rota no mesmo commit) + front (modal) separados.
+
+### 17.3 CONFIG (sem código) — "Pede login do admin ao finalizar OP em algumas máquinas"
+NÃO é do Gantt; é do Checkout/Programação. A ação de concluir usa a permissão
+`podeFinalizar` por tipo de processo (`permissoes-pcp.routes.ts`,
+`PermissoesPorProcesso`). Em algumas máquinas o perfil do operador não tem
+`podeFinalizar` → o sistema exige um usuário que tenha (admin). Decisão do
+usuário: **ajustar máquina a máquina** (não liberar geral). Resolver em
+**PCP → Permissões**: no perfil do operador, marcar `podeFinalizar` para os
+tipos de processo daquelas máquinas (permissão granular por tipo de processo
+sobrescreve a global). Nenhuma alteração de código.
+
+### 17.4 ROADMAP (opcional) — Cascata de VÁRIAS OPs no Gantt
+Manter o foco 1-a-1 como PADRÃO (clicar na OP → setas dela). Evolução OPCIONAL:
+um modo "mostrar dependências de várias OPs" (todas ou as selecionadas), com
+**setas FINAS e translúcidas** para não poluir, ligável só quando o usuário
+quiser. Não implementar agora — fila.
