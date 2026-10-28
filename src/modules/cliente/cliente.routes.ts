@@ -39,6 +39,20 @@ export async function clienteRoutes(app: FastifyInstance) {
       prisma.cliente.findMany({ where, skip: (q.page - 1) * q.limit, take: q.limit, orderBy: { razaoSocial: 'asc' } }),
       prisma.cliente.count({ where }),
     ])
+
+    // Quando o termo buscado é um código exato (codigoCalcgraf), traz esse
+    // cliente para o TOPO da lista — senão ele se perderia no corte alfabético
+    // (orderBy razaoSocial + limit). Reordena só a página já carregada.
+    const termoNumerico = (search || '').trim()
+    if (/^\d+$/.test(termoNumerico)) {
+      const cod = Number(termoNumerico)
+      data.sort((a, b) => {
+        const aExato = (a as { codigoCalcgraf?: number | null }).codigoCalcgraf === cod ? 0 : 1
+        const bExato = (b as { codigoCalcgraf?: number | null }).codigoCalcgraf === cod ? 0 : 1
+        return aExato - bExato
+      })
+    }
+
     return { data, total }
   })
 

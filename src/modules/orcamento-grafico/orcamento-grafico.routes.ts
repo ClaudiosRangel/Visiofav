@@ -36,7 +36,7 @@ import {
   garantirEngenhariaCompleta,
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
-import { aplicarDecomposicaoStc, normalizarCustosStc } from './calculo-grafico/decomposicao-stc.service'
+import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
 import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
@@ -889,6 +889,92 @@ type CalculoGraficoRegistroCompleto = NonNullable<
   Awaited<ReturnType<typeof obterCalculoGrafico>>
 >
 
+/** Matriz derivada de uma fonte da foto rica / decomposição STC. */
+type MatrizProjetada = { quantidade: number; precoUnitario: number }
+
+/**
+ * Deriva a MATRIZ de impressão de um cálculo migrado a partir de UMA fonte,
+ * nesta ordem de preferência (valor real primeiro):
+ *   1) `custosCalcgraf` — componente com `origem === 'MATRIZ IMPRESSÃO'`
+ *      (`valorTotal`/`quantFixa` → preço unitário);
+ *   2) `resultadoCalculo.matriz` (`FotoMatriz { quantidade, precoUnitario,
+ *      subtotal }`) — quando só houver `subtotal`+`quantidade`, deriva
+ *      `precoUnitario = subtotal / quantidade`.
+ *
+ * Retorna `null` quando nenhuma fonte traz matriz com quantidade > 0 (Req 3.4 —
+ * MD inalterado). Função PURA (não consulta banco), para facilitar o teste de
+ * exemplo da Tarefa 7.4.
+ */
+function extrairMatrizDeOrigem(calc: CalculoGraficoRegistroCompleto): MatrizProjetada | null {
+  // 1) Decomposição STC (valor REAL cravado pelo Calcgraf).
+  const stc = normalizarCustosStc((calc as { custosCalcgraf?: unknown }).custosCalcgraf)
+  const compMatriz = stc?.componentes.find((k) => k.origem === 'MATRIZ IMPRESSÃO')
+  if (compMatriz) {
+    const quantidade = Number(compMatriz.quantFixa ?? 0)
+    const subtotal = Number(compMatriz.valorTotal ?? 0)
+    if (quantidade > 0 && subtotal > 0) {
+      return { quantidade, precoUnitario: subtotal / quantidade }
+    }
+  }
+
+  // 2) Foto rica (`resultadoCalculo.matriz`).
+  const foto = (calc.resultadoCalculo ?? null) as {
+    matriz?: { quantidade?: number; precoUnitario?: number; subtotal?: number } | null
+  } | null
+  const fm = foto?.matriz
+  if (fm) {
+    const quantidade = Number(fm.quantidade ?? 0)
+    if (quantidade > 0) {
+      const precoUnitario =
+        fm.precoUnitario != null && Number(fm.precoUnitario) > 0
+          ? Number(fm.precoUnitario)
+          : fm.subtotal != null && Number(fm.subtotal) > 0
+            ? Number(fm.subtotal) / quantidade
+            : 0
+      if (precoUnitario > 0) return { quantidade, precoUnitario }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Remove de uma lista de `itensDiversos` o PRIMEIRO item equivalente à matriz
+ * (chapa/clichê/RVU), preservando todos os demais. Heurística segura: item
+ * `fixo === true` cuja descrição normalizada casa com `/matriz|chapa|clich|rvu/i`.
+ * Quando `descricaoComponente` (do STC) é informada, também aceita o casamento
+ * por igualdade da descrição limpa — reforço para cálculos cuja descrição do
+ * item diverso veio do próprio componente STC.
+ *
+ * Retorna uma NOVA lista (não muta a original). Função PURA. Genérica sobre o
+ * shape estrutural do item diverso (`{ descricao, fixo }`) para aceitar tanto o
+ * tipo inferido do Zod (`ItemOrcamentoBody['itensDiversos']`) quanto o
+ * `ItemDiversoCalculo` sem acoplamento.
+ */
+function removerItemDiversoMatriz<T extends { descricao?: string | null; fixo?: boolean }>(
+  itens: T[] | null | undefined,
+  descricaoComponente?: string | null,
+): T[] {
+  if (!Array.isArray(itens) || itens.length === 0) return []
+  const regexMatriz = /matriz|chapa|clich|rvu/i
+  const alvoComp = (descricaoComponente ?? '').trim().toLowerCase()
+  let removido = false
+  const resultado: T[] = []
+  for (const item of itens) {
+    const desc = (item?.descricao ?? '').trim()
+    const casaMatriz =
+      !removido &&
+      item?.fixo === true &&
+      (regexMatriz.test(desc) || (alvoComp.length > 0 && desc.toLowerCase() === alvoComp))
+    if (casaMatriz) {
+      removido = true // remove APENAS o primeiro equivalente; preserva os demais
+      continue
+    }
+    resultado.push(item)
+  }
+  return resultado
+}
+
 /**
  * Fonte ÚNICA da regra de cópia de um `CalculoGrafico` da Biblioteca para um
  * `ItemOrcamentoGrafico` por CÓPIA da FOTO CONGELADA (sem recálculo). Reaproveita
@@ -932,6 +1018,37 @@ function copiarCalculoParaItem(
         rendimentoM2Kg: c.rendimentoM2Kg != null && c.rendimentoM2Kg > 0 ? c.rendimentoM2Kg : 25,
       }
     }) as ItemOrcamentoBody['cores']
+  }
+
+  // ── MATRIZ DE IMPRESSÃO: projeção nos campos dedicados (Req 3.1/3.2/3.4) ──
+  // Os cálculos migrados do Calcgraf gravaram a matriz DENTRO de `itensDiversos`
+  // (não nas colunas dedicadas `matriz_quantidade`/`matriz_preco_unitario`). Por
+  // isso o item puxado nasce com `matriz = null` e a matriz entra no MD só pela
+  // via do item diverso herdado. Aqui projetamos a matriz nos campos dedicados a
+  // partir da foto rica / decomposição STC e REMOVEMOS o item diverso equivalente,
+  // para a matriz entrar no MD UMA ÚNICA VEZ (o motor `montarParamsDoItem` já soma
+  // a matriz dedicada ao MD — sem a remoção, haveria dupla contagem).
+  if (itemBody.matriz != null && itemBody.matriz.quantidade > 0) {
+    // 1) Cálculo já tem matriz dedicada (round-trip) → mantém como está; NÃO
+    //    toca `itensDiversos` (Req 3.1).
+  } else {
+    // 2) Deriva a matriz de uma fonte (STC → foto rica). Se achar, projeta no
+    //    campo dedicado e remove o item diverso equivalente para não duplicar.
+    const matrizProjetada = extrairMatrizDeOrigem(calc)
+    if (matrizProjetada != null) {
+      itemBody.matriz = matrizProjetada
+      // Descrição limpa do componente STC (quando houver) reforça o casamento do
+      // item diverso equivalente, além da heurística por regex.
+      const stc = normalizarCustosStc((calc as { custosCalcgraf?: unknown }).custosCalcgraf)
+      const compMatriz = stc?.componentes.find((k) => k.origem === 'MATRIZ IMPRESSÃO')
+      const descComponente = limparDescStc(compMatriz?.descricao)
+      itemBody.itensDiversos = removerItemDiversoMatriz(
+        itemBody.itensDiversos,
+        descComponente,
+      ) as ItemOrcamentoBody['itensDiversos']
+    }
+    // 3) Nenhuma fonte com matriz → mantém `matriz` nulo e `itensDiversos`
+    //    intactos (Req 3.4 — MD inalterado).
   }
 
   // Foto congelada do cálculo como resultado do item (sem recalcular). Quando a

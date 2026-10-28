@@ -523,15 +523,20 @@ async function importarTiposEmbalagem(empresaId: string) {
     const descricao = (prod.Nome || '').trim().replace(/\s+/g, ' ').slice(0, 200)
     if (!descricao) continue
     const f = formulasBase(prod.Formato)
+    // Rótulos (label) na nomenclatura esperada pelo cliente (Caio/Calcgraf):
+    // "Comprimento, Largura, Altura" (nessa ordem), sem duplicados. A chave de
+    // dado (`nome`: L/A/P) NÃO muda — o Motor_Calculo lê `medidas.L/A/P` e as
+    // fórmulas `formulaLargura/formulaAltura` continuam válidas. Só o texto
+    // exibido no StepMedidas muda. (spec orcamento-grafico-ajustes-caio, Tarefa 3.2)
     const parametros = f.params3d
       ? [
-          { nome: 'L', label: 'Largura', unidade: 'mm', obrigatorio: true, default: 0 },
-          { nome: 'A', label: 'Altura', unidade: 'mm', obrigatorio: true, default: 0 },
-          { nome: 'P', label: 'Profundidade', unidade: 'mm', obrigatorio: true, default: 0 },
+          { nome: 'L', label: 'Comprimento', unidade: 'mm', obrigatorio: true, default: 0 },
+          { nome: 'A', label: 'Largura', unidade: 'mm', obrigatorio: true, default: 0 },
+          { nome: 'P', label: 'Altura', unidade: 'mm', obrigatorio: true, default: 0 },
         ]
       : [
-          { nome: 'L', label: 'Largura', unidade: 'mm', obrigatorio: true, default: 0 },
-          { nome: 'A', label: 'Altura', unidade: 'mm', obrigatorio: true, default: 0 },
+          { nome: 'L', label: 'Comprimento', unidade: 'mm', obrigatorio: true, default: 0 },
+          { nome: 'A', label: 'Largura', unidade: 'mm', obrigatorio: true, default: 0 },
         ]
     const processos = processosDoTipo(prod)
 
