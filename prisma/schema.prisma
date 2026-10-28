@@ -3170,6 +3170,11 @@ model AcabamentoGrafico {
   // Exige escolha de uma sub-opção (restrição) ao usar no orçamento (Req 7).
   exigeRestricao Boolean @default(false) @map("exige_restricao")
 
+  // P16 — Materiais INFORMATIVOS por atividade (ex.: "Cola Branca", "Cola
+  // Quente"). Lista de nomes textuais. É só descritivo — NÃO entra em
+  // cálculo/preço. Ver spec orcamento-grafico-restricoes-materiais.
+  materiais Json? @map("materiais")
+
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")

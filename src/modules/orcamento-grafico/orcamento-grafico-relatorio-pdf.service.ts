@@ -134,6 +134,18 @@ export function gerarRelatorioPdf(rel: RelatorioOrcamento): Promise<Buffer> {
         drawSecao('ACABAMENTO', rel.acabamento)
       }
 
+      // ── P16 — Restrições/Materiais informativos dos acabamentos (TEXTO, sem
+      // custo). Só aparece quando há seleção; senão o layout fica idêntico. ──
+      if (rel.acabamentosInformativos && rel.acabamentosInformativos.length > 0) {
+        if (doc.y > doc.page.height - 120) doc.addPage()
+        doc.moveDown(0.4)
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F3D2B').text('RESTRIÇÕES / MATERIAIS DO ACABAMENTO', left)
+        doc.fillColor('#000').font('Helvetica').fontSize(8)
+        for (const info of rel.acabamentosInformativos) {
+          doc.text(`• ${info.texto}`, left, doc.y + 2, { width })
+        }
+      }
+
       // ── Custo de Produção ──
       if (doc.y > doc.page.height - 160) doc.addPage()
       doc.moveDown(0.5)

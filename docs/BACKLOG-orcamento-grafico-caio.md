@@ -126,10 +126,21 @@ Produto → Atividades" (Colagem Manual, Colocação de Alça, Envase) +
 de Produto / Acondicionamento) e "Item Diversos: FACA NOVA, COLAGEM MANUAL
 DUPLA".
 
-**Status:** fora de escopo da 1ª spec. **Spec dedicada a criar** (há uma spec
-`orcamento-grafico-acabamentos` já existente no repo — verificar se cobre isto
-ou se é outra; não confundir). Relacionado ao cadastro rico de acabamentos
-(`AcabamentoGrafico`) já usado em `acabamentosRicos`.
+**Status:** 🟡 PARCIAL. O GROSSO já foi entregue pela spec
+`orcamento-grafico-acabamentos` (motor soma MAT.ACABAMENTO no MD + cadeia de
+centros no CT; golden 15.235 ≤0,5%; cadastro `AcabamentoGrafico`; CRUD; wizard
+`StepAcabamentos` lê do cadastro; relatório PDF). Falta: (a) passos operacionais
+(importar acabamentos em produção — tarefa 8.3 daquela spec) e (b) o que as
+IMAGENS de Caio mostram e NÃO está coberto → **Restrições + Materiais por
+Atividade** (ver P16).
+
+**Esclarecimento das imagens (28/10/2026):** na tela "CARTUCHO", a seção
+Acabamento tem 3 listas acopladas: **Atividades** (AFT70 Coladeira, Bobst E
+Corte e Vinco…), **Restrições** (sub-opções que MUDAM conforme a atividade
+selecionada — ex.: "Acerto Acoplado Colagem Lateral", "Fundo Automático",
+"Normal Repetição", "Onda B Acoplado Novo") e **Materiais** (Cola Branca/Cola
+Quente + "Medida em mm"). Isso NÃO existe hoje no `AcabamentoGrafico` → virou o
+P16. O resto do P4 está feito.
 
 ---
 
@@ -315,7 +326,130 @@ get_diagnostics limpo. NÃO commitado ainda.
 
 ---
 
+### P16 — Restrições + Materiais por Atividade de acabamento ✅ ENTREGUE
+
+**Spec:** `.kiro/specs/orcamento-grafico-restricoes-materiais/` (requirements +
+design). Abordagem de menor risco: restrições reusam o model
+`RestricaoAcabamento` (já existe, só texto); materiais = Json novo
+`AcabamentoGrafico.materiais`; seleção no orçamento gravada em
+`acabamentosRicos[].{restricaoNome,materialNome,medidaMm}` (texto, sem custo).
+MOTOR NÃO foi tocado (golden 15.235 preservado).
+
+**ENTREGUE (28/10/2026).** SÓ persistência/exibição — zero efeito no cálculo.
+- **Back:** `AcabamentoGrafico.materiais Json?` (+ migrate-prod idempotente
+  `ADD COLUMN IF NOT EXISTS materiais JSONB`, mesmo commit); CRUD de acabamentos
+  aceita `materiais[]` + sincroniza `RestricaoAcabamento` por nome (tempos 0,
+  não usados); `acabamentoRicoRequestSchema` repassa `restricaoNome/materialNome/
+  medidaMm` (persistidos em `acabamentosRicos`, IGNORADOS pelo motor); relatório
+  (service + PDF) ganha seção textual "Restrições/Materiais do Acabamento" (sem
+  coluna de custo). `montarAcabamentosRicos` NÃO repassa esses campos ao motor.
+- **Front:** cadastro de acabamentos com CRUD de materiais (TagsInput) +
+  restrições (já existia); `StepAcabamentos` mostra, ao marcar a atividade,
+  Select de Restrição/Material + "Medida em mm" (oculto se não houver);
+  `AcabamentoRicoSelecionado` carrega/envia os campos; `RelatorioItem` exibe.
+- **Verificação:** suíte `orcamento-grafico` **277 passed / 0 falhas** (golden
+  15.235 verde) + get_diagnostics limpo (11 arquivos) + prisma generate OK.
+  Migração local não rodou (Postgres local off) — roda no deploy (idempotente).
+  NÃO commitado ainda.
+
+**O que é (imagens de Caio, tela "CARTUCHO"):** ao marcar uma **Atividade** de
+acabamento, aparecem duas listas DEPENDENTES dela:
+- **Restrições** (sub-opções): mudam conforme a atividade. Ex. para uma
+  coladeira: "Acerto Acoplado Colagem Lateral", "Acerto Acoplado Fundo
+  Automático", "Acerto Lateral Alterando o Tamanho"; para corte/vinco: "Normal
+  Repetição", "Onda B Acoplado Novo", "Onda B Acoplado Repetição", "Onda E
+  Acoplado Novo"…
+- **Materiais**: ex. "Cola Branca", "Cola Quente" + um campo "Medida em mm".
+
+**Entendimento do usuário (confirmado por ele):** "cada Atividade tem suas
+restrições e materiais cadastradas — teria que olhar isso no banco restaurado".
+Ou seja, Restrições e Materiais são CADASTROS vinculados à Atividade no Calcgraf.
+
+**O que falta no Vizor:** o `AcabamentoGrafico` (cadastro de atividade) NÃO tem
+restrições nem materiais vinculados. Hoje há só o campo solto
+`restricaoAcabamentoId` no WizardFormData do front (sem schema/cadastro/efeito).
+
+**DECIDIDO (28/10/2026, usuário):** Restrições e Materiais são **INFORMATIVOS —
+NÃO mexem em valores/cálculo**. Logo P16 é cadastro + seleção + exibição/texto
+(vai pro relatório/OP como descrição), SEM tocar o motor calibrado (golden
+15.235 preservado). Risco BAIXO. A "Medida em mm" é um detalhe descritivo do
+material, não multiplica consumo.
+
+**✅ VERIFICAÇÃO NAS DUAS BASES (28/10/2026) — confirma "informativo":**
+- **Calcgraf (base restaurada `CalcgrafCartonWega`):** as tabelas de restrição
+  (`PcpTiposRestricao`, `RestricoesManuais`, `ProdutosxRestricoes`,
+  `WebCalculoRestricoes`) têm SÓ colunas descritivas/vínculo — `Codigo`, `Ativo`,
+  `Nome`, `Tipo`, `CodAtividade`, `flagExibirProposta`, `CodRestricao`. **Nenhuma
+  coluna de preço/custo/tempo.** O `flagExibirProposta` confirma que a restrição
+  serve para APARECER na proposta, não para calcular. Não há "tabela de preço de
+  restrição".
+- **Vizor (Neon, Wega):** `restricao_acabamento` EXISTE (com campos
+  `tempo_acerto_min`/`tempo_operacao_min`) mas está **VAZIA (0 registros)** e o
+  **código NÃO a usa** (infra criada e nunca plugada). Dos 67 `acabamento_grafico`
+  da Wega, 0 com `exige_restricao=true`.
+- **Decisão (usuário: "não tendo tabela de preço, manter como está o código"):**
+  NÃO remover os campos de tempo do model (fica como está); tratar restrição/
+  material como TEXTO informativo. Zero efeito no motor.
+
+**Escopo (leve):**
+- Cadastro: vincular Restrições e Materiais a cada Atividade (`AcabamentoGrafico`).
+  Avaliar tabelas novas (`RestricaoAcabamento`, `MaterialAcabamento`) OU campos
+  Json no próprio `AcabamentoGrafico` (restricoes[]/materiais[]) — menor risco.
+- Wizard (`StepAcabamentos`): ao marcar a atividade, listar suas restrições e
+  materiais (checkbox) + campo "Medida em mm"; persistir a seleção no item
+  (`acabamentosRicos[].restricaoId`/`materialId`/`medidaMm`), como TEXTO/ref —
+  sem efeito no custo.
+- Relatório/OP: exibir a restrição/material escolhidos como descrição.
+- Levantamento no banco restaurado (design) de como o Calcgraf modela, só para
+  nomear certo — mas sem efeito de cálculo.
+
+---
+
+### P17 — Fechamento do Orçamento (abas: Preço de Venda / Taxas de Produção / Custos Diretos de Venda / Diversos) ⬜ PENDENTE
+
+**O que é (= P7 do editor de custos; imagens do "Fechamento"):** uma tela de
+Fechamento POR ORÇAMENTO (não por item — confirmado pelo usuário: "essas abas
+estão ligadas ao orçamento em si") com 4 abas:
+- **Preço de Venda**: grade Tiragem × Margem (3 faixas de margem por tiragem,
+  com Valor Unitário/Total, C.Marg%/$, Primeiro Mil, Mil Seguinte) — overlap com
+  P1, mas aqui no nível do Fechamento do orçamento.
+- **Taxas de Produção**: Materiais Diretos, Transformação, Serviços Externos,
+  Crédito Pis/Cofins, Crédito ICMS, Crédito IPI, Custo Financeiro (com
+  "Composição da Taxa" por Agrupamento).
+- **Custos Diretos de Venda**: Comissão (Agência/Vendedor/Vendedor2/Produtor/
+  Produtor2/Interna), Imposto de Venda, Juros, Pis/Cofins — cada um com
+  Alíquota, Base de Cálculo, Valor Fixo, Valor da Taxa.
+- **Diversos**: Fechamento Padrão, Prazos (Produção/Entrega, Armazenagem,
+  Pagamento, (-)Financiamento, Total em dias), Precisão do Valor Unitário
+  (Ideal/Máxima/Var.Máx.%), Margem de Lucro sobre (Venda/Produção), Juros
+  (Bancária/Aplicação a.m., incide à vista/à prazo, simples/composto).
+
+Rodapé comum: Tiragem/Mod, Custo Produção, Taxas de Produção, Custos Diretos de
+Venda, Over Total/Gráfica, Condições de Pagamento, Tributação, Desconto, Margem,
+Base Preço, Valor Unitário, Valor de Venda.
+
+**Também inclui (imagem "Tabelas de Custo"):** tela de Tabelas de Custo onde o
+operador vê o custo unitário de cada componente (SUPORTE/TINTA/MATRIZ/
+MAT.ACABAMENTO/CENTRO DE CUSTO) e pode **alterar manualmente** (ligado à
+decomposição `CalculoSTC`).
+
+**É o MAIOR ponto do conjunto.** Mexe em como o orçamento forma preço (CEV,
+comissões, prazos, juros) — alto risco sobre o motor calibrado. SPEC DEDICADA
+obrigatória, provavelmente faseada. Parte do P3 (campos do pré-cálculo) é
+coberta por esta tela.
+
+**DECIDIDO (28/10/2026, usuário):** a edição das Taxas/Comissões/Juros/Prazos
+**RECALCULA o preço DESSE orçamento somente** (override por orçamento, não muda
+cadastro global). Ou seja: as abas são EDITÁVEIS e disparam recálculo local.
+Isso confirma que é a reformulação da formação de preço → **spec dedicada,
+FASEADA**, com golden/não-regressão travando a paridade antes de expor a edição.
+Estratégia recomendada: persistir overrides por orçamento (comissões/prazos/
+juros/CEV) e o motor usar o override quando presente, senão o default do cadastro
+(aditivo/não-regressivo quando sem override).
+
+---
+
 ## Próximos pontos (a registrar — o usuário vai enviar mais)
 
 <!-- Adicionar aqui os novos pontos conforme o usuário for passando, com IDs
-     P16, P17, ... Não renumerar os existentes. -->
+     P18, P19, ... Não renumerar os existentes. -->

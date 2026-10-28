@@ -84,6 +84,15 @@ export interface AcabamentoRicoInput {
   tempoVarHoras?: number
   /** Fator de folhas-equivalentes na operação (paridade Calcgraf). Default 1. */
   fatorOperacao?: number
+  /**
+   * P16 — seleção INFORMATIVA (restrição/material/medida) por acabamento.
+   * Apenas texto/número descritivo: são PERSISTIDOS em acabamentosRicos do item
+   * e devolvidos, mas NÃO entram em NENHUM cálculo de custo/preço. O motor os
+   * ignora (não são repassados por `montarAcabamentosRicos`). Ver spec P16.
+   */
+  restricaoNome?: string | null
+  materialNome?: string | null
+  medidaMm?: number | null
 }
 
 /**

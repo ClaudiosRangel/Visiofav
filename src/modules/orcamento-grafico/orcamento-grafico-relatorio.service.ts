@@ -90,6 +90,21 @@ export interface RelatorioPlanoBloco {
   acabamento?: RelatorioSecaoLinha[]
 }
 
+/**
+ * P16 — linha INFORMATIVA de acabamento no relatório: restrição/material/medida
+ * escolhidos no orçamento, exibidos como TEXTO junto do acabamento, SEM custo.
+ * Nunca entra em cálculo. Ver spec orcamento-grafico-restricoes-materiais.
+ */
+export interface RelatorioAcabamentoInformativo {
+  /** Nome do acabamento/atividade (quando conhecido). */
+  acabamento?: string
+  restricaoNome?: string
+  materialNome?: string
+  medidaMm?: number
+  /** Texto já formatado para exibição (ex.: "AFT70 · Restrição: ... · Material: ... · 3 mm"). */
+  texto: string
+}
+
 export interface RelatorioOrcamento {
   cabecalho: {
     empresa?: string
@@ -115,6 +130,12 @@ export interface RelatorioOrcamento {
   matAcabamento: RelatorioSecaoLinha[]
   impressao: RelatorioSecaoLinha[]
   acabamento: RelatorioSecaoLinha[]
+  /**
+   * P16 — restrições/materiais/medidas INFORMATIVOS escolhidos nos acabamentos
+   * do item. Exibidos como texto junto do acabamento, SEM coluna de custo.
+   * Vazio quando nada foi selecionado (não-regressão do layout atual).
+   */
+  acabamentosInformativos: RelatorioAcabamentoInformativo[]
   custoProducao: {
     materialDireto: number
     custoTransformacao: number
@@ -163,6 +184,18 @@ export interface RelatorioOrcamento {
 export interface DadosRelatorio {
   resultado: ResultadoOrcamento
   quantidade: number
+  /**
+   * P16 — seleção INFORMATIVA de restrição/material/medida por acabamento
+   * (vinda de `ItemOrcamentoGrafico.acabamentosRicos`). Só texto/número
+   * descritivo; NÃO entra em cálculo. Quando ausente/vazio, o relatório fica
+   * idêntico ao atual. Ver spec orcamento-grafico-restricoes-materiais.
+   */
+  acabamentosRicos?: Array<{
+    nome?: string | null
+    restricaoNome?: string | null
+    materialNome?: string | null
+    medidaMm?: number | null
+  }>
   cabecalho?: Partial<RelatorioOrcamento['cabecalho']>
   cev?: { icms: number; juros: number; pisCofins: number; comissoes: number; impostoIpi?: number }
   /** Markups a exibir na tabela de margem (default 10/20 + markup do cálculo). */
@@ -354,6 +387,37 @@ export function montarSecoesDoResultado(r: ResultadoOrcamento): {
  * Monta o relatório a partir do resultado do motor. O gross-up das margens usa
  * o mesmo CEV do cálculo; cada markup gera uma linha (preço, margem$, CM%/CM$).
  */
+/**
+ * P16 — Deriva as linhas INFORMATIVAS de acabamento (restrição/material/medida)
+ * a partir dos `acabamentosRicos` persistidos no item. Função PURA, sem efeito
+ * de custo. Só gera uma linha quando o acabamento tiver pelo menos um dos campos
+ * informativos preenchidos (restrição, material ou medida). Caso contrário o
+ * array fica vazio e o relatório segue idêntico ao atual (não-regressão).
+ */
+export function montarAcabamentosInformativos(
+  acabamentosRicos:
+    | Array<{ nome?: string | null; restricaoNome?: string | null; materialNome?: string | null; medidaMm?: number | null }>
+    | undefined,
+): RelatorioAcabamentoInformativo[] {
+  if (!acabamentosRicos || acabamentosRicos.length === 0) return []
+  const out: RelatorioAcabamentoInformativo[] = []
+  for (const a of acabamentosRicos) {
+    const restricaoNome = a.restricaoNome?.trim() || undefined
+    const materialNome = a.materialNome?.trim() || undefined
+    const medidaMm = a.medidaMm != null && Number.isFinite(Number(a.medidaMm)) && Number(a.medidaMm) > 0 ? Number(a.medidaMm) : undefined
+    // Sem nenhum informativo → não gera linha (mantém o relatório limpo).
+    if (!restricaoNome && !materialNome && medidaMm === undefined) continue
+    const acabamento = a.nome?.trim() || undefined
+    const partes: string[] = []
+    if (acabamento) partes.push(acabamento)
+    if (restricaoNome) partes.push(`Restrição: ${restricaoNome}`)
+    if (materialNome) partes.push(`Material: ${materialNome}`)
+    if (medidaMm !== undefined) partes.push(`Medida: ${medidaMm} mm`)
+    out.push({ acabamento, restricaoNome, materialNome, medidaMm, texto: partes.join(' · ') })
+  }
+  return out
+}
+
 export function montarRelatorio(d: DadosRelatorio): RelatorioOrcamento {
   const { resultado: r, quantidade } = d
   const cevPerc = d.cev
@@ -488,6 +552,8 @@ export function montarRelatorio(d: DadosRelatorio): RelatorioOrcamento {
     matAcabamento,
     impressao,
     acabamento,
+    // P16 — restrições/materiais/medidas informativos (texto, sem custo).
+    acabamentosInformativos: montarAcabamentosInformativos(d.acabamentosRicos),
     custoProducao: {
       materialDireto: r.materialDireto,
       custoTransformacao: r.custoTransformacao,
@@ -570,6 +636,13 @@ export interface DadosRelatorioConsolidado {
     valorTotal: number
     margemSelecionada: number
     cev?: { icms: number; juros: number; pisCofins: number; comissoes: number }
+    /** P16 — seleção informativa por acabamento do item (texto, sem custo). */
+    acabamentosRicos?: Array<{
+      nome?: string | null
+      restricaoNome?: string | null
+      materialNome?: string | null
+      medidaMm?: number | null
+    }>
   }>
   custoProducaoConsolidado: number
   valorTotalConsolidado: number
@@ -592,6 +665,7 @@ export function montarRelatorioConsolidado(d: DadosRelatorioConsolidado): Relato
         resultado: item.resultado,
         quantidade: item.quantidade,
         cev: item.cev,
+        acabamentosRicos: item.acabamentosRicos,
       }),
       custoProducao: r2(item.custoProducao),
       valorTotal: r2(item.valorTotal),

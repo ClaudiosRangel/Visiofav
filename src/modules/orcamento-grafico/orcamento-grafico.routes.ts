@@ -183,6 +183,13 @@ const acabamentoRicoRequestSchema = z.object({
   tempoPrimeiroAcertoMin: z.coerce.number().min(0).optional(),
   tempoFixoHoras: z.coerce.number().min(0).optional(),
   tempoVarHoras: z.coerce.number().min(0).optional(),
+  // P16 — seleção INFORMATIVA de restrição/material/medida por acabamento.
+  // Apenas texto/número descritivo: são PERSISTIDOS em acabamentosRicos e
+  // devolvidos, mas NÃO entram em nenhum cálculo de custo/preço (o motor os
+  // ignora — não existem no tipo ItemAcabamentoRico). Ver spec P16.
+  restricaoNome: z.string().max(100).optional().nullable(),
+  materialNome: z.string().max(200).optional().nullable(),
+  medidaMm: z.coerce.number().min(0).optional().nullable(),
 })
 
 type AcabamentoRicoRequest = z.infer<typeof acabamentoRicoRequestSchema>
@@ -249,6 +256,31 @@ async function montarAcabamentosRicos(
     }
   }
   return resolvidos
+}
+
+/**
+ * P16 — Extrai a seleção INFORMATIVA (restrição/material/medida) dos
+ * `acabamentosRicos` PERSISTIDOS de um item (Json gravado como veio do body).
+ * Retorna só os campos textuais/descritivos + o nome do acabamento, para o
+ * relatório. NÃO toca cálculo. Tolerante a Json malformado/legado (retorna []).
+ */
+function extrairAcabamentosInformativos(
+  acabamentosRicos: unknown,
+):
+  | Array<{ nome?: string | null; restricaoNome?: string | null; materialNome?: string | null; medidaMm?: number | null }>
+  | undefined {
+  if (!Array.isArray(acabamentosRicos)) return undefined
+  return acabamentosRicos.map((a) => {
+    const obj = (a ?? {}) as Record<string, unknown>
+    const medidaRaw = obj.medidaMm
+    const medidaMm = medidaRaw == null ? null : Number(medidaRaw)
+    return {
+      nome: typeof obj.nome === 'string' ? obj.nome : null,
+      restricaoNome: typeof obj.restricaoNome === 'string' ? obj.restricaoNome : null,
+      materialNome: typeof obj.materialNome === 'string' ? obj.materialNome : null,
+      medidaMm: medidaMm != null && Number.isFinite(medidaMm) ? medidaMm : null,
+    }
+  })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1535,9 +1567,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     tempoPrimeiroAcertoMin: true,
     unidadeBase: true,
     exigeRestricao: true,
+    // P16 — materiais informativos por atividade (lista de nomes). Só texto.
+    materiais: true,
     status: true,
     criadoEm: true,
     atualizadoEm: true,
+    // P16 — restrições (sub-opções por atividade) devolvidas como nomes. Só texto.
+    restricoes: {
+      select: { id: true, nome: true },
+      orderBy: { nome: 'asc' },
+    },
   } as const
 
   const acabamentoBodySchema = z.object({
@@ -1555,7 +1594,90 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     tempoPrimeiroAcertoMin: z.number().min(0).optional().nullable(),
     unidadeBase: z.enum(['FOLHA', 'PRODUTO']).optional().nullable(),
     exigeRestricao: z.boolean().optional(),
+    // P16 — materiais informativos (lista de nomes). Puramente descritivo,
+    // NÃO entra em cálculo. Normaliza: remove vazios e duplicados.
+    materiais: z.array(z.string().min(1).max(200)).optional(),
+    // P16 — restrições (sub-opções por atividade) por NOME. Sincronizadas com
+    // a tabela restricao_acabamento (criadas/removidas por nome). Só texto —
+    // os campos de tempo da restrição recebem 0 (não usados no cálculo P16).
+    restricoes: z.array(z.object({ nome: z.string().min(1).max(100) })).optional(),
   })
+
+  /**
+   * Normaliza a lista de nomes de materiais do body (remove espaços nas pontas,
+   * descarta vazios e duplicados preservando a ordem). Retorna undefined quando
+   * o body NÃO trouxe o campo (para não sobrescrever o valor já gravado no PUT).
+   */
+  function normalizarMateriais(materiais: string[] | undefined): string[] | undefined {
+    if (materiais === undefined) return undefined
+    const vistos = new Set<string>()
+    const out: string[] = []
+    for (const m of materiais) {
+      const nome = m.trim()
+      if (!nome) continue
+      const chave = nome.toLowerCase()
+      if (vistos.has(chave)) continue
+      vistos.add(chave)
+      out.push(nome)
+    }
+    return out
+  }
+
+  /**
+   * Sincroniza as RestricaoAcabamento de um acabamento com a lista de nomes
+   * recebida (P16 — CRUD por nome). Cria as novas, remove as que saíram.
+   * Isolado por empresaId. As restrições criadas por aqui são INFORMATIVAS:
+   * os tempos recebem 0 (não usados no cálculo). Restrições com tempo > 0
+   * criadas por outra tela (Task 14) são preservadas pela correspondência de
+   * nome. Não faz nada quando `restricoes === undefined` (campo ausente no body).
+   */
+  async function sincronizarRestricoesPorNome(
+    empresaId: string,
+    acabamentoId: string,
+    restricoes: { nome: string }[] | undefined,
+  ): Promise<void> {
+    if (restricoes === undefined) return
+    // Normaliza nomes desejados (sem vazios/duplicados, por chave minúscula).
+    const vistos = new Set<string>()
+    const desejados: string[] = []
+    for (const r of restricoes) {
+      const nome = r.nome.trim()
+      if (!nome) continue
+      const chave = nome.toLowerCase()
+      if (vistos.has(chave)) continue
+      vistos.add(chave)
+      desejados.push(nome)
+    }
+
+    const existentes = await prisma.restricaoAcabamento.findMany({
+      where: { acabamentoGraficoId: acabamentoId, empresaId },
+      select: { id: true, nome: true },
+    })
+    const existentesPorChave = new Map(existentes.map((e) => [e.nome.trim().toLowerCase(), e]))
+    const desejadosChaves = new Set(desejados.map((n) => n.toLowerCase()))
+
+    // Remover as que saíram.
+    const idsRemover = existentes.filter((e) => !desejadosChaves.has(e.nome.trim().toLowerCase())).map((e) => e.id)
+    if (idsRemover.length) {
+      await prisma.restricaoAcabamento.deleteMany({
+        where: { id: { in: idsRemover }, acabamentoGraficoId: acabamentoId, empresaId },
+      })
+    }
+
+    // Criar as novas (tempos 0 — informativas, não usadas no cálculo P16).
+    const criar = desejados.filter((n) => !existentesPorChave.has(n.toLowerCase()))
+    if (criar.length) {
+      await prisma.restricaoAcabamento.createMany({
+        data: criar.map((nome) => ({
+          acabamentoGraficoId: acabamentoId,
+          empresaId,
+          nome,
+          tempoAcertoMin: 0,
+          tempoOperacaoMin: 0,
+        })),
+      })
+    }
+  }
 
   app.get('/acabamentos', async (request) => {
     const user = request.user as { id: string; empresaId: string }
@@ -1602,11 +1724,25 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (existe) return reply.status(409).send({ message: `Código '${body.codigo}' já existe` })
 
+    // P16 — `restricoes` não é coluna (vai para restricao_acabamento); `materiais`
+    // é coluna Json (lista de nomes). Separa do restante antes de gravar.
+    const { restricoes, materiais, ...dadosAcabamento } = body
+    const materiaisNorm = normalizarMateriais(materiais)
+
     const acabamento = await prisma.acabamentoGrafico.create({
-      data: { ...body, empresaId: user.empresaId },
+      data: {
+        ...dadosAcabamento,
+        empresaId: user.empresaId,
+        ...(materiaisNorm !== undefined ? { materiais: materiaisNorm } : {}),
+      },
+    })
+    await sincronizarRestricoesPorNome(user.empresaId, acabamento.id, restricoes)
+
+    const criado = await prisma.acabamentoGrafico.findFirst({
+      where: { id: acabamento.id, empresaId: user.empresaId },
       select: acabamentoGraficoSelect,
     })
-    return reply.status(201).send(acabamento)
+    return reply.status(201).send(criado)
   })
 
   app.put('/acabamentos/:id', async (request, reply) => {
@@ -1623,9 +1759,21 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       if (conflito && conflito.id !== id) return reply.status(409).send({ message: `Código '${body.codigo}' já existe` })
     }
 
-    const atualizado = await prisma.acabamentoGrafico.update({
+    // P16 — separa `restricoes` (tabela filha) e `materiais` (Json) do restante.
+    const { restricoes, materiais, ...dadosAcabamento } = body
+    const materiaisNorm = normalizarMateriais(materiais)
+
+    await prisma.acabamentoGrafico.update({
       where: { id },
-      data: body,
+      data: {
+        ...dadosAcabamento,
+        ...(materiaisNorm !== undefined ? { materiais: materiaisNorm } : {}),
+      },
+    })
+    await sincronizarRestricoesPorNome(user.empresaId, id, restricoes)
+
+    const atualizado = await prisma.acabamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
       select: acabamentoGraficoSelect,
     })
     return atualizado
@@ -2879,6 +3027,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             sequencia: true, descricao: true, resultadoCalculo: true,
             quantidade: true, custoProducao: true, valorTotal: true,
             margemSelecionada: true,
+            // P16 — seleção informativa (restrição/material/medida) por acabamento.
+            acabamentosRicos: true,
           },
         },
       },
@@ -2903,6 +3053,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             custoProducao: Number(it.custoProducao ?? 0),
             valorTotal: Number(it.valorTotal ?? 0),
             margemSelecionada: Number(it.margemSelecionada ?? 0),
+            // P16 — repassa a seleção informativa do item para o relatório (texto).
+            acabamentosRicos: extrairAcabamentosInformativos(it.acabamentosRicos),
           }
         })
 
@@ -2929,6 +3081,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const relatorio = montarRelatorio({
       resultado,
       quantidade: orcamento.quantidade || resultado.quantidade || 0,
+      // P16 — no modelo legado (item único) a seleção informativa fica no 1º item.
+      acabamentosRicos: extrairAcabamentosInformativos(orcamento.itens[0]?.acabamentosRicos),
       cabecalho: {
         empresa: empresa?.razaoSocial,
         numero: orcamento.versao ? `${orcamento.numero}/${orcamento.versao}` : String(orcamento.numero),
@@ -2965,6 +3119,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // resultado do 1º item que tenha cálculo, para o relatório do cabeçalho
     // não falhar com 400 nesses orçamentos.
     let resultado = orcamento.resultadoCalculo as any
+    // P16 — seleção informativa (restrição/material/medida) para o PDF. Colhida
+    // de TODOS os itens do orçamento (texto, sem custo). Vazio → PDF idêntico.
+    let acabamentosRicosInformativos = extrairAcabamentosInformativos(undefined)
     if (!resultado || typeof resultado !== 'object') {
       const item = await prisma.itemOrcamentoGrafico.findFirst({
         where: { orcamentoId: id, empresaId: user.empresaId, resultadoCalculo: { not: null } },
@@ -2979,12 +3136,21 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Orçamento sem resultado de cálculo. Abra o item, recalcule e salve antes de gerar o relatório.' })
     }
 
+    // Agrega a seleção informativa de todos os itens do orçamento (multi-item).
+    const itensInfo = await prisma.itemOrcamentoGrafico.findMany({
+      where: { orcamentoId: id, empresaId: user.empresaId },
+      orderBy: { sequencia: 'asc' },
+      select: { acabamentosRicos: true },
+    })
+    acabamentosRicosInformativos = itensInfo.flatMap((it) => extrairAcabamentosInformativos(it.acabamentosRicos) ?? [])
+
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId }, select: { razaoSocial: true },
     })
     const relatorio = montarRelatorio({
       resultado,
       quantidade: orcamento.quantidade || resultado.quantidade || 0,
+      acabamentosRicos: acabamentosRicosInformativos,
       cabecalho: {
         empresa: empresa?.razaoSocial,
         numero: orcamento.versao ? `${orcamento.numero}/${orcamento.versao}` : String(orcamento.numero),
@@ -5678,6 +5844,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       select: {
         id: true, descricao: true, quantidade: true, resultadoCalculo: true,
         suporteId: true, suporteProducaoId: true,
+        // P16 — seleção informativa (restrição/material/medida) por acabamento.
+        acabamentosRicos: true,
         planos: {
           orderBy: { sequencia: 'asc' },
           select: {
@@ -5726,6 +5894,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const dados: Parameters<typeof import('./orcamento-grafico-relatorio.service')['montarRelatorio']>[0] = {
       resultado: resultadoItem,
       quantidade: item.quantidade || resultadoItem.quantidade || 0,
+      // P16 — repassa a seleção informativa do item (texto, sem custo).
+      acabamentosRicos: extrairAcabamentosInformativos(item.acabamentosRicos),
       cabecalho: {
         empresa: empresa?.razaoSocial,
         numero: orcamento.versao ? `${orcamento.numero}/${orcamento.versao}` : String(orcamento.numero),

@@ -4900,6 +4900,16 @@ async function seedMateriaisFromOPs() {
   console.log('✅ Orçamento Gráfico Restrições (Task 14): exige_restricao em acabamento_grafico + restricao_acabamento criado (índices acabamento/empresa, FK cascade)')
 
   // ──────────────────────────────────────────────────────────────────────────
+  // P16 — Restrições e Materiais INFORMATIVOS por atividade de acabamento.
+  // Adiciona a coluna JSONB `materiais` (lista de nomes de material) em
+  // acabamento_grafico. É só texto descritivo — NÃO entra em cálculo/preço.
+  // As restrições reaproveitam a tabela restricao_acabamento (já criada acima).
+  // Idempotente (ADD COLUMN IF NOT EXISTS). Ver spec orcamento-grafico-restricoes-materiais.
+  // ──────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "materiais" JSONB`)
+  console.log('✅ Orçamento Gráfico P16: coluna materiais (JSONB) adicionada em acabamento_grafico (materiais informativos por atividade)')
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Orçamento Gráfico — OP/Relatório/Paridade — Fase 1 (Task 1): campos de
   // paridade + geometria/formatos + acondicionamento + suporte de produção no
   // item. Todos ADITIVOS/opcionais; enums como VARCHAR; idempotente.
