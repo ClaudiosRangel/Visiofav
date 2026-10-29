@@ -1531,7 +1531,11 @@ corrigir o 0.
 3. **Correção pelo ERP já existia**: `pcp/cadastros/centros/[id]/contador`
    corrige a inicial de qualquer leitura (preview + validação da cadeia 409).
 
-**FOLLOW-UP (app VisioFab.Checkout, repo separado — fora desta sessão)**: plugar
-no modal de apontar produção (modo CONTADOR) um campo "Leitura inicial" editável
-pré-preenchido com a sugestão (`leituraInicial`+`temLeituraAnterior`), enviando
-`leituraInicialManual` quando o operador alterar. Até lá, corrigir pelo ERP.
+**Front do Checkout (FEITO)**: o `VisioFab.Checkout` está DENTRO do repo do
+backend (`VisioFab.Wms.Back/VisioFab.Checkout/`, sem git próprio). O apontar
+produção em modo CONTADOR (`src/app/etapa/[id]/apontar/page.tsx`) agora tem o
+campo "Leitura inicial" EDITÁVEL, pré-preenchido com a sugestão derivada; quando
+`temLeituraAnterior`, mostra "Sugerida a partir da última leitura (N). Ajuste se
+o contador continuou de ontem." e envia `leituraInicialManual` só quando o
+operador altera. ⚠️ AÇÃO do usuário restante: deixar os centros de contador da
+Wega com "Zera diariamente" DESMARCADO no cadastro.

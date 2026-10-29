@@ -69,13 +69,15 @@ Para a Wega o contador é **acumulativo contínuo** (não zera fisicamente). Log
    qualquer leitura, com preview de quantidade e validação da cadeia (409 com
    valor esperado). Isso cobre a correção pelo supervisor.
 
-### Frontend do terminal (app VisioFab.Checkout)
-O apontamento por contador do operador vive no app `VisioFab.Checkout` (repo
-SEPARADO, fora dos workspaces abertos nesta sessão). O backend já aceita
-`leituraInicialManual` e expõe `temLeituraAnterior`. Falta plugar no front do
-Checkout: um campo "Leitura inicial" editável (pré-preenchido com a sugestão)
-no modal de apontar produção em modo CONTADOR, enviando `leituraInicialManual`
-quando o operador alterar. Enquanto isso, a correção pode ser feita pelo ERP.
+### Frontend do terminal (VisioFab.Checkout — DENTRO do repo do backend)
+O `VisioFab.Checkout` fica em `VisioFab.Wms.Back/VisioFab.Checkout/` (sem git
+próprio — mesmo repositório do backend). O apontar produção em modo CONTADOR
+(`src/app/etapa/[id]/apontar/page.tsx`) agora tem o campo "Leitura inicial"
+EDITÁVEL, pré-preenchido com a sugestão derivada. Quando `temLeituraAnterior` é
+true, exibe o aviso "Sugerida a partir da última leitura (N). Ajuste se o
+contador continuou de ontem." e envia `leituraInicialManual` SÓ quando o
+operador altera o valor. A validação final ≥ inicial é preservada. A correção
+pelo ERP (tela de histórico) continua disponível.
 
 ## Correctness Properties (Frente 1)
 - P1: sem turno == duração corrida (não-regressão). ✓ testada

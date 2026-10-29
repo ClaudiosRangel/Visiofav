@@ -30,12 +30,14 @@
   - [x] 4.2 Commit + push (sem schema — nenhuma migração).
   - _Requisitos: 4.1, 4.2, 4.3_
 
-- [ ] 5. FOLLOW-UP (app VisioFab.Checkout, repo separado — fora desta sessão)
-  - [ ] 5.1 Campo "Leitura inicial" editável no modal de apontar produção
-    (modo CONTADOR), pré-preenchido com a sugestão (`leituraInicial` +
-    `temLeituraAnterior` do GET), enviando `leituraInicialManual` quando alterado.
+- [x] 5. Front do Checkout (VisioFab.Checkout, DENTRO do repo do backend)
+  - [x] 5.1 Campo "Leitura inicial" editável no apontar produção (modo
+    CONTADOR), pré-preenchido com a sugestão (`leituraInicial` +
+    `temLeituraAnterior` do GET), enviando `leituraInicialManual` SÓ quando o
+    operador altera a sugestão. Validação final ≥ inicial preservada.
+    (`VisioFab.Checkout/src/app/etapa/[id]/apontar/page.tsx`). get_diagnostics limpo.
   - [ ] 5.2 Garantir no cadastro: centros de contador acumulativo da Wega com
-    "Zera diariamente" DESMARCADO (ação de cadastro, não código).
+    "Zera diariamente" DESMARCADO (ação de cadastro do usuário, não código).
 
 ## Notas
 - Nenhuma mudança de schema (sem migração). A regra deriva do Turno do centro.

@@ -64,6 +64,9 @@ interface EstadoContador {
   zeraDiariamente: boolean
   leituraInicial: number
   resetDoDia: boolean
+  // Há leitura anterior do centro → a inicial é uma SUGESTÃO editável
+  // (corrige OP que virou o dia em máquina acumulativa — pedido do Caio).
+  temLeituraAnterior?: boolean
 }
 
 /** Lê o Funcionario identificado (task 19.2) salvo em localStorage. */
@@ -96,6 +99,10 @@ export default function ApontarPage() {
   const [tipo, setTipo] = useState<TipoApontamento>('PRODUCAO')
   const [quantidade, setQuantidade] = useState('')
   const [leituraFinal, setLeituraFinal] = useState('')
+  // Leitura inicial EDITÁVEL (modo CONTADOR). Pré-preenchida com a sugestão do
+  // backend; o operador pode corrigir quando vier errada (ex.: 0 numa OP que
+  // virou o dia em máquina acumulativa). Vazio = usar a sugestão derivada.
+  const [leituraInicialEditada, setLeituraInicialEditada] = useState('')
   const [motivoPerda, setMotivoPerda] = useState<MotivoPerda | ''>('')
   const [observacao, setObservacao] = useState('')
   const [foto, setFoto] = useState<File | null>(null)
@@ -115,7 +122,13 @@ export default function ApontarPage() {
     checkoutApiClient
       .get<EstadoContador>(`/etapas/${etapaId}/contador`)
       .then((response) => {
-        if (ativo) setEstadoContador(response.data)
+        if (ativo) {
+          setEstadoContador(response.data)
+          // Pré-preenche o campo editável com a sugestão derivada.
+          if (response.data.modo === 'CONTADOR') {
+            setLeituraInicialEditada(String(response.data.leituraInicial ?? 0))
+          }
+        }
       })
       .catch(() => {
         // Falha ao consultar o modo não deve travar o apontamento: cai no
@@ -130,7 +143,15 @@ export default function ApontarPage() {
   // Produção em centro CONTADOR usa leitura do display; Perda/Retrabalho e
   // centros QUANTIDADE seguem com quantidade digitada (Req 2.7, 1.3, 5.2).
   const usaContador = estadoContador?.modo === 'CONTADOR' && tipo === 'PRODUCAO'
-  const leituraInicial = estadoContador?.leituraInicial ?? 0
+  // Inicial derivada (sugestão) vs. a efetivamente usada (o que o operador
+  // digitou no campo editável; se vazio, cai na derivada).
+  const leituraInicialDerivada = estadoContador?.leituraInicial ?? 0
+  const leituraInicialNumero = leituraInicialEditada.trim() !== '' && !Number.isNaN(Number(leituraInicialEditada))
+    ? Number(leituraInicialEditada)
+    : leituraInicialDerivada
+  const leituraInicial = leituraInicialNumero
+  // O operador alterou a inicial sugerida? (controla o envio de leituraInicialManual)
+  const inicialFoiEditada = usaContador && leituraInicialNumero !== leituraInicialDerivada
 
   // Quantidade calculada (final − inicial) exibida ao operador antes de
   // confirmar (Req 2.3, task 6.2). Só válida quando os números batem.
@@ -191,6 +212,8 @@ export default function ApontarPage() {
         // Modo CONTADOR manda `leituraFinal`; demais mandam `quantidade`.
         if (usaContador) {
           formData.append('leituraFinal', String(leituraFinalNumero))
+          // Só envia a inicial manual quando o operador alterou a sugestão.
+          if (inicialFoiEditada) formData.append('leituraInicialManual', String(leituraInicialNumero))
         } else {
           formData.append('quantidade', String(quantidadeNumero))
         }
@@ -206,7 +229,7 @@ export default function ApontarPage() {
         await checkoutApiClient.post(`/etapas/${etapaId}/apontar`, {
           tipo,
           ...(usaContador
-            ? { leituraFinal: leituraFinalNumero }
+            ? { leituraFinal: leituraFinalNumero, ...(inicialFoiEditada ? { leituraInicialManual: leituraInicialNumero } : {}) }
             : { quantidade: quantidadeNumero }),
           motivoPerda: motivoPerda || undefined,
           funcionarioId: funcionarioIdentificado?.funcionarioId,
@@ -286,10 +309,21 @@ export default function ApontarPage() {
               <input
                 id="leituraInicial"
                 type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
                 className={styles.input}
-                value={leituraInicial}
-                readOnly
+                value={leituraInicialEditada}
+                onChange={(event) => setLeituraInicialEditada(event.target.value)}
               />
+              {/* A inicial é uma sugestão (última leitura final / 0). Quando a
+                  máquina continua de ontem (OP que virou o dia), o operador
+                  corrige aqui o valor inicial — pedido do Caio. */}
+              {estadoContador?.temLeituraAnterior && (
+                <p className={styles.infoMessage}>
+                  Sugerida a partir da última leitura ({leituraInicialDerivada}). Ajuste se o contador continuou de ontem.
+                </p>
+              )}
             </div>
 
             <div className={styles.campo}>
