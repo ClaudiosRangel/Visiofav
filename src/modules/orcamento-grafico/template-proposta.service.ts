@@ -13,6 +13,9 @@
 import { prisma } from '../../lib/prisma'
 
 export interface TemplatePropostaConfig {
+  // Estilo de renderização. PADRAO = layout genérico atual; WEGA = layout da
+  // proposta ao cliente Carton Wega (ver docs/modelo-proposta-cliente-carton-wega.md).
+  estilo: 'PADRAO' | 'WEGA'
   cabecalho: {
     mostrarLogo: boolean
     mostrarRazaoSocial: boolean
@@ -24,6 +27,9 @@ export interface TemplatePropostaConfig {
     introducao?: string
     condicoes?: string
     rodape?: string
+    // Linha de data do cabeçalho WEGA (ex.: "Comendador Levy Gasp"). Editável
+    // para não hardcodear o endereço de uma empresa específica.
+    cidadeData?: string
   }
   blocos: {
     engenharia: boolean
@@ -40,6 +46,7 @@ export interface TemplatePropostaConfig {
  * não-regressão da proposta que já existe hoje.
  */
 export const CONFIG_DEFAULT_EMBUTIDA: TemplatePropostaConfig = {
+  estilo: 'PADRAO',
   cabecalho: {
     mostrarLogo: true,
     mostrarRazaoSocial: true,
@@ -78,7 +85,9 @@ export function normalizarConfig(raw: unknown): TemplatePropostaConfig {
   const txt = (obj.textos && typeof obj.textos === 'object' ? obj.textos : {}) as Record<string, unknown>
   const blk = (obj.blocos && typeof obj.blocos === 'object' ? obj.blocos : {}) as Record<string, unknown>
   const d = CONFIG_DEFAULT_EMBUTIDA
+  const estilo: 'PADRAO' | 'WEGA' = obj.estilo === 'WEGA' ? 'WEGA' : 'PADRAO'
   return {
+    estilo,
     cabecalho: {
       mostrarLogo: asBool(cab.mostrarLogo, d.cabecalho.mostrarLogo),
       mostrarRazaoSocial: asBool(cab.mostrarRazaoSocial, d.cabecalho.mostrarRazaoSocial),
@@ -90,6 +99,7 @@ export function normalizarConfig(raw: unknown): TemplatePropostaConfig {
       introducao: asTexto(txt.introducao),
       condicoes: asTexto(txt.condicoes),
       rodape: asTexto(txt.rodape),
+      cidadeData: asTexto(txt.cidadeData),
     },
     blocos: {
       engenharia: asBool(blk.engenharia, d.blocos.engenharia),

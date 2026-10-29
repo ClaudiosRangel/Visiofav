@@ -4135,6 +4135,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       throw e
     }
 
+    // Nome do vendedor (usado no estilo WEGA; opcional nos demais).
+    let vendedorNomeProposta: string | null = null
+    if (orcamento.vendedorId) {
+      const vend = await prisma.vendedor.findFirst({
+        where: { id: orcamento.vendedorId, empresaId: user.empresaId },
+        select: { nome: true },
+      })
+      vendedorNomeProposta = vend?.nome ?? null
+    }
+
     // Buscar dados da empresa
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId },
@@ -4179,6 +4189,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         validadeAte: orcamento.validadeAte,
         observacoes: orcamento.observacoes,
         criadoEm: orcamento.criadoEm,
+        vendedorNome: vendedorNomeProposta,
       },
       cliente: clienteData,
       empresa: {
@@ -4232,6 +4243,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       throw e
     }
 
+    let vendedorNomeEmail: string | null = null
+    if (orcamento.vendedorId) {
+      const vend = await prisma.vendedor.findFirst({
+        where: { id: orcamento.vendedorId, empresaId: user.empresaId },
+        select: { nome: true },
+      })
+      vendedorNomeEmail = vend?.nome ?? null
+    }
+
     // Buscar dados da empresa
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId },
@@ -4274,6 +4294,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         validadeAte: orcamento.validadeAte,
         observacoes: orcamento.observacoes,
         criadoEm: orcamento.criadoEm,
+        vendedorNome: vendedorNomeEmail,
       },
       cliente: clienteData,
       empresa: {

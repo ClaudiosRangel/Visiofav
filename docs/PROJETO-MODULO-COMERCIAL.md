@@ -81,7 +81,7 @@ faturamento; override de custos por orçamento (P17).
 | # | Bloco | Spec (nome sugerido) | Toca motor de preço? | Status REAL |
 |---|-------|----------------------|----------------------|-------------|
 | B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos) | — | ✅ FEITO (sidebar `title:'Comercial'`) |
-| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | 🟡 QUASE (espinha + cadastro feitos; falta seed Wega c/ imagens + seletor no detalhe) |
+| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ✅ QUASE-FEITO (espinha + cadastro + estilo WEGA + seed; falta só task 8: seletor+botões no detalhe, junto do B3) |
 | B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | 🟡 PARCIAL (form básico existe; faltam campos da planilha, CNPJ, tipos de pedido) |
 | B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | 🟡 PARCIAL (dashboard + a-converter + solicitações existem; falta painel unificado + menu "Propostas" dedicado) |
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
@@ -246,3 +246,18 @@ disponível nesta sessão.)
   detalhe do orçamento `[id]` — hoje o front NÃO tem esses botões plugados; fazer
   junto do B3/painel). Spec: `.kiro/specs/comercial-templates-proposta/`.
   Próximo: B2 (formulário do portal + cadastro de cliente novo + consulta CNPJ).
+- **29/10/2026 (5)** — B1 estilo WEGA + seed. As imagens do modelo de proposta
+  Carton Wega chegaram (2 modelos: 1 item e multi-item "aprovação de cálculo").
+  Registradas em `docs/modelo-proposta-cliente-carton-wega.md`. Implementado:
+  campo `estilo: 'PADRAO' | 'WEGA'` + `textos.cidadeData` na config; renderizador
+  `renderWega` no PDF service (cabeçalho Carton Wega + Proposta/Cálculo nº + À
+  cliente + saudação + dados do produto + tabela de preços 1-item ou multi-item
+  com quebra de página + condições + bloco IMPORTANTE + assinatura do cliente);
+  `vendedorNome` populado nas rotas de PDF; tela de cadastro ganhou seletor de
+  estilo + campo cidade; seed `scripts/seed-template-proposta-wega.mjs`
+  (idempotente, cria o default WEGA p/ a Wega — rodar em produção é passo do
+  usuário). Verificação: suíte **284 passed/0 falhas** (golden intacto) +
+  get_diagnostics limpo + teste do service 7/7. CNPJ na Receita (B2): usuário
+  autorizou reaproveitar o do módulo `prospeccao` (BrasilAPI/CNPJá Open).
+  **Único resto do B1:** task 8 (seletor de template + botões baixar/enviar
+  proposta no detalhe `[id]`) — será feita junto do B3. Próximo: B2.

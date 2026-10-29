@@ -30,10 +30,16 @@
     resolvem via `obterConfigTemplate` e repassam `config`. 404 cross-empresa.
   - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 6. Seed do template "Padrão Carton Wega"
-  - Script idempotente (ou garantir na 1ª leitura) que cria o template default
-    reproduzindo o modelo Carton Wega para a empresa Wega. Sem sobrescrever
-    ajuste manual.
+- [x] 6. Seed do template "Padrão Carton Wega"
+  - Estilo `WEGA` adicionado à config (`estilo: 'PADRAO' | 'WEGA'` + `textos.cidadeData`);
+    renderizador `renderWega` no PDF service reproduz o modelo (cabeçalho +
+    Proposta/Cálculo nº + À cliente + saudação + dados do produto + tabela
+    Qtd/Unit/Total (1 item) ou Qtd/Descrição/Unit/Total multi-item com quebra de
+    página + condições + bloco IMPORTANTE + assinatura). Referência:
+    `docs/modelo-proposta-cliente-carton-wega.md`. Seed idempotente
+    `scripts/seed-template-proposta-wega.mjs` (cria o default WEGA p/ a Wega; não
+    sobrescreve). **Rodar em produção é passo operacional do usuário** (via
+    `DATABASE_URL_PROD`). get_diagnostics limpo + teste 7/7.
   - _Requirements: 5_
 
 - [x] 7. Frontend — cadastro de Templates de Proposta

@@ -60,10 +60,17 @@ describe('normalizarConfig', () => {
 
   it('P1: idempotente em config já válida', () => {
     const cfg: TemplatePropostaConfig = {
+      estilo: 'WEGA',
       cabecalho: { mostrarLogo: false, mostrarRazaoSocial: true, mostrarCnpj: false, mostrarTelefone: true, mostrarEmail: false },
-      textos: { introducao: 'A', condicoes: 'B', rodape: 'C' },
+      textos: { introducao: 'A', condicoes: 'B', rodape: 'C', cidadeData: 'X' },
       blocos: { engenharia: false, decomposicaoCustos: true, variacoesTiragem: false, validade: true, observacoes: false },
     }
     expect(normalizarConfig(cfg)).toEqual(cfg)
+  })
+
+  it('estilo inválido/ausente vira PADRAO; WEGA é preservado', () => {
+    expect(normalizarConfig({}).estilo).toBe('PADRAO')
+    expect(normalizarConfig({ estilo: 'XPTO' }).estilo).toBe('PADRAO')
+    expect(normalizarConfig({ estilo: 'WEGA' }).estilo).toBe('WEGA')
   })
 })
