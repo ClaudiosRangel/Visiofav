@@ -87,7 +87,7 @@ faturamento; override de custos por orçamento (P17).
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
 | B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
 | B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ✅ FEITO (assinatura por senha do usuário na liberação ao PCP; envio de proposta no B1; aceite via portal já existia) |
-| B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | 🟡 PARCIAL (helper puro `gate-margem.puro.ts` + código MARGEM_PENDENTE; falta plugar `RegraAprovacao`/UI) |
+| B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | ✅ FEITO (backend já plugado com RegraAprovacao/SolicitacaoAprovacao; front: desconto no modal de conversão + tratamento MARGEM_PENDENTE) |
 | B8 | **Elo PCP completo + gatilho de faturamento** | Não | ⬜ PENDENTE |
 | B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | ⬜ PENDENTE |
 
@@ -315,3 +315,12 @@ disponível nesta sessão.)
   Verificação: get_diagnostics limpo + suíte sem regressão. Envio de proposta
   (e-mail) já foi no B1; aceite do cliente via portal (`aprovadaClientePor/Em`)
   já existia. **B6 COMPLETO.** Próximo: B7 (gate de margem) → B8 → B9.
+- **29/10/2026 (11)** — B7 (gate de margem). Backend JÁ ESTAVA pronto
+  (`gate-margem.puro.ts` + `converter-orcamento.service` busca RegraAprovacao
+  tipo DESCONTO, abre SolicitacaoAprovacao, retorna MARGEM_PENDENTE). Faltava só
+  o front: tela `a-converter` — o botão "Converter" agora abre um modal com
+  `NumberInput` de desconto (%); envia `descontoPercent`; `MARGEM_PENDENTE` vira
+  aviso "aprovação aberta" (não converte); dentro da alçada converte normal.
+  Spec `.kiro/specs/comercial-gate-margem/`. get_diagnostics limpo; backend
+  intocado (não-regressão). **B7 COMPLETO.** Restam: B8 (elo PCP/faturamento) e
+  B9 (Fechamento editável — P17, alto risco).
