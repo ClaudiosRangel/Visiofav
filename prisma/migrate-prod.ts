@@ -5496,6 +5496,25 @@ async function seedMateriaisFromOPs() {
   // ─────────────────────────────────────────────────────────────────────────
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "tiragem_prevista" DECIMAL(12,4)`)
   console.log('✅ PCP Desmembrar: etapa_ordem_producao.tiragem_prevista')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Templates de Proposta comercial (spec comercial-templates-proposta, B1).
+  // Layout/textos/blocos configuráveis por empresa; um default por empresa.
+  // Só apresentação do PDF — não toca valores. Equivalente ao schema:
+  //   model TemplateProposta { ... @@map("template_proposta") }
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "template_proposta" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "nome" VARCHAR(120) NOT NULL,
+    "is_default" BOOLEAN NOT NULL DEFAULT false,
+    "config" JSONB NOT NULL,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "template_proposta_pkey" PRIMARY KEY ("id")
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "template_proposta_empresa_id_is_default_idx" ON "template_proposta"("empresa_id","is_default")`)
+  console.log('✅ Comercial: template_proposta (templates de proposta PDF)')
 }
 
 main()

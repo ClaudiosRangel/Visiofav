@@ -4473,6 +4473,23 @@ model ConversaoOrcamentoLog {
   @@map("conversao_orcamento_log")
 }
 
+// Template de Proposta comercial em PDF (layout/textos/blocos configuráveis por
+// empresa). Um template default por empresa. Só apresentação — NÃO afeta valores
+// do orçamento. Spec comercial-templates-proposta (bloco B1).
+model TemplateProposta {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  nome         String   @db.VarChar(120)
+  isDefault    Boolean  @default(false) @map("is_default")
+  // Config de layout/textos/blocos (shape TemplatePropostaConfig no service).
+  config       Json
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, isDefault])
+  @@map("template_proposta")
+}
+
 /// Cálculo Gráfico reutilizável, independente do Orçamento (biblioteca estilo
 /// "Cálculo Padrão" do Calcgraf). Mesmo shape de engenharia do
 /// ItemOrcamentoGrafico, porém SEM orçamento pai. Isolamento por empresaId.

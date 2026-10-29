@@ -74,22 +74,33 @@ faturamento; override de custos por orçamento (P17).
 > NÃO toca o motor de preço calibrado (rename, propostas, status), depois o
 > hand-off, e por último o Fechamento editável (que mexe na formação de preço).
 
-| # | Bloco | Spec (nome sugerido) | Toca motor de preço? | Status |
-|---|-------|----------------------|----------------------|--------|
-| B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos, sem mexer em rota/tabela) | `comercial-rebranding` | Não | ⬜ |
-| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | `comercial-templates-proposta` | Não | ⬜ |
-| B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega: é cliente?/CNPJ/mercado/UF origem/cidade/entrega/fracionado/prazo pgto/produto/acabamento/amostra/qtd/gramatura…) + cadastro de cliente novo + **consulta CNPJ Receita** | `comercial-portal-solicitacao` | Não | ⬜ |
-| B3 | **Menu Propostas** (gestão dos pedidos lançados: repetição/mostruário/novos; comercial LIBERA p/ o cálculo) + **painel de status unificado** ponta a ponta | `comercial-propostas-pipeline` | Não | ⬜ |
-| B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`; enum origemPedido) | `comercial-handoff-conversao` | Não (reusa conversão existente) | ⬜ |
-| B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`: SOLICITADA→…→APROVADA; rodadas; anexos; envio correio/caminhão + retorno; bloqueia conversão quando exigida) | `comercial-aprovacao-amostra` | Não | ⬜ |
-| B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** (e-mail/WhatsApp; validação por senha do orçamento antes de encaminhar ao PCP) | `comercial-envio-proposta-aceite` | Não | ⬜ |
-| B7 | **Gate de margem** na conversão (alçada de desconto/margem; reusa `RegraAprovacao`/`SolicitacaoAprovacao`) | `comercial-gate-margem` | Não | ⬜ |
-| B8 | **Elo PCP completo + gatilho de faturamento** (OP nasce com engenharia do orçamento; "OP concluída → pronto para faturar" + notificações) | `comercial-elo-pcp-faturamento` | Não | ⬜ |
-| B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** (override de taxas/comissões/juros/prazos/CEV; Tabelas de Custo editáveis; preview de encaixe) | `comercial-fechamento-editavel` | **SIM — ALTO RISCO** | ⬜ |
+> **⚠️ ATUALIZADO 29/10/2026 após mapeamento do código real.** Muita coisa já
+> estava implementada em sessões anteriores (hand-off comercial completo). A
+> tabela abaixo reflete o ESTADO REAL do código, não o plano inicial.
 
-**B9 é o mais arriscado** (mexe na formação de preço calibrada contra o Calcgraf,
-golden 15.235 ≤0,5%). Faseado e com golden/não-regressão travando a paridade
-ANTES de expor a edição. Deixar por último, conforme a regra do projeto.
+| # | Bloco | Spec (nome sugerido) | Toca motor de preço? | Status REAL |
+|---|-------|----------------------|----------------------|-------------|
+| B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos) | — | ✅ FEITO (sidebar `title:'Comercial'`) |
+| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ⬜ PENDENTE (só há PDF de layout FIXO `gerarPropostaPdf`) |
+| B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | 🟡 PARCIAL (form básico existe; faltam campos da planilha, CNPJ, tipos de pedido) |
+| B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | 🟡 PARCIAL (dashboard + a-converter + solicitações existem; falta painel unificado + menu "Propostas" dedicado) |
+| B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
+| B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
+| B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ⬜ PENDENTE (há `/enviar-email` fixo; falta aceite+assinatura) |
+| B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | 🟡 PARCIAL (helper puro `gate-margem.puro.ts` + código MARGEM_PENDENTE; falta plugar `RegraAprovacao`/UI) |
+| B8 | **Elo PCP completo + gatilho de faturamento** | Não | ⬜ PENDENTE |
+| B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | ⬜ PENDENTE |
+
+**Lacunas reais a atacar (ordem):** B1 (templates) → B2 (form do portal + CNPJ) →
+B3 (painel unificado + menu Propostas) → B6 (envio/aceite/assinatura) → B7 (fechar
+o gate) → B8 (elo PCP/faturamento) → **B9 (Fechamento editável, por último — mexe
+na formação de preço calibrada contra o Calcgraf, golden 15.235 ≤0,5%; faseado,
+com golden travando a paridade ANTES de expor a edição).**
+
+**Achados do mapeamento a tratar:** (a) páginas órfãs de menu — `dashboard/` e
+`importar/` existem mas não estão no sidebar; (b) duplicidade: `/:id/aprovar`
+(legada, cria pedido SEM itens) vs `/:id/converter` (nova, cria pedido COM itens)
+— o hand-off correto é o `/converter`.
 
 ---
 
@@ -212,6 +223,20 @@ disponível nesta sessão.)
 ## 8. Histórico de execução (atualizar a cada rodada)
 
 - **29/10/2026** — Documento-mestre criado. P1/P15/P16 confirmados commitados
-  (`2bc3ab4`, `a590079`); backlog corrigido. Nenhum bloco do Comercial iniciado
-  ainda — aguardando respostas das perguntas de escopo (§7) para começar por B0
-  (rebranding, risco zero) e B1 (templates de proposta).
+  (`2bc3ab4`, `a590079`); backlog corrigido.
+- **29/10/2026 (2)** — Mapeamento do código real (sub-agente). Descoberto que
+  B0/B4/B5 JÁ ESTAVAM FEITOS e B3/B7 parciais (sessões anteriores já tinham
+  construído o hand-off comercial completo). Tabela de blocos corrigida para o
+  estado real. Próximo alvo: começar pelos pendentes puros na ordem B1 → B2 →
+  B3 → B6 → B7 → B8 → B9.
+- **29/10/2026 (3)** — B1 espinha dorsal implementada (backend): model
+  `TemplateProposta` + migrate-prod idempotente; `template-proposta.service.ts`
+  (CONFIG_DEFAULT_EMBUTIDA, normalizarConfig puro, obterConfigTemplate, CRUD +
+  default único); `gerarPropostaPdf` agora dirigido por `config` (cabeçalho/
+  textos/blocos; sem config = layout atual, não-regressão); rotas CRUD
+  `/api/orcamento-grafico/templates-proposta`; `templateId` plugado no download
+  e no envio por e-mail. Verificação: get_diagnostics limpo (6 arquivos) +
+  suíte orcamento-grafico **283 passed / 0 falhas** (golden 15.235 intacto) +
+  prisma generate OK. **FALTA do B1:** task 6 (seed "Padrão Carton Wega" — depende
+  das IMAGENS do modelo) + tasks 7/8 (frontend: tela de cadastro + seletor no
+  detalhe do orçamento). Spec: `.kiro/specs/comercial-templates-proposta/`.

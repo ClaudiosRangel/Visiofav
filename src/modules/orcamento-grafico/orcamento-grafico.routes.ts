@@ -38,6 +38,7 @@ import {
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
 import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
+import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
   solicitarAmostra,
@@ -4108,6 +4109,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.get('/:id/proposta-pdf', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    // templateId opcional (B1): escolhe o template de proposta; sem ele → default.
+    const { templateId } = z.object({ templateId: z.string().uuid().optional() }).parse(request.query ?? {})
 
     const orcamento = await prisma.orcamentoGrafico.findFirst({
       where: { id, empresaId: user.empresaId },
@@ -4121,6 +4124,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const statusPermitidos = ['RASCUNHO', 'ENVIADO', 'APROVADO']
     if (!statusPermitidos.includes(orcamento.status)) {
       return reply.status(400).send({ message: 'PDF disponível apenas para orçamentos em Rascunho, Enviado ou Aprovado' })
+    }
+
+    // Config do template (404 se templateId for de outra empresa).
+    let configTemplate
+    try {
+      configTemplate = await obterConfigTemplate(user.empresaId, templateId)
+    } catch (e) {
+      if (e instanceof TemplatePropostaError) return reply.status(e.statusCode).send({ message: e.message, code: e.code })
+      throw e
     }
 
     // Buscar dados da empresa
@@ -4175,6 +4187,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         telefone: empresa?.telefone,
         email: empresa?.email,
       },
+      config: configTemplate,
     })
 
     const filename = `proposta-${orcamento.numero}-v${orcamento.versao}.pdf`
@@ -4198,6 +4211,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const body = z.object({
       destinatario: z.string().email('E-mail de destino inválido'),
       mensagem: z.string().optional(),
+      templateId: z.string().uuid().optional(),
     }).parse(request.body)
 
     const orcamento = await prisma.orcamentoGrafico.findFirst({
@@ -4208,6 +4222,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       },
     })
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+
+    // Config do template (404 se templateId for de outra empresa).
+    let configTemplateEmail
+    try {
+      configTemplateEmail = await obterConfigTemplate(user.empresaId, body.templateId)
+    } catch (e) {
+      if (e instanceof TemplatePropostaError) return reply.status(e.statusCode).send({ message: e.message, code: e.code })
+      throw e
+    }
 
     // Buscar dados da empresa
     const empresa = await prisma.empresa.findUnique({
@@ -4259,6 +4282,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         telefone: empresa?.telefone,
         email: empresa?.email,
       },
+      config: configTemplateEmail,
     })
 
     // Buscar config SMTP
