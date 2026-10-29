@@ -1456,3 +1456,60 @@ Manter o foco 1-a-1 como PADRÃO (clicar na OP → setas dela). Evolução OPCIO
 um modo "mostrar dependências de várias OPs" (todas ou as selecionadas), com
 **setas FINAS e translúcidas** para não poluir, ligável só quando o usuário
 quiser. Não implementar agora — fila.
+
+---
+
+## 18. Pedidos do Caio — 3ª leva (filtros + pausa de fim de turno)
+
+### 18.1 ✅ ENTREGUE — Centros de Produção: ocultar inativos por padrão
+Tela `pcp/cadastros/centros/page.tsx` agora lista **só os ATIVOS** por padrão
+(padrão de mercado em cadastros) + toggle **"Mostrar inativos"** no cabeçalho
+(traz os inativos para reativar/consultar). A rota `GET /centros-producao` já
+aceitava `status=true|false`; o front passa `status='true'` por padrão e omite o
+param quando o toggle liga. Front commit `bae96fe`. Nenhuma mudança de backend.
+
+### 18.2 ✅ JÁ RESOLVIDO (reconfirmar deploy) — Gantt não listar máquina inativa/fora de prog.
+É o mesmo bug da seção 17.1: `GET /pcp/timeline` filtra as etapas por
+`centroProducao: { status: true, disponivelProgramacao: true }` (commit back
+`070aa80a3`). O Gantt (`/pcp/gantt`) monta as raias SÓ a partir das etapas da
+timeline — logo máquina inativa/fora de programação não vira raia. Se o cliente
+ainda vê máquinas que considera "fora" (ex.: "Laminadora PL110", "Serviço
+Terceirizado", "Sorzs"), as hipóteses são: (a) a tela foi vista ANTES do deploy
+do `070aa80a3`, ou (b) esses centros estão de fato `status=true` +
+`disponivelProgramacao=true` no cadastro (o cliente deve inativá-los ou
+desmarcar "Disponível na Programação" na tela de Centros). NÃO é bug de código —
+o filtro está correto e testado.
+
+### 18.3 🟡 SPEC CRIADA (requirements) — Pausa automática de fim de turno
+Spec `.kiro/specs/pcp-pausa-fim-turno/` (só requirements por ora). Problema do
+Caio (print WhatsApp): operador inicia produção, vai embora no fim do turno sem
+pausar, e o sistema **contabiliza a noite toda** (infla duração/velocidade).
+Pedido literal: "colocar uma pausa pelo fim do turno e não contabilizar hora
+parada".
+
+**Padrão de mercado pesquisado** (inmation OEE, Epicor MES AutoClockOut,
+MachineMetrics, sistemas de ponto): (1) tempo FORA da janela do turno é
+"não-agendado" e NÃO conta; (2) "auto clock-out / shift-end stop" encerra o
+apontamento aberto no horário de fim de turno; (3) sessão que cruza a fronteira
+de turno é dividida (split), cada lado no dia certo.
+
+**Base técnica existente**: `CentroProducao.turnoProducaoId → TurnoProducao
+(horaInicio/horaFim/diasSemana)`. O `timeline-producao.routes.ts` já tem
+`calcularFimComTurno()` que "pula" períodos fora do expediente — bom ponto de
+partida para a lógica de "tempo trabalhável".
+
+**ONDE o tempo infla hoje** (investigado): `etapa-operacional.routes.ts`
+~linha 1915, o `tempoParadaMinutos` do quadro de produção é `agora −
+ultimoApontamento` (corre a noite toda quando PARADA); e o tempo PRODUTIVO
+(etapa EM_ANDAMENTO sem pausar) acumula igual. O Checkout
+(`checkout.service.ts`/`checkout.routes.ts`) é onde o Caio viu.
+
+**4 PONTOS A CONFIRMAR COM O USUÁRIO antes do design** (evitar retrabalho —
+regra do steering): (1) gatilho = job de cron no fim do turno OU cálculo "lazy"
+no read (sem infra de cron); (2) motivo = reusar `TROCA_TURNO` ou criar
+`FIM_TURNO`; (3) escopo = só Checkout ou também painel/quadro/BI; (4) default da
+flag `pcp.pausaAutomaticaFimTurno` (lig/desl) para a Wega. **NÃO implementar
+antes de alinhar** — recomendação: abordagem "lazy" (R1: descontar tempo fora do
+turno no cálculo, sem cron) como MVP, que já resolve a distorção sem risco de
+job em produção; a pausa persistida (R2) entra depois se o usuário quiser o
+registro explícito.
