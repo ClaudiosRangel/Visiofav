@@ -81,9 +81,9 @@ faturamento; override de custos por orçamento (P17).
 | # | Bloco | Spec (nome sugerido) | Toca motor de preço? | Status REAL |
 |---|-------|----------------------|----------------------|-------------|
 | B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos) | — | ✅ FEITO (sidebar `title:'Comercial'`) |
-| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ✅ QUASE-FEITO (espinha + cadastro + estilo WEGA + seed; falta só task 8: seletor+botões no detalhe, junto do B3) |
+| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ✅ FEITO (espinha + cadastro + estilo WEGA + seed + task 8: proposta PDF/seletor no detalhe) |
 | B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | ✅ FEITO (Fase A: CNPJ+cliente novo; Fase B: 23 campos da planilha + tipo de pedido) |
-| B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | 🟡 PARCIAL (dashboard + a-converter + solicitações existem; falta painel unificado + menu "Propostas" dedicado) |
+| B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | ✅ FEITO (tela Pipeline com régua de estágios + rota de listagem; task 8 do B1 — proposta PDF no detalhe — fechada) |
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
 | B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
 | B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ⬜ PENDENTE (há `/enviar-email` fixo; falta aceite+assinatura) |
@@ -290,3 +290,16 @@ disponível nesta sessão.)
   nullable = não-regressão. **B2 COMPLETO.** Commits a seguir.
   Próximo: B3 (painel unificado + menu Propostas + task 8 do B1 — botões/seletor
   de proposta no detalhe).
+- **29/10/2026 (9)** — B3 (painel unificado) + task 8 do B1. Spec
+  `.kiro/specs/comercial-pipeline-propostas/`. Backend: `jornada-lista.service.ts`
+  (`listarPainelJornadas` — agrega pedidos comerciais + orçamentos + amostras +
+  OPs sem N+1, reusa `montarEstagios`, empresaId explícito) + rota
+  `GET /orcamento-grafico/pedidos/jornadas` (filtros status/busca). Front: tela
+  `/orcamento-grafico/pipeline` (régua de estágios Orçamento→Amostra→Pedido→
+  Produção→Faturamento com badges por estado + progresso de OPs + filtros) + item
+  "Pipeline (Status)" no menu. **Task 8 do B1 FECHADA:** detalhe do orçamento
+  ganhou Menu "Proposta" (Baixar PDF / Enviar por e-mail) com `Select` de template
+  (default pré-selecionado) + modal de e-mail — usa `/:id/proposta-pdf?templateId`
+  e `/:id/enviar-email`. Verificação: get_diagnostics limpo (back+front) + suíte.
+  **B1, B2 e B3 COMPLETOS.** Próximo: B6 (envio/aceite/assinatura do setor) → B7
+  (gate de margem) → B8 (elo PCP/faturamento) → B9 (Fechamento editável — P17).

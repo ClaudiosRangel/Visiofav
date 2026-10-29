@@ -55,6 +55,7 @@ import {
 } from './handoff-comercial/encaixe-download.service'
 import { liberarPedidoParaPcp, LiberacaoError } from './handoff-comercial/liberar-pedido-pcp.service'
 import { montarJornadaPedido, JornadaError } from './handoff-comercial/jornada-pedido.service'
+import { listarPainelJornadas } from './handoff-comercial/jornada-lista.service'
 import {
   criarNotificacaoComercial,
   listarNotificacoesComercial,
@@ -3634,6 +3635,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
     }
     return { modo: body.modo }
+  })
+
+  // ─── Painel de Status Unificado: LISTAGEM (B3) ───────────────────────────
+  // Lista os pedidos de origem comercial com o estágio atual de cada um
+  // (Orçamento→Amostra→Pedido→Produção→Faturamento). empresaId explícito.
+  app.get('/pedidos/jornadas', async (request) => {
+    const user = request.user as { empresaId: string }
+    const q = z.object({
+      statusPedido: z.string().optional(),
+      busca: z.string().optional(),
+    }).parse(request.query ?? {})
+    return listarPainelJornadas(user.empresaId, q)
   })
 
   // ─── Painel de Status Unificado: jornada do pedido (R9) ──────────────────
