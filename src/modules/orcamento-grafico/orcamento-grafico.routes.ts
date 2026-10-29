@@ -53,7 +53,7 @@ import {
   gerarEncaixeSvg, gerarEncaixePdf, EncaixeError,
   salvarEncaixeArquivo, obterEncaixeArquivoInfo, obterEncaixeArquivoBinario, removerEncaixeArquivo,
 } from './handoff-comercial/encaixe-download.service'
-import { liberarPedidoParaPcp, LiberacaoError } from './handoff-comercial/liberar-pedido-pcp.service'
+import { liberarPedidoParaPcp, LiberacaoError, exigeAssinaturaLiberacao } from './handoff-comercial/liberar-pedido-pcp.service'
 import { montarJornadaPedido, JornadaError } from './handoff-comercial/jornada-pedido.service'
 import { listarPainelJornadas } from './handoff-comercial/jornada-lista.service'
 import {
@@ -3731,14 +3731,42 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   app.post('/pedidos/:pedidoId/liberar-pcp', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { pedidoId } = z.object({ pedidoId: z.string().uuid() }).parse(request.params)
+    // Assinatura do setor (B6): senha do usuário, exigida conforme config.
+    const body = z.object({ senha: z.string().optional() }).parse(request.body ?? {})
     try {
-      return reply.status(200).send(await liberarPedidoParaPcp(user.empresaId, pedidoId, user.id))
+      return reply.status(200).send(await liberarPedidoParaPcp(user.empresaId, pedidoId, user.id, { senha: body.senha }))
     } catch (err) {
       if (err instanceof LiberacaoError) {
         return reply.status(err.statusCode).send({ message: err.message, code: err.code })
       }
       throw err
     }
+  })
+
+  // ─── Config da empresa: exigir assinatura na liberação ao PCP (B6) ────────
+  // Parametro `comercial.exigir-assinatura-liberacao` (default true).
+  app.get('/comercial/config-assinatura', async (request) => {
+    const user = request.user as { empresaId: string }
+    const exige = await exigeAssinaturaLiberacao(user.empresaId)
+    return { exigeAssinatura: exige }
+  })
+
+  app.put('/comercial/config-assinatura', async (request) => {
+    const user = request.user as { empresaId: string }
+    const body = z.object({ exigeAssinatura: z.boolean() }).parse(request.body)
+    const valor = body.exigeAssinatura ? 'true' : 'false'
+    const existente = await prisma.parametro.findFirst({
+      where: { empresaId: user.empresaId, chave: 'comercial.exigir-assinatura-liberacao' },
+      select: { id: true },
+    })
+    if (existente) {
+      await prisma.parametro.update({ where: { id: existente.id }, data: { valor } })
+    } else {
+      await prisma.parametro.create({
+        data: { empresaId: user.empresaId, chave: 'comercial.exigir-assinatura-liberacao', valor },
+      })
+    }
+    return { exigeAssinatura: body.exigeAssinatura }
   })
 
   app.get('/:id/encaixe.svg', async (request, reply) => encaixeSvgHandler(request, reply, undefined))

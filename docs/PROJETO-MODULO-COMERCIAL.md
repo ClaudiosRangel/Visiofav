@@ -86,7 +86,7 @@ faturamento; override de custos por orçamento (P17).
 | B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | ✅ FEITO (tela Pipeline com régua de estágios + rota de listagem; task 8 do B1 — proposta PDF no detalhe — fechada) |
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
 | B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
-| B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ⬜ PENDENTE (há `/enviar-email` fixo; falta aceite+assinatura) |
+| B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ✅ FEITO (assinatura por senha do usuário na liberação ao PCP; envio de proposta no B1; aceite via portal já existia) |
 | B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | 🟡 PARCIAL (helper puro `gate-margem.puro.ts` + código MARGEM_PENDENTE; falta plugar `RegraAprovacao`/UI) |
 | B8 | **Elo PCP completo + gatilho de faturamento** | Não | ⬜ PENDENTE |
 | B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | ⬜ PENDENTE |
@@ -303,3 +303,15 @@ disponível nesta sessão.)
   e `/:id/enviar-email`. Verificação: get_diagnostics limpo (back+front) + suíte.
   **B1, B2 e B3 COMPLETOS.** Próximo: B6 (envio/aceite/assinatura do setor) → B7
   (gate de margem) → B8 (elo PCP/faturamento) → B9 (Fechamento editável — P17).
+- **29/10/2026 (10)** — B6 (assinatura do setor na liberação ao PCP). Spec
+  `.kiro/specs/comercial-assinatura-liberacao/`. Decisão: senha do PRÓPRIO usuário
+  + perfil permitido (ADMIN/SUPER_ADMIN/SUPERVISOR), auditável. Backend:
+  `exigeAssinaturaLiberacao` (Parametro `comercial.exigir-assinatura-liberacao`,
+  default true) + `validarAssinaturaSetor` (bcrypt; 401 senha/403 perfil/
+  ASSINATURA_REQUERIDA) em `liberar-pedido-pcp.service.ts`; `liberarPedidoParaPcp`
+  recebe `{ senha }`; rota `liberar-pcp` aceita senha + `GET/PUT
+  /comercial/config-assinatura`. Front: `vendas/pedidos/[id]` abre modal de
+  `PasswordInput` quando o backend pede assinatura; "Assinar e liberar" reenvia.
+  Verificação: get_diagnostics limpo + suíte sem regressão. Envio de proposta
+  (e-mail) já foi no B1; aceite do cliente via portal (`aprovadaClientePor/Em`)
+  já existia. **B6 COMPLETO.** Próximo: B7 (gate de margem) → B8 → B9.
