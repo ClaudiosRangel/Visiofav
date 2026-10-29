@@ -88,14 +88,33 @@ faturamento; override de custos por orçamento (P17).
 | B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
 | B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ✅ FEITO (assinatura por senha do usuário na liberação ao PCP; envio de proposta no B1; aceite via portal já existia) |
 | B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | ✅ FEITO (backend já plugado com RegraAprovacao/SolicitacaoAprovacao; front: desconto no modal de conversão + tratamento MARGEM_PENDENTE) |
-| B8 | **Elo PCP completo + gatilho de faturamento** | Não | ⬜ PENDENTE |
+| B8 | **Elo PCP completo + gatilho de faturamento** | Não | ✅ FEITO (gatilho OP→pedido EFETIVADO+notificação já existia; sino adicionado ao Pipeline) |
 | B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | ⬜ PENDENTE |
 
 **Lacunas reais a atacar (ordem):** B1 (templates) → B2 (form do portal + CNPJ) →
 B3 (painel unificado + menu Propostas) → B6 (envio/aceite/assinatura) → B7 (fechar
 o gate) → B8 (elo PCP/faturamento) → **B9 (Fechamento editável, por último — mexe
 na formação de preço calibrada contra o Calcgraf, golden 15.235 ≤0,5%; faseado,
-com golden travando a paridade ANTES de expor a edição).**
+com golden travando a paridade ANTES de expor a edição)** → **B10 (permissões —
+DEPOIS do B9, ver abaixo)**.
+
+### B10 — Controle de Permissões do Comercial (acordado 29/10/2026, FAZER POR ÚLTIMO)
+
+O usuário pediu que o módulo Comercial tenha controle de permissões **igual ao
+PCP**. Decisão: fazer **depois** de finalizar B8 e B9 (permissões protegem telas
+que ainda serão criadas). **Padrão a replicar = PCP** (`permissoes-pcp.routes.ts`):
+- Permissões por USUÁRIO/empresa na tabela `Parametro`, chave
+  `comercial.permissoes.<usuarioId>` (JSON). Sem schema novo.
+- ADMIN/SUPER_ADMIN bypass. Default = TUDO LIBERADO (não-regressão).
+- Tela **Comercial → Permissões** (só ADMIN) espelhando a do PCP
+  (`pcp/permissoes/page.tsx`): lista usuários + switches por ação/menu.
+- `GET /permissoes/minha` (front oculta botões) + `GET/PUT /permissoes[/:usuarioId]`.
+- **Ações aprovadas pelo usuário** (flags): `podeVerComercial`, `podeCriarOrcamento`,
+  `podeEnviarProposta`, `podeAprovarOrcamento`, `podeConverterPedido`,
+  `podeAplicarDesconto`, `podeLiberarPcp`, `podeGerenciarAmostras`,
+  `podeEditarCadastros`. + **acesso por menu** (habilitar/ocultar cada tela).
+- Enforcement nas rotas sensíveis (criar/enviar/aprovar/converter/liberar-pcp/
+  amostras/cadastros) com bypass admin, igual ao PCP.
 
 **Achados do mapeamento a tratar:** (a) páginas órfãs de menu — `dashboard/` e
 `importar/` existem mas não estão no sidebar; (b) duplicidade: `/:id/aprovar`
@@ -324,3 +343,12 @@ disponível nesta sessão.)
   Spec `.kiro/specs/comercial-gate-margem/`. get_diagnostics limpo; backend
   intocado (não-regressão). **B7 COMPLETO.** Restam: B8 (elo PCP/faturamento) e
   B9 (Fechamento editável — P17, alto risco).
+- **29/10/2026 (12)** — B8 (elo PCP + gatilho de faturamento). Descoberto que o
+  gatilho JÁ ESTAVA no `concluirEtapa` (etapa-operacional.service.ts): OP de
+  orçamento gráfico, ao concluir todas as etapas, marca o pedido EFETIVADO +
+  cria NotificacaoComercial "pronto para faturar" (best-effort, empresaId da OP).
+  O sino `NotificacoesComercialBell` já existia na tela a-converter. Fechamento:
+  sino adicionado ao cabeçalho do Pipeline (onde o comercial acompanha). Spec
+  `.kiro/specs/comercial-elo-pcp-faturamento/`. get_diagnostics limpo; backend
+  intocado. **B8 COMPLETO.** Restam: **B9 (Fechamento editável — P17, alto
+  risco)** e, por último, **B10 (permissões do Comercial)**.
