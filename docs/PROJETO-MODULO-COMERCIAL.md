@@ -82,7 +82,7 @@ faturamento; override de custos por orçamento (P17).
 |---|-------|----------------------|----------------------|-------------|
 | B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos) | — | ✅ FEITO (sidebar `title:'Comercial'`) |
 | B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ✅ QUASE-FEITO (espinha + cadastro + estilo WEGA + seed; falta só task 8: seletor+botões no detalhe, junto do B3) |
-| B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | 🟡 PARCIAL (form básico existe; faltam campos da planilha, CNPJ, tipos de pedido) |
+| B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | 🟡 FASE A FEITA (CNPJ + cadastro cliente novo no portal); FASE B (campos da planilha + tipo de pedido) aguarda LISTA de campos |
 | B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | 🟡 PARCIAL (dashboard + a-converter + solicitações existem; falta painel unificado + menu "Propostas" dedicado) |
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
 | B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
@@ -261,3 +261,19 @@ disponível nesta sessão.)
   autorizou reaproveitar o do módulo `prospeccao` (BrasilAPI/CNPJá Open).
   **Único resto do B1:** task 8 (seletor de template + botões baixar/enviar
   proposta no detalhe `[id]`) — será feita junto do B3. Próximo: B2.
+- **29/10/2026 (6)** — Passo operacional: seed do template "Padrão Carton Wega"
+  rodado em produção (Neon) — reportou que o template JÁ EXISTE (tabela
+  `template_proposta` criada pelo deploy + template default WEGA presente). B1
+  100% operacional em produção (resta só a task 8 de UI junto do B3).
+- **29/10/2026 (7)** — B2 Fase A (sem schema). Spec
+  `.kiro/specs/comercial-portal-solicitacao/`. Consulta de CNPJ exposta ao portal
+  (`GET /clientes/cnpj/:cnpj`, reaproveita `enriquecerCnpj` BrasilAPI/CNPJá Open)
+  + autopreenchimento no cadastro de cliente novo do portal (o `POST /clientes`
+  já existia). Front: fluxo "Cadastrar cliente novo" no formulário de nova
+  solicitação (CNPJ → Buscar na Receita → campos → Salvar e selecionar). Hooks
+  `useConsultarCnpj`/`useCriarCliente`. get_diagnostics limpo.
+  **FASE B do B2 (aguarda usuário):** campos da planilha Carton Wega
+  (mercado/UF/cidade/entrega/fracionado/prazo pgto/gramatura/precisa amostra) +
+  tipo de pedido (Repetição/Mostruário/Novos) em `SolicitacaoOrcamentoRep` —
+  precisa da LISTA FINAL de campos. Próximo: B3 (painel unificado + menu
+  Propostas + fechar task 8 do B1).

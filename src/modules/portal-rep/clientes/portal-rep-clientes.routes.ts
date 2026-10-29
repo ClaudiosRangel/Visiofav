@@ -20,6 +20,7 @@ import {
   editarDadosComplementares,
   solicitarAlteracaoFiscal,
 } from './portal-rep-clientes.service'
+import { enriquecerCnpj } from '../../prospeccao/provider'
 
 // ─── Schemas Zod ────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,36 @@ export async function portalRepClientesRoutes(app: FastifyInstance) {
       const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
       if (err.code) response.code = err.code
       return reply.status(statusCode).send(response)
+    }
+  })
+
+  // GET /cnpj/:cnpj — consulta de CNPJ na Receita (autopreenche cadastro de
+  // cliente novo). Reaproveita enriquecerCnpj (BrasilAPI/CNPJá Open). Só leitura;
+  // envia à API pública apenas o CNPJ (dado público). Spec B2 (Req 1).
+  app.get('/cnpj/:cnpj', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { cnpj } = z.object({ cnpj: z.string() }).parse(request.params)
+    const soDigitos = cnpj.replace(/\D/g, '')
+    if (soDigitos.length !== 14) {
+      return reply.status(400).send({ message: 'CNPJ deve ter 14 dígitos.' })
+    }
+    const dados = await enriquecerCnpj(soDigitos)
+    if (!dados) {
+      return reply.status(422).send({ message: 'Não foi possível consultar este CNPJ na Receita no momento. Preencha manualmente.' })
+    }
+    // Mapeia para os campos do cadastro de cliente do portal.
+    return {
+      cpfCnpj: dados.cnpj,
+      razaoSocial: dados.razaoSocial,
+      nomeFantasia: dados.nomeFantasia,
+      logradouro: dados.logradouro,
+      numero: dados.numero,
+      complemento: dados.complemento,
+      bairro: dados.bairro,
+      cidade: dados.cidade,
+      uf: dados.uf,
+      cep: dados.cep,
+      telefone: dados.telefone,
+      email: dados.email,
     }
   })
 
