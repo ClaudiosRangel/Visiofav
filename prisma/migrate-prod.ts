@@ -5515,6 +5515,44 @@ async function seedMateriaisFromOPs() {
   )`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "template_proposta_empresa_id_is_default_idx" ON "template_proposta"("empresa_id","is_default")`)
   console.log('✅ Comercial: template_proposta (templates de proposta PDF)')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Campos da planilha de pedidos Carton Wega na solicitação do portal
+  // (spec comercial-portal-solicitacao, B2 Fase B). Todos aditivos/nullable
+  // (null = legado, não-regressão). Idempotente (ADD COLUMN IF NOT EXISTS).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const colsSolic: Array<[string, string]> = [
+      ['tipo_pedido', 'VARCHAR(12)'],
+      ['ja_cliente', 'BOOLEAN'],
+      ['mercado', 'VARCHAR(120)'],
+      ['uf_origem', 'VARCHAR(2)'],
+      ['cidade', 'VARCHAR(120)'],
+      ['tipo_entrega', 'VARCHAR(20)'],
+      ['entrega_fracionada_dias', 'VARCHAR(60)'],
+      ['prazo_pagamento', 'VARCHAR(60)'],
+      ['produto_nome', 'VARCHAR(200)'],
+      ['data_validade', 'VARCHAR(60)'],
+      ['variacoes_arte', 'VARCHAR(60)'],
+      ['exportacao', 'VARCHAR(12)'],
+      ['cartao', 'VARCHAR(120)'],
+      ['gramatura_texto', 'VARCHAR(60)'],
+      ['cartao_fsc', 'BOOLEAN'],
+      ['medidas_texto', 'VARCHAR(120)'],
+      ['corte_interno_verso', 'BOOLEAN'],
+      ['passtime', 'BOOLEAN'],
+      ['matriz', 'VARCHAR(200)'],
+      ['acabamento_manual', 'BOOLEAN'],
+      ['quantidade_por_volume', 'VARCHAR(60)'],
+      ['anexo1_url', 'VARCHAR(500)'],
+      ['anexo2_url', 'VARCHAR(500)'],
+      ['discriminacao', 'TEXT'],
+    ]
+    for (const [col, tipo] of colsSolic) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "solicitacao_orcamento_rep" ADD COLUMN IF NOT EXISTS "${col}" ${tipo}`)
+    }
+    console.log('✅ Comercial B2: solicitacao_orcamento_rep (campos da planilha Carton Wega)')
+  }
 }
 
 main()

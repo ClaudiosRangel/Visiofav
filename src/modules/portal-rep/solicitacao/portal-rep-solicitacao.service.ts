@@ -29,6 +29,31 @@ export interface CriarSolicitacaoInput {
   acabamentos?: string
   observacoes?: string
   produtoId?: string // modo Repetição: produto cadastrado que reproduz (opcional)
+  // Campos da planilha Carton Wega (B2 Fase B) — todos opcionais.
+  tipoPedido?: string
+  jaCliente?: boolean
+  mercado?: string
+  ufOrigem?: string
+  cidade?: string
+  tipoEntrega?: string
+  entregaFracionadaDias?: string
+  prazoPagamento?: string
+  produtoNome?: string
+  dataValidade?: string
+  variacoesArte?: string
+  exportacao?: string
+  cartao?: string
+  gramaturaTexto?: string
+  cartaoFsc?: boolean
+  medidasTexto?: string
+  corteInternoVerso?: boolean
+  passtime?: boolean
+  matriz?: string
+  acabamentoManual?: boolean
+  quantidadePorVolume?: string
+  anexo1Url?: string
+  anexo2Url?: string
+  discriminacao?: string
 }
 
 export interface ListarSolicitacoesFiltros {
@@ -57,6 +82,31 @@ const SOLICITACAO_SELECT = {
   quantidade: true,
   acabamentos: true,
   observacoes: true,
+  // Campos da planilha Carton Wega (B2 Fase B).
+  tipoPedido: true,
+  jaCliente: true,
+  mercado: true,
+  ufOrigem: true,
+  cidade: true,
+  tipoEntrega: true,
+  entregaFracionadaDias: true,
+  prazoPagamento: true,
+  produtoNome: true,
+  dataValidade: true,
+  variacoesArte: true,
+  exportacao: true,
+  cartao: true,
+  gramaturaTexto: true,
+  cartaoFsc: true,
+  medidasTexto: true,
+  corteInternoVerso: true,
+  passtime: true,
+  matriz: true,
+  acabamentoManual: true,
+  quantidadePorVolume: true,
+  anexo1Url: true,
+  anexo2Url: true,
+  discriminacao: true,
   precoVenda: true,
   precoUnitario: true,
   produtoId: true,
@@ -140,8 +190,33 @@ export async function criarSolicitacao(
       acabamentos: dados.acabamentos || null,
       observacoes: dados.observacoes || null,
       produtoId: dados.produtoId || null,
+      // Campos da planilha Carton Wega (B2 Fase B) — gravados quando presentes.
+      tipoPedido: dados.tipoPedido || null,
+      jaCliente: dados.jaCliente ?? null,
+      mercado: dados.mercado || null,
+      ufOrigem: dados.ufOrigem || null,
+      cidade: dados.cidade || null,
+      tipoEntrega: dados.tipoEntrega || null,
+      entregaFracionadaDias: dados.entregaFracionadaDias || null,
+      prazoPagamento: dados.prazoPagamento || null,
+      produtoNome: dados.produtoNome || null,
+      dataValidade: dados.dataValidade || null,
+      variacoesArte: dados.variacoesArte || null,
+      exportacao: dados.exportacao || null,
+      cartao: dados.cartao || null,
+      gramaturaTexto: dados.gramaturaTexto || null,
+      cartaoFsc: dados.cartaoFsc ?? null,
+      medidasTexto: dados.medidasTexto || null,
+      corteInternoVerso: dados.corteInternoVerso ?? null,
+      passtime: dados.passtime ?? null,
+      matriz: dados.matriz || null,
+      acabamentoManual: dados.acabamentoManual ?? null,
+      quantidadePorVolume: dados.quantidadePorVolume || null,
+      anexo1Url: dados.anexo1Url || null,
+      anexo2Url: dados.anexo2Url || null,
+      discriminacao: dados.discriminacao || null,
       status: 'PENDENTE',
-    },
+    } as never,
     select: SOLICITACAO_SELECT,
   })
 

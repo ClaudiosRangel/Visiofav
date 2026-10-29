@@ -82,7 +82,7 @@ faturamento; override de custos por orçamento (P17).
 |---|-------|----------------------|----------------------|-------------|
 | B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos) | — | ✅ FEITO (sidebar `title:'Comercial'`) |
 | B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ✅ QUASE-FEITO (espinha + cadastro + estilo WEGA + seed; falta só task 8: seletor+botões no detalhe, junto do B3) |
-| B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | 🟡 FASE A FEITA (CNPJ + cadastro cliente novo no portal); FASE B (campos da planilha + tipo de pedido) aguarda LISTA de campos |
+| B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | ✅ FEITO (Fase A: CNPJ+cliente novo; Fase B: 23 campos da planilha + tipo de pedido) |
 | B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | 🟡 PARCIAL (dashboard + a-converter + solicitações existem; falta painel unificado + menu "Propostas" dedicado) |
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
 | B5 | **Aprovação de Amostra/Modelo** (`AprovacaoAmostra`; rodadas; bloqueia conversão) | Não | ✅ FEITO (telas interno+portal-rep; model+rotas) |
@@ -277,3 +277,16 @@ disponível nesta sessão.)
   tipo de pedido (Repetição/Mostruário/Novos) em `SolicitacaoOrcamentoRep` —
   precisa da LISTA FINAL de campos. Próximo: B3 (painel unificado + menu
   Propostas + fechar task 8 do B1).
+- **29/10/2026 (8)** — B2 Fase B (campos da planilha). Planilha de pedidos Carton
+  Wega recebida (3 imagens, 30 colunas) → `docs/planilha-pedidos-carton-wega.md`.
+  Schema: 23 colunas aditivas/nullable em `SolicitacaoOrcamentoRep` + migrate-prod
+  idempotente (ADD COLUMN IF NOT EXISTS em loop). Backend: Zod + service +
+  SOLICITACAO_SELECT estendidos. Front: formulário do portal ganhou Card "Tipo de
+  pedido" (Novo/Repetição/Mostruário) + Card "Detalhes do pedido" com todos os
+  campos (mercado, UF/cidade, entrega única/fracionada + dias, exportação,
+  variações de arte, cartão, gramatura, medidas, FSC, corte interno, passtime,
+  acabamento manual, matriz, validade, qtd por volume, anexos, discriminação).
+  Verificação: get_diagnostics limpo (back+front) + prisma generate OK; campos
+  nullable = não-regressão. **B2 COMPLETO.** Commits a seguir.
+  Próximo: B3 (painel unificado + menu Propostas + task 8 do B1 — botões/seletor
+  de proposta no detalhe).

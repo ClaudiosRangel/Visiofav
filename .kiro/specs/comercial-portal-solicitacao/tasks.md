@@ -26,24 +26,36 @@
     get_diagnostics limpo.
   - _Requirements: 1, 2_
 
-## Fase B — Campos da planilha Wega + tipo de pedido (com schema) — AGUARDA LISTA
+## Fase B — Campos da planilha Wega + tipo de pedido (com schema) — FEITA
 
-- [ ] 4. Schema + migração dos campos novos
-  - Colunas aditivas em `SolicitacaoOrcamentoRep` (tipoPedido, mercado, ufOrigem,
-    cidade, tipoEntrega, localEntrega, fracionado, prazoPagamento, produtoNome,
-    gramatura, precisaAmostra, + a confirmar) + migrate-prod idempotente.
+Planilha completa recebida (29/10/2026): `docs/planilha-pedidos-carton-wega.md`
+(30 colunas transcritas das 3 imagens).
+
+- [x] 4. Schema + migração dos campos novos
+  - 23 colunas aditivas/nullable em `SolicitacaoOrcamentoRep` (tipoPedido,
+    jaCliente, mercado, ufOrigem, cidade, tipoEntrega, entregaFracionadaDias,
+    prazoPagamento, produtoNome, dataValidade, variacoesArte, exportacao, cartao,
+    gramaturaTexto, cartaoFsc, medidasTexto, corteInternoVerso, passtime, matriz,
+    acabamentoManual, quantidadePorVolume, anexo1Url, anexo2Url, discriminacao) +
+    migrate-prod idempotente (ADD COLUMN IF NOT EXISTS em loop). prisma generate OK.
   - _Requirements: 3.4_
 
-- [ ] 5. Backend — aceitar/persistir os campos novos
-  - `criarSolicitacaoSchema` + `criarSolicitacao` com os campos opcionais.
+- [x] 5. Backend — aceitar/persistir os campos novos
+  - `criarSolicitacaoSchema` (Zod, enums p/ tipoPedido/tipoEntrega/exportacao) +
+    `CriarSolicitacaoInput` + `criarSolicitacao` (grava os campos) +
+    `SOLICITACAO_SELECT` (comercial enxerga). get_diagnostics limpo.
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 6. Frontend — formulário rico + tipo de pedido
-  - Campos da planilha + `SegmentedControl` Repetição/Mostruário/Novos;
-    Repetição mostra seleção de produto.
+- [x] 6. Frontend — formulário rico + tipo de pedido
+  - `portal-rep/orcamentos/novo`: Card "Tipo de pedido" (SegmentedControl
+    Novo/Repetição/Mostruário) + Card "Detalhes do pedido" com todos os campos da
+    planilha (mercado, UF/cidade, entrega única/fracionada, exportação, cartão,
+    gramatura, medidas texto, switches FSC/corte/passtime/manual, matriz,
+    validade, volume, anexos, discriminação). Payload só envia preenchidos.
+    `CriarSolicitacaoPayload` estendido. get_diagnostics limpo.
   - _Requirements: 3_
 
-- [ ] 7. Verificação e documentação
-  - get_diagnostics + não-regressão do formulário básico + atualizar doc-mestre
-    e backlog.
+- [x] 7. Verificação e documentação
+  - get_diagnostics limpo (back+front) + prisma generate + não-regressão (campos
+    nullable/opcionais). Doc-mestre e planilha documentados.
   - _Requirements: 4_

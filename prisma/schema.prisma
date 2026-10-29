@@ -6543,6 +6543,32 @@ model SolicitacaoOrcamentoRep {
   quantidade         Int
   acabamentos        String?                 @db.Text
   observacoes        String?                 @db.Text
+  // Campos da planilha de pedidos Carton Wega (spec comercial-portal-solicitacao,
+  // B2 Fase B). Todos NULLABLE — null = legado/não-regressão.
+  tipoPedido            String?  @map("tipo_pedido") @db.VarChar(12)   // REPETICAO|MOSTRUARIO|NOVO
+  jaCliente             Boolean? @map("ja_cliente")
+  mercado               String?  @db.VarChar(120)
+  ufOrigem              String?  @map("uf_origem") @db.VarChar(2)
+  cidade                String?  @db.VarChar(120)
+  tipoEntrega           String?  @map("tipo_entrega") @db.VarChar(20)  // UNICA|FRACIONADA
+  entregaFracionadaDias String?  @map("entrega_fracionada_dias") @db.VarChar(60)
+  prazoPagamento        String?  @map("prazo_pagamento") @db.VarChar(60)
+  produtoNome           String?  @map("produto_nome") @db.VarChar(200)
+  dataValidade          String?  @map("data_validade") @db.VarChar(60)
+  variacoesArte         String?  @map("variacoes_arte") @db.VarChar(60)
+  exportacao            String?  @db.VarChar(12)                        // COMUM|EXPORTACAO
+  cartao                String?  @db.VarChar(120)
+  gramaturaTexto        String?  @map("gramatura_texto") @db.VarChar(60)
+  cartaoFsc             Boolean? @map("cartao_fsc")
+  medidasTexto          String?  @map("medidas_texto") @db.VarChar(120)
+  corteInternoVerso     Boolean? @map("corte_interno_verso")
+  passtime              Boolean?
+  matriz                String?  @db.VarChar(200)
+  acabamentoManual      Boolean? @map("acabamento_manual")
+  quantidadePorVolume   String?  @map("quantidade_por_volume") @db.VarChar(60)
+  anexo1Url             String?  @map("anexo1_url") @db.VarChar(500)
+  anexo2Url             String?  @map("anexo2_url") @db.VarChar(500)
+  discriminacao         String?  @db.Text
   precoVenda         Decimal?                @map("preco_venda") @db.Decimal(12, 2)
   precoUnitario      Decimal?                @map("preco_unitario") @db.Decimal(12, 4)
   orcamentoGraficoId String?                 @map("orcamento_grafico_id")
