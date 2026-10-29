@@ -11,6 +11,7 @@ import { getOpPdfPath, carregarOpPdf } from '../../lib/storage'
 import { proximoNumeroOp } from '../ordem-producao/ordem-producao.service'
 import { reordenarFilaAutomaticamente } from './fila-ordenacao.service'
 import { tiragemDaEtapa } from './base-contagem.service'
+import { minutosDentroDoTurno } from './tempo-trabalhavel.service'
 import {
   iniciarEtapa,
   pausarEtapa,
@@ -1699,7 +1700,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const centros = await prisma.centroProducao.findMany({
       // Só centros ATIVOS e disponíveis para programação (fora de programação não entra no quadro)
       where: { empresaId: user.empresaId, status: true, disponivelProgramacao: true },
-      include: { tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } } },
+      include: {
+        tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } },
+        // Turno da máquina — usado para NÃO contabilizar o tempo fora do turno
+        // (spec pcp-pausa-fim-turno). Centro sem turno = tempo corrido (legado).
+        turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true } },
+      },
       orderBy: [{ tipoProcesso: { posicao: 'asc' } }, { posicao: 'asc' }, { codigo: 'asc' }],
     })
 
@@ -1862,8 +1868,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         const quantidade = Number(op.quantidade)
         const quantidadeProduzida = Number(etapaAtual.quantidadeProduzida)
         const percentual = quantidade > 0 ? Math.min(Math.round((quantidadeProduzida / quantidade) * 100), 100) : 0
+        // Tempo na etapa: minutos DENTRO do turno da máquina (spec
+        // pcp-pausa-fim-turno). Sem turno = tempo corrido (legado). Isso evita
+        // contabilizar a noite toda quando o operador não pausa no fim do turno.
         const tempoNaEtapa = etapaAtual.dataInicioReal
-          ? Math.round((agora.getTime() - new Date(etapaAtual.dataInicioReal).getTime()) / 60000)
+          ? minutosDentroDoTurno(
+              new Date(etapaAtual.dataInicioReal),
+              agora,
+              (centro as any).turnoProducao || null,
+            )
           : 0
 
         etapaAtualData = {
@@ -1912,9 +1925,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
           motivoParada = motivos[ultimoApt.motivoParada] || ultimoApt.motivoParada
         }
         if (ultimoApt.dataHora) {
-          tempoParadaMinutos = Math.max(
-            0,
-            Math.round((agora.getTime() - new Date(ultimoApt.dataHora).getTime()) / 60000),
+          // Tempo da parada: só os minutos DENTRO do turno (spec
+          // pcp-pausa-fim-turno) — a parada no fim do turno não acumula a
+          // madrugada. Sem turno = corrido (legado).
+          tempoParadaMinutos = minutosDentroDoTurno(
+            new Date(ultimoApt.dataHora),
+            agora,
+            (centro as any).turnoProducao || null,
           )
         }
       }

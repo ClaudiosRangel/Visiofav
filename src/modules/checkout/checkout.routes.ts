@@ -75,8 +75,13 @@ const apontarBodySchema = z.object({
   // `quantidade` — por isso aqui `quantidade` é opcional (validada depois).
   quantidade: z.coerce.number().min(0, 'Quantidade não pode ser negativa').optional(),
   // Leitura final do contador (modo CONTADOR, só Produção). A inicial é
-  // derivada no backend — nunca aceita do cliente.
+  // derivada no backend por padrão (última final / 0 no reset).
   leituraFinal: z.coerce.number().min(0).optional(),
+  // Correção MANUAL da leitura inicial (modo CONTADOR) — pedido do Caio:
+  // quando a inicial derivada vier errada (ex.: 0 numa OP que virou o dia
+  // numa máquina acumulativa), o operador pode informar a inicial correta.
+  // Validada no service (0 ≤ inicial ≤ final) e registrada para auditoria.
+  leituraInicialManual: z.coerce.number().min(0).optional(),
   motivoPerda: z.enum(['ACERTO', 'REFUGO', 'DEFEITO', 'APARA']).optional(),
   funcionarioId: z.string().uuid().optional(),
   observacao: z.string().optional(),
@@ -333,6 +338,8 @@ export async function checkoutRoutes(app: FastifyInstance) {
       if (body.tipo === 'PRODUCAO' && body.leituraFinal != null) {
         const resultado = await registrarApontamentoContador(id, request.checkoutUser, {
           leituraFinal: body.leituraFinal,
+          // Override manual da inicial (opcional) — corrige a derivada.
+          leituraInicialManual: body.leituraInicialManual,
           funcionarioId: body.funcionarioId,
           observacao: body.observacao,
           fotoUrl,

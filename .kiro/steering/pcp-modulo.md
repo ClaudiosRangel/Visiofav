@@ -1480,36 +1480,58 @@ do `070aa80a3`, ou (b) esses centros estão de fato `status=true` +
 desmarcar "Disponível na Programação" na tela de Centros). NÃO é bug de código —
 o filtro está correto e testado.
 
-### 18.3 🟡 SPEC CRIADA (requirements) — Pausa automática de fim de turno
-Spec `.kiro/specs/pcp-pausa-fim-turno/` (só requirements por ora). Problema do
-Caio (print WhatsApp): operador inicia produção, vai embora no fim do turno sem
-pausar, e o sistema **contabiliza a noite toda** (infla duração/velocidade).
-Pedido literal: "colocar uma pausa pelo fim do turno e não contabilizar hora
-parada".
+### 18.3 ✅ ENTREGUE — Pausa de fim de turno (cálculo esperto, não conta fora do turno)
+Spec `.kiro/specs/pcp-pausa-fim-turno/` (requirements+design+tasks). Problema do
+Caio: operador inicia produção, vai embora no fim do turno sem pausar, e o
+sistema **contabiliza a noite toda** (infla duração/velocidade/alertas).
 
-**Padrão de mercado pesquisado** (inmation OEE, Epicor MES AutoClockOut,
-MachineMetrics, sistemas de ponto): (1) tempo FORA da janela do turno é
-"não-agendado" e NÃO conta; (2) "auto clock-out / shift-end stop" encerra o
-apontamento aberto no horário de fim de turno; (3) sessão que cruza a fronteira
-de turno é dividida (split), cada lado no dia certo.
+**Decisões do usuário**: (1) **cálculo esperto** (sem cron) — desconta o tempo
+fora do turno no momento da leitura; (2) motivo "Fim de Turno" (para pausa
+persistida futura); (3) aplicar onde influencia o controle; (4) ligado por
+padrão — como deriva do Turno do centro, vale para todo centro com turno (24h =
+corrido, não-regressão). Padrão de mercado (inmation/Epicor/MachineMetrics):
+tempo fora do turno é "não-agendado" e não conta.
 
-**Base técnica existente**: `CentroProducao.turnoProducaoId → TurnoProducao
-(horaInicio/horaFim/diasSemana)`. O `timeline-producao.routes.ts` já tem
-`calcularFimComTurno()` que "pula" períodos fora do expediente — bom ponto de
-partida para a lógica de "tempo trabalhável".
+**Implementado** (sem schema/migração):
+- Motor puro `src/modules/pcp/tempo-trabalhavel.service.ts` →
+  `minutosDentroDoTurno(inicio, fim, turno|null)`: interseção dia-a-dia (BRT
+  -3h) de [inicio,fim] com [horaInicio,horaFim]×diasSemana; suporta turno que
+  cruza meia-noite; sem turno = corrido; nunca excede o corrido. Testes 9/9
+  (vitest+fast-check), inclui o caso do Caio (16:30→07:00 = 30 min).
+- Quadro de produção (`GET /pcp/quadro-producao`): `tempoNaEtapa` e
+  `tempoParadaMinutos` agora via `minutosDentroDoTurno` (include do centro
+  ganhou `turnoProducao`).
+- Checkout alerta de parada prolongada (`listarEtapasEmAlertaParadaProlongada`):
+  `minutosParada` via `minutosDentroDoTurno` (sem falso alerta pela madrugada).
+- `GET /pcp/etapas/:id/apontamentos` NÃO precisou mudar: `tempoParadaTotal` soma
+  `tempoParadaMinutos` JÁ gravados nas paradas fechadas (não é cálculo ao vivo).
 
-**ONDE o tempo infla hoje** (investigado): `etapa-operacional.routes.ts`
-~linha 1915, o `tempoParadaMinutos` do quadro de produção é `agora −
-ultimoApontamento` (corre a noite toda quando PARADA); e o tempo PRODUTIVO
-(etapa EM_ANDAMENTO sem pausar) acumula igual. O Checkout
-(`checkout.service.ts`/`checkout.routes.ts`) é onde o Caio viu.
+### 18.4 ✅ ENTREGUE (backend) — Contador em OP que vira o dia (problema da 2ª imagem do Caio)
+NÃO é o mesmo problema da 18.3 (aquele é TEMPO; este é CONTAGEM por CONTADOR de
+máquina, seção 11). Caio: OP fecha o dia com contador 10.000; amanhã a inicial
+derivada voltava a **0** (centro com "Zera diariamente" ligado) → quantidade do
+dia 20.000−0=20.000, somando 30.000 em vez de 20.000; e o operador não conseguia
+corrigir o 0.
 
-**4 PONTOS A CONFIRMAR COM O USUÁRIO antes do design** (evitar retrabalho —
-regra do steering): (1) gatilho = job de cron no fim do turno OU cálculo "lazy"
-no read (sem infra de cron); (2) motivo = reusar `TROCA_TURNO` ou criar
-`FIM_TURNO`; (3) escopo = só Checkout ou também painel/quadro/BI; (4) default da
-flag `pcp.pausaAutomaticaFimTurno` (lig/desl) para a Wega. **NÃO implementar
-antes de alinhar** — recomendação: abordagem "lazy" (R1: descontar tempo fora do
-turno no cálculo, sem cron) como MVP, que já resolve a distorção sem risco de
-job em produção; a pausa persistida (R2) entra depois se o usuário quiser o
-registro explícito.
+**Causa raiz + correção (abordagem A, aprovada)**: o contador da Wega é
+**acumulativo contínuo** (não zera fisicamente). Logo:
+1. **"Zera diariamente" DESMARCADO** nesses centros → `derivarInicial` já usa a
+   última final como inicial do dia seguinte (10.000) e a quantidade fica certa
+   (20.000−10.000=10.000 → total 20.000). É CADASTRO, não código. ⚠️ AÇÃO
+   pendente do usuário: conferir que os centros de contador da Wega estão com
+   "Zera diariamente" DESMARCADO na tela de Centros.
+2. **Edição manual da leitura inicial** (backend FEITO):
+   `registrarApontamentoContador` (checkout.service) aceita `leituraInicialManual`
+   opcional — valida 0 ≤ inicial ≤ final, usa no lugar da derivada,
+   `resetDoDia=false`, e registra em `LogLeituraContador` (empresaId +
+   anterior→novo) para auditoria. `POST /checkout/etapas/:id/apontar` repassa o
+   campo; `GET /checkout/etapas/:id/contador` expõe `temLeituraAnterior` (a
+   inicial é SUGESTÃO editável). A trava "nunca aceitar inicial do cliente"
+   (seção 11) foi flexibilizada com validação+auditoria.
+3. **Correção pelo ERP já existia**: `pcp/cadastros/centros/[id]/contador`
+   corrige a inicial de qualquer leitura (preview + validação da cadeia 409).
+
+**FOLLOW-UP (app VisioFab.Checkout, repo separado — fora desta sessão)**: plugar
+no modal de apontar produção (modo CONTADOR) um campo "Leitura inicial" editável
+pré-preenchido com a sugestão (`leituraInicial`+`temLeituraAnterior`), enviando
+`leituraInicialManual` quando o operador alterar. Até lá, corrigir pelo ERP.

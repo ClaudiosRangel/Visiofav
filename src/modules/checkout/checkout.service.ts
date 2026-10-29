@@ -13,6 +13,7 @@ import {
   type DerivarInicialResultado,
 } from './contador-maquina.service'
 import { resolverPlanejadoDaEtapa, tiragemDaEtapa, type ContagemResolvida } from '../pcp/base-contagem.service'
+import { minutosDentroDoTurno } from '../pcp/tempo-trabalhavel.service'
 
 /**
  * Regras de negócio exclusivas do Checkout de Apontamento (task 10 do spec
@@ -1583,6 +1584,10 @@ export async function listarEtapasEmAlertaParadaProlongada(
       sequencia: true,
       centroProducaoId: true,
       ordemProducao: { select: { numero: true } },
+      // Turno do centro — para descontar o tempo fora do turno do alerta de
+      // parada prolongada (spec pcp-pausa-fim-turno): a parada no fim do turno
+      // não deve gerar falso alerta de "parada longa" pela madrugada.
+      centroProducao: { select: { turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true } } } },
     },
   })
 
@@ -1626,7 +1631,14 @@ export async function listarEtapasEmAlertaParadaProlongada(
       continue
     }
 
-    const minutosParada = Math.floor((agora.getTime() - ultimaParada.dataHora.getTime()) / 60000)
+    // Minutos de parada DENTRO do turno (spec pcp-pausa-fim-turno): a parada
+    // que atravessa o fim do turno não acumula a madrugada → sem falso alerta.
+    // Sem turno = corrido (legado).
+    const minutosParada = minutosDentroDoTurno(
+      ultimaParada.dataHora,
+      agora,
+      (etapa as any).centroProducao?.turnoProducao || null,
+    )
 
     if (minutosParada > LIMITE_MINUTOS_ALERTA_PARADA_PROLONGADA) {
       alertas.push({
@@ -1840,6 +1852,10 @@ export interface EstadoContadorEtapa {
   zeraDiariamente: boolean
   leituraInicial: number
   resetDoDia: boolean
+  // Há uma leitura anterior do centro (a inicial foi herdada dela). Quando
+  // true, a inicial é uma SUGESTÃO editável no terminal (pedido do Caio —
+  // corrigir OP que virou o dia em máquina acumulativa).
+  temLeituraAnterior: boolean
 }
 
 /**
@@ -1852,14 +1868,21 @@ export async function estadoContadorDaEtapa(
 ): Promise<EstadoContadorEtapa> {
   const centro = await obterModoContagemDaEtapa(etapaId, checkoutUser)
   if (centro.modo !== 'CONTADOR') {
-    return { modo: 'QUANTIDADE', zeraDiariamente: false, leituraInicial: 0, resetDoDia: false }
+    return { modo: 'QUANTIDADE', zeraDiariamente: false, leituraInicial: 0, resetDoDia: false, temLeituraAnterior: false }
   }
   const inicial = await derivarInicialDoCentro(centro, checkoutUser.empresaId)
+  // Existe leitura anterior do centro? (a inicial foi herdada dela, logo é
+  // uma sugestão editável). Se a inicial > 0 ou não é reset, veio de uma final.
+  const ultima = await prisma.leituraContador.findFirst({
+    where: { empresaId: checkoutUser.empresaId, centroProducaoId: centro.centroProducaoId },
+    select: { id: true },
+  })
   return {
     modo: 'CONTADOR',
     zeraDiariamente: centro.zeraDiariamente,
     leituraInicial: inicial.leituraInicial,
     resetDoDia: inicial.resetDoDia,
+    temLeituraAnterior: ultima != null,
   }
 }
 
@@ -1872,7 +1895,7 @@ export async function estadoContadorDaEtapa(
 export async function registrarApontamentoContador(
   etapaId: string,
   checkoutUser: { empresaId: string; centroProducaoId: string },
-  dados: { leituraFinal: number; funcionarioId?: string; observacao?: string; fotoUrl?: string },
+  dados: { leituraFinal: number; leituraInicialManual?: number; funcionarioId?: string; observacao?: string; fotoUrl?: string },
 ) {
   const etapa = await buscarEtapaDoTerminal(etapaId, checkoutUser)
   const empresaId = etapa.ordemProducao.empresaId
@@ -1883,7 +1906,17 @@ export async function registrarApontamentoContador(
 
   const centro = await obterModoContagemDaEtapa(etapaId, checkoutUser)
   const inicialDerivada = await derivarInicialDoCentro(centro, empresaId)
-  const leituraInicial = inicialDerivada.leituraInicial
+  // Leitura inicial: por padrão a DERIVADA (última final / 0 no reset). Quando
+  // o operador informa `leituraInicialManual` (pedido do Caio — corrigir a
+  // inicial 0 numa OP que virou o dia em máquina acumulativa), usamos a manual,
+  // validando 0 ≤ manual ≤ final. O ajuste some do reset (não é 1º-do-dia) e é
+  // registrado em LogLeituraContador para auditoria.
+  const usouManual = dados.leituraInicialManual != null
+  const leituraInicial = usouManual ? Number(dados.leituraInicialManual) : inicialDerivada.leituraInicial
+  if (usouManual && leituraInicial < 0) {
+    throw new ContadorError(400, 'A leitura inicial informada não pode ser negativa.')
+  }
+  const resetDoDia = usouManual ? false : inicialDerivada.resetDoDia
   // calcularQuantidade lança ContadorError(400) se final < inicial.
   const quantidade = calcularQuantidade(leituraInicial, dados.leituraFinal)
 
@@ -1898,7 +1931,7 @@ export async function registrarApontamentoContador(
   })
 
   // Persiste a LeituraContador (histórico + base da próxima inicial).
-  await prisma.leituraContador.create({
+  const leitura = await prisma.leituraContador.create({
     data: {
       empresaId,
       centroProducaoId: centro.centroProducaoId,
@@ -1907,10 +1940,26 @@ export async function registrarApontamentoContador(
       leituraInicial,
       leituraFinal: dados.leituraFinal,
       quantidade,
-      resetDoDia: inicialDerivada.resetDoDia,
+      resetDoDia,
       funcionarioId: dados.funcionarioId ?? null,
     },
   })
 
-  return { apontamento, leituraInicial, leituraFinal: dados.leituraFinal, quantidade, resetDoDia: inicialDerivada.resetDoDia }
+  // Auditoria do override manual da inicial (pedido do Caio): registra o valor
+  // derivado (anterior) → o valor informado (novo) em LogLeituraContador, a
+  // mesma tabela usada pela correção no ERP (seção 11 do steering).
+  if (usouManual && leituraInicial !== inicialDerivada.leituraInicial) {
+    await prisma.logLeituraContador.create({
+      data: {
+        empresaId,
+        leituraContadorId: leitura.id,
+        campo: 'leituraInicial',
+        valorAnterior: inicialDerivada.leituraInicial,
+        valorNovo: leituraInicial,
+        usuarioId: dados.funcionarioId ?? null,
+      },
+    })
+  }
+
+  return { apontamento, leituraInicial, leituraFinal: dados.leituraFinal, quantidade, resetDoDia, inicialAjustadaManualmente: usouManual }
 }
