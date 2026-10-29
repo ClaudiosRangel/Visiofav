@@ -1539,3 +1539,15 @@ campo "Leitura inicial" EDITÁVEL, pré-preenchido com a sugestão derivada; qua
 o contador continuou de ontem." e envia `leituraInicialManual` só quando o
 operador altera. ⚠️ AÇÃO do usuário restante: deixar os centros de contador da
 Wega com "Zera diariamente" DESMARCADO no cadastro.
+
+### 18.5 ✅ Códigos de Parada da Wega cadastrados em produção (lista do Caio)
+Seed `scripts/seed-codigos-parada-wega.mjs` (idempotente, `ON CONFLICT DO
+NOTHING`) populou os **16 códigos de parada** da Carton Wega (empresa
+`75848e24-...`) na tabela `codigo_parada` em produção (Neon), usados no Pareto
+do Relatório Mensal e no modal "Pausar Etapa". Lista: Aguardando chapa / cartão /
+aprovação / aprovação do cliente / fim do processo / pré-impressão / amostra /
+liberação da qualidade, Acerto de máquina-setup, Matéria prima com defeito,
+Falta de matéria prima, Manutenção, Serviço cancelado, Reunião, Falta de energia,
+Outros. A connection string do Neon é passada por env (`DATABASE_URL_PROD`),
+NUNCA no arquivo; o script RECUSA rodar contra localhost. Rodar de novo não
+duplica (upsert por `empresaId,codigo`).
