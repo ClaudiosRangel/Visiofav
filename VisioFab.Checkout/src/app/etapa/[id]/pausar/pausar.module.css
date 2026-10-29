@@ -98,6 +98,22 @@
   border-color: #16a34a;
 }
 
+.select {
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #111111;
+  background-color: #ffffff;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+}
+
+.select:disabled {
+  opacity: 0.6;
+}
+
 .textarea {
   width: 100%;
   min-height: 80px;

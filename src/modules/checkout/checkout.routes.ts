@@ -15,6 +15,7 @@ import {
   finalizarSetup,
   registrarApontamentoProducao,
   pausarEtapaComMotivo,
+  listarCodigosParadaDoCheckout,
   concluirEtapaComBloqueio,
   registrarEntradaOperador,
   registrarSaidaOperador,
@@ -91,6 +92,9 @@ const pausarEtapaBodySchema = z.object({
   motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']),
   paradaPlanejada: z.boolean(),
   observacao: z.string().optional(),
+  // Código de parada customizado (opcional) — lista cadastrada em PCP →
+  // Gerencial → Códigos de Parada. Repassado ao service/ApontamentoEtapa.
+  codigoParadaId: z.string().uuid().optional(),
 })
 
 // =============================================================================
@@ -384,6 +388,17 @@ export async function checkoutRoutes(app: FastifyInstance) {
       }
       throw err
     }
+  })
+
+  // =========================================================================
+  // GET /codigos-parada — Lista os Códigos de Parada ATIVOS da empresa do
+  // terminal, para o operador escolher ao pausar uma etapa. Mesma lista do
+  // painel de Programação do ERP (cadastrada em PCP → Gerencial → Códigos de
+  // Parada). Isolada por empresaId do terminal.
+  // =========================================================================
+  app.get('/codigos-parada', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const codigos = await listarCodigosParadaDoCheckout(request.checkoutUser)
+    return reply.status(200).send(codigos)
   })
 
   // =========================================================================

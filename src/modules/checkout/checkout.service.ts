@@ -692,6 +692,11 @@ export const pausarEtapaComMotivoSchema = z.object({
   motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']),
   paradaPlanejada: z.boolean(),
   observacao: z.string().optional(),
+  // Código de parada customizado da empresa (opcional) — mesma lista do painel
+  // de Programação do ERP. Quando informado, é gravado no ApontamentoEtapa e
+  // usado no Pareto do relatório. O enum motivoParada continua obrigatório
+  // (compat.). Lista cadastrada em PCP → Gerencial → Códigos de Parada.
+  codigoParadaId: z.string().uuid().optional(),
 })
 
 export type PausarEtapaComMotivoInput = z.infer<typeof pausarEtapaComMotivoSchema>
@@ -757,6 +762,7 @@ export async function pausarEtapaComMotivo(
     motivoParada: dados.motivoParada,
     observacao: dados.observacao,
     paradaPlanejada: dados.paradaPlanejada,
+    codigoParadaId: dados.codigoParadaId,
   })
 
   const candidataOrdemManutencao = !dados.paradaPlanejada && dados.motivoParada === 'MANUTENCAO'
@@ -1884,6 +1890,22 @@ export async function estadoContadorDaEtapa(
     resetDoDia: inicial.resetDoDia,
     temLeituraAnterior: ultima != null,
   }
+}
+
+/**
+ * Lista os Códigos de Parada ATIVOS da empresa do terminal (para o operador
+ * escolher ao pausar). Mesma lista do painel do ERP (PCP → Gerencial →
+ * Códigos de Parada). Isolada por empresaId do checkoutUser.
+ */
+export async function listarCodigosParadaDoCheckout(
+  checkoutUser: { empresaId: string },
+): Promise<Array<{ id: string; codigo: string; descricao: string }>> {
+  const rows = await prisma.codigoParada.findMany({
+    where: { empresaId: checkoutUser.empresaId, status: true },
+    orderBy: { codigo: 'asc' },
+    select: { id: true, codigo: true, descricao: true },
+  })
+  return rows
 }
 
 /**

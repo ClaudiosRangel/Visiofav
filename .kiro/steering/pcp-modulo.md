@@ -1551,3 +1551,17 @@ Falta de matéria prima, Manutenção, Serviço cancelado, Reunião, Falta de en
 Outros. A connection string do Neon é passada por env (`DATABASE_URL_PROD`),
 NUNCA no arquivo; o script RECUSA rodar contra localhost. Rodar de novo não
 duplica (upsert por `empresaId,codigo`).
+
+### 18.6 ✅ Códigos de Parada agora aparecem no CHECKOUT (terminal)
+Antes os códigos de parada só apareciam no modal "Pausar Etapa" do painel do ERP.
+Agora também no Checkout (`VisioFab.Checkout`, dentro do repo do backend):
+- **Backend**: nova rota `GET /checkout/codigos-parada`
+  (`listarCodigosParadaDoCheckout`, isolada por empresa do terminal, só ATIVOS).
+  `PATCH /checkout/etapas/:id/pausar` e `pausarEtapaComMotivo` passaram a aceitar
+  `codigoParadaId` opcional → repassado a `pausarEtapaOperacional` → gravado no
+  `ApontamentoEtapa` (enum `motivoParada` segue obrigatório, compat.). O Pareto
+  do relatório usa o código quando presente.
+- **Frontend** (`src/app/etapa/[id]/pausar/page.tsx`): carrega os códigos no
+  carregamento da tela e mostra um `<select>` "Código de parada (opcional)" —
+  só aparece quando há códigos cadastrados; envia `codigoParadaId` no pausar.
+  (`.select` adicionado ao `pausar.module.css`, estilo touch-friendly.)

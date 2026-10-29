@@ -43,6 +43,14 @@ interface PausarEtapaBody {
   motivoParada: MotivoParada
   paradaPlanejada: boolean
   observacao?: string
+  codigoParadaId?: string
+}
+
+/** Código de parada da empresa (GET /checkout/codigos-parada). */
+interface CodigoParada {
+  id: string
+  codigo: string
+  descricao: string
 }
 
 /** Shape do retorno de `PATCH /checkout/etapas/:id/pausar`. */
@@ -73,6 +81,21 @@ export default function PausarEtapaPage() {
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<PausarEtapaResultado | null>(null)
+  // Códigos de parada da empresa (cadastrados em PCP → Gerencial → Códigos de
+  // Parada). Opcional: só aparece o seletor quando há códigos cadastrados.
+  const [codigosParada, setCodigosParada] = useState<CodigoParada[]>([])
+  const [codigoParadaId, setCodigoParadaId] = useState<string>('')
+
+  // Carrega os códigos de parada ao abrir a tela (uma vez).
+  useEffect(() => {
+    if (!estaAutenticado) return
+    let ativo = true
+    checkoutApiClient
+      .get<CodigoParada[]>('/codigos-parada')
+      .then((r) => { if (ativo) setCodigosParada(Array.isArray(r.data) ? r.data : []) })
+      .catch(() => { if (ativo) setCodigosParada([]) })
+    return () => { ativo = false }
+  }, [estaAutenticado])
 
   const camposObrigatoriosPreenchidos = motivoParada !== null && paradaPlanejada !== null
 
@@ -90,6 +113,7 @@ export default function PausarEtapaPage() {
       motivoParada: motivoParada as MotivoParada,
       paradaPlanejada: paradaPlanejada as boolean,
       observacao: observacao.trim() ? observacao.trim() : undefined,
+      codigoParadaId: codigoParadaId || undefined,
     }
 
     try {
@@ -184,6 +208,23 @@ export default function PausarEtapaPage() {
           </button>
         </div>
       </section>
+
+      {codigosParada.length > 0 && (
+        <section className={styles.secao}>
+          <h2 className={styles.secaoTitulo}>Código de parada (opcional)</h2>
+          <select
+            className={styles.select}
+            value={codigoParadaId}
+            onChange={(e) => setCodigoParadaId(e.target.value)}
+            disabled={enviando}
+          >
+            <option value="">Selecione...</option>
+            {codigosParada.map((c) => (
+              <option key={c.id} value={c.id}>{c.descricao}</option>
+            ))}
+          </select>
+        </section>
+      )}
 
       <section className={styles.secao}>
         <h2 className={styles.secaoTitulo}>Observação (opcional)</h2>
