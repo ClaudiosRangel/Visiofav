@@ -68,6 +68,7 @@ rotas `simular-tiragens` que já existem):
   (não-regressão). get_diagnostics limpo. NÃO commitado ainda.
 NOTA operacional: no FRONT deste repo, o vitest roda no pool PADRÃO (forks); o
 `--pool=threads` TRAVOU nesta máquina (oposto da nota de steering do OutLife).
+**COMMITADO (29/10/2026):** front `2bc3ab4` (P1 + P15 juntos).
 
 ---
 
@@ -322,7 +323,7 @@ gerais `_itemSalvoOrcamentoId`/`_itemSalvoId` ao `WizardFormData`
 edição (não só repetição) — assim o encaixe real aparece em qualquer item salvo
 com arquivo. Sem arquivo / criação do zero → só o encaixe calculado (1 coluna),
 sem regressão. Só frontend (endpoints de encaixe-arquivo já existiam).
-get_diagnostics limpo. NÃO commitado ainda.
+get_diagnostics limpo. **COMMITADO (29/10/2026):** front `2bc3ab4` (junto com P1).
 
 ---
 
@@ -350,7 +351,7 @@ MOTOR NÃO foi tocado (golden 15.235 preservado).
 - **Verificação:** suíte `orcamento-grafico` **277 passed / 0 falhas** (golden
   15.235 verde) + get_diagnostics limpo (11 arquivos) + prisma generate OK.
   Migração local não rodou (Postgres local off) — roda no deploy (idempotente).
-  NÃO commitado ainda.
+  **COMMITADO (29/10/2026):** back `aad2ee238` + front `a590079`.
 
 **O que é (imagens de Caio, tela "CARTUCHO"):** ao marcar uma **Atividade** de
 acabamento, aparecem duas listas DEPENDENTES dela:
@@ -446,6 +447,17 @@ FASEADA**, com golden/não-regressão travando a paridade antes de expor a ediç
 Estratégia recomendada: persistir overrides por orçamento (comissões/prazos/
 juros/CEV) e o motor usar o override quando presente, senão o default do cadastro
 (aditivo/não-regressivo quando sem override).
+
+**🚀 EXPANDIDO (29/10/2026, query 21 com 6 imagens) → PROJETO MÓDULO COMERCIAL.**
+O usuário expandiu o P17 para um **módulo Comercial completo** (rebranding +
+menu Propostas + portal com formulário da planilha Wega + consulta CNPJ Receita +
+envio de proposta/aceite/assinatura + amostra com correio/caminhão + hand-off
+PCP/faturamento + templates de proposta PDF). O B9 (Fechamento editável) é o P17
+original dentro desse projeto maior. **Fonte de verdade agora é o documento-mestre
+`docs/PROJETO-MODULO-COMERCIAL.md`** (blocos B0..B9, decisões, perguntas de
+escopo §7). O blueprint de fluxo está em
+`docs/fluxo-comercial-orcamento-pcp-faturamento.md`. P17 permanece ⬜ PENDENTE
+até o B9 ser executado (depois dos blocos de menor risco).
 
 ---
 
