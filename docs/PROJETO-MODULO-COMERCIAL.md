@@ -81,7 +81,7 @@ faturamento; override de custos por orçamento (P17).
 | # | Bloco | Spec (nome sugerido) | Toca motor de preço? | Status REAL |
 |---|-------|----------------------|----------------------|-------------|
 | B0 | **Rebranding** "Orçamento Gráfico" → "Comercial" (menu/títulos) | — | ✅ FEITO (sidebar `title:'Comercial'`) |
-| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | ⬜ PENDENTE (só há PDF de layout FIXO `gerarPropostaPdf`) |
+| B1 | **Templates de Proposta PDF** (modelo Carton Wega + editor de formato + default) | Não | 🟡 QUASE (espinha + cadastro feitos; falta seed Wega c/ imagens + seletor no detalhe) |
 | B2 | **Portal — Formulário de Solicitação** (campos da planilha Wega + cadastro de cliente novo + **consulta CNPJ Receita** + Repetição/Mostruário/Novos) | Não | 🟡 PARCIAL (form básico existe; faltam campos da planilha, CNPJ, tipos de pedido) |
 | B3 | **Menu Propostas / painel de status unificado** ponta a ponta | Não | 🟡 PARCIAL (dashboard + a-converter + solicitações existem; falta painel unificado + menu "Propostas" dedicado) |
 | B4 | **Hand-off / Conversão completa** (status CONVERTIDO; pedido nasce com itens; `NotificacaoComercial`) | Não | ✅ FEITO (`handoff-comercial/converter-orcamento.service.ts`) |
@@ -237,6 +237,12 @@ disponível nesta sessão.)
   `/api/orcamento-grafico/templates-proposta`; `templateId` plugado no download
   e no envio por e-mail. Verificação: get_diagnostics limpo (6 arquivos) +
   suíte orcamento-grafico **283 passed / 0 falhas** (golden 15.235 intacto) +
-  prisma generate OK. **FALTA do B1:** task 6 (seed "Padrão Carton Wega" — depende
-  das IMAGENS do modelo) + tasks 7/8 (frontend: tela de cadastro + seletor no
-  detalhe do orçamento). Spec: `.kiro/specs/comercial-templates-proposta/`.
+  prisma generate OK. Commit back `8387c7817`.
+- **29/10/2026 (4)** — B1 frontend: tela de cadastro de Templates de Proposta
+  (`/orcamento-grafico/cadastros/templates-proposta`) + item no menu (grupo
+  Cadastros). get_diagnostics limpo. Commit front `60f9840`.
+  **FALTA do B1:** task 6 (seed "Padrão Carton Wega" — depende das IMAGENS do
+  modelo de proposta) + task 8 (seletor de template + botões baixar/enviar no
+  detalhe do orçamento `[id]` — hoje o front NÃO tem esses botões plugados; fazer
+  junto do B3/painel). Spec: `.kiro/specs/comercial-templates-proposta/`.
+  Próximo: B2 (formulário do portal + cadastro de cliente novo + consulta CNPJ).

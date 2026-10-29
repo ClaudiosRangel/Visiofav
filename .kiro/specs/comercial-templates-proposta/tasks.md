@@ -36,14 +36,17 @@
     ajuste manual.
   - _Requirements: 5_
 
-- [ ] 7. Frontend — cadastro de Templates de Proposta
-  - Tela `/orcamento-grafico/cadastros/templates-proposta` (lista + form com
-    toggles e textos + preview) + item no `ModuleSidebar` (grupo Cadastros).
+- [x] 7. Frontend — cadastro de Templates de Proposta
+  - Tela `/orcamento-grafico/cadastros/templates-proposta` (lista + modal com
+    toggles de cabeçalho/blocos + textos + marcar padrão + excluir) + item no
+    `ModuleSidebar` (grupo Cadastros). get_diagnostics limpo.
   - _Requirements: 1, 2, 3_
 
 - [ ] 8. Frontend — escolher template ao baixar/enviar
-  - No detalhe do orçamento (`[id]`), `Select` de template (default
-    pré-selecionado) passando `templateId` ao baixar/enviar proposta.
+  - PENDENTE: no detalhe do orçamento (`[id]`) o front HOJE não tem botões de
+    baixar/enviar proposta plugados (as rotas backend existem). Fazer junto do
+    B3 (painel/propostas) ou quando o usuário definir os botões de proposta no
+    detalhe. `Select` de template (default pré-selecionado) passando `templateId`.
   - _Requirements: 4.1, 4.2_
 
 - [ ] 9. Verificação e documentação
