@@ -72,15 +72,49 @@ interface ParamsPropostaPdf {
 }
 
 /**
+ * Converte o logo da empresa (base64/dataURL/URL http) em Buffer para o pdfkit.
+ * Best-effort: retorna null em qualquer erro (o PDF cai no nome em texto).
+ */
+async function resolverLogoBuffer(logoUrl?: string | null): Promise<Buffer | null> {
+  if (!logoUrl || typeof logoUrl !== 'string') return null
+  const v = logoUrl.trim()
+  try {
+    // data URL (data:image/png;base64,....) ou base64 puro.
+    if (v.startsWith('data:')) {
+      const b64 = v.substring(v.indexOf(',') + 1)
+      return Buffer.from(b64, 'base64')
+    }
+    if (v.startsWith('http://') || v.startsWith('https://')) {
+      const controller = new AbortController()
+      const t = setTimeout(() => controller.abort(), 8000)
+      const resp = await fetch(v, { signal: controller.signal })
+      clearTimeout(t)
+      if (!resp.ok) return null
+      const ab = await resp.arrayBuffer()
+      return Buffer.from(ab)
+    }
+    // Heurística: string longa sem esquema → tratar como base64 puro.
+    if (v.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(v)) {
+      return Buffer.from(v, 'base64')
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Gera PDF de proposta comercial para orçamento gráfico.
  * Retorna um Buffer com o PDF gerado.
  */
-export function gerarPropostaPdf(params: ParamsPropostaPdf): Promise<Buffer> {
+export async function gerarPropostaPdf(params: ParamsPropostaPdf): Promise<Buffer> {
   const { orcamento, cliente, empresa, termos } = params
   // Config do template (B1). Sem template → layout fixo atual (não-regressão).
   const config: TemplatePropostaConfig = params.config ?? CONFIG_DEFAULT_EMBUTIDA
   const cab = config.cabecalho
   const blocos = config.blocos
+  // Resolve o logo ANTES de renderizar (pdfkit desenha de Buffer síncrono).
+  const logoBuffer = cab.mostrarLogo ? await resolverLogoBuffer(empresa.logoUrl) : null
 
   return new Promise((resolve, reject) => {
     try {
@@ -95,9 +129,18 @@ export function gerarPropostaPdf(params: ParamsPropostaPdf): Promise<Buffer> {
 
       // Estilo WEGA: layout da proposta ao cliente Carton Wega (doc dedicado).
       if (config.estilo === 'WEGA') {
-        renderWega(doc, { orcamento, cliente, empresa, config, pageWidth })
+        renderWega(doc, { orcamento, cliente, empresa, config, pageWidth, logoBuffer })
         doc.end()
         return
+      }
+
+      // ── Logo da empresa (centralizado) quando disponível ──
+      if (logoBuffer) {
+        try {
+          const logoW = 120
+          doc.image(logoBuffer, (doc.page.width - logoW) / 2, doc.y, { width: logoW, align: 'center' })
+          doc.moveDown(5)
+        } catch { /* logo inválido → ignora */ }
       }
 
       // ── Header com dados da empresa (conforme config.cabecalho) ──
@@ -268,6 +311,7 @@ interface RenderWegaCtx {
   empresa: DadosEmpresa
   config: TemplatePropostaConfig
   pageWidth: number
+  logoBuffer?: Buffer | null
 }
 
 const IMPORTANTE_PADRAO = [
@@ -284,14 +328,24 @@ function dataPorExtenso(data: Date): string {
 }
 
 function renderWega(doc: PDFKit.PDFDocument, ctx: RenderWegaCtx): void {
-  const { orcamento, cliente, empresa, config, pageWidth } = ctx
+  const { orcamento, cliente, empresa, config, pageWidth, logoBuffer } = ctx
   const left = 50
   const right = doc.page.width - 50
 
-  // 1. Cabeçalho da empresa (razão social centralizada — o logo real exige
-  //    binário; usamos o nome em destaque como o layout aprovado).
-  doc.fontSize(16).font('Helvetica-Bold').text(empresa.razaoSocial, { align: 'center' })
-  doc.moveDown(1)
+  // 1. Cabeçalho: logo da empresa quando houver; senão a razão social em destaque.
+  if (logoBuffer) {
+    try {
+      const logoW = 130
+      doc.image(logoBuffer, (doc.page.width - logoW) / 2, doc.y, { width: logoW, align: 'center' })
+      doc.moveDown(6)
+    } catch {
+      doc.fontSize(16).font('Helvetica-Bold').text(empresa.razaoSocial, { align: 'center' })
+      doc.moveDown(1)
+    }
+  } else {
+    doc.fontSize(16).font('Helvetica-Bold').text(empresa.razaoSocial, { align: 'center' })
+    doc.moveDown(1)
+  }
 
   // 2. Linha: cidade/data à esquerda; Proposta/Cálculo nº à direita.
   const linhaY = doc.y

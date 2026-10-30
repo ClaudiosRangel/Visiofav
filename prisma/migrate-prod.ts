@@ -5560,6 +5560,16 @@ async function seedMateriaisFromOPs() {
   // ───────────────────────────────────────────────────────────────────────────
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "fechamento_override" JSONB`)
   console.log('✅ Comercial B9: orcamento_grafico.fechamento_override')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Comercial — Grids de Orçamento (spec comercial-grids-orcamento):
+  // sub-etapa do cálculo DENTRO do RASCUNHO + auditoria da assinatura de
+  // validação. Aditivo/idempotente. null = legado (sem fluxo de validação).
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "etapa_calculo" VARCHAR(16)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "validado_por_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "validado_em" TIMESTAMP(3)`)
+  console.log('✅ Comercial Grids: orcamento_grafico.etapa_calculo + validado_por_id/validado_em')
 }
 
 main()

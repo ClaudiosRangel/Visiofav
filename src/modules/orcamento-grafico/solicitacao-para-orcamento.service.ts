@@ -152,6 +152,9 @@ export async function criarOrcamentoGraficoDeSolicitacao(
       medidas,
       quantidade: solicitacao.quantidade,
       status: 'RASCUNHO',
+      // Entra na fila "A orçar" (grid de entrada): aguarda o calculista assumir
+      // o cálculo. Ver spec comercial-grids-orcamento.
+      etapaCalculo: 'AGUARDANDO',
       observacoes: obsPartes.join('\n'),
       produtoId: solicitacao.produtoId ?? null, // modo repetição propagado
       criadoPorId: usuarioId,

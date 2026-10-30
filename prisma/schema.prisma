@@ -4269,6 +4269,14 @@ model OrcamentoGrafico {
   margemReal       Decimal?      @map("margem_real") @db.Decimal(5, 2)
   // Status e fluxo
   status           String        @default("RASCUNHO") @db.VarChar(20)
+  // Sub-etapa do cálculo DENTRO do RASCUNHO (spec comercial-grids-orcamento):
+  // AGUARDANDO (liberado p/ orçar, ninguém assumiu) → EM_CALCULO (calculista
+  // iniciou) → VALIDAR (enviado para conferência/assinatura) → VALIDADO
+  // (supervisor assinou, pronto p/ enviar proposta). null = legado (orçamento
+  // avulso sem fluxo de validação — comporta-se como hoje). NÃO altera `status`.
+  etapaCalculo     String?       @map("etapa_calculo") @db.VarChar(16)
+  validadoPorId    String?       @map("validado_por_id")
+  validadoEm       DateTime?     @map("validado_em")
   validadeAte      DateTime?     @map("validade_ate")
   motivoRecusa     String?       @map("motivo_recusa") @db.Text
   aprovadoEm       DateTime?     @map("aprovado_em")

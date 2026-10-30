@@ -405,3 +405,106 @@ Pendências MENORES para a revisão do usuário (relacionar divergências):
 - Passos operacionais de produção: deploy Render roda as migrações novas
   (`template_proposta` já estava; `solicitacao_orcamento_rep` campos da planilha;
   `orcamento_grafico.fechamento_override`). Seed do template Wega já rodado.
+
+## 🔧 REVISÃO DO USUÁRIO (29/10/2026) — ajustes pedidos após testar
+
+O usuário testou e pediu estes ajustes (FAZER NESTA ORDEM, antes dos demais):
+
+1. **Card do seletor de módulos ainda diz "Orçamento Gráfico"** → trocar para
+   **"Comercial"** + ajustar descrição. Local: `VisioFab.Wms.Front/src/app/
+   (interna)/modulos/page.tsx`, array `MODULOS_CONFIG`, item
+   `modulo:'ORCAMENTO_GRAFICO'` (label/description). (O menu lateral já é "Comercial".)
+
+2. **Ordem do menu Comercial deve ser lógica**: PRIMEIRO pedidos/propostas,
+   DEPOIS a parte de orçamento/cálculo. Reordenar as entries em `ModuleSidebar.tsx`
+   (chave 'orcamento-grafico').
+
+3. **Criar um menu "Pedidos / Propostas"** (gestão central) que:
+   - recebe TODAS as propostas/pedidos de TODAS as origens: do representante
+     (portal) E de clientes diretos (pedido por e-mail/telefone/outros canais
+     lançados internamente). Hoje são telas separadas (Solicitações do Rep,
+     Orçamentos, a-converter, Pipeline) — o usuário quer UM lugar para gerenciar
+     tudo.
+   - mostra o estágio de cada um no funil completo: lançamento → cálculo de
+     orçamento → aprovação do cliente → conferência de cálculo → liberação p/
+     Produção (PCP abre OP) → Faturamento (Vendas, status "Liberado para
+     Produção"). Só vai pra PCP/Faturamento depois de passar por TODO o processo
+     (orçar, aprovar cliente, conferir cálculo).
+   - permite ENVIAR a proposta ao cliente nos formatos pedidos (PDF/e-mail/zap),
+     e o PDF deve sair COM O LOGO DA EMPRESA (hoje sai sem — pegar do cadastro).
+
+4. **Logo na proposta PDF**: o PDF só escreve o NOME da empresa; não desenha o
+   logo. Model `Empresa.logo` (String @db.Text — URL ou base64). As rotas
+   `proposta-pdf` e `enviar-email` NÃO selecionam/passam o logo; o PDF service
+   tem `DadosEmpresa.logoUrl` como campo MORTO (nunca usado em `doc.image`).
+   Corrigir: selecionar `logo`, passar ao PDF, e desenhar com `doc.image` nos
+   dois renderizadores (PADRÃO + WEGA). Suportar base64/dataURL (pdfkit aceita
+   Buffer) e, se for URL http, baixar antes (ou tratar graciosamente se falhar).
+
+**Decisão combinada:** fazer 1, 2, 3, 4 primeiro; com eles OK, seguir para os
+demais casos. O menu "Pedidos / Propostas" é o eixo central do módulo (não só o
+funil pré-venda, mas a ENTRADA unificada de qualquer canal).
+
+---
+
+## 9. EXECUÇÃO DA REVISÃO (30/10/2026)
+
+### 9.1 Pontos 1, 2, 4 da revisão — FEITOS
+- **Ponto 1 (card do módulo):** `modulos/page.tsx` → item `ORCAMENTO_GRAFICO`
+  agora `label:'Comercial'`, description "Pedidos e propostas, orçamento gráfico,
+  aprovação e envio ao cliente."
+- **Ponto 2 (ordem do menu):** `ModuleSidebar.tsx` chave `orcamento-grafico`
+  reordenada — 1º bloco Pedidos/Propostas (Pedidos/Propostas, Pipeline,
+  Solicitações Rep, A Converter, Amostras, Dashboard), 2º grupo "Orçamento"
+  (Novo, Orçamentos, Biblioteca), Permissões, Cadastros.
+- **Ponto 4 (logo na proposta PDF):** `orcamento-grafico-proposta-pdf.service.ts`
+  ganhou `resolverLogoBuffer` (base64/dataURL/URL http → Buffer best-effort);
+  `gerarPropostaPdf` virou async e desenha o logo via `doc.image` nos DOIS
+  renderizadores (PADRÃO + WEGA), fallback p/ nome em texto. As rotas
+  `proposta-pdf` e `enviar-email` selecionam `empresa.logo` e passam como
+  `logoUrl`. get_diagnostics limpo.
+
+### 9.2 Ponto 3 — menu "Pedidos / Propostas" + DOIS GRIDS no Orçamento
+Spec conceitual: `comercial-grids-orcamento` (ver abaixo). Confirmado pelo
+usuário (3 perguntas OK): (1) entrada = solicitação/orçamento liberado, o
+orçamento "nasce" mas aguarda o calculista ASSUMIR; (2) novo estado "Validar
+cálculo" com ação **Assinar** (senha do supervisor); (3) ações iniciar/cancelar/
+devolver/assinar/abrir/imprimir/enviar/converter.
+
+**Modelo escolhido (MENOR RISCO — não mexe no enum `status`):** sub-etapa do
+cálculo DENTRO do RASCUNHO, no campo novo `OrcamentoGrafico.etapaCalculo`
+(VARCHAR nullable) + `validadoPorId`/`validadoEm`. Fluxo:
+`AGUARDANDO → EM_CALCULO → VALIDAR → VALIDADO`. `status` segue RASCUNHO durante
+todo o cálculo; só vira ENVIADO ao enviar a proposta. `etapaCalculo == null` =
+orçamento avulso/legado (comporta-se como hoje — NÃO-REGRESSÃO).
+
+- **Schema:** `etapa_calculo VARCHAR(16)` + `validado_por_id TEXT` +
+  `validado_em TIMESTAMP(3)` em `orcamento_grafico`. migrate-prod idempotente
+  (ADD COLUMN IF NOT EXISTS) no mesmo commit. Roda no deploy do Render.
+- **`solicitacao-para-orcamento.service.ts`:** o orçamento criado pela liberação
+  nasce com `etapaCalculo:'AGUARDANDO'` (entra no grid "A orçar").
+- **`handoff-comercial/etapa-calculo.service.ts` (novo):** `iniciarCalculo`,
+  `enviarParaValidacao`, `assinarValidacao` (senha do usuário + perfil
+  ADMIN/SUPER_ADMIN/SUPERVISOR, bcrypt — reusa o padrão do B6), `reabrirCalculo`,
+  `cancelarCalculo` (RASCUNHO→RECUSADO + devolve a solicitação de origem).
+  Máquina de transições validada; isolamento empresaId explícito.
+- **Rotas (orcamento-grafico.routes.ts):** `POST /:id/calculo/iniciar`,
+  `/enviar-validacao`, `/assinar`, `/reabrir`, `/cancelar`. O `GET /` ganhou o
+  filtro `etapa=A_ORCAR|EM_ANDAMENTO|<valor>` e o select expõe `etapaCalculo`.
+  O `POST /:id/enviar` (proposta) agora BLOQUEIA se `etapaCalculo` está no fluxo
+  e não é `VALIDADO` (code `CALCULO_NAO_VALIDADO`) — avulso/legado não bloqueia.
+- **Front:** tela nova `orcamento-grafico/pedidos/page.tsx` (gestão central,
+  todas as origens, consome `GET /orcamento-grafico`, estágio derivado do
+  status/etapa, ações abrir/baixar PDF/enviar e-mail/converter) + item no menu.
+  A tela principal `orcamento-grafico/page.tsx` virou **dois grids**: "A orçar"
+  (entrada, ação Iniciar/Abrir/Cancelar) + "Em andamento" (ação por etapa:
+  Enviar p/ validação / Assinar / Devolver / Imprimir / Cancelar) + listagem
+  geral com coluna Etapa. Assinatura via modal de senha; cancelar via modal de
+  motivo.
+- **Verificação:** get_diagnostics limpo em todos os arquivos (back+front);
+  prisma generate OK. Suíte orcamento-grafico: rodada (ver nota de execução).
+  Os 8 erros do migrate-prod.ts (linhas 3945-4017) são BASELINE pré-existente,
+  não tocados aqui.
+
+**Commits:** back (schema+migrate+service+rotas) + front (2 telas + menu + card)
+— SEPARADOS (repos distintos). Deploy Render roda a migração nova.

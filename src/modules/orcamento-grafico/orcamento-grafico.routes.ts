@@ -44,6 +44,14 @@ import { verificarPermissaoComercial } from './permissoes-comercial.routes'
 import { mesclarMargem, reaplicarPreco, FechamentoError, type MargemFechamento } from './handoff-comercial/fechamento-preco.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
+  iniciarCalculo,
+  enviarParaValidacao,
+  assinarValidacao,
+  reabrirCalculo,
+  cancelarCalculo,
+  EtapaCalculoError,
+} from './handoff-comercial/etapa-calculo.service'
+import {
   solicitarAmostra,
   avancarStatusAmostra,
   aprovarAmostra,
@@ -2486,6 +2494,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     precoUnitario: true,
     margemReal: true,
     status: true,
+    // Sub-etapa do cálculo (grids do Comercial): AGUARDANDO/EM_CALCULO/VALIDAR/
+    // VALIDADO/null. Ver spec comercial-grids-orcamento.
+    etapaCalculo: true,
+    validadoPorId: true,
+    validadoEm: true,
     exigeAmostra: true,
     validadeAte: true,
     motivoRecusa: true,
@@ -2762,6 +2775,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       dataInicio: z.coerce.date().optional(),
       dataFim: z.coerce.date().optional(),
       busca: z.string().optional(),
+      // Grids do Comercial: filtra pela sub-etapa do cálculo.
+      // - 'A_ORCAR'    → fila de entrada (AGUARDANDO).
+      // - 'EM_ANDAMENTO' → orçamentos sendo calculados/validados (EM_CALCULO/VALIDAR/VALIDADO).
+      // - um valor cru de etapaCalculo também é aceito.
+      etapa: z.string().optional(),
     }).parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
@@ -2769,6 +2787,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (query.status) where.status = query.status
     if (query.clienteId) where.clienteId = query.clienteId
     if (query.vendedorId) where.vendedorId = query.vendedorId
+
+    if (query.etapa === 'A_ORCAR') {
+      where.status = 'RASCUNHO'
+      where.etapaCalculo = 'AGUARDANDO'
+    } else if (query.etapa === 'EM_ANDAMENTO') {
+      where.status = 'RASCUNHO'
+      where.etapaCalculo = { in: ['EM_CALCULO', 'VALIDAR', 'VALIDADO'] }
+    } else if (query.etapa) {
+      where.etapaCalculo = query.etapa
+    }
 
     if (query.clienteNome) {
       where.clienteNome = { contains: query.clienteNome, mode: 'insensitive' }
@@ -3346,6 +3374,90 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ETAPAS DO CÁLCULO (grids do Comercial — spec comercial-grids-orcamento)
+  // Sub-estado em etapaCalculo: AGUARDANDO → EM_CALCULO → VALIDAR → VALIDADO.
+  // Não altera `status` (segue RASCUNHO). Ver etapa-calculo.service.ts.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function tratarEtapaErro(err: any, reply: any) {
+    if (err instanceof EtapaCalculoError) {
+      const body: Record<string, unknown> = { message: err.message }
+      if (err.code) body.code = err.code
+      return reply.status(err.statusCode).send(body)
+    }
+    throw err
+  }
+
+  // Iniciar o cálculo (o calculista assume): AGUARDANDO/legado → EM_CALCULO.
+  app.post('/:id/calculo/iniciar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeCriarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão para iniciar orçamentos.' })
+    }
+    try {
+      return await iniciarCalculo(user.empresaId, id, user.id)
+    } catch (err) {
+      return tratarEtapaErro(err, reply)
+    }
+  })
+
+  // Enviar para validação: EM_CALCULO → VALIDAR.
+  app.post('/:id/calculo/enviar-validacao', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeCriarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão.' })
+    }
+    try {
+      return await enviarParaValidacao(user.empresaId, id)
+    } catch (err) {
+      return tratarEtapaErro(err, reply)
+    }
+  })
+
+  // Assinar a validação (supervisor, senha): VALIDAR → VALIDADO.
+  app.post('/:id/calculo/assinar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ senha: z.string().optional() }).parse(request.body ?? {})
+    try {
+      return await assinarValidacao(user.empresaId, id, user.id, body.senha)
+    } catch (err) {
+      return tratarEtapaErro(err, reply)
+    }
+  })
+
+  // Reabrir/devolver para ajuste: VALIDAR/VALIDADO → EM_CALCULO.
+  app.post('/:id/calculo/reabrir', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeCriarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão.' })
+    }
+    try {
+      return await reabrirCalculo(user.empresaId, id)
+    } catch (err) {
+      return tratarEtapaErro(err, reply)
+    }
+  })
+
+  // Cancelar o orçamento no cálculo (RASCUNHO → RECUSADO) + devolve a solicitação.
+  app.post('/:id/calculo/cancelar', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ motivo: z.string().min(3, 'Informe o motivo') }).parse(request.body)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeCriarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão.' })
+    }
+    try {
+      return await cancelarCalculo(user.empresaId, id, user.id, body.motivo)
+    } catch (err) {
+      return tratarEtapaErro(err, reply)
+    }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ENVIAR PROPOSTA (POST /:id/enviar)
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -3360,7 +3472,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const orcamento = await prisma.orcamentoGrafico.findFirst({
       where: { id, empresaId: user.empresaId },
       select: {
-        id: true, status: true, validadeAte: true, precoVenda: true, resultadoCalculo: true,
+        id: true, status: true, etapaCalculo: true, validadeAte: true, precoVenda: true, resultadoCalculo: true,
         // Multi-item: o valor pode estar no consolidado + itens (orçamento de
         // repetição puxado de cálculo não preenche precoVenda/resultadoCalculo
         // do cabeçalho — o preço vive nos itens).
@@ -3371,6 +3483,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
     if (orcamento.status !== 'RASCUNHO') {
       return reply.status(400).send({ message: 'Só é possível enviar orçamentos em RASCUNHO' })
+    }
+    // Fluxo de validação do cálculo (grids do Comercial): quando o orçamento
+    // está no fluxo (etapaCalculo != null), só pode enviar proposta depois de
+    // VALIDADO (assinado pelo supervisor). Orçamentos avulsos/legados
+    // (etapaCalculo == null) seguem sem essa trava — não-regressão.
+    if (orcamento.etapaCalculo && orcamento.etapaCalculo !== 'VALIDADO') {
+      return reply.status(400).send({
+        message: 'O cálculo precisa ser validado (assinado) antes de enviar a proposta ao cliente.',
+        code: 'CALCULO_NAO_VALIDADO',
+      })
     }
     // Não permitir enviar um orçamento sem precificação — senão ele pode ser
     // aprovado gerando um PedidoVenda com valor zero (bug de negócio real).
@@ -4343,7 +4465,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // Buscar dados da empresa
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId },
-      select: { razaoSocial: true, cnpj: true, telefone: true, email: true },
+      select: { razaoSocial: true, cnpj: true, telefone: true, email: true, logo: true },
     })
 
     // Buscar dados do cliente se houver clienteId
@@ -4392,6 +4514,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         cnpj: empresa?.cnpj,
         telefone: empresa?.telefone,
         email: empresa?.email,
+        logoUrl: empresa?.logo || null,
       },
       config: configTemplate,
     })
@@ -4450,7 +4573,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // Buscar dados da empresa
     const empresa = await prisma.empresa.findUnique({
       where: { id: user.empresaId },
-      select: { razaoSocial: true, cnpj: true, telefone: true, email: true },
+      select: { razaoSocial: true, cnpj: true, telefone: true, email: true, logo: true },
     })
 
     // Buscar dados do cliente
@@ -4497,6 +4620,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         cnpj: empresa?.cnpj,
         telefone: empresa?.telefone,
         email: empresa?.email,
+        logoUrl: empresa?.logo || null,
       },
       config: configTemplateEmail,
     })
