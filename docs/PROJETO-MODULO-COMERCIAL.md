@@ -618,3 +618,32 @@ acabamentos_selecionados` (ADD COLUMN IF NOT EXISTS). prisma generate OK.
 **Verificação:** get_diagnostics limpo (back+front). Testes do módulo
 pedido-proposta sem regressão. Reaproveitou endpoints existentes de cliente,
 produto e acabamentos (nada reescrito). Deploy Render roda a nova tabela + colunas.
+
+---
+
+## 12. REVISÃO 4 (30/10/2026) — refinamentos do formulário RFQ
+
+1. **Características do produto preenchem os campos** (ponto 1): endpoint novo
+   `GET /pedidos-proposta/caracteristicas-produto/:produtoId` — consolida o
+   Produto + o `CalculoGrafico` migrado (casa por nome/descrição normalizado) e
+   devolve cartão (papelDescricao), gramatura, cores (resumo), medidas (texto),
+   formato de corte. O form preenche só os campos VAZIOS ao selecionar o produto
+   (não sobrescreve o que o usuário digitou). Cores vão para "Variações de arte".
+2. **Cadastrar prazo sem fechar o cadastro** (ponto 2): botão "+" ao lado do
+   Select de prazo abre modal inline (`POST /prazos-pagamento`), recarrega a
+   lista e seleciona o novo.
+3. **Guard de navegação ao sair sem salvar** (ponto 3): integra
+   `navigationGuardStore` (menu lateral já consulta) + `beforeunload` +
+   confirmação no botão Voltar; ativado enquanto `dirty`.
+4. **Nome fantasia + cadastrar cliente novo** (ponto 4): a busca de cliente
+   mostra "Razão social (Nome fantasia) — CNPJ"; botão "Cadastrar novo" grava
+   via `POST /clientes` e vincula (pré-preenche com o que já foi digitado).
+5. **Acabamentos selecionar + descrição** (ponto 5): checklist dos cadastrados
+   com detalhe por item + campo para adicionar acabamento LIVRE (quando não há
+   cadastro ou precisa de um fora da lista). Persistido em
+   `acabamentos_selecionados`.
+
+Backend: só rotas novas em `pedido-proposta.routes.ts` (sem schema novo nesta
+leva — os campos já foram criados na rev3). Reaproveitou `GET /clientes`,
+`GET /produtos`, `CalculoGrafico`. Front: `PedidoPropostaForm.tsx`. get_diagnostics
+limpo; testes do módulo sem regressão.

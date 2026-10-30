@@ -278,6 +278,88 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Características do produto (para pré-preencher o RFQ). Consolida o cadastro
+  // de Produto + (se houver) o CalculoGrafico migrado do Calcgraf que casa pelo
+  // nome/descrição, trazendo cartão/suporte, gramatura, cores, medidas, formato.
+  // ═══════════════════════════════════════════════════════════════════════════
+  app.get('/caracteristicas-produto/:produtoId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { produtoId } = z.object({ produtoId: z.string().uuid() }).parse(request.params)
+
+    const produto = await prisma.produto.findFirst({
+      where: { id: produtoId, empresaId: user.empresaId },
+      select: { id: true, nome: true, codigo: true, descricao: true, imagemUrl: true },
+    })
+    if (!produto) return reply.status(404).send({ message: 'Produto não encontrado.' })
+
+    // Normaliza p/ casar nome do produto com o cálculo migrado.
+    const norm = (s: string | null | undefined) =>
+      (s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+    const alvo = norm(produto.nome)
+
+    // Busca um CalculoGrafico cujo `produto`/`descricao` case (normalizado).
+    // Carrega poucos candidatos recentes e filtra em memória (sem índice p/ norm).
+    let calc: {
+      medidas: unknown; gramatura: unknown; papelDescricao: string | null; numCores: number
+      cores: unknown; formatoCorteLarguraMm: unknown; formatoCorteAlturaMm: unknown
+      acabamentosRicos: unknown; matrizQuantidade: unknown
+    } | null = null
+    try {
+      const candidatos = await prisma.calculoGrafico.findMany({
+        where: { empresaId: user.empresaId, status: 'ATIVO' },
+        orderBy: { criadoEm: 'desc' },
+        take: 300,
+        select: {
+          produto: true, descricao: true, medidas: true, gramatura: true, papelDescricao: true,
+          numCores: true, cores: true, formatoCorteLarguraMm: true, formatoCorteAlturaMm: true,
+          acabamentosRicos: true, matrizQuantidade: true,
+        },
+      })
+      calc = candidatos.find((c) => norm(c.produto) === alvo || norm(c.descricao) === alvo)
+        ?? candidatos.find((c) => alvo.length > 4 && (norm(c.produto).includes(alvo) || norm(c.descricao).includes(alvo)))
+        ?? null
+    } catch { /* biblioteca pode não existir — segue só com o produto */ }
+
+    // Monta um resumo de cores em texto (nome + cobertura) a partir do JSON.
+    function resumoCores(cores: unknown, n: number): string | null {
+      if (Array.isArray(cores) && cores.length > 0) {
+        const nomes = cores
+          .map((c) => (c && typeof c === 'object' ? (c as { nome?: string }).nome : null))
+          .filter(Boolean)
+        if (nomes.length) return nomes.join(', ')
+      }
+      return n ? `${n} cores` : null
+    }
+    function medidasTexto(medidas: unknown): string | null {
+      const m = (medidas ?? {}) as Record<string, unknown>
+      const c = Number(m.P ?? m.comprimento)
+      const l = Number(m.L ?? m.largura)
+      const a = Number(m.A ?? m.altura)
+      const partes = [c, l, a].filter((x) => Number.isFinite(x) && x > 0)
+      return partes.length ? partes.join(' x ') : null
+    }
+
+    const caracteristicas = calc
+      ? {
+          cartao: calc.papelDescricao ?? null,
+          gramatura: calc.gramatura != null ? String(Number(calc.gramatura)) : null,
+          cores: resumoCores(calc.cores, calc.numCores),
+          medidasTexto: medidasTexto(calc.medidas),
+          formatoCorte:
+            calc.formatoCorteLarguraMm != null && calc.formatoCorteAlturaMm != null
+              ? `${Number(calc.formatoCorteLarguraMm)} x ${Number(calc.formatoCorteAlturaMm)}`
+              : null,
+          temCalculo: true,
+        }
+      : { cartao: null, gramatura: null, cores: null, medidasTexto: null, formatoCorte: null, temCalculo: false }
+
+    return {
+      produto: { id: produto.id, nome: produto.nome, codigo: produto.codigo, descricao: produto.descricao, imagemUrl: produto.imagemUrl },
+      caracteristicas,
+    }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Cadastro de Prazos / Condições de Pagamento (ligado ao Financeiro)
   // ═══════════════════════════════════════════════════════════════════════════
 
