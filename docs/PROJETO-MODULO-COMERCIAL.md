@@ -89,7 +89,7 @@ faturamento; override de custos por orçamento (P17).
 | B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ✅ FEITO (assinatura por senha do usuário na liberação ao PCP; envio de proposta no B1; aceite via portal já existia) |
 | B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | ✅ FEITO (backend já plugado com RegraAprovacao/SolicitacaoAprovacao; front: desconto no modal de conversão + tratamento MARGEM_PENDENTE) |
 | B8 | **Elo PCP completo + gatilho de faturamento** | Não | ✅ FEITO (gatilho OP→pedido EFETIVADO+notificação já existia; sino adicionado ao Pipeline) |
-| B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | ⬜ PENDENTE |
+| B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | 🟡 FASE 1 FEITA (4 abas só leitura); FASE 2 (edição+recálculo) aguarda revisão do usuário + golden |
 
 **Lacunas reais a atacar (ordem):** B1 (templates) → B2 (form do portal + CNPJ) →
 B3 (painel unificado + menu Propostas) → B6 (envio/aceite/assinatura) → B7 (fechar
@@ -352,3 +352,17 @@ disponível nesta sessão.)
   `.kiro/specs/comercial-elo-pcp-faturamento/`. get_diagnostics limpo; backend
   intocado. **B8 COMPLETO.** Restam: **B9 (Fechamento editável — P17, alto
   risco)** e, por último, **B10 (permissões do Comercial)**.
+- **29/10/2026 (13)** — B9 Fase 1 (Fechamento, 4 abas SÓ LEITURA). Descoberto que
+  o `resultadoCalculo` do orçamento já expõe toda a decomposição (MD/CT/SE,
+  custoProducao, cevPerc/cevValor, cev{icms/juros/pisCofins/comissoes},
+  margem{...}, CM) — então a Fase 1 é 100% FRONTEND, risco zero, sem tocar motor
+  nem schema. Componente `[id]/FechamentoOrcamento.tsx` (abas Preço de Venda /
+  Taxas de Produção / Custos Diretos de Venda com CEV decomposto / Diversos) +
+  botão "Fechamento" no detalhe do orçamento (modal). Spec
+  `.kiro/specs/comercial-fechamento-editavel/`. get_diagnostics limpo.
+  **FASE 2 (edição + recálculo por orçamento) PENDENTE** — alto risco (mexe no
+  motor calibrado, golden 15.235). O usuário pediu para REVISAR o conjunto do
+  Controle de Proposta ANTES de fazer a Fase 2. Pendências em aberto para a
+  revisão: (a) quais campos editáveis na Fase 2; (b) B10 permissões do Comercial;
+  (c) consulta de CNPJ/cadastro de cliente novo também no Novo Orçamento interno
+  (hoje só no portal); (d) páginas órfãs de menu (dashboard/importar).
