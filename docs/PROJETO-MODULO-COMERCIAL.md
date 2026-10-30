@@ -647,3 +647,32 @@ Backend: só rotas novas em `pedido-proposta.routes.ts` (sem schema novo nesta
 leva — os campos já foram criados na rev3). Reaproveitou `GET /clientes`,
 `GET /produtos`, `CalculoGrafico`. Front: `PedidoPropostaForm.tsx`. get_diagnostics
 limpo; testes do módulo sem regressão.
+
+---
+
+## 13. REVISÃO 5 (30/10/2026) — correção do match de características + ajustes RFQ
+
+**BUG do ponto 1 (características não vinham) — CAUSA RAIZ + FIX:** diagnóstico
+no banco de produção (Neon, Wega) mostrou que os 7.951 CalculoGrafico têm o nome
+em `descricao` (campo `produto` é NULL) e `gramatura`/`cores`/`medidas` 100%
+preenchidos (papel em 5.207). O endpoint `caracteristicas-produto` casava em
+MEMÓRIA só com os 300 cálculos mais recentes (`take:300`) — os da "Caixa Garrafa
+Império Gold" não estavam nesse corte → nada vinha. **Fix:** o match passou a ser
+ILIKE NO BANCO (findFirst por `descricao`/`produto` equals→contains, sem limite),
+pegando o mais recente que casa. Produto "Caixa Garrafa Império Gold 210ml
+610040039" tem 47 cálculos que casam por descrição → agora preenche cartão/
+gramatura/cores/medidas.
+
+**Ajustes adicionais (frontend + schema aditivo):**
+- (a) **Tiragens múltiplas**: campo passou de NumberInput para TextInput que
+  aceita "1000, 5000, 8000, 10000". Nova coluna `pedido_proposta.tiragens_texto`
+  (VARCHAR 200); `quantidade` (Int) recebe a 1ª tiragem (compat.). migrate-prod
+  idempotente (ADD COLUMN IF NOT EXISTS).
+- (b) **Tipo de embalagem = combobox** dos `TipoEmbalagem` cadastrados
+  (`GET /orcamento-grafico/tipos-embalagem`), via Autocomplete (aceita livre).
+- (c) **Cartão = combobox** dos `SuporteGrafico` (`GET /orcamento-grafico/suportes`),
+  via Autocomplete (aceita livre). **Gramatura** fica texto (não há cadastro
+  simples de gramaturas isoladas; é preenchida pelo produto quando há cálculo).
+
+Verificação: get_diagnostics limpo (back+front); testes do módulo 16/16. Script
+de diagnóstico `_tmp-` removido. Deploy Render roda a coluna nova.

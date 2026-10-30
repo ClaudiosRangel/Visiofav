@@ -5673,6 +5673,7 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "prazo_pagamento_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "acabamentos_selecionados" JSONB`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "tiragens_texto" VARCHAR(200)`)
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "condicao_pagamento_comercial" (
       "id" TEXT PRIMARY KEY,

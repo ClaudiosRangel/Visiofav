@@ -80,6 +80,7 @@ const corpoCriar = z.object({
     marcado: z.boolean(),
     detalhe: z.string().max(500).optional().nullable(),
   })).optional().nullable(),
+  tiragensTexto: z.string().max(200).optional().nullable(),
 })
 
 export async function pedidoPropostaRoutes(app: FastifyInstance) {
@@ -292,32 +293,51 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
     })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado.' })
 
-    // Normaliza p/ casar nome do produto com o cálculo migrado.
-    const norm = (s: string | null | undefined) =>
-      (s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
-    const alvo = norm(produto.nome)
-
-    // Busca um CalculoGrafico cujo `produto`/`descricao` case (normalizado).
-    // Carrega poucos candidatos recentes e filtra em memória (sem índice p/ norm).
+    // Casa o produto com um CalculoGrafico migrado. IMPORTANTE: nos cálculos
+    // migrados do Calcgraf, o nome vive em `descricao` (o campo `produto` é
+    // null) — então o match é por `descricao`/`produto` via ILIKE NO BANCO
+    // (há ~8 mil cálculos; filtrar em memória com take limitado perdia o
+    // casamento). Busca o MAIS RECENTE que casa exato; senão, por "contém".
     let calc: {
       medidas: unknown; gramatura: unknown; papelDescricao: string | null; numCores: number
       cores: unknown; formatoCorteLarguraMm: unknown; formatoCorteAlturaMm: unknown
       acabamentosRicos: unknown; matrizQuantidade: unknown
     } | null = null
+    const selCalc = {
+      produto: true, descricao: true, medidas: true, gramatura: true, papelDescricao: true,
+      numCores: true, cores: true, formatoCorteLarguraMm: true, formatoCorteAlturaMm: true,
+      acabamentosRicos: true, matrizQuantidade: true,
+    } as const
+    const nomeAlvo = (produto.nome ?? '').trim()
     try {
-      const candidatos = await prisma.calculoGrafico.findMany({
-        where: { empresaId: user.empresaId, status: 'ATIVO' },
-        orderBy: { criadoEm: 'desc' },
-        take: 300,
-        select: {
-          produto: true, descricao: true, medidas: true, gramatura: true, papelDescricao: true,
-          numCores: true, cores: true, formatoCorteLarguraMm: true, formatoCorteAlturaMm: true,
-          acabamentosRicos: true, matrizQuantidade: true,
-        },
-      })
-      calc = candidatos.find((c) => norm(c.produto) === alvo || norm(c.descricao) === alvo)
-        ?? candidatos.find((c) => alvo.length > 4 && (norm(c.produto).includes(alvo) || norm(c.descricao).includes(alvo)))
-        ?? null
+      if (nomeAlvo.length >= 3) {
+        // 1) match EXATO (case-insensitive) por descrição ou produto.
+        calc = await prisma.calculoGrafico.findFirst({
+          where: {
+            empresaId: user.empresaId, status: 'ATIVO',
+            OR: [
+              { descricao: { equals: nomeAlvo, mode: 'insensitive' } },
+              { produto: { equals: nomeAlvo, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: { criadoEm: 'desc' },
+          select: selCalc,
+        })
+        // 2) fallback por "contém" (pega o mais recente que contém o nome).
+        if (!calc) {
+          calc = await prisma.calculoGrafico.findFirst({
+            where: {
+              empresaId: user.empresaId, status: 'ATIVO',
+              OR: [
+                { descricao: { contains: nomeAlvo, mode: 'insensitive' } },
+                { produto: { contains: nomeAlvo, mode: 'insensitive' } },
+              ],
+            },
+            orderBy: { criadoEm: 'desc' },
+            select: selCalc,
+          })
+        }
+      }
     } catch { /* biblioteca pode não existir — segue só com o produto */ }
 
     // Monta um resumo de cores em texto (nome + cobertura) a partir do JSON.

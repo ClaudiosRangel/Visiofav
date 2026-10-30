@@ -57,6 +57,7 @@ export interface CriarPedidoPropostaInput {
   produtoId?: string | null
   prazoPagamentoId?: string | null
   acabamentosSelecionados?: Array<{ acabamentoId?: string | null; nome: string; marcado: boolean; detalhe?: string | null }> | null
+  tiragensTexto?: string | null
 }
 
 /** Valida regras de negócio da criação/edição (origem, tipo, obrigatórios). */
@@ -103,7 +104,7 @@ function montarDados(input: Partial<CriarPedidoPropostaInput>) {
     'prazoPagamento', 'produtoNome', 'tipoEmbalagem', 'quantidade', 'cartao',
     'gramatura', 'medidasTexto', 'acabamentos', 'matriz', 'quantidadePorVolume',
     'variacoesArte', 'exportacao', 'dataValidade', 'discriminacao', 'observacoes',
-    'produtoId', 'prazoPagamentoId', 'acabamentosSelecionados',
+    'produtoId', 'prazoPagamentoId', 'acabamentosSelecionados', 'tiragensTexto',
   ] as (keyof CriarPedidoPropostaInput)[]).forEach(set)
 
   // Booleanos: default false quando não informados na criação.

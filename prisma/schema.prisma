@@ -4383,6 +4383,9 @@ model PedidoProposta {
   // Acabamentos selecionados (checklist): [{acabamentoId?, nome, marcado, detalhe?}].
   // O campo texto `acabamentos` segue como observação livre complementar.
   acabamentosSelecionados Json? @map("acabamentos_selecionados")
+  // Tiragens múltiplas em texto (ex.: "1000, 5000, 8000, 10000"). O campo
+  // numérico `quantidade` guarda a 1ª tiragem (compat.); este guarda a lista.
+  tiragensTexto String? @map("tiragens_texto") @db.VarChar(200)
 
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)
   orcamentoGraficoId String? @map("orcamento_grafico_id")
