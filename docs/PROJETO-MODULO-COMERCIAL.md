@@ -577,3 +577,44 @@ HubSpot): o RFQ/lead é entidade separada do quote; nem todo RFQ vira orçamento
 
 **Commits:** back (schema+migrate+submódulo+rotas+server) + front (telas RFQ +
 detalhe) — separados. Deploy Render roda a migração nova (3 tabelas + coluna).
+
+---
+
+## 11. REVISÃO 3 (30/10/2026) — enriquecimento do formulário RFQ
+
+Pedidos do usuário (4 pontos), todos implementados:
+
+1. **Buscar cliente do cadastro**: `Autocomplete` no formulário RFQ consumindo
+   `GET /clientes?busca=` (nome/CNPJ/código Calcgraf — endpoint já existia). Ao
+   selecionar, preenche nome/CNPJ/UF/cidade e grava `clienteId` (+ `jaCliente`).
+
+2. **Cadastro de prazo ligado ao financeiro** (ESTUDO: não existia cadastro
+   geral — só `CondicaoPagamento` amarrado a `TabelaPreco`). Criado cadastro NOVO
+   e simples `CondicaoPagamentoComercial` (`condicao_pagamento_comercial`:
+   descrição + dias + parcelas + observação + status, `@@unique([empresaId,
+   descricao])`). CRUD em `/pedidos-proposta/prazos-pagamento` (GET/POST/PUT/
+   DELETE soft-delete; POST/PUT/DELETE exigem `podeEditarCadastros`). Tela
+   `orcamento-grafico/cadastros/prazos-pagamento` + item no menu Cadastros. No
+   RFQ virou `Select` (+ texto livre `prazoPagamento` preservado p/ fidelidade e
+   prazos fora do cadastro). Campo `pedido_proposta.prazo_pagamento_id` aditivo.
+
+3. **Localizar do cadastro de produtos + foto + características**: `Autocomplete`
+   no RFQ consumindo `GET /produtos?busca=`. Ao selecionar, traz nome, foto
+   (`Produto.imagemUrl` base64) e características (gramatura) e marca
+   `tipoPedido=REPETICAO`. Campo `pedido_proposta.produto_id` aditivo; na edição,
+   carrega a foto via `GET /produtos/:id`.
+
+4. **Acabamentos: checklist + detalhe**: o textarea virou uma LISTA dos
+   `AcabamentoGrafico` cadastrados (`GET /orcamento-grafico/acabamentos`) com
+   checkbox por item + campo de detalhe por acabamento marcado; o textarea foi
+   mantido como complemento livre. Persistido em
+   `pedido_proposta.acabamentos_selecionados` (Json
+   `[{acabamentoId,nome,marcado,detalhe}]`). Exibido no painel "Ver proposta".
+
+**Schema (mesmo commit migrate-prod idempotente):** +`condicao_pagamento_comercial`
+(CREATE TABLE/INDEX IF NOT EXISTS) + `pedido_proposta.produto_id/prazo_pagamento_id/
+acabamentos_selecionados` (ADD COLUMN IF NOT EXISTS). prisma generate OK.
+
+**Verificação:** get_diagnostics limpo (back+front). Testes do módulo
+pedido-proposta sem regressão. Reaproveitou endpoints existentes de cliente,
+produto e acabamentos (nada reescrito). Deploy Render roda a nova tabela + colunas.

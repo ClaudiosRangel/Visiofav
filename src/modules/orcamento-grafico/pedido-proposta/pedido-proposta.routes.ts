@@ -71,6 +71,15 @@ const corpoCriar = z.object({
   discriminacao: z.string().optional().nullable(),
   observacoes: z.string().optional().nullable(),
   exigeAmostra: z.boolean().optional(),
+  // Revisão 3
+  produtoId: z.string().uuid().optional().nullable(),
+  prazoPagamentoId: z.string().uuid().optional().nullable(),
+  acabamentosSelecionados: z.array(z.object({
+    acabamentoId: z.string().uuid().optional().nullable(),
+    nome: z.string().max(200),
+    marcado: z.boolean(),
+    detalhe: z.string().max(500).optional().nullable(),
+  })).optional().nullable(),
 })
 
 export async function pedidoPropostaRoutes(app: FastifyInstance) {
@@ -266,5 +275,75 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
     } catch {
       return { proposta: null }
     }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Cadastro de Prazos / Condições de Pagamento (ligado ao Financeiro)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Lista os prazos ativos da empresa (para o Select do RFQ e cadastro).
+  app.get('/prazos-pagamento', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const q = z.object({ incluirInativos: z.coerce.boolean().optional() }).parse(request.query)
+    return prisma.condicaoPagamentoComercial.findMany({
+      where: { empresaId: user.empresaId, ...(q.incluirInativos ? {} : { status: true }) },
+      orderBy: [{ dias: 'asc' }, { descricao: 'asc' }],
+      select: { id: true, descricao: true, dias: true, parcelas: true, observacao: true, status: true },
+    })
+  })
+
+  app.post('/prazos-pagamento', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeEditarCadastros'))) {
+      return reply.status(403).send({ message: 'Sem permissão para editar cadastros.' })
+    }
+    const body = z.object({
+      descricao: z.string().min(1).max(120),
+      dias: z.coerce.number().int().min(0).default(0),
+      parcelas: z.coerce.number().int().min(1).default(1),
+      observacao: z.string().optional().nullable(),
+    }).parse(request.body)
+    try {
+      const criado = await prisma.condicaoPagamentoComercial.create({
+        data: { empresaId: user.empresaId, ...body },
+        select: { id: true, descricao: true, dias: true, parcelas: true, status: true },
+      })
+      return reply.status(201).send(criado)
+    } catch (err: any) {
+      if (err?.code === 'P2002') return reply.status(409).send({ message: 'Já existe um prazo com essa descrição.', code: 'DUPLICADO' })
+      throw err
+    }
+  })
+
+  app.put('/prazos-pagamento/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeEditarCadastros'))) {
+      return reply.status(403).send({ message: 'Sem permissão para editar cadastros.' })
+    }
+    const body = z.object({
+      descricao: z.string().min(1).max(120).optional(),
+      dias: z.coerce.number().int().min(0).optional(),
+      parcelas: z.coerce.number().int().min(1).optional(),
+      observacao: z.string().optional().nullable(),
+      status: z.boolean().optional(),
+    }).parse(request.body)
+    const existente = await prisma.condicaoPagamentoComercial.findFirst({ where: { id, empresaId: user.empresaId }, select: { id: true } })
+    if (!existente) return reply.status(404).send({ message: 'Prazo não encontrado.' })
+    await prisma.condicaoPagamentoComercial.update({ where: { id }, data: body })
+    return { ok: true }
+  })
+
+  app.delete('/prazos-pagamento/:id', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeEditarCadastros'))) {
+      return reply.status(403).send({ message: 'Sem permissão para editar cadastros.' })
+    }
+    const existente = await prisma.condicaoPagamentoComercial.findFirst({ where: { id, empresaId: user.empresaId }, select: { id: true } })
+    if (!existente) return reply.status(404).send({ message: 'Prazo não encontrado.' })
+    // Soft delete (inativa) — mantém o vínculo histórico em pedidos que já usaram.
+    await prisma.condicaoPagamentoComercial.update({ where: { id }, data: { status: false } })
+    return reply.status(204).send()
   })
 }

@@ -5665,6 +5665,30 @@ async function seedMateriaisFromOPs() {
   // Coluna aditiva em orcamento_grafico (vínculo RFQ → orçamento)
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "pedido_proposta_id" TEXT`)
   console.log('✅ Comercial Pedido/Proposta: pedido_proposta + anexo_pedido_proposta + log_pedido_proposta + orcamento_grafico.pedido_proposta_id')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Comercial Pedido/Proposta — revisão 3 (produto/prazo/acabamentos checklist):
+  // colunas aditivas no pedido_proposta + cadastro de condição de pagamento.
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "produto_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "prazo_pagamento_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "acabamentos_selecionados" JSONB`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "condicao_pagamento_comercial" (
+      "id" TEXT PRIMARY KEY,
+      "empresa_id" TEXT NOT NULL,
+      "descricao" VARCHAR(120) NOT NULL,
+      "dias" INTEGER NOT NULL DEFAULT 0,
+      "parcelas" INTEGER NOT NULL DEFAULT 1,
+      "observacao" TEXT,
+      "status" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "condicao_pagamento_comercial_empresa_descricao_key" ON "condicao_pagamento_comercial"("empresa_id","descricao")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_condicao_pag_comercial_empresa_status" ON "condicao_pagamento_comercial"("empresa_id","status")`)
+  console.log('✅ Comercial Pedido/Proposta rev3: pedido_proposta.produto_id/prazo_pagamento_id/acabamentos_selecionados + condicao_pagamento_comercial')
 }
 
 main()

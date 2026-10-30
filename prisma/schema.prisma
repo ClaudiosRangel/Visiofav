@@ -4375,6 +4375,15 @@ model PedidoProposta {
   // Controle de amostra
   exigeAmostra Boolean @default(false) @map("exige_amostra")
 
+  // Produto do cadastro (quando selecionado): traz foto/características.
+  produtoId String? @map("produto_id")
+  // Prazo de pagamento do cadastro (CondicaoPagamentoComercial). Coexiste com o
+  // texto livre `prazoPagamento` (fidelidade à planilha / prazos não cadastrados).
+  prazoPagamentoId String? @map("prazo_pagamento_id")
+  // Acabamentos selecionados (checklist): [{acabamentoId?, nome, marcado, detalhe?}].
+  // O campo texto `acabamentos` segue como observação livre complementar.
+  acabamentosSelecionados Json? @map("acabamentos_selecionados")
+
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)
   orcamentoGraficoId String? @map("orcamento_grafico_id")
 
@@ -4421,6 +4430,26 @@ model LogPedidoProposta {
 
   @@index([empresaId, pedidoPropostaId])
   @@map("log_pedido_proposta")
+}
+
+/// Cadastro de Prazos / Condições de Pagamento do Comercial (ligado ao
+/// Financeiro). Cadastro simples e reutilizável por empresa: descrição +
+/// dias + nº de parcelas. Usado como Select no Pedido/Proposta (e disponível
+/// ao Financeiro/Vendas). Spec comercial-pedido-proposta (revisão 3).
+model CondicaoPagamentoComercial {
+  id          String   @id @default(uuid())
+  empresaId   String   @map("empresa_id")
+  descricao   String   @db.VarChar(120) // ex.: "À vista", "28/35/42", "30 dias"
+  dias        Int      @default(0) // prazo médio em dias (0 = à vista)
+  parcelas    Int      @default(1)
+  observacao  String?  @db.Text
+  status      Boolean  @default(true)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, descricao])
+  @@index([empresaId, status])
+  @@map("condicao_pagamento_comercial")
 }
 
 /// Item de cálculo de um Orçamento Gráfico (multi-item). Cada item é um
