@@ -156,6 +156,13 @@ export interface ItemOrcamentoInput {
   /** Tabela de margem (quando ausente, usa o default legado 15/5/5/30). */
   tabelaMargemId?: string | null
 
+  /**
+   * Override de margem por orçamento (B9 Fase 2 — Fechamento editável). Quando
+   * presente, SUBSTITUI a tabela/default. null/ausente = comportamento atual
+   * (não-regressão). Cada campo é opcional; os ausentes herdam a tabela/default.
+   */
+  margemOverride?: { impostos?: number; comissao?: number; despAdm?: number; markup?: number } | null
+
   // ── Frente A (Task 2): montagem/formatos que AFETAM o cálculo (Req 2) ─────
   // Montagem informada (linhas × colunas) curto-circuita o encaixe geométrico
   // via `aproveitamentoManual`; formato de corte alimenta a folha do motor.
@@ -457,7 +464,7 @@ export async function montarParamsDoItem(
   let margem = { impostos: 15, comissao: 5, despAdm: 5, markup: 30 }
   if (input.tabelaMargemId) {
     const tabela = await prisma.tabelaMargem.findFirst({
-      where: { id: input.tabelaMargemId, empresaId },
+      where: { id: input.tabelaMargemId, empresaId: empresaId },
     })
     if (tabela) {
       margem = {
@@ -466,6 +473,18 @@ export async function montarParamsDoItem(
         despAdm: Number(tabela.despAdm),
         markup: Number(tabela.markup),
       }
+    }
+  }
+
+  // Override de margem por orçamento (B9 Fase 2). Aplica SÓ os campos informados
+  // sobre a margem resolvida (tabela/default). Ausente = sem efeito (não-regressão).
+  if (input.margemOverride) {
+    const o = input.margemOverride
+    margem = {
+      impostos: o.impostos != null ? Number(o.impostos) : margem.impostos,
+      comissao: o.comissao != null ? Number(o.comissao) : margem.comissao,
+      despAdm: o.despAdm != null ? Number(o.despAdm) : margem.despAdm,
+      markup: o.markup != null ? Number(o.markup) : margem.markup,
     }
   }
 

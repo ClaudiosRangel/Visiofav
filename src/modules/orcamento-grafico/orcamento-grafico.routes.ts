@@ -41,6 +41,7 @@ import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/
 import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.service'
 import { enriquecerCnpj } from '../prospeccao/provider'
 import { verificarPermissaoComercial } from './permissoes-comercial.routes'
+import { mesclarMargem, reaplicarPreco, FechamentoError, type MargemFechamento } from './handoff-comercial/fechamento-preco.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
   solicitarAmostra,
@@ -3796,6 +3797,103 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       cep: dados.cep,
       telefone: dados.telefone,
       email: dados.email,
+    }
+  })
+
+  // ─── Fechamento editável (B9 Fase 2): override de margem/desconto + preço ──
+  // Reaplica a FÓRMULA DE PREÇO sobre o custo já salvo (NÃO recalcula custos —
+  // a engenharia calibrada permanece). Persiste o override no orçamento.
+  // GET devolve o override salvo; PUT salva + reaplica o preço do cabeçalho.
+  app.get('/:id/fechamento', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const orc = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, fechamentoOverride: true, margemReal: true, resultadoCalculo: true } as never,
+    }) as { id: string; fechamentoOverride: unknown; margemReal: unknown; resultadoCalculo: unknown } | null
+    if (!orc) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+    return { override: orc.fechamentoOverride ?? null }
+  })
+
+  app.put('/:id/fechamento', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({
+      impostos: z.coerce.number().min(0).max(100).optional(),
+      comissao: z.coerce.number().min(0).max(100).optional(),
+      despAdm: z.coerce.number().min(0).max(100).optional(),
+      markup: z.coerce.number().min(0).max(100).optional(),
+      descontoPercent: z.coerce.number().min(0).max(100).optional(),
+    }).parse(request.body ?? {})
+
+    // Desconto exige a permissão correspondente (B10).
+    if ((body.descontoPercent ?? 0) > 0 && !(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeAplicarDesconto'))) {
+      return reply.status(403).send({ message: 'Sem permissão para aplicar desconto.' })
+    }
+
+    const orc = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: {
+        id: true, status: true, quantidade: true,
+        custoTotal: true, custoProducaoConsolidado: true,
+        resultadoCalculo: true, margemReal: true,
+      } as never,
+    }) as {
+      id: string; status: string; quantidade: number
+      custoTotal: unknown; custoProducaoConsolidado: unknown
+      resultadoCalculo: { custoTotal?: number; margem?: MargemFechamento } | null; margemReal: unknown
+    } | null
+    if (!orc) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+    if (['CONVERTIDO', 'RECUSADO'].includes(orc.status)) {
+      return reply.status(400).send({ message: 'Orçamento convertido/recusado não pode ter o fechamento alterado.' })
+    }
+
+    // Margem base: do resultado salvo (se tiver), senão o default legado.
+    const base: MargemFechamento = orc.resultadoCalculo?.margem
+      ? {
+          impostos: Number(orc.resultadoCalculo.margem.impostos ?? 15),
+          comissao: Number(orc.resultadoCalculo.margem.comissao ?? 5),
+          despAdm: Number(orc.resultadoCalculo.margem.despAdm ?? 5),
+          markup: Number(orc.resultadoCalculo.margem.markup ?? 30),
+        }
+      : { impostos: 15, comissao: 5, despAdm: 5, markup: 30 }
+
+    const margem = mesclarMargem(base, body)
+    // Custo total base do preço: do resultado salvo, senão consolidado/custoTotal.
+    const custoTotal =
+      (orc.resultadoCalculo?.custoTotal != null ? Number(orc.resultadoCalculo.custoTotal) : null)
+      ?? (orc.custoTotal != null ? Number(orc.custoTotal) : null)
+      ?? (orc.custoProducaoConsolidado != null ? Number(orc.custoProducaoConsolidado) : null)
+    if (custoTotal == null) {
+      return reply.status(400).send({ message: 'Orçamento sem custo calculado — recalcule antes de ajustar o fechamento.' })
+    }
+
+    let preco
+    try {
+      preco = reaplicarPreco(custoTotal, margem, orc.quantidade, body.descontoPercent ?? 0)
+    } catch (err) {
+      if (err instanceof FechamentoError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+
+    const override = { ...body }
+    await prisma.orcamentoGrafico.update({
+      where: { id },
+      data: {
+        fechamentoOverride: override as never,
+        precoVenda: preco.precoVenda,
+        precoUnitario: preco.precoUnitario,
+        margemReal: margem.markup,
+        valorTotalConsolidado: preco.precoVenda,
+      } as never,
+    })
+
+    return {
+      override,
+      precoVenda: preco.precoVenda,
+      precoUnitario: preco.precoUnitario,
+      margem,
+      descontoPercent: body.descontoPercent ?? 0,
     }
   })
 

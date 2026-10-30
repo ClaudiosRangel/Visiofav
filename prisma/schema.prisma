@@ -4297,6 +4297,9 @@ model OrcamentoGrafico {
   dataOrcamento            DateTime? @map("data_orcamento") // Req 1.1 (Data)
   custoProducaoConsolidado Decimal?  @map("custo_producao_consolidado") @db.Decimal(14, 2) // Req 3.2
   valorTotalConsolidado    Decimal?  @map("valor_total_consolidado") @db.Decimal(14, 2) // Req 3.1
+  // Fechamento editável (B9 Fase 2): override de margem/CEV por orçamento.
+  // null = sem override (comportamento atual). Ex.: {margem:{markup,comissao,...}}.
+  fechamentoOverride       Json?     @map("fechamento_override")
 
   itens ItemOrcamentoGrafico[] // 0..999 (Req 1.2)
 

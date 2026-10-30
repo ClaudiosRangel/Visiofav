@@ -89,7 +89,7 @@ faturamento; override de custos por orçamento (P17).
 | B6 | **Envio de Proposta + aceite do cliente + assinatura/senha do setor** | Não | ✅ FEITO (assinatura por senha do usuário na liberação ao PCP; envio de proposta no B1; aceite via portal já existia) |
 | B7 | **Gate de margem** na conversão (alçada de desconto/margem) | Não | ✅ FEITO (backend já plugado com RegraAprovacao/SolicitacaoAprovacao; front: desconto no modal de conversão + tratamento MARGEM_PENDENTE) |
 | B8 | **Elo PCP completo + gatilho de faturamento** | Não | ✅ FEITO (gatilho OP→pedido EFETIVADO+notificação já existia; sino adicionado ao Pipeline) |
-| B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | 🟡 FASE 1 FEITA (4 abas só leitura); FASE 2 (edição+recálculo) aguarda revisão do usuário + golden |
+| B9 | **P17 — Fechamento EDITÁVEL (4 abas) com recálculo por orçamento** | **SIM — ALTO RISCO** | ✅ FEITO (Fase 1: 4 abas; Fase 2: edição de margem/desconto reaplica o PREÇO sobre o custo salvo — engenharia calibrada intacta; golden preservado) |
 
 **Lacunas reais a atacar (ordem):** B1 (templates) → B2 (form do portal + CNPJ) →
 B3 (painel unificado + menu Propostas) → B6 (envio/aceite/assinatura) → B7 (fechar
@@ -379,3 +379,29 @@ disponível nesta sessão.)
   `/orcamento-grafico/permissoes` (ADMIN) + item no menu. 9 flags conforme
   aprovado. Spec `.kiro/specs/comercial-permissoes/`. Follow-up cosmético:
   ocultar botões no front via `permissoes/minha` (o backend já bloqueia 403).
+
+- **29/10/2026 (16)** — B9 Fase 2 (Fechamento EDITÁVEL). Abordagem de MENOR RISCO
+  confirmada: editar margem/comissão/impostos/despAdm/desconto NÃO recalcula os
+  CUSTOS (engenharia calibrada MD/CT/SE intacta) — só reaplica a FÓRMULA DE PREÇO
+  (gross-up) sobre o custo já salvo. Backend: `OrcamentoGrafico.fechamentoOverride`
+  (Json, migrate idempotente) + `ItemOrcamentoInput.margemOverride` (aplicado em
+  `montarParamsDoItem`, ausente=idêntico) + service PURO
+  `handoff-comercial/fechamento-preco.service.ts` (`mesclarMargem`/`reaplicarPreco`)
+  + rota `GET/PUT /:id/fechamento` (persiste override + reaplica preço; bloqueia
+  CONVERTIDO/RECUSADO; desconto exige permissão B10). Front: aba "Preço de Venda"
+  do Fechamento com campos editáveis + "Salvar e recalcular". Testes:
+  `fechamento-preco.service.test.ts` 7/7 (golden gross-up + desconto + erro ≥100%
+  + 2 property) + suíte orcamento-grafico sem regressão (golden 15.235 intacto).
+  **B9 COMPLETO. TODOS OS BLOCOS B0–B10 DO PROJETO COMERCIAL ENTREGUES.**
+
+## ✅ STATUS FINAL (29/10/2026): B0..B10 todos ✅
+
+Pendências MENORES para a revisão do usuário (relacionar divergências):
+- Ocultar botões no front conforme `comercial/permissoes/minha` (cosmético — o
+  backend já bloqueia com 403).
+- Fase 2 do Fechamento: hoje edita margem/comissão/impostos/despAdm/desconto
+  (reaplica preço). Se o usuário quiser editar CEV decomposto (ICMS/PIS/juros
+  separados) ou prazos com recálculo, é um incremento.
+- Passos operacionais de produção: deploy Render roda as migrações novas
+  (`template_proposta` já estava; `solicitacao_orcamento_rep` campos da planilha;
+  `orcamento_grafico.fechamento_override`). Seed do template Wega já rodado.

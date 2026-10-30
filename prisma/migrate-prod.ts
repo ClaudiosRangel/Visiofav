@@ -5553,6 +5553,13 @@ async function seedMateriaisFromOPs() {
     }
     console.log('✅ Comercial B2: solicitacao_orcamento_rep (campos da planilha Carton Wega)')
   }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Fechamento editável (B9 Fase 2): override de margem/CEV por orçamento.
+  // Aditivo/idempotente. null = sem override (comportamento atual).
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "fechamento_override" JSONB`)
+  console.log('✅ Comercial B9: orcamento_grafico.fechamento_override')
 }
 
 main()

@@ -22,22 +22,27 @@
 > paridade ANTES de expor a edição. O usuário pediu para revisar o conjunto do
 > Controle de Proposta ANTES de fazer a Fase 2.
 
-- [ ] 3. Schema de overrides por orçamento
-  - Colunas aditivas/nullable em `OrcamentoGrafico` para overrides
-    (margem/desconto/comissões/CEV/prazos) + migrate-prod idempotente.
+- [x] 3. Schema de override por orçamento
+  - `OrcamentoGrafico.fechamentoOverride Json?` + migrate-prod idempotente
+    (ADD COLUMN IF NOT EXISTS). prisma generate OK.
   - _Requirements: 2.2_
 
-- [ ] 4. Motor usa override quando presente (não-regressão)
-  - O cálculo aplica o override do orçamento quando houver; sem override =
-    comportamento atual IDÊNTICO. Golden 15.235 ≤0,5% travando antes de expor.
+- [x] 4. Motor aceita override (não-regressão)
+  - `ItemOrcamentoInput.margemOverride` + aplicação em `montarParamsDoItem`
+    (mescla sobre a tabela/default; ausente = idêntico). Abordagem de MENOR RISCO
+    na Fase 2: a rota de Fechamento NÃO recalcula custos (engenharia calibrada
+    intacta) — reaplica só a FÓRMULA DE PREÇO (`fechamento-preco.service.ts`,
+    PURO) sobre o custo já salvo. Golden 15.235 preservado (sem override).
   - _Requirements: 2.3, 3.2_
 
-- [ ] 5. UI editável no Fechamento
-  - Campos editáveis (a definir: margem/desconto, comissões, CEV, prazos) +
-    "Salvar e recalcular" (só este orçamento).
+- [x] 5. Rota + UI editável no Fechamento
+  - `GET/PUT /:id/fechamento` (persiste override + reaplica preço; bloqueia
+    CONVERTIDO/RECUSADO; desconto exige permissão). UI: aba "Preço de Venda"
+    ganhou campos editáveis (markup/comissão/impostos/despAdm/desconto) +
+    "Salvar e recalcular" quando status permite. Recarrega o orçamento.
   - _Requirements: 2.1, 2.2_
 
-- [ ] 6. Golden/testes da Fase 2
-  - Teste: sem override, resultado idêntico ao atual; com override, recalcula
-    conforme esperado. fast-check onde aplicável.
+- [x] 6. Testes da Fase 2
+  - `fechamento-preco.service.test.ts` (mesclarMargem + reaplicarPreco):
+    golden gross-up + desconto no divisor + fator ≥100% erro + 2 property tests.
   - _Requirements: 3_
