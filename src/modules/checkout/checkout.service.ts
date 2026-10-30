@@ -381,7 +381,14 @@ export async function listarPainelCheckout(
     where: {
       centroProducaoId: checkoutUser.centroProducaoId,
       status: { in: ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA'] },
-      ordemProducao: { empresaId: checkoutUser.empresaId },
+      // Mesma regra do painel de Programação do ERP: só etapas de OPs nos
+      // status que entram na fila (PROGRAMADA/LIBERADA/EM_PRODUCAO). Sem isso,
+      // o checkout listava OPs de outros status (RASCUNHO/PLANEJADA), em ordem
+      // diferente da programação da máquina — reportado pelo Caio.
+      ordemProducao: {
+        empresaId: checkoutUser.empresaId,
+        status: { in: ['PROGRAMADA', 'LIBERADA', 'EM_PRODUCAO'] },
+      },
     },
     include: {
       ordemProducao: {

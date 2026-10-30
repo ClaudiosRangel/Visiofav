@@ -1565,3 +1565,16 @@ Agora também no Checkout (`VisioFab.Checkout`, dentro do repo do backend):
   carregamento da tela e mostra um `<select>` "Código de parada (opcional)" —
   só aparece quando há códigos cadastrados; envia `codigoParadaId` no pausar.
   (`.select` adicionado ao `pausar.module.css`, estilo touch-friendly.)
+
+### 18.7 ✅ Checkout: fila igual à Programação + título da aba
+Dois ajustes pedidos pelo Caio (prints):
+1. **Fila do Checkout = Programação da máquina.** `listarPainelCheckout`
+   (checkout.service) listava etapas do centro SEM filtrar o status da OP, então
+   apareciam OPs que não estão na programação (ex.: 2882/2883) e em ordem
+   diferente. Alinhado ao painel do ERP: adicionado o filtro
+   `ordemProducao.status IN ['PROGRAMADA','LIBERADA','EM_PRODUCAO']` (a
+   ordenação já era idêntica: `posicaoFila asc nulls last → prioridade desc →
+   sequencia asc`). Agora as OPs e a ordem batem com a Programação do centro.
+2. **Título da aba** do app Checkout era "Create Next App" (metadata padrão do
+   Next). Corrigido em `VisioFab.Checkout/src/app/layout.tsx` para "Checkout de
+   Apontamentos".
