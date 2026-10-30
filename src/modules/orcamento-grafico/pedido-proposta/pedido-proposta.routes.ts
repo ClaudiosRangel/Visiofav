@@ -283,7 +283,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   // de Produto + (se houver) o CalculoGrafico migrado do Calcgraf que casa pelo
   // nome/descrição, trazendo cartão/suporte, gramatura, cores, medidas, formato.
   // ═══════════════════════════════════════════════════════════════════════════
-  app.get('/caracteristicas-produto/:produtoId', async (request, reply) => {
+  app.get('/pedidos-proposta/caracteristicas-produto/:produtoId', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { produtoId } = z.object({ produtoId: z.string().uuid() }).parse(request.params)
 
@@ -384,7 +384,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Lista os prazos ativos da empresa (para o Select do RFQ e cadastro).
-  app.get('/prazos-pagamento', async (request) => {
+  app.get('/pedidos-proposta/prazos-pagamento', async (request) => {
     const user = request.user as { id: string; empresaId: string }
     const q = z.object({ incluirInativos: z.coerce.boolean().optional() }).parse(request.query)
     return prisma.condicaoPagamentoComercial.findMany({
@@ -394,7 +394,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
     })
   })
 
-  app.post('/prazos-pagamento', async (request, reply) => {
+  app.post('/pedidos-proposta/prazos-pagamento', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string; perfil?: string }
     if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeEditarCadastros'))) {
       return reply.status(403).send({ message: 'Sem permissão para editar cadastros.' })
@@ -417,7 +417,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
     }
   })
 
-  app.put('/prazos-pagamento/:id', async (request, reply) => {
+  app.put('/pedidos-proposta/prazos-pagamento/:id', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeEditarCadastros'))) {
@@ -436,7 +436,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
     return { ok: true }
   })
 
-  app.delete('/prazos-pagamento/:id', async (request, reply) => {
+  app.delete('/pedidos-proposta/prazos-pagamento/:id', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeEditarCadastros'))) {

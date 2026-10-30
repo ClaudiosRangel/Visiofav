@@ -676,3 +676,28 @@ gramatura/cores/medidas.
 
 Verificação: get_diagnostics limpo (back+front); testes do módulo 16/16. Script
 de diagnóstico `_tmp-` removido. Deploy Render roda a coluna nova.
+
+---
+
+## 14. REVISÃO 6 (30/10/2026) — correção de rotas + modal de imagem
+
+**BUG "erro ao salvar prazo" / "não trouxe dados" — CAUSA RAIZ:** descompasso de
+caminho. O front chama `/orcamento-grafico/pedidos-proposta/prazos-pagamento` e
+`/pedidos-proposta/caracteristicas-produto/:id`, mas no backend essas rotas
+estavam registradas como `/prazos-pagamento` e `/caracteristicas-produto/:id`
+(sem o segmento `pedidos-proposta`) → 404. O 404 de características era engolido
+pelo `catch` (por isso "não trouxe dados"); o de prazo aparecia na tela.
+**Fix:** renomeadas as 5 rotas para `/pedidos-proposta/prazos-pagamento`
+(GET/POST/PUT/DELETE) e `/pedidos-proposta/caracteristicas-produto/:produtoId`,
+batendo com o front. (Fastify resolve a estática `prazos-pagamento` antes da
+paramétrica `:id` — sem conflito.)
+
+**Ponto 3 — modal de imagem ampliada:** clicar na foto do produto OU numa
+imagem de anexo abre um Modal (size xl) com a imagem em `fit=contain`
+(`cursor: zoom-in`).
+
+Após o deploy do Render, o produto "Caixa Garrafa Império Gold" deve trazer as
+características (cartão/gramatura/cores/medidas) — o endpoint estava inacessível
+pelo caminho errado, não por falta de dado (o match ILIKE da rev5 está correto).
+
+Verificação: get_diagnostics limpo (back+front).
