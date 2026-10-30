@@ -508,3 +508,72 @@ orçamento avulso/legado (comporta-se como hoje — NÃO-REGRESSÃO).
 
 **Commits:** back (schema+migrate+service+rotas) + front (2 telas + menu + card)
 — SEPARADOS (repos distintos). Deploy Render roda a migração nova.
+
+---
+
+## 10. REVISÃO 2 (30/10/2026) — Dashboard-first + entidade Pedido/Proposta (RFQ)
+
+Pedidos do usuário nesta rodada (3 pontos):
+
+### Pontos 1 e 3 — menu (FEITOS, commitados)
+- **Dashboard é o 1º item** do menu Comercial e o módulo **abre direto no
+  Dashboard** (card em `modulos/page.tsx` → `/orcamento-grafico/dashboard`).
+- **"Novo Orçamento" saiu do 1º nível** — fica só dentro do grupo "Orçamento".
+- Commit front `735a760`.
+
+### Ponto 2 — Pedido/Proposta (RFQ) como entidade NOVA separada do orçamento
+Spec completa `.kiro/specs/comercial-pedido-proposta/` (requirements + design +
+tasks). Pesquisa de mercado (MIS gráfico CERM/Label Traxx/Avanti + CRM Pipedrive/
+HubSpot): o RFQ/lead é entidade separada do quote; nem todo RFQ vira orçamento.
+
+**Decisões firmadas com o usuário:**
+- Tabela NOVA `PedidoProposta` (não mexer/apagar orçamentos existentes).
+- **Origem**: REPRESENTANTE | VENDEDOR | INTERNA (venda interna). Representante/
+  vendedor gravam quem; interna dispensa.
+- Campos do Excel (planilha Carton Wega) + classificação Repetição/Mostruário/Novo.
+- **Até 5 imagens** por proposta em **BYTEA no Neon** (sem storage externo —
+  padrão do `OrdemProducao.pdfData`), servidas por rota GET com Content-Type.
+- Máquina de estados própria do RFQ: `NOVO → EM_ANALISE → ENVIADO_ORCAMENTO →
+  ORCADO → PROPOSTA_ENVIADA → ACEITO | PERDIDO | CANCELADO`.
+- **Encaminhar para orçamento**: cria o `OrcamentoGrafico` (RASCUNHO,
+  etapaCalculo=AGUARDANDO) vinculado (`OrcamentoGrafico.pedidoPropostaId`),
+  reusando o mapeamento de `criarOrcamentoGraficoDeSolicitacao`. Só aí aparece
+  no menu Orçamento.
+- **Ver proposta** no detalhe do orçamento: painel somente-leitura + galeria.
+- **Liberar a PCP/Faturamento** só com todas as fases: orçado (orçamento
+  APROVADO) + RFQ ACEITO + etapaCalculo VALIDADO + amostra aprovada (quando
+  exigeAmostra) + perfil Supervisor → compõe `converterOrcamentoEmPedido` +
+  `liberarPedidoParaPcp`.
+
+**Implementado (backend `VisioFab.Wms.Back`):**
+- Schema: 3 models novos (`PedidoProposta`, `AnexoPedidoProposta` bytea,
+  `LogPedidoProposta`) + coluna `OrcamentoGrafico.pedidoPropostaId`. migrate-prod
+  idempotente no mesmo commit (3 CREATE TABLE/INDEX IF NOT EXISTS + 2 FK
+  try/catch + ADD COLUMN). prisma generate OK.
+- Submódulo `src/modules/orcamento-grafico/pedido-proposta/`:
+  `pedido-proposta-estado.service.ts` (máquina PURA), `pedido-proposta.service.ts`
+  (CRUD + transição + log, empresaId explícito), `anexo-pedido-proposta.service.ts`
+  (bytea, mime/limite 5/10MB, select sem `dados`), `encaminhar-orcamento.service.ts`
+  (transação atômica, parse medidas "C x L x A"), `liberar-pedido-proposta.service.ts`
+  (fases + compõe cadeia existente), `pedido-proposta.routes.ts` (prefixo
+  /api/orcamento-grafico; CRUD + estado + encaminhar + liberar + anexos multipart
+  + GET binário com token na query + cnpj + por-orcamento). Registrado no server.ts.
+- Testes (vitest+fast-check --reporter=dot): estado 6/6, anexo 6/6, encaminhar
+  golden 4/4 — **16/16 do módulo**. Suíte orcamento-grafico inteira **307 passed /
+  0 falhas** (golden 15.235 intacto).
+
+**Implementado (frontend `VisioFab.Wms.Front`):**
+- `orcamento-grafico/pedidos/page.tsx` REESCRITA: consome `GET /pedidos-proposta`
+  (filtros estado/origem/tipo + busca; badges; ações Encaminhar/Liberar/Abrir).
+  "Novo pedido/proposta" abre o FORMULÁRIO RFQ (não o Novo Orçamento).
+- `pedidos/PedidoPropostaForm.tsx` + `pedidos/novo` + `pedidos/[id]`: formulário
+  com os campos do Excel + consulta CNPJ (`/cnpj/:cnpj`) + galeria de até 5
+  imagens (upload/preview/remover).
+- `orcamento-grafico/[id]/page.tsx`: botão "Ver proposta" + modal somente-leitura
+  com todos os campos do RFQ + galeria (`/pedidos-proposta/por-orcamento/:id`).
+- get_diagnostics limpo em todos os arquivos (back+front). Build Next não
+  finalizou local por lentidão da máquina (diagnostics validam TS/lint; Vercel
+  compila no deploy).
+
+**Commits:** back (schema+migrate+submódulo+rotas+server) + front (telas RFQ +
+detalhe) — separados. Deploy Render roda a migração nova (3 tabelas + coluna).

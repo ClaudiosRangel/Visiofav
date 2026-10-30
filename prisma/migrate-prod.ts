@@ -5570,6 +5570,101 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "validado_por_id" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "validado_em" TIMESTAMP(3)`)
   console.log('✅ Comercial Grids: orcamento_grafico.etapa_calculo + validado_por_id/validado_em')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Comercial — Pedido/Proposta (RFQ) (spec comercial-pedido-proposta):
+  // 3 tabelas novas (pedido_proposta + anexo bytea + log de transições) + coluna
+  // aditiva orcamento_grafico.pedido_proposta_id. Idempotente.
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "pedido_proposta" (
+      "id" TEXT PRIMARY KEY,
+      "empresa_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "origem" VARCHAR(16) NOT NULL,
+      "representante_id" TEXT,
+      "vendedor_id" TEXT,
+      "tipo_pedido" VARCHAR(12) NOT NULL,
+      "cliente_id" TEXT,
+      "cliente_nome" VARCHAR(200),
+      "cliente_cpf_cnpj" VARCHAR(20),
+      "ja_cliente" BOOLEAN NOT NULL DEFAULT false,
+      "mercado" VARCHAR(120) NOT NULL,
+      "uf_origem" VARCHAR(2),
+      "cidade" VARCHAR(120),
+      "tipo_entrega" VARCHAR(20),
+      "entrega_fracionada_dias" VARCHAR(60),
+      "prazo_pagamento" VARCHAR(60),
+      "produto_nome" VARCHAR(200),
+      "tipo_embalagem" VARCHAR(120),
+      "quantidade" INTEGER,
+      "cartao" VARCHAR(120),
+      "gramatura" VARCHAR(60),
+      "medidas_texto" VARCHAR(120),
+      "cartao_fsc" BOOLEAN NOT NULL DEFAULT false,
+      "corte_interno_verso" BOOLEAN NOT NULL DEFAULT false,
+      "passtime" BOOLEAN NOT NULL DEFAULT false,
+      "acabamentos" TEXT,
+      "matriz" VARCHAR(200),
+      "acabamento_manual" BOOLEAN NOT NULL DEFAULT false,
+      "quantidade_por_volume" VARCHAR(60),
+      "variacoes_arte" VARCHAR(60),
+      "exportacao" VARCHAR(12),
+      "data_validade" VARCHAR(60),
+      "discriminacao" TEXT,
+      "observacoes" TEXT,
+      "estado" VARCHAR(20) NOT NULL DEFAULT 'NOVO',
+      "motivo" TEXT,
+      "exige_amostra" BOOLEAN NOT NULL DEFAULT false,
+      "orcamento_grafico_id" TEXT,
+      "criado_por_id" TEXT NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "pedido_proposta_empresa_numero_key" ON "pedido_proposta"("empresa_id","numero")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_pedido_proposta_empresa_estado" ON "pedido_proposta"("empresa_id","estado")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_pedido_proposta_empresa_origem" ON "pedido_proposta"("empresa_id","origem")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "anexo_pedido_proposta" (
+      "id" TEXT PRIMARY KEY,
+      "pedido_proposta_id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "nome" VARCHAR(255) NOT NULL,
+      "tipo" VARCHAR(100) NOT NULL,
+      "tamanho" INTEGER NOT NULL,
+      "dados" BYTEA NOT NULL,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_anexo_pedido_proposta_empresa_pedido" ON "anexo_pedido_proposta"("empresa_id","pedido_proposta_id")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "log_pedido_proposta" (
+      "id" TEXT PRIMARY KEY,
+      "pedido_proposta_id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "estado_anterior" VARCHAR(20) NOT NULL,
+      "estado_novo" VARCHAR(20) NOT NULL,
+      "usuario_id" TEXT NOT NULL,
+      "motivo" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_log_pedido_proposta_empresa_pedido" ON "log_pedido_proposta"("empresa_id","pedido_proposta_id")`)
+
+  // FK em try/catch (Postgres não tem ADD CONSTRAINT IF NOT EXISTS)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "anexo_pedido_proposta" ADD CONSTRAINT "anexo_pedido_proposta_pedido_fk" FOREIGN KEY ("pedido_proposta_id") REFERENCES "pedido_proposta"("id") ON DELETE CASCADE`)
+  } catch { /* já existe */ }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "log_pedido_proposta" ADD CONSTRAINT "log_pedido_proposta_pedido_fk" FOREIGN KEY ("pedido_proposta_id") REFERENCES "pedido_proposta"("id") ON DELETE CASCADE`)
+  } catch { /* já existe */ }
+
+  // Coluna aditiva em orcamento_grafico (vínculo RFQ → orçamento)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "pedido_proposta_id" TEXT`)
+  console.log('✅ Comercial Pedido/Proposta: pedido_proposta + anexo_pedido_proposta + log_pedido_proposta + orcamento_grafico.pedido_proposta_id')
 }
 
 main()

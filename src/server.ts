@@ -197,6 +197,7 @@ import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-gr
 import { calculoGraficoRoutes } from './modules/orcamento-grafico/calculo-grafico/calculo-grafico.routes'
 import { templatePropostaRoutes } from './modules/orcamento-grafico/template-proposta.routes'
 import { permissoesComercialRoutes } from './modules/orcamento-grafico/permissoes-comercial.routes'
+import { pedidoPropostaRoutes } from './modules/orcamento-grafico/pedido-proposta/pedido-proposta.routes'
 import { configuradorGraficoRoutes } from './modules/configurador-grafico/configurador-grafico.routes'
 import { acompanhamentoClienteRoutes } from './modules/pcp/acompanhamento-cliente.routes'
 import { importacaoOpRoutes } from './modules/pcp/importacao-op/importacao-op.routes'
@@ -530,6 +531,7 @@ async function bootstrap() {
   await app.register(calculoGraficoRoutes, { prefix: '/api/calculo-grafico' })
   await app.register(templatePropostaRoutes, { prefix: '/api/orcamento-grafico/templates-proposta' })
   await app.register(permissoesComercialRoutes, { prefix: '/api/orcamento-grafico/comercial' })
+  await app.register(pedidoPropostaRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(configuradorGraficoRoutes, { prefix: '/api/configurador-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
   await app.register(requisicaoCorteRoutes, { prefix: '/api/pcp' })

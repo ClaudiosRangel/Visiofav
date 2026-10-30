@@ -4269,6 +4269,9 @@ model OrcamentoGrafico {
   margemReal       Decimal?      @map("margem_real") @db.Decimal(5, 2)
   // Status e fluxo
   status           String        @default("RASCUNHO") @db.VarChar(20)
+  // Vínculo ao Pedido/Proposta (RFQ) que originou este orçamento
+  // (spec comercial-pedido-proposta). Null = orçamento sem RFQ de origem.
+  pedidoPropostaId String?       @map("pedido_proposta_id")
   // Sub-etapa do cálculo DENTRO do RASCUNHO (spec comercial-grids-orcamento):
   // AGUARDANDO (liberado p/ orçar, ninguém assumiu) → EM_CALCULO (calculista
   // iniciou) → VALIDAR (enviado para conferência/assinatura) → VALIDADO
@@ -4313,6 +4316,111 @@ model OrcamentoGrafico {
 
   @@unique([empresaId, numero, versao])
   @@map("orcamento_grafico")
+}
+
+// ============================================================================
+// COMERCIAL — PEDIDO/PROPOSTA (RFQ)  (spec comercial-pedido-proposta)
+// Entidade NOVA e independente do orçamento: representa a intenção comercial
+// (lead/RFQ) antes de existir cálculo. Só vira orçamento quando ENCAMINHADO.
+// ============================================================================
+
+model PedidoProposta {
+  id        String @id @default(uuid())
+  empresaId String @map("empresa_id")
+  numero    Int // sequencial por empresa (max+1)
+
+  // Origem / classificação
+  origem          String  @db.VarChar(16) // REPRESENTANTE | VENDEDOR | INTERNA
+  representanteId String? @map("representante_id")
+  vendedorId      String? @map("vendedor_id")
+  tipoPedido      String  @map("tipo_pedido") @db.VarChar(12) // REPETICAO | MOSTRUARIO | NOVO
+
+  // Identificação do cliente (planilha #3/#4/#5)
+  clienteId      String?  @map("cliente_id")
+  clienteNome    String?  @map("cliente_nome") @db.VarChar(200)
+  clienteCpfCnpj String?  @map("cliente_cpf_cnpj") @db.VarChar(20)
+  jaCliente      Boolean  @default(false) @map("ja_cliente")
+
+  // Campos comerciais e técnicos (planilha Carton Wega)
+  mercado               String  @db.VarChar(120) // #6 — OBRIGATÓRIO
+  ufOrigem              String? @map("uf_origem") @db.VarChar(2) // #7
+  cidade                String? @db.VarChar(120) // #7
+  tipoEntrega           String? @map("tipo_entrega") @db.VarChar(20) // UNICA | FRACIONADA  #8
+  entregaFracionadaDias String? @map("entrega_fracionada_dias") @db.VarChar(60) // #9
+  prazoPagamento        String? @map("prazo_pagamento") @db.VarChar(60) // #10
+  produtoNome           String? @map("produto_nome") @db.VarChar(200) // #11
+  tipoEmbalagem         String? @map("tipo_embalagem") @db.VarChar(120) // #14 (texto livre)
+  quantidade            Int? // #16
+  cartao                String? @db.VarChar(120) // #17
+  gramatura             String? @db.VarChar(60) // #18 (texto)
+  medidasTexto          String? @map("medidas_texto") @db.VarChar(120) // #20 (C x L x A)
+  cartaoFsc             Boolean @default(false) @map("cartao_fsc") // #19
+  corteInternoVerso     Boolean @default(false) @map("corte_interno_verso") // #21
+  passtime              Boolean @default(false) // #22
+  acabamentos           String? @db.Text // #23
+  matriz                String? @db.VarChar(200) // #24
+  acabamentoManual      Boolean @default(false) @map("acabamento_manual") // #25
+  quantidadePorVolume   String? @map("quantidade_por_volume") @db.VarChar(60) // #26
+  variacoesArte         String? @map("variacoes_arte") @db.VarChar(60) // #13
+  exportacao            String? @db.VarChar(12) // COMUM | EXPORTACAO  #15
+  dataValidade          String? @map("data_validade") @db.VarChar(60) // #12 (texto)
+  discriminacao         String? @db.Text // #28
+  observacoes           String? @db.Text // #29
+
+  // Máquina de estados (RFQ)
+  // NOVO | EM_ANALISE | ENVIADO_ORCAMENTO | ORCADO | PROPOSTA_ENVIADA | ACEITO | PERDIDO | CANCELADO
+  estado String  @default("NOVO") @db.VarChar(20)
+  motivo String? @db.Text // cancelamento / perdido (>=5 chars)
+
+  // Controle de amostra
+  exigeAmostra Boolean @default(false) @map("exige_amostra")
+
+  // Vínculo ao orçamento criado pelo encaminhamento (0..1)
+  orcamentoGraficoId String? @map("orcamento_grafico_id")
+
+  criadoPorId  String   @map("criado_por_id")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  anexos AnexoPedidoProposta[]
+  logs   LogPedidoProposta[]
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, estado])
+  @@index([empresaId, origem])
+  @@map("pedido_proposta")
+}
+
+model AnexoPedidoProposta {
+  id               String   @id @default(uuid())
+  pedidoPropostaId String   @map("pedido_proposta_id")
+  empresaId        String   @map("empresa_id") // denormalizado p/ filtro direto
+  nome             String   @db.VarChar(255)
+  tipo             String   @db.VarChar(100) // mime (image/png, image/jpeg...)
+  tamanho          Int // bytes
+  dados            Bytes // BYTEA — NUNCA retornar em listagem
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  pedidoProposta PedidoProposta @relation(fields: [pedidoPropostaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId, pedidoPropostaId])
+  @@map("anexo_pedido_proposta")
+}
+
+model LogPedidoProposta {
+  id               String   @id @default(uuid())
+  pedidoPropostaId String   @map("pedido_proposta_id")
+  empresaId        String   @map("empresa_id")
+  estadoAnterior   String   @map("estado_anterior") @db.VarChar(20)
+  estadoNovo       String   @map("estado_novo") @db.VarChar(20)
+  usuarioId        String   @map("usuario_id")
+  motivo           String?  @db.Text
+  criadoEm         DateTime @default(now()) @map("criado_em")
+
+  pedidoProposta PedidoProposta @relation(fields: [pedidoPropostaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId, pedidoPropostaId])
+  @@map("log_pedido_proposta")
 }
 
 /// Item de cálculo de um Orçamento Gráfico (multi-item). Cada item é um
