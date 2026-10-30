@@ -366,3 +366,16 @@ disponível nesta sessão.)
   revisão: (a) quais campos editáveis na Fase 2; (b) B10 permissões do Comercial;
   (c) consulta de CNPJ/cadastro de cliente novo também no Novo Orçamento interno
   (hoje só no portal); (d) páginas órfãs de menu (dashboard/importar).
+
+- **29/10/2026 (14)** — Leva de pendências: (3) consulta de CNPJ + cadastro de
+  cliente novo também no Novo Orçamento interno (`GET /orcamento-grafico/
+  consulta-cnpj/:cnpj` + bloco no StepCliente, reusa `POST /clientes`); (4)
+  páginas órfãs no menu (Dashboard + Importar Preços CSV adicionados ao menu
+  Comercial). Commits back `9d530b523`, front `66a7734`.
+- **29/10/2026 (15)** — B10 (Permissões do Comercial) FEITO. Padrão do PCP:
+  `permissoes-comercial.routes.ts` (Parametro `comercial.permissoes.<usuarioId>`,
+  ADMIN bypass, default tudo liberado) + enforcement nas rotas sensíveis (criar/
+  aprovar/converter/desconto/liberar-pcp/amostras) + tela
+  `/orcamento-grafico/permissoes` (ADMIN) + item no menu. 9 flags conforme
+  aprovado. Spec `.kiro/specs/comercial-permissoes/`. Follow-up cosmético:
+  ocultar botões no front via `permissoes/minha` (o backend já bloqueia 403).

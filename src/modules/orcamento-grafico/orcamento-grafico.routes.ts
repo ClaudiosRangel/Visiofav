@@ -40,6 +40,7 @@ import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './ca
 import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
 import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.service'
 import { enriquecerCnpj } from '../prospeccao/provider'
+import { verificarPermissaoComercial } from './permissoes-comercial.routes'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
   solicitarAmostra,
@@ -2505,7 +2506,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
    * Caso contrário, executa o cálculo a partir dos parâmetros informados.
    */
   app.post('/', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeCriarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão para criar orçamentos no Comercial.' })
+    }
     const { calcularOrcamentoGrafico: calcular } = await import('./orcamento-grafico-calculo.service')
 
     const body = z.object({
@@ -3417,8 +3421,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
    * Muda status de ENVIADO para APROVADO. Gera PedidoVenda se possível.
    */
   app.post('/:id/aprovar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeAprovarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão para aprovar orçamentos.' })
+    }
 
     const orcamento = await prisma.orcamentoGrafico.findFirst({
       where: { id, empresaId: user.empresaId },
@@ -3536,12 +3543,19 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
    * Spec orcamento-grafico-handoff-comercial.
    */
   app.post('/:id/converter', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({
       descontoPercent: z.coerce.number().min(0).max(100).optional(),
       gateAprovado: z.boolean().optional(),
     }).parse(request.body ?? {})
+    // Permissão do Comercial (B10)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeConverterPedido'))) {
+      return reply.status(403).send({ message: 'Sem permissão para converter pedidos no Comercial.' })
+    }
+    if ((body.descontoPercent ?? 0) > 0 && !(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeAplicarDesconto'))) {
+      return reply.status(403).send({ message: 'Sem permissão para aplicar desconto.' })
+    }
     try {
       const r = await converterOrcamentoEmPedido(user.empresaId, id, user.id, {
         descontoPercent: body.descontoPercent,
@@ -3696,8 +3710,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   })
 
   app.patch('/amostras/:id/status', async (request, reply) => {
-    const user = request.user as { empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeGerenciarAmostras'))) {
+      return reply.status(403).send({ message: 'Sem permissão para gerenciar amostras.' })
+    }
     const body = z.object({
       status: z.enum(['EM_PRODUCAO_AMOSTRA', 'ENVIADA_CLIENTE']),
       anexoUrl: z.string().optional().nullable(),
@@ -3707,16 +3724,22 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   })
 
   app.post('/amostras/:id/aprovar', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeGerenciarAmostras'))) {
+      return reply.status(403).send({ message: 'Sem permissão para gerenciar amostras.' })
+    }
     const body = z.object({ aprovadoPor: z.string().min(1).max(200).optional() }).parse(request.body ?? {})
     try { return await aprovarAmostra(user.empresaId, id, body.aprovadoPor || user.id) }
     catch (err) { return amostraErr(reply, err) }
   })
 
   app.post('/amostras/:id/reprovar', async (request, reply) => {
-    const user = request.user as { empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeGerenciarAmostras'))) {
+      return reply.status(403).send({ message: 'Sem permissão para gerenciar amostras.' })
+    }
     const body = z.object({ motivoReprova: z.string().min(1) }).parse(request.body)
     try { return await reprovarAmostra(user.empresaId, id, body.motivoReprova) }
     catch (err) { return amostraErr(reply, err) }
@@ -3730,10 +3753,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   }
   // ─── Liberação do pedido (vindo de orçamento gráfico) para o PCP (R7) ─────
   app.post('/pedidos/:pedidoId/liberar-pcp', async (request, reply) => {
-    const user = request.user as { id: string; empresaId: string }
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { pedidoId } = z.object({ pedidoId: z.string().uuid() }).parse(request.params)
     // Assinatura do setor (B6): senha do usuário, exigida conforme config.
     const body = z.object({ senha: z.string().optional() }).parse(request.body ?? {})
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeLiberarPcp'))) {
+      return reply.status(403).send({ message: 'Sem permissão para liberar pedidos ao PCP.' })
+    }
     try {
       return reply.status(200).send(await liberarPedidoParaPcp(user.empresaId, pedidoId, user.id, { senha: body.senha }))
     } catch (err) {
