@@ -701,3 +701,56 @@ características (cartão/gramatura/cores/medidas) — o endpoint estava inacess
 pelo caminho errado, não por falta de dado (o match ILIKE da rev5 está correto).
 
 Verificação: get_diagnostics limpo (back+front).
+
+---
+
+## 15. REVISÃO 7 (30/10/2026) — comboboxes a partir da planilha real de respostas
+
+**Pedido do usuário:** "lê os dados da planilha preenchida (`Formulário sem
+título (respostas).xlsx`), nela tem as informações que se repetem nos campos,
+coloca como itens de combobox."
+
+**O que foi feito (SÓ FRONTEND — nenhuma mudança de backend/schema nesta leva):**
+- Li as 384 respostas reais da planilha (descompactada + parse do XML da
+  planilha via script temporário, JÁ REMOVIDO) e consolidei os valores mais
+  frequentes por coluna.
+- Novo módulo `src/app/(interna)/orcamento-grafico/pedidos/sugestoes-rfq.ts`
+  com as constantes derivadas da planilha (ordenadas por frequência):
+  `SUG_MERCADO`, `SUG_TIPO_EMBALAGEM`, `SUG_CARTAO`, `SUG_GRAMATURA`,
+  `SUG_ACABAMENTOS`, `SUG_ACONDICIONAMENTO`, `SUG_ESPECIFICACAO`, `SUG_PRAZO`,
+  `SUG_CORES`.
+- `PedidoPropostaForm.tsx`: helper `unir(cadastro, sugestoes)` (combina as
+  opções do cadastro com as da planilha sem duplicar, case-insensitive).
+  Aplicado:
+  - **Mercado** → Autocomplete(`SUG_MERCADO`).
+  - **Tipo de embalagem** → `unir(tiposEmb, SUG_TIPO_EMBALAGEM)`.
+  - **Cartão** → `unir(suportes, SUG_CARTAO)`.
+  - **Gramatura** → Autocomplete(`SUG_GRAMATURA`).
+  - **Variações de arte / cores** → Autocomplete(`SUG_CORES`).
+  - **Prazo (texto livre)** → Autocomplete(`SUG_PRAZO`).
+  - **Checklist de acabamentos** = cadastro (`AcabamentoGrafico`) + sugestões da
+    planilha (itens de sugestão têm id sintético `sug-<nome>`, mapeados para
+    `acabamentoId=null` ao marcar). O filtro de "acabamentos livres" exclui os
+    da planilha para não duplicar.
+- Todos os campos continuam Autocomplete (aceitam digitação livre — a combobox é
+  só sugestão, não trava o valor).
+
+**Valores reais consolidados (referência):** Mercado = Alimentício/Cosméticos/
+Alimentos congelados/E-commerce/Farmacêutico/Bebidas/Perfumaria/Cigarro/Lab.
+Veterinário. Tipo serviço = Cartucho(191)/Caixa(112)/Display(26)/Cinta(14)/
+Sacola(10). Cartão = Duplex(151)/Fibra longa(67)/Triplex(42)/Duplex+Micro(26)/
+Duplex+Cartão(22). Acabamentos = Verniz Base D'água(148)/Verniz UV(93)/Verniz
+Base D'água Fosco(59)/Laminação Fosca(31)/Hot Stamping(9)/Relevo(7). Prazo =
+28/35(43), 28/35/42(33), 30/45/60(12), À vista(10). Cores = 4x0(dominante)/5x0/
+2x0/6x0.
+
+**Nota:** `SUG_ESPECIFICACAO` e `SUG_ACONDICIONAMENTO` foram criadas mas os
+campos correspondentes ainda não existem no FormState — ficam prontas para
+quando o usuário pedir esses campos (não geram erro de lint, são exports usados
+pelo módulo).
+
+**Dado sensível:** a planilha `.xlsx` (e-mails/clientes reais) foi adicionada ao
+`.gitignore` do backend (junto com `PROGRAMAÇÃOWEGA*.xlsx` e `_tmp_*`). NUNCA
+commitar.
+
+Verificação: get_diagnostics limpo nos 2 arquivos front. Sem mudança de backend.

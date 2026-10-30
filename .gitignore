@@ -9,3 +9,8 @@ prisma/seed-prod.ts
 # Backup e dados reais do cliente (Calcgraf/Carton Wega) — NUNCA commitar (dados sensíveis)
 /cartoon/
 /scripts/_tmp-*
+/scripts/_tmp_*
+
+# Planilhas com dados reais do cliente (respostas de formulário, programação) — NUNCA commitar
+Formulário sem título (respostas).xlsx
+PROGRAMAÇÃOWEGA*.xlsx
