@@ -39,6 +39,7 @@ import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeament
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
 import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
 import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.service'
+import { enriquecerCnpj } from '../prospeccao/provider'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
   solicitarAmostra,
@@ -3740,6 +3741,35 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         return reply.status(err.statusCode).send({ message: err.message, code: err.code })
       }
       throw err
+    }
+  })
+
+  // ─── Consulta de CNPJ na Receita (interno — Novo Orçamento) ──────────────
+  // Espelha a do portal, mas com authenticate interno. Autopreenche o cadastro
+  // de cliente novo no fluxo direto (sem representante). Só leitura.
+  app.get('/consulta-cnpj/:cnpj', async (request, reply) => {
+    const { cnpj } = z.object({ cnpj: z.string() }).parse(request.params)
+    const soDigitos = cnpj.replace(/\D/g, '')
+    if (soDigitos.length !== 14) {
+      return reply.status(400).send({ message: 'CNPJ deve ter 14 dígitos.' })
+    }
+    const dados = await enriquecerCnpj(soDigitos)
+    if (!dados) {
+      return reply.status(422).send({ message: 'Não foi possível consultar este CNPJ na Receita no momento. Preencha manualmente.' })
+    }
+    return {
+      cpfCnpj: dados.cnpj,
+      razaoSocial: dados.razaoSocial,
+      nomeFantasia: dados.nomeFantasia,
+      logradouro: dados.logradouro,
+      numero: dados.numero,
+      complemento: dados.complemento,
+      bairro: dados.bairro,
+      cidade: dados.cidade,
+      uf: dados.uf,
+      cep: dados.cep,
+      telefone: dados.telefone,
+      email: dados.email,
     }
   })
 
