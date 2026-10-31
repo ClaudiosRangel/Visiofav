@@ -44,32 +44,38 @@ export function layoutPropostaWega(): LayoutDocumento {
   const left = pagina.margemEsquerdaPt
   const larguraUtil = pagina.larguraPt - pagina.margemEsquerdaPt - pagina.margemDireitaPt
   const els: Elemento[] = []
+  const rotuloCol = 90 // largura da coluna de rótulos "Produto:", "Descrição:" etc.
 
   // Logo centralizado no topo.
   els.push({
     id: novoId('logo'), tipo: 'LOGO',
-    xPt: (pagina.larguraPt - 130) / 2, yPt: 40, larguraPt: 130, alturaPt: 55,
+    xPt: (pagina.larguraPt - 150) / 2, yPt: 40, larguraPt: 150, alturaPt: 60,
   })
 
   // Cidade/data (esquerda) e Proposta nº (direita).
   els.push({
     id: novoId('txt'), tipo: 'CAMPO_DINAMICO', binding: '{{orcamento.criadoEm}}',
-    xPt: left, yPt: 110, larguraPt: 300, alturaPt: 16, estilo: estilo({ tamanhoPt: 10 }),
+    xPt: left, yPt: 120, larguraPt: 300, alturaPt: 16, estilo: estilo({ tamanhoPt: 10 }),
+  })
+  els.push({
+    id: novoId('lblprop'), tipo: 'TEXTO', textoEstatico: 'Proposta nº',
+    xPt: left + larguraUtil - 200, yPt: 120, larguraPt: 110, alturaPt: 16,
+    estilo: estilo({ tamanhoPt: 10, alinhamento: 'right', negrito: true }),
   })
   els.push({
     id: novoId('cd'), tipo: 'CAMPO_DINAMICO', binding: '{{orcamento.numero}}',
-    xPt: left + larguraUtil - 150, yPt: 110, larguraPt: 150, alturaPt: 16,
+    xPt: left + larguraUtil - 85, yPt: 120, larguraPt: 85, alturaPt: 16,
     estilo: estilo({ tamanhoPt: 10, alinhamento: 'right', negrito: true }),
   })
 
   // Destinatário.
   els.push({
     id: novoId('txt'), tipo: 'TEXTO', textoEstatico: 'À',
-    xPt: left, yPt: 140, larguraPt: larguraUtil, alturaPt: 14, estilo: estilo({}),
+    xPt: left, yPt: 150, larguraPt: larguraUtil, alturaPt: 14, estilo: estilo({}),
   })
   els.push({
     id: novoId('cli'), tipo: 'CAMPO_DINAMICO', binding: '{{cliente.nome}}',
-    xPt: left, yPt: 154, larguraPt: larguraUtil, alturaPt: 16,
+    xPt: left, yPt: 164, larguraPt: larguraUtil, alturaPt: 16,
     estilo: estilo({ negrito: true, fonte: 'Helvetica-Bold' }),
   })
 
@@ -77,19 +83,27 @@ export function layoutPropostaWega(): LayoutDocumento {
   els.push({
     id: novoId('txt'), tipo: 'TEXTO',
     textoEstatico: 'Prezado(s) senhor(es),\nConforme solicitado, encaminhamos abaixo nossa proposta:',
-    xPt: left, yPt: 180, larguraPt: larguraUtil, alturaPt: 30, estilo: estilo({}),
+    xPt: left, yPt: 190, larguraPt: larguraUtil, alturaPt: 30, estilo: estilo({}),
   })
 
-  // Dados do produto.
-  els.push({
-    id: novoId('prod'), tipo: 'CAMPO_DINAMICO', binding: '{{orcamento.descricao}}',
-    xPt: left, yPt: 220, larguraPt: larguraUtil, alturaPt: 16, estilo: estilo({}),
-  })
+  // Bloco de dados do produto (rótulo em negrito + valor).
+  const linhaCampo = (y: number, rotulo: string, binding: string) => {
+    els.push({
+      id: novoId('rot'), tipo: 'TEXTO', textoEstatico: rotulo,
+      xPt: left, yPt: y, larguraPt: rotuloCol, alturaPt: 14, estilo: estilo({ negrito: true, fonte: 'Helvetica-Bold' }),
+    })
+    els.push({
+      id: novoId('val'), tipo: 'CAMPO_DINAMICO', binding,
+      xPt: left + rotuloCol, yPt: y, larguraPt: larguraUtil - rotuloCol, alturaPt: 14, estilo: estilo({}),
+    })
+  }
+  linhaCampo(232, 'Produto:', '{{orcamento.descricao}}')
+  linhaCampo(250, 'Cliente:', '{{cliente.nome}}')
 
   // Tabela de tiragens (Quantidade | Unitário | Total).
   els.push({
     id: novoId('tab'), tipo: 'TABELA',
-    xPt: left, yPt: 250, larguraPt: larguraUtil, alturaPt: 80,
+    xPt: left, yPt: 285, larguraPt: larguraUtil, alturaPt: 90,
     estilo: estilo({ tamanhoPt: 10 }),
     tabela: {
       fonteDados: 'variacoes',
@@ -101,6 +115,10 @@ export function layoutPropostaWega(): LayoutDocumento {
     },
   })
 
+  // Condições (Cond. Pagto / Validade / Vendedor).
+  linhaCampo(390, 'Cond. Pagto:', '{{orcamento.condicaoPagamento}}')
+  linhaCampo(408, 'Vendedor:', '{{orcamento.vendedorNome}}')
+
   // Bloco IMPORTANTE (condições).
   els.push({
     id: novoId('cond'), tipo: 'BLOCO_CONDICOES',
@@ -110,13 +128,13 @@ export function layoutPropostaWega(): LayoutDocumento {
       '- Este Orçamento está apoiado na informação fornecida pelo cliente.\n' +
       '- Reservamos o direito de entregar 10% a mais ou a menos da quantidade solicitada (normas A.B.T.G).\n' +
       '- Os processos de fabricação só terão início após confirmação do pedido e aprovação de arte.',
-    xPt: left, yPt: 360, larguraPt: larguraUtil, alturaPt: 80, estilo: estilo({ tamanhoPt: 9 }),
+    xPt: left, yPt: 440, larguraPt: larguraUtil, alturaPt: 90, estilo: estilo({ tamanhoPt: 9 }),
   })
 
   // Assinatura do cliente.
   els.push({
     id: novoId('ass'), tipo: 'ASSINATURA', rotuloAssinatura: 'Assinatura do Cliente',
-    xPt: left, yPt: 470, larguraPt: 300, alturaPt: 20, estilo: estilo({ tamanhoPt: 9 }),
+    xPt: left, yPt: 560, larguraPt: 300, alturaPt: 20, estilo: estilo({ tamanhoPt: 9 }),
   })
 
   return { versao: 1, pagina, elementos: els }
@@ -193,10 +211,23 @@ export async function seedTemplatesVisuaisWega(empresaId: string): Promise<Resul
     // Idempotência: já existe template VISUAL desse tipo para a empresa?
     const existente = await prisma.templateProposta.findFirst({
       where: { empresaId, tipo: def.tipo, layoutJson: { not: null } } as never,
-      select: { id: true },
+      select: { id: true, layoutJson: true } as never,
     })
     if (existente) {
-      ignorados += 1
+      // Conserta templates semeados VAZIOS em versões anteriores: se o layout
+      // não tem elementos, regrava com o layout rico atual. Templates já
+      // editados (com elementos) são preservados — não sobrescreve trabalho.
+      const layoutAtual = (existente as { layoutJson?: { elementos?: unknown[] } }).layoutJson
+      const vazio = !layoutAtual || !Array.isArray(layoutAtual.elementos) || layoutAtual.elementos.length === 0
+      if (vazio) {
+        await prisma.templateProposta.update({
+          where: { id: (existente as { id: string }).id },
+          data: { layoutJson: def.layout as never } as never,
+        })
+        criados += 1
+      } else {
+        ignorados += 1
+      }
       continue
     }
     // Há algum default (visual) desse tipo? Se não, este nasce default.
