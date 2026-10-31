@@ -21,6 +21,7 @@ import {
   listarAnexosMetadados,
 } from './anexo-pedido-proposta.service'
 import { criarOrcamentoDePedidoProposta } from './encaminhar-orcamento.service'
+import { gerarPedidoPropostaPdf } from './pedido-proposta-pdf.service'
 import { liberarPedidoDePedidoProposta, type FasePendente } from './liberar-pedido-proposta.service'
 import { ESTADOS_VALIDOS, PedidoPropostaError, type EstadoProposta } from './pedido-proposta-estado.service'
 import { enriquecerCnpj } from '../../prospeccao/provider'
@@ -195,6 +196,72 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
     const body = z.object({ senha: z.string().optional() }).parse(request.body ?? {})
     try {
       return await liberarPedidoDePedidoProposta(user.empresaId, id, user.id, user.perfil, { senha: body.senha })
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // ── Imprimir (PDF do RFQ com todos os campos preenchidos) ──
+  // Aceita token via query (mesmo padrão dos anexos) para abrir em nova aba.
+  app.get('/pedidos-proposta/:id/pdf', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      const p = await obterPedidoProposta(user.empresaId, id)
+      const empresa = await prisma.empresa.findFirst({
+        where: { id: user.empresaId },
+        select: { razaoSocial: true, cnpj: true, telefone: true, email: true, logo: true },
+      })
+      const pdf = await gerarPedidoPropostaPdf(
+        {
+          numero: p.numero,
+          estado: p.estado,
+          origem: p.origem,
+          tipoPedido: p.tipoPedido,
+          criadoEm: p.criadoEm,
+          clienteNome: p.clienteNome,
+          clienteCpfCnpj: p.clienteCpfCnpj,
+          jaCliente: p.jaCliente,
+          mercado: p.mercado,
+          ufOrigem: p.ufOrigem,
+          cidade: p.cidade,
+          tipoEntrega: p.tipoEntrega,
+          entregaFracionadaDias: p.entregaFracionadaDias,
+          prazoPagamento: p.prazoPagamento,
+          produtoNome: p.produtoNome,
+          tipoEmbalagem: p.tipoEmbalagem,
+          quantidade: p.quantidade,
+          tiragensTexto: (p as { tiragensTexto?: string | null }).tiragensTexto,
+          cartao: p.cartao,
+          gramatura: p.gramatura,
+          medidasTexto: p.medidasTexto,
+          cartaoFsc: p.cartaoFsc,
+          corteInternoVerso: p.corteInternoVerso,
+          passtime: p.passtime,
+          acabamentoManual: p.acabamentoManual,
+          acabamentos: p.acabamentos,
+          acabamentosSelecionados: (p as { acabamentosSelecionados?: Array<{ nome: string; marcado: boolean; detalhe?: string | null }> | null }).acabamentosSelecionados,
+          matriz: p.matriz,
+          quantidadePorVolume: p.quantidadePorVolume,
+          variacoesArte: p.variacoesArte,
+          exportacao: p.exportacao,
+          dataValidade: p.dataValidade,
+          exigeAmostra: p.exigeAmostra,
+          discriminacao: p.discriminacao,
+          observacoes: p.observacoes,
+        },
+        {
+          razaoSocial: empresa?.razaoSocial || 'Empresa',
+          cnpj: empresa?.cnpj,
+          telefone: empresa?.telefone,
+          email: empresa?.email,
+          logoUrl: (empresa as { logo?: string | null } | null)?.logo ?? null,
+        },
+      )
+      return reply
+        .type('application/pdf')
+        .header('Content-Disposition', `inline; filename="pedido-proposta-${p.numero}.pdf"`)
+        .send(pdf)
     } catch (err) {
       return tratarErro(err, reply)
     }

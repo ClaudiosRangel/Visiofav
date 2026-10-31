@@ -754,3 +754,51 @@ pelo módulo).
 commitar.
 
 Verificação: get_diagnostics limpo nos 2 arquivos front. Sem mudança de backend.
+
+---
+
+## 16. REVISÃO 8 (30/10/2026) — impressão do RFQ + ações de workflow na listagem
+
+**Pedido do usuário:** "era para ter impressão e as ações da proposta (imprimir,
+enviar para orçamento, enviar para conferir cálculo) com status de workflow — não
+está aparecendo." No print, o registro estava em `NOVO` e só a ação "Abrir"
+aparecia (as ações de workflow estavam escondidas por estado). Além disso, os
+campos preenchidos (inclusive os da planilha) deveriam sair na impressão.
+
+### Backend (novo — sem schema)
+- `pedido-proposta-pdf.service.ts` (NOVO): `gerarPedidoPropostaPdf(p, empresa)` —
+  PDF (pdfkit) do RFQ com cabeçalho/logo da empresa (`resolverLogoBuffer`
+  base64/dataURL/URL) + TODAS as seções preenchidas: Cliente, Entrega/Pagamento,
+  Produto/Especificação (cartão, gramatura, medidas, tiragens, variações de arte,
+  matriz, FSC, corte interno, passtime, exige amostra...), Acabamentos
+  selecionados (checklist marcado + detalhe), e textos longos (acabamentos
+  livre/discriminação/observações). Campos vazios são omitidos.
+- Rota `GET /orcamento-grafico/pedidos-proposta/:id/pdf` (em
+  `pedido-proposta.routes.ts`): carrega o RFQ (`obterPedidoProposta`, empresaId
+  explícito) + empresa (`razaoSocial/cnpj/telefone/email/logo`) e serve o PDF
+  `inline`. Aceita token via query (mesmo padrão dos anexos → abre em nova aba).
+- get_diagnostics limpo (routes + service). Sem mudança de schema/migração.
+
+### Frontend (listagem `pedidos/page.tsx` + form)
+- Coluna **Ações** reformulada para mostrar o WORKFLOW por estado + um menu de
+  ações sempre presente:
+  - `NOVO` → botão **"Iniciar análise"** (PATCH estado → EM_ANALISE).
+  - `EM_ANALISE` → **"Enviar p/ orçamento"** (encaminhar — gera o cálculo).
+  - `ENVIADO_ORCAMENTO`/`ORCADO` → **"Conferir cálculo"** (abre o orçamento
+    vinculado).
+  - `ACEITO` → **"Liberar"** (modal com senha, já existia).
+  - Menu **"Ações"** (sempre): Abrir/editar, **Imprimir (PDF)**, abrir orçamento
+    vinculado, atalhos de workflow do estado (marcar proposta enviada / registrar
+    aceite) e, para estados não-terminais, **Marcar como perdido** / **Cancelar**
+    (modal de motivo ≥5 chars → PATCH estado com motivo).
+- Impressão abre o PDF em nova aba com `?token=` (via `getAuthToken`).
+- `PedidoPropostaForm.tsx`: botão **"Imprimir"** no cabeçalho (quando o pedido já
+  foi salvo) chamando o mesmo endpoint.
+- get_diagnostics limpo nos 3 arquivos front.
+
+**Observação sobre "campos da planilha na proposta":** os campos do RFQ (cartão,
+gramatura, medidas, acabamentos, cores/variações, etc.) agora saem na impressão
+do Pedido/Proposta. Quando o RFQ é encaminhado ao orçamento (`encaminhar`), esses
+dados alimentam o OrcamentoGrafico; a proposta ao cliente (PDF WEGA) continua
+saindo do orçamento. Se o usuário quiser os campos técnicos do RFQ também no PDF
+WEGA da proposta ao cliente, é um incremento no `orcamento-grafico-proposta-pdf`.
