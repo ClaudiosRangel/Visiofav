@@ -542,6 +542,12 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
     interface Conflito {
       centroProducao: string
       tipoProcesso: string
+      // Gravidade/tipo do conflito (regra por status — pergunta 2):
+      //  - NORMAL / NAO_INICIADAS: duas etapas ainda não iniciadas disputam a máquina.
+      //  - ALTA / DUAS_EM_ANDAMENTO: duas etapas apontadas como rodando ao mesmo
+      //    tempo no mesmo centro (erro de apontamento).
+      gravidade: 'NORMAL' | 'ALTA'
+      tipoConflito: 'NAO_INICIADAS' | 'DUAS_EM_ANDAMENTO'
       etapa1: { id: string; opNumero: string; descricao: string; inicioAt: string; fimAt: string }
       etapa2: { id: string; opNumero: string; descricao: string; inicioAt: string; fimAt: string }
       sobreposicaoMinutos: number
@@ -549,17 +555,19 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
 
     const conflitos: Conflito[] = []
 
-    // Coletar todas as etapas com horários previstos, agrupadas por centro
+    // Coletar todas as etapas com horários previstos, agrupadas por centro.
+    // Guardamos o `status` para aplicar a regra de conflito por status (abaixo).
     const etapasPorCentro = new Map<string, Array<{
       id: string; opNumero: string; descricao: string
       centroProducao: string; tipoProcesso: string
+      status: string
       inicioMs: number; fimMs: number
     }>>()
 
     for (const op of timeline) {
       for (const etapa of op.etapas) {
         if (!etapa.centroProducao || !etapa.inicioPrevistoAt || !etapa.fimPrevistoAt) continue
-        if (etapa.status === 'CONCLUIDO') continue // ignorar etapas já terminadas
+        if (etapa.status === 'CONCLUIDO' || etapa.status === 'CONCLUIDA') continue // ignorar etapas já terminadas
 
         const key = etapa.centroProducao
         if (!etapasPorCentro.has(key)) etapasPorCentro.set(key, [])
@@ -569,10 +577,37 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           descricao: etapa.descricao,
           centroProducao: etapa.centroProducao,
           tipoProcesso: etapa.tipoProcesso || '',
+          status: etapa.status,
           inicioMs: new Date(etapa.inicioPrevistoAt).getTime(),
           fimMs: new Date(etapa.fimPrevistoAt).getTime(),
         })
       }
+    }
+
+    // Regra de CONFLITO por status (decisão do cliente — pergunta 2):
+    //
+    // A sobreposição temporal projetada no Gantt NEM SEMPRE é um conflito real.
+    // Quando uma etapa já está EM_ANDAMENTO (rodando na máquina agora, ancorada
+    // no início real) e a próxima etapa PENDENTE/PAUSADA da fila é projetada
+    // para começar antes dela terminar, isso é apenas FILA NORMAL (a de trás
+    // está aguardando a vez) — não deve alarmar.
+    //
+    // Só é conflito REAL quando:
+    //  (A) duas etapas AINDA NÃO INICIADAS (PENDENTE/PAUSADA) disputam a mesma
+    //      máquina no mesmo horário; ou
+    //  (B) duas etapas EM_ANDAMENTO se sobrepõem no mesmo centro — o que indica
+    //      erro de apontamento (duas OPs marcadas rodando ao mesmo tempo na
+    //      mesma máquina). Esse caso é destacado como gravidade ALTA.
+    //
+    // A combinação "EM_ANDAMENTO × PENDENTE/PAUSADA" é IGNORADA (fila normal).
+    const naoIniciada = (s: string) => s === 'PENDENTE' || s === 'PAUSADA' || s === 'AGUARDANDO'
+    const emAndamento = (s: string) => s === 'EM_ANDAMENTO' || s === 'EM_PRODUCAO'
+    function classificarConflito(sa: string, sb: string): 'NAO_INICIADAS' | 'DUAS_EM_ANDAMENTO' | null {
+      if (naoIniciada(sa) && naoIniciada(sb)) return 'NAO_INICIADAS'
+      if (emAndamento(sa) && emAndamento(sb)) return 'DUAS_EM_ANDAMENTO'
+      // Qualquer mistura envolvendo uma EM_ANDAMENTO e uma não-iniciada = fila
+      // normal → sem conflito.
+      return null
     }
 
     // Detectar sobreposições em cada centro
@@ -595,9 +630,15 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           // Ignorar micro-sobreposições (< 5 min) — podem ser arredondamentos
           if (sobreposicaoMin < 5) continue
 
+          // Aplica a regra por status: só registra conflito REAL.
+          const tipo = classificarConflito(a.status, b.status)
+          if (!tipo) continue
+
           conflitos.push({
             centroProducao: centro,
             tipoProcesso: a.tipoProcesso,
+            gravidade: tipo === 'DUAS_EM_ANDAMENTO' ? 'ALTA' : 'NORMAL',
+            tipoConflito: tipo,
             etapa1: { id: a.id, opNumero: a.opNumero, descricao: a.descricao, inicioAt: new Date(a.inicioMs).toISOString(), fimAt: new Date(a.fimMs).toISOString() },
             etapa2: { id: b.id, opNumero: b.opNumero, descricao: b.descricao, inicioAt: new Date(b.inicioMs).toISOString(), fimAt: new Date(b.fimMs).toISOString() },
             sobreposicaoMinutos: sobreposicaoMin,
