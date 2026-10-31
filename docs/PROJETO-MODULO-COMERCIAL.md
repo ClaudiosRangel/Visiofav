@@ -813,3 +813,67 @@ registrado SEM `getToken` customizado (`server.ts`) — ele só lê o header
 do `authenticate`) que, quando não há header Authorization, promove `?token=` da
 query para `Authorization: Bearer <token>`. Corrige o PDF e também os anexos
 abertos em nova aba (mesmo padrão `urlAnexo`). get_diagnostics limpo.
+
+---
+
+## 17. EDITOR VISUAL DE TEMPLATES (spec comercial-editor-visual-templates) — 30/10/2026
+
+Pedido do usuário: evoluir o configurador de templates para um EDITOR VISUAL de
+alta tecnologia (arrastar/redimensionar objetos, expandir logo, preview fiel ao
+PDF), com templates separados de ORÇAMENTO e PROPOSTA, e os modelos atuais da
+Carton Wega como default. Spec completa (requirements → design → tasks) em
+`.kiro/specs/comercial-editor-visual-templates/`.
+
+### Arquitetura (resumo)
+- **Uma spec, dois renderizadores**: o layout é um `Layout_JSON` com coordenadas
+  em **pt** (unidade nativa do pdfkit, A4=595×842). O MESMO JSON é interpretado
+  pelo `Renderizador_PDF` (back, pdfkit por coordenadas) e pelo
+  `Renderizador_Preview` (front, DOM absoluto escalado pt→px) — garante
+  fidelidade preview↔PDF.
+- **Persistência sem tabela nova**: `TemplateProposta` ganhou `tipo`
+  (ORCAMENTO|PROPOSTA, default PROPOSTA = não-regressão) + `layoutJson` (null =
+  template legado de blocos; preenchido = template visual novo). Default por
+  (empresaId, tipo). migrate-prod idempotente (ADD COLUMN IF NOT EXISTS + índice)
+  no MESMO commit do schema.
+- **Canvas DOM** com **react-moveable** (drag/resize/snapping às margens) — texto
+  nítido e fiel ao pdfkit vetorial (Fabric.js descartada por ser bitmap).
+
+### Backend (`VisioFab.Wms.Back`, `src/modules/orcamento-grafico/template-visual/`)
+- `layout-json.types.ts` (tipos pt) + `layout-json.service.ts` (Zod +
+  normalizar tolerante + `clampElemento` à área útil).
+- `binding-resolver.service.ts` (puro): `resolverBinding` ({{cliente.nome}}…,
+  R$/dd-mm-aaaa, fallback vazio+aviso sem lançar) + `resolverTabela`.
+- `renderizador-pdf.service.ts`: `renderizarLayout(layout, ctx)` desenha os
+  elementos NA ORDEM, despacho por tipo (LOGO/TEXTO/CAMPO_DINAMICO/TABELA/LINHA/
+  BLOCO_CONDICOES/ASSINATURA). `logo-buffer.ts` (base64/dataURL/URL → Buffer).
+- `template-visual.service.ts`: CRUD + `duplicar` + `definirDefault` (único por
+  empresa+tipo, transação) + `resolverTemplateVisual`. empresaId EXPLÍCITO.
+- `seed-default-wega.service.ts`: `seedTemplatesVisuaisWega` idempotente —
+  1 PROPOSTA (reproduz o estilo WEGA) + 1 ORCAMENTO; default quando o tipo não
+  tem; empresaId explícito.
+- `template-visual.routes.ts` (prefixo `/api/orcamento-grafico/templates-visuais`):
+  seed-wega, listar(?tipo), detalhe, criar, atualizar, duplicar, default,
+  excluir, preview-pdf (dados de exemplo), gerar-pdf (orçamento real; sem
+  template visual → 409 orientando usar a proposta padrão). Registrada em
+  server.ts. Rotas legadas `proposta-pdf`/`enviar-email` INTOCADAS.
+
+### Frontend (`VisioFab.Wms.Front`)
+- Libs espelho: `src/lib/comercial/template-visual/{binding-resolver,layout-tipos,
+  layout-escala}.ts` (mesma especificação de binding + escala pt→px + clamp).
+- Componentes `src/components/comercial/template-visual/`: `RenderizadorPreview`
+  (DOM), `PaletaElementos` (7 tipos), `PainelPropriedades` (x/y/larg/alt/estilo +
+  catálogo de bindings), `CanvasA4` (react-moveable: arrastar/redimensionar/
+  snapping + clamp).
+- Página `src/app/(interna)/comercial/editor-visual/page.tsx`: Paleta + Canvas +
+  Painel + lista por tipo + CRUD/duplicar/default/excluir + Preview PDF + botão
+  "Modelos Carton Wega" (seed). Item "Editor de Templates" no menu Comercial.
+- Dependência nova: `react-moveable`.
+
+### Estado e pendências
+- Núcleo funcional (tarefas 1–8 back + 10–15 front) IMPLEMENTADO; get_diagnostics
+  limpo em todos os arquivos. `prisma generate` OK (client reconhece tipo/layoutJson).
+- Tarefas OPCIONAIS não feitas: property-based tests (Properties 1–13, fast-check)
+  e testes de componente — ficam como follow-up (núcleo não depende delas).
+- Verificação: build Next em andamento; migrate-prod roda no deploy do Render
+  (Postgres local off). Commits ficam com o usuário (back: schema+migrate-prod
+  juntos; back e front separados). Motor de cálculo NÃO tocado.

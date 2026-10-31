@@ -5514,7 +5514,14 @@ async function seedMateriaisFromOPs() {
     CONSTRAINT "template_proposta_pkey" PRIMARY KEY ("id")
   )`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "template_proposta_empresa_id_is_default_idx" ON "template_proposta"("empresa_id","is_default")`)
-  console.log('✅ Comercial: template_proposta (templates de proposta PDF)')
+  // Editor visual de templates (spec comercial-editor-visual-templates):
+  // `tipo` (ORCAMENTO|PROPOSTA, default PROPOSTA preserva legados) + `layout_json`
+  // (NULL = template legado de blocos; presente = template visual novo). Aditivo,
+  // idempotente — registros existentes recebem tipo='PROPOSTA' e layout_json=NULL.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "template_proposta" ADD COLUMN IF NOT EXISTS "tipo" VARCHAR(20) NOT NULL DEFAULT 'PROPOSTA'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "template_proposta" ADD COLUMN IF NOT EXISTS "layout_json" JSONB`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "template_proposta_empresa_id_tipo_is_default_idx" ON "template_proposta"("empresa_id","tipo","is_default")`)
+  console.log('✅ Comercial: template_proposta (templates de proposta PDF + editor visual: tipo/layout_json)')
 
   // ───────────────────────────────────────────────────────────────────────────
   // Campos da planilha de pedidos Carton Wega na solicitação do portal

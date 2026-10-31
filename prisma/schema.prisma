@@ -4631,13 +4631,20 @@ model TemplateProposta {
   id           String   @id @default(uuid())
   empresaId    String   @map("empresa_id")
   nome         String   @db.VarChar(120)
+  // Tipo do template (editor visual — spec comercial-editor-visual-templates).
+  // Default PROPOSTA preserva registros legados (não-regressão). ORCAMENTO | PROPOSTA.
+  tipo         String   @default("PROPOSTA") @db.VarChar(20)
   isDefault    Boolean  @default(false) @map("is_default")
   // Config de layout/textos/blocos (shape TemplatePropostaConfig no service).
   config       Json
+  // Layout visual (editor WYSIWYG). NULL = template LEGADO de blocos (usa config);
+  // presente = template VISUAL novo (LayoutDocumento, coordenadas em pt).
+  layoutJson   Json?    @map("layout_json")
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
   @@index([empresaId, isDefault])
+  @@index([empresaId, tipo, isDefault])
   @@map("template_proposta")
 }
 
