@@ -802,3 +802,14 @@ do Pedido/Proposta. Quando o RFQ é encaminhado ao orçamento (`encaminhar`), es
 dados alimentam o OrcamentoGrafico; a proposta ao cliente (PDF WEGA) continua
 saindo do orçamento. Se o usuário quiser os campos técnicos do RFQ também no PDF
 WEGA da proposta ao cliente, é um incremento no `orcamento-grafico-proposta-pdf`.
+
+### 16.1 FIX (30/10/2026) — "Não autenticado" ao imprimir o PDF em nova aba
+
+O botão Imprimir abria `.../pedidos-proposta/:id/pdf?token=<jwt>` em nova aba e
+retornava `{"message":"Não autenticado"}`. CAUSA: o `@fastify/jwt` global é
+registrado SEM `getToken` customizado (`server.ts`) — ele só lê o header
+`Authorization`, NÃO a query string. A nova aba não envia header, então o
+`authenticate` rejeitava. FIX: hook `onRequest` em `pedidoPropostaRoutes` (ANTES
+do `authenticate`) que, quando não há header Authorization, promove `?token=` da
+query para `Authorization: Bearer <token>`. Corrige o PDF e também os anexos
+abertos em nova aba (mesmo padrão `urlAnexo`). get_diagnostics limpo.

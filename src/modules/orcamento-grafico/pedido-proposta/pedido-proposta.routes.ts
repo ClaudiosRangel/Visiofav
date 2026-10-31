@@ -85,6 +85,18 @@ const corpoCriar = z.object({
 })
 
 export async function pedidoPropostaRoutes(app: FastifyInstance) {
+  // Permite abrir PDF/anexos em NOVA ABA (sem header Authorization): se vier
+  // `?token=` na query, promove para o header Bearer ANTES do authenticate.
+  // O @fastify/jwt global só lê o header; sem isto, a nova aba cai em 401.
+  app.addHook('onRequest', async (request) => {
+    if (!request.headers.authorization) {
+      const q = request.query as { token?: string } | undefined
+      const t = q?.token
+      if (t && typeof t === 'string') {
+        request.headers.authorization = `Bearer ${t}`
+      }
+    }
+  })
   app.addHook('onRequest', authenticate)
 
   // ── Consulta CNPJ (autopreenchimento) — reusa enriquecerCnpj ──
