@@ -23,7 +23,7 @@ import type { TipoTemplate } from './layout-json.types'
 import { LayoutJsonError } from './layout-json.service'
 import { renderizarLayout, type ContextoRender } from './renderizador-pdf.service'
 import { resolverLogoBuffer } from './logo-buffer'
-import { seedTemplatesVisuaisWega } from './seed-default-wega.service'
+import { seedTemplatesVisuaisWega, layoutPropostaWega, layoutOrcamentoPadrao } from './seed-default-wega.service'
 
 function tratarErro(err: unknown, reply: any) {
   if (err instanceof TemplateVisualError) {
@@ -37,6 +37,17 @@ function tratarErro(err: unknown, reply: any) {
 
 const tipoSchema = z.enum(['ORCAMENTO', 'PROPOSTA'])
 
+/** Resume os acabamentos (JSON do orçamento) em texto separado por vírgula. */
+function resumoAcabamentos(acabamentos: unknown): string | null {
+  if (Array.isArray(acabamentos) && acabamentos.length > 0) {
+    const nomes = acabamentos
+      .map((a) => (a && typeof a === 'object' ? ((a as { tipo?: string; nome?: string }).tipo ?? (a as { nome?: string }).nome) : null))
+      .filter(Boolean)
+    if (nomes.length) return nomes.join(', ')
+  }
+  return null
+}
+
 /** Monta o Contexto_de_Geracao real a partir de um orçamento gráfico da empresa. */
 async function montarContexto(empresaId: string, orcamentoId: string): Promise<ContextoRender | null> {
   const orc = await prisma.orcamentoGrafico.findFirst({
@@ -44,8 +55,8 @@ async function montarContexto(empresaId: string, orcamentoId: string): Promise<C
     select: {
       numero: true, versao: true, quantidade: true, precoVenda: true, precoUnitario: true,
       validadeAte: true, criadoEm: true, observacoes: true, papelDescricao: true,
-      gramatura: true, numCores: true, variacoes: true, clienteId: true, clienteNome: true,
-      vendedorId: true,
+      gramatura: true, numCores: true, variacoes: true, acabamentos: true,
+      clienteId: true, clienteNome: true, vendedorId: true,
       tipoEmbalagem: { select: { descricao: true } },
     } as never,
   })
@@ -99,6 +110,13 @@ async function montarContexto(empresaId: string, orcamentoId: string): Promise<C
       precoUnitario: o.precoUnitario != null ? Number(o.precoUnitario) : null,
       validadeAte: o.validadeAte, criadoEm: o.criadoEm,
       descricao: o.tipoEmbalagem?.descricao || o.papelDescricao || null,
+      tipoEmbalagem: o.tipoEmbalagem?.descricao || null,
+      formatoFinal: o.formatoFinal ?? null,
+      especificacoes: o.especificacoes ?? null,
+      acabamentosTexto: resumoAcabamentos(o.acabamentos),
+      condicaoPagamento: o.condicaoPagamento ?? null,
+      imposto: o.imposto ?? null,
+      programacaoEntrega: o.programacaoEntrega ?? null,
       vendedorNome,
     },
     itens,
@@ -174,6 +192,20 @@ export async function templateVisualRoutes(app: FastifyInstance) {
     }
   })
 
+  // ── Restaurar o layout do modelo Carton Wega no template aberto ──
+  // Sobrescreve o layoutJson deste template com o layout padrão do tipo dele.
+  app.patch('/:id/restaurar-wega', async (request, reply) => {
+    const user = request.user as { empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      const tpl = await obterTemplateVisual(user.empresaId, id)
+      const layout = tpl.tipo === 'ORCAMENTO' ? layoutOrcamentoPadrao() : layoutPropostaWega()
+      return await atualizarTemplateVisual(user.empresaId, id, { layoutJson: layout })
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
   // ── Duplicar ──
   app.post('/:id/duplicar', async (request, reply) => {
     const user = request.user as { empresaId: string }
@@ -229,7 +261,11 @@ export async function templateVisualRoutes(app: FastifyInstance) {
         orcamento: {
           numero: 1234, versao: 1, quantidade: 5000, precoVenda: 12500, precoUnitario: 2.5,
           validadeAte: new Date(Date.now() + 10 * 864e5), criadoEm: new Date(),
-          descricao: 'Produto de exemplo', vendedorNome: 'Vendedor Exemplo',
+          descricao: 'Cartucho Sabonete — exemplo', vendedorNome: 'Vendedor Exemplo',
+          tipoEmbalagem: 'Cartucho', formatoFinal: '57 x 32 x 82 mm',
+          especificacoes: 'Cartão Triplex 250 g/m², 4x0 cores',
+          acabamentosTexto: 'Verniz Base Água Total Frente, Laminação Fosca',
+          condicaoPagamento: '28/35/42', imposto: 'ICMS + IPI', programacaoEntrega: 'a combinar',
         },
         itens: [
           { descricao: 'Item de exemplo A', quantidade: 5000, precoUnitario: 2.5, precoTotal: 12500 },

@@ -86,24 +86,28 @@ export function layoutPropostaWega(): LayoutDocumento {
     xPt: left, yPt: 190, larguraPt: larguraUtil, alturaPt: 30, estilo: estilo({}),
   })
 
-  // Bloco de dados do produto (rótulo em negrito + valor).
-  const linhaCampo = (y: number, rotulo: string, binding: string) => {
+  // Bloco de dados do produto (rótulo em negrito + valor), espelhando o modelo
+  // Carton Wega: Produto / Descrição / Formato Final / Especificações / Acabamentos.
+  const linhaCampo = (y: number, rotulo: string, binding: string, xRot = left, larguraRot = rotuloCol) => {
     els.push({
       id: novoId('rot'), tipo: 'TEXTO', textoEstatico: rotulo,
-      xPt: left, yPt: y, larguraPt: rotuloCol, alturaPt: 14, estilo: estilo({ negrito: true, fonte: 'Helvetica-Bold' }),
+      xPt: xRot, yPt: y, larguraPt: larguraRot, alturaPt: 14, estilo: estilo({ negrito: true, fonte: 'Helvetica-Bold' }),
     })
     els.push({
       id: novoId('val'), tipo: 'CAMPO_DINAMICO', binding,
-      xPt: left + rotuloCol, yPt: y, larguraPt: larguraUtil - rotuloCol, alturaPt: 14, estilo: estilo({}),
+      xPt: xRot + larguraRot, yPt: y, larguraPt: left + larguraUtil - (xRot + larguraRot), alturaPt: 14, estilo: estilo({}),
     })
   }
-  linhaCampo(232, 'Produto:', '{{orcamento.descricao}}')
-  linhaCampo(250, 'Cliente:', '{{cliente.nome}}')
+  linhaCampo(228, 'Produto:', '{{orcamento.tipoEmbalagem}}')
+  linhaCampo(244, 'Descrição:', '{{orcamento.descricao}}')
+  linhaCampo(260, 'Formato Final:', '{{orcamento.formatoFinal}}')
+  linhaCampo(276, 'Especificações:', '{{orcamento.especificacoes}}')
+  linhaCampo(292, 'Acabamentos:', '{{orcamento.acabamentosTexto}}')
 
   // Tabela de tiragens (Quantidade | Unitário | Total).
   els.push({
     id: novoId('tab'), tipo: 'TABELA',
-    xPt: left, yPt: 285, larguraPt: larguraUtil, alturaPt: 90,
+    xPt: left, yPt: 322, larguraPt: larguraUtil, alturaPt: 80,
     estilo: estilo({ tamanhoPt: 10 }),
     tabela: {
       fonteDados: 'variacoes',
@@ -115,9 +119,14 @@ export function layoutPropostaWega(): LayoutDocumento {
     },
   })
 
-  // Condições (Cond. Pagto / Validade / Vendedor).
-  linhaCampo(390, 'Cond. Pagto:', '{{orcamento.condicaoPagamento}}')
-  linhaCampo(408, 'Vendedor:', '{{orcamento.vendedorNome}}')
+  // Condições em DUAS colunas (esquerda: Cond.Pagto/Vendedor/Prog.Entrega;
+  // direita: Validade/Imposto), como no modelo.
+  const metadeDir = left + larguraUtil / 2
+  linhaCampo(418, 'Cond. Pagto:', '{{orcamento.condicaoPagamento}}', left, 90)
+  linhaCampo(418, 'Validade:', '{{orcamento.validadeAte}}', metadeDir, 70)
+  linhaCampo(434, 'Vendedor:', '{{orcamento.vendedorNome}}', left, 90)
+  linhaCampo(434, 'Imposto:', '{{orcamento.imposto}}', metadeDir, 70)
+  linhaCampo(450, 'Programação Entrega:', '{{orcamento.programacaoEntrega}}', left, 120)
 
   // Bloco IMPORTANTE (condições).
   els.push({
@@ -128,7 +137,7 @@ export function layoutPropostaWega(): LayoutDocumento {
       '- Este Orçamento está apoiado na informação fornecida pelo cliente.\n' +
       '- Reservamos o direito de entregar 10% a mais ou a menos da quantidade solicitada (normas A.B.T.G).\n' +
       '- Os processos de fabricação só terão início após confirmação do pedido e aprovação de arte.',
-    xPt: left, yPt: 440, larguraPt: larguraUtil, alturaPt: 90, estilo: estilo({ tamanhoPt: 9 }),
+    xPt: left, yPt: 480, larguraPt: larguraUtil, alturaPt: 90, estilo: estilo({ tamanhoPt: 9 }),
   })
 
   // Assinatura do cliente.
