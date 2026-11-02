@@ -80,7 +80,15 @@ export async function criarOrcamentoDePedidoProposta(
       observacoes: true,
       exigeAmostra: true,
       numero: true,
-    },
+      // Dados técnicos do produto (transferidos ao orçamento para o item nascer
+      // com a engenharia do RFQ, não vazio).
+      produtoNome: true,
+      produtoId: true,
+      cartao: true,
+      gramatura: true,
+      variacoesArte: true,
+      tiragensTexto: true,
+    } as never,
   })
   if (!rfq) throw new PedidoPropostaError(404, 'Pedido/Proposta não encontrado.', 'NAO_ENCONTRADO')
 
@@ -118,7 +126,21 @@ export async function criarOrcamentoDePedidoProposta(
 
   const medidas = parseMedidasTexto(rfq.medidasTexto)
 
+  const r = rfq as Record<string, any>
+  // Descrição do produto a exibir no orçamento (nome do produto do RFQ; senão
+  // o tipo de embalagem). Também grava nos campos técnicos do orçamento.
+  const descricaoProduto: string | null = (r.produtoNome && String(r.produtoNome).trim())
+    ? String(r.produtoNome).trim()
+    : (rfq.tipoEmbalagem ?? null)
+  const gramaturaNum = r.gramatura ? Number(String(r.gramatura).replace(/[^\d.]/g, '')) : null
+
   const obsPartes: string[] = [`Origem: Pedido/Proposta nº ${rfq.numero} (${rfq.id})`]
+  if (descricaoProduto) obsPartes.push(`Produto: ${descricaoProduto}`)
+  if (r.cartao) obsPartes.push(`Cartão: ${r.cartao}`)
+  if (r.gramatura) obsPartes.push(`Gramatura: ${r.gramatura}`)
+  if (rfq.medidasTexto) obsPartes.push(`Medidas: ${rfq.medidasTexto}`)
+  if (r.variacoesArte) obsPartes.push(`Cores/Variações: ${r.variacoesArte}`)
+  if (r.tiragensTexto) obsPartes.push(`Tiragens: ${r.tiragensTexto}`)
   if (rfq.acabamentos) obsPartes.push(`Acabamentos solicitados: ${rfq.acabamentos}`)
   if (rfq.observacoes) obsPartes.push(rfq.observacoes)
 
@@ -147,6 +169,9 @@ export async function criarOrcamentoDePedidoProposta(
         status: 'RASCUNHO',
         etapaCalculo: 'AGUARDANDO',
         exigeAmostra: rfq.exigeAmostra ?? false,
+        // Engenharia inicial vinda do RFQ (não deixa o item nascer vazio).
+        papelDescricao: r.cartao ?? null,
+        gramatura: gramaturaNum && Number.isFinite(gramaturaNum) && gramaturaNum > 0 ? gramaturaNum : null,
         observacoes: obsPartes.join('\n'),
         pedidoPropostaId: rfq.id,
         criadoPorId: usuarioId,
