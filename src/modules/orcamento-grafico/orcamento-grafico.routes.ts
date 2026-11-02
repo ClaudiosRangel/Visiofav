@@ -366,13 +366,17 @@ const itemOrcamentoBodySchema = z.object({
     .array(acabamentoRicoRequestSchema.extend({ restricaoAcabamentoId: z.string().uuid().optional() }))
     .optional(),
   // Itens Diversos / Fornecidos / Campos Livres (Req 12) — persistidos.
+  // `quantidade`/`fixo` são OPCIONAIS (default 1/false): o custo relevante é o
+  // `valor` (achatado por fixo no mapeamento). Isso permite que a PRÉVIA do
+  // StepRevisão (que envia só {descricao, valor}) e o item "fixo" (cuja
+  // quantidade é irrelevante) passem sem erro de validação.
   itensDiversos: z
     .array(
       z.object({
         descricao: z.string().min(1).max(200),
-        quantidade: z.number().min(0.001).max(999999.999),
+        quantidade: z.number().min(0.001).max(999999.999).optional().default(1),
         valor: z.number().min(0.01).max(9999999.99),
-        fixo: z.boolean().default(false),
+        fixo: z.boolean().optional().default(false),
       }),
     )
     .max(50)
@@ -381,7 +385,7 @@ const itemOrcamentoBodySchema = z.object({
     .array(
       z.object({
         descricao: z.string().min(1).max(200),
-        quantidade: z.number().min(0.001).max(999999.999),
+        quantidade: z.number().min(0.001).max(999999.999).optional().default(1),
       }),
     )
     .max(50)
