@@ -2964,12 +2964,50 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     // Resolver nome do produto de repetição (modo Repetição), se houver
     let produtoNome: string | null = null
+    // Foto do produto cadastrado (exibida ao lado da faca em Dados Técnicos/Revisão).
+    let imagemProdutoUrl: string | null = null
     if ((orcamento as any).produtoId) {
       const prod = await prisma.produto.findFirst({
         where: { id: (orcamento as any).produtoId, empresaId: user.empresaId },
-        select: { codigo: true, nome: true },
+        select: { codigo: true, nome: true, imagemUrl: true },
       })
-      if (prod) produtoNome = `${prod.codigo} - ${prod.nome}`
+      if (prod) {
+        produtoNome = `${prod.codigo} - ${prod.nome}`
+        imagemProdutoUrl = prod.imagemUrl ?? null
+      }
+    }
+
+    // Se não há produtoId (orçamento vindo do RFQ por texto), tenta casar a foto
+    // do produto pelo NOME/código extraído do cabeçalho ou da tag "Produto:" das
+    // observações — para a foto aparecer mesmo sem vínculo formal. Multi-tenant.
+    if (!imagemProdutoUrl) {
+      const obs = (orcamento as { observacoes?: string | null }).observacoes ?? null
+      const mTag = obs ? obs.split('\n').map((l) => l.match(/Produto\s*:?\s*(.+)/i)).find(Boolean) : null
+      const nomeAlvo = (
+        (orcamento as { produtoNome?: string | null }).produtoNome ||
+        (mTag ? mTag[1] : null) ||
+        ''
+      ).trim()
+      if (nomeAlvo.length >= 3) {
+        // O nome costuma vir "Descrição ... CODIGO"; tenta por nome exato, por
+        // "contém" e pelo código (última palavra numérica), pegando o 1º com foto.
+        const ultimaPalavra = nomeAlvo.split(/\s+/).pop() || ''
+        const prod = await prisma.produto.findFirst({
+          where: {
+            empresaId: user.empresaId,
+            imagemUrl: { not: null },
+            OR: [
+              { nome: { equals: nomeAlvo, mode: 'insensitive' } },
+              { nome: { contains: nomeAlvo, mode: 'insensitive' } },
+              ...(ultimaPalavra.length >= 3 ? [{ codigo: { equals: ultimaPalavra } }] : []),
+              ...(nomeAlvo.length >= 5 ? [{ nome: { contains: nomeAlvo.slice(0, 40), mode: 'insensitive' as const } }] : []),
+            ],
+          },
+          orderBy: { atualizadoEm: 'desc' },
+          select: { imagemUrl: true },
+        })
+        if (prod?.imagemUrl) imagemProdutoUrl = prod.imagemUrl
+      }
     }
 
     // aproveitamento_manual (peças/folha) via SQL raw — o campo existe no banco
@@ -3021,7 +3059,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }
     } catch { /* não quebra o GET se a resolução falhar */ }
 
-    return { ...orcamento, produtoNome, calculoOrigem: calculoOrigemInfo }
+    return { ...orcamento, produtoNome, imagemProdutoUrl, calculoOrigem: calculoOrigemInfo }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
