@@ -877,3 +877,86 @@ Carton Wega como default. Spec completa (requirements → design → tasks) em
 - Verificação: build Next em andamento; migrate-prod roda no deploy do Render
   (Postgres local off). Commits ficam com o usuário (back: schema+migrate-prod
   juntos; back e front separados). Motor de cálculo NÃO tocado.
+
+---
+
+## 18. SESSÃO 02/11/2026 — bug da tiragem na grade + melhoria da tela de detalhe + fusão de steps
+
+Três pedidos do usuário (prints do detalhe do orçamento + da grade de tiragens
+falhando + reiteração da fusão de steps). Contexto: o usuário criou do zero uma
+Proposta (RFQ) e um Orçamento na Wega e sinalizou pontos a melhorar.
+
+### 18.1 ✅ BUG DA TIRAGEM — grade "falha no cálculo desta faixa" (RAIZ + FIX)
+
+**Sintoma:** no wizard de edição do item (StepRevisao), o "Comparativo por
+Tiragem" mostrava TODAS as faixas (ex.: 39.000 / 78.000 / 156.000 / 390.000 /
+780.000) com "falha no cálculo desta faixa". Os valores são as faixas
+AUTOMÁTICAS (0,5× a 10× a tiragem do item) — no caso real o item do orçamento #2
+da Wega estava com `quantidade = 78.000` (o cabeçalho dizia 1.000; há desconexão
+cabeçalho × item, mas isso é secundário).
+
+**Causa raiz (confirmada lendo produção + o código):** a rota
+`POST /api/orcamento-grafico/simular-tiragens` NÃO resolvia o preço do papel:
+- ignorava o alias `precoKg` (o wizard envia `precoKg`, não `precoKgPapel`);
+- NÃO buscava o `precoUnitario` do cadastro pelo `papelId`.
+Resultado: o papel ia ao motor SEM preço → custo do papel zerado → preço de venda
+zerado → a grade marcava `valorTotal <= 0` como "falha". A rota `/calcular`
+(irmã) JÁ resolvia o preço corretamente (alias + cadastro) — a `simular-tiragens`
+era a única divergente. Dado real conferido: o item tinha `papelId` →
+`PrecoMateriaPrima "Billerud Board 282" = R$ 7,45/kg` (preço existia, só não era
+lido).
+
+**Fix (back, `orcamento-grafico.routes.ts`, rota `/simular-tiragens`):** antes do
+loop de quantidades, resolve `precoKgPapel = body.precoKgPapel || body.precoKg` e,
+quando há `papelId`, sobrepõe pelo `precoUnitario` do cadastro (multi-tenant,
+empresaId explícito) — EXATAMENTE a mesma regra do `/calcular`. O `papel.precoKg`
+do input do motor passou a usar essa variável resolvida. Não toca o motor de
+cálculo (paridade Calcgraf preservada). get_diagnostics limpo.
+
+**Verificação:** diagnóstico feito com script temporário de leitura do Neon (já
+REMOVIDO) — confirmou item com cores completas + papelId com preço no cadastro, e
+a rota antiga ignorando esse preço. Após o deploy, a grade calcula as faixas
+normalmente.
+
+**Observação (não corrigido, secundário):** o cabeçalho do orçamento mostra
+`quantidade` diferente do item (1.000 × 78.000). A tela de detalhe agora mostra a
+tiragem REAL do item na tabela de itens; a quantidade do cabeçalho é só
+informativa do RFQ. Se o usuário reclamar da divergência, alinhar o cabeçalho ao
+item na reconsolidação — fica como follow-up.
+
+### 18.2 ✅ TELA DE DETALHE DO ORÇAMENTO — bloco "Produto / Especificação"
+
+**Pedido:** "melhore essa tela" (print do `/orcamento-grafico/[id]` com os dados
+do produto espalhados e o detalhe do item precisando ser expandido).
+
+**Feito (SÓ FRONT, `[id]/page.tsx`):** o cabeçalho passou de 2 para **3 cards**
+(`SimpleGrid cols={{ base:1, md:3 }}`): Dados Comerciais · **Produto /
+Especificação** (novo) · Totais Consolidados. O card novo
+(`<ProdutoEspecificacao>`) consolida num só lugar: Produto, Tipo de Embalagem,
+Medidas (formatadas C×L×A mm), Cartão + gramatura, nº de cores + badges das
+cores. Busca primeiro no cabeçalho do orçamento e cai no 1º item quando o
+cabeçalho não tem o dado (orçamentos vindos do RFQ têm a engenharia só no item).
+Helper `extrairTagObs` lê "Produto:" das observações quando falta `produtoNome`.
+get_diagnostics limpo.
+
+### 18.3 ✅ FUSÃO DOS STEPS DO WIZARD (reiteração) — já estava no ar
+
+O usuário reiterou "quero step1 a step3 em um único step". **Já foi implementado**
+na sessão anterior (front commit `e2c484b`): o wizard de Novo Orçamento fundiu
+Tipo + Medidas + Papel num único step "Produto" (de 9 índices → 7 labels:
+Cliente, Produto, Cores, Dados Técnicos, Acabamentos, Diversos, Revisão). O
+`StepTipo` virou Select com imagem (combobox). O usuário via a versão antiga
+porque o deploy Vercel ainda não tinha subido. Nada a refazer — confirmar o
+deploy.
+
+### 18.4 PENDENTE — campo "imagem da faca" (Opção A, confirmada)
+
+Ainda NÃO implementado (é o maior; toca schema). Campo dedicado de imagem da faca
+no RFQ/proposta + exibição no orçamento junto com a foto do produto. Requer:
+coluna nova (bytea/base64) em `pedido_proposta` (e espelho no orçamento ou item)
++ migrate-prod idempotente no MESMO commit + UI de upload na proposta + exibição
+no detalhe do orçamento. Fazer quando o usuário priorizar.
+
+### Commits desta sessão (ficam na main dos 2 repos, separados)
+- Back: fix do preço do papel em `/simular-tiragens`.
+- Front: card "Produto / Especificação" na tela de detalhe do orçamento.

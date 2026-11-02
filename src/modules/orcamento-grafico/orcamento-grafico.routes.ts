@@ -4990,6 +4990,21 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const tipo = await prisma.tipoEmbalagem.findFirst({ where: { id: body.tipoEmbalagemId, empresaId: user.empresaId } })
     if (!tipo) return reply.status(404).send({ message: 'Tipo de embalagem não encontrado' })
 
+    // Preço do papel por kg — MESMA regra do /calcular (antes o simular-tiragens
+    // ignorava o alias `precoKg` E não resolvia o `papelId`, deixando o papel sem
+    // preço → custo zerado → a grade de faixas falhava "falha no cálculo desta
+    // faixa"). Agora: alias precoKg → fallback; se há papelId, o preço do cadastro
+    // (PrecoMateriaPrima) tem precedência. Multi-tenant (empresaId explícito).
+    let precoKgPapel = body.precoKgPapel || body.precoKg
+    if (body.papelId) {
+      const papelCad = await prisma.precoMateriaPrima.findFirst({
+        where: { id: body.papelId, empresaId: user.empresaId },
+        select: { precoUnitario: true },
+      })
+      const precoCad = papelCad?.precoUnitario != null ? Number(papelCad.precoUnitario) : 0
+      if (precoCad > 0) precoKgPapel = precoCad
+    }
+
     // Buscar máquina: a informada OU a primeira de impressão (mesmo fallback do
     // /calcular — o wizard nem sempre envia maquinaId).
     let maquina = body.maquinaId
@@ -5041,7 +5056,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           parametros: parametrosDoTipo(tipo),
         },
         medidas: body.medidas,
-        papel: { gramatura: body.gramatura, precoKg: body.precoKgPapel },
+        papel: { gramatura: body.gramatura, precoKg: precoKgPapel },
         maquinaImpressao: {
           velocidade: Number(maquina.velocidade) || 6000,
           custoHora: Number(maquina.custoHora) || 250,
