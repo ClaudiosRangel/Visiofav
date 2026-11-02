@@ -82,6 +82,10 @@ const corpoCriar = z.object({
     detalhe: z.string().max(500).optional().nullable(),
   })).optional().nullable(),
   tiragensTexto: z.string().max(200).optional().nullable(),
+  // Imagem da FACA do produto (dataURL/base64). Limite generoso (~8 MB em
+  // base64) — null limpa. Validação leve de prefixo data: no handler quando
+  // necessário; aqui só limitamos o tamanho.
+  imagemFaca: z.string().max(11_000_000).optional().nullable(),
 })
 
 export async function pedidoPropostaRoutes(app: FastifyInstance) {

@@ -2861,6 +2861,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         dataOrcamento: true,
         custoProducaoConsolidado: true,
         valorTotalConsolidado: true,
+        // Imagem da faca do produto (dataURL/base64) — exibida no detalhe.
+        imagemFaca: true,
         tipoEmbalagem: {
           select: { id: true, codigo: true, descricao: true, formulaLargura: true, formulaAltura: true, parametros: true },
         },
@@ -3020,6 +3022,31 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     } catch { /* não quebra o GET se a resolução falhar */ }
 
     return { ...orcamento, produtoNome, calculoOrigem: calculoOrigemInfo }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // IMAGEM DA FACA (PATCH /:id/imagem-faca) — define/limpa a imagem da faca do
+  // produto direto no orçamento (upload no detalhe). dataURL/base64 em texto;
+  // null limpa. Multi-tenant (empresaId explícito). Não toca cálculo.
+  // ═══════════════════════════════════════════════════════════════════════════
+  app.patch('/:id/imagem-faca', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z
+      .object({ imagemFaca: z.string().max(11_000_000).nullable() })
+      .parse(request.body)
+
+    const existe = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!existe) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+
+    await prisma.orcamentoGrafico.update({
+      where: { id },
+      data: { imagemFaca: body.imagemFaca } as never,
+    })
+    return { ok: true }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -88,6 +88,7 @@ export async function criarOrcamentoDePedidoProposta(
       gramatura: true,
       variacoesArte: true,
       tiragensTexto: true,
+      imagemFaca: true,
     } as never,
   })
   if (!rfq) throw new PedidoPropostaError(404, 'Pedido/Proposta não encontrado.', 'NAO_ENCONTRADO')
@@ -172,6 +173,8 @@ export async function criarOrcamentoDePedidoProposta(
         // Engenharia inicial vinda do RFQ (não deixa o item nascer vazio).
         papelDescricao: r.cartao ?? null,
         gramatura: gramaturaNum && Number.isFinite(gramaturaNum) && gramaturaNum > 0 ? gramaturaNum : null,
+        // Imagem da faca transferida do RFQ (quando houver) → exibida no orçamento.
+        imagemFaca: r.imagemFaca ?? null,
         observacoes: obsPartes.join('\n'),
         pedidoPropostaId: rfq.id,
         criadoPorId: usuarioId,

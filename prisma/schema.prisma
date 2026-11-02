@@ -4298,6 +4298,10 @@ model OrcamentoGrafico {
   // Variações de tiragem (simulações)
   variacoes        Json? // [{quantidade, precoUnitario, precoTotal}]
   observacoes      String?       @db.Text
+  // Imagem da FACA do produto (dataURL/base64), transferida do RFQ ou enviada
+  // direto no orçamento. Exibida no detalhe do orçamento junto com a foto do
+  // produto. Campo TEXTO — NUNCA em select de listagem.
+  imagemFaca       String?       @map("imagem_faca") @db.Text
   criadoPorId      String        @map("criado_por_id")
   criadoEm         DateTime      @default(now()) @map("criado_em")
   atualizadoEm     DateTime      @updatedAt @map("atualizado_em")
@@ -4386,6 +4390,13 @@ model PedidoProposta {
   // Tiragens múltiplas em texto (ex.: "1000, 5000, 8000, 10000"). O campo
   // numérico `quantidade` guarda a 1ª tiragem (compat.); este guarda a lista.
   tiragensTexto String? @map("tiragens_texto") @db.VarChar(200)
+
+  // Imagem da FACA do produto (dataURL/base64). Informação técnica do produto:
+  // quando a proposta tem a faca/corte, o calculista a vê no orçamento junto com
+  // a foto do produto. Campo TEXTO (não bytea) — uma imagem opcional por RFQ;
+  // NUNCA incluir em select de listagem (pode ser grande). Transferida ao
+  // orçamento no encaminhamento.
+  imagemFaca String? @map("imagem_faca") @db.Text
 
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)
   orcamentoGraficoId String? @map("orcamento_grafico_id")

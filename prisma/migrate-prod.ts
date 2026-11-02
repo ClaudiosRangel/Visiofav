@@ -5697,6 +5697,17 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "condicao_pagamento_comercial_empresa_descricao_key" ON "condicao_pagamento_comercial"("empresa_id","descricao")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_condicao_pag_comercial_empresa_status" ON "condicao_pagamento_comercial"("empresa_id","status")`)
   console.log('✅ Comercial Pedido/Proposta rev3: pedido_proposta.produto_id/prazo_pagamento_id/acabamentos_selecionados + condicao_pagamento_comercial')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Imagem da FACA do produto (spec — pedido do usuário). Coluna TEXTO
+  // (dataURL/base64) no RFQ e no orçamento. Aditivo/idempotente; null = sem
+  // imagem. NUNCA incluir em select de listagem (pode ser grande). Equivalente:
+  //   pedido_proposta.imagem_faca   TEXT
+  //   orcamento_grafico.imagem_faca TEXT
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "imagem_faca" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "imagem_faca" TEXT`)
+  console.log('✅ Comercial: pedido_proposta.imagem_faca + orcamento_grafico.imagem_faca (imagem da faca)')
 }
 
 main()

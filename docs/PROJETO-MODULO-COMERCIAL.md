@@ -949,13 +949,43 @@ Cliente, Produto, Cores, Dados Técnicos, Acabamentos, Diversos, Revisão). O
 porque o deploy Vercel ainda não tinha subido. Nada a refazer — confirmar o
 deploy.
 
-### 18.4 PENDENTE — campo "imagem da faca" (Opção A, confirmada)
+### 18.4 ✅ IMAGEM DA FACA (Opção A) — IMPLEMENTADA (02/11/2026)
 
-Ainda NÃO implementado (é o maior; toca schema). Campo dedicado de imagem da faca
-no RFQ/proposta + exibição no orçamento junto com a foto do produto. Requer:
-coluna nova (bytea/base64) em `pedido_proposta` (e espelho no orçamento ou item)
-+ migrate-prod idempotente no MESMO commit + UI de upload na proposta + exibição
-no detalhe do orçamento. Fazer quando o usuário priorizar.
+Campo dedicado de imagem da faca do produto no RFQ/proposta e no orçamento,
+exibido no detalhe do orçamento junto com os dados do produto.
+
+**Schema (aditivo, idempotente, no MESMO commit — migrate-prod roda no deploy):**
+- `PedidoProposta.imagemFaca` (`imagem_faca`, `@db.Text`) — dataURL/base64.
+- `OrcamentoGrafico.imagemFaca` (`imagem_faca`, `@db.Text`).
+- Escolha de **TEXTO (dataURL base64)**, não bytea: uma imagem opcional por
+  registro, consumida direto no preview/form sem rota binária. **NUNCA** incluir
+  em `select` de listagem (pode ser grande) — o `orcamentoGraficoSelect` e o
+  `select` de `listarPedidosProposta` NÃO a incluem; só o GET `/:id` e o
+  `obterPedidoProposta` (que usa `include`, retornando todos os campos).
+
+**Backend:**
+- `pedido-proposta.service.ts` (interface + `montarDados`) e o schema Zod de
+  `pedido-proposta.routes.ts` (`imagemFaca: string.max(~11MB).nullable()`)
+  aceitam o campo no criar/editar do RFQ.
+- `encaminhar-orcamento.service.ts` TRANSFERE `imagemFaca` do RFQ → orçamento.
+- `orcamento-grafico.routes.ts`: GET `/:id` passou a retornar `imagemFaca`; nova
+  rota `PATCH /:id/imagem-faca` (`{ imagemFaca: string|null }`) define/limpa a
+  imagem direto no orçamento (upload no detalhe). empresaId explícito, não toca
+  cálculo.
+- `npx prisma generate` OK (client reconhece `imagemFaca`).
+
+**Frontend:**
+- `PedidoPropostaForm.tsx`: seção "Imagem da faca" (Selecionar/Trocar/Remover) —
+  lê o arquivo como dataURL em `form.imagemFaca` (≤5MB) e salva junto com o RFQ
+  (funciona antes de o pedido existir, diferente dos anexos de amostra que usam
+  upload imediato). Miniatura clicável (modal ampliado).
+- `[id]/page.tsx`: o card "Produto / Especificação" exibe a imagem da faca; com
+  o orçamento em RASCUNHO, botões Enviar/Trocar/Remover (chamam
+  `PATCH /:id/imagem-faca`, atualização otimista). Modal de imagem ampliada.
+
+**Verificação:** get_diagnostics limpo nos 4 arquivos tocados (back) + 2 (front).
+Migração roda no deploy do Render (Postgres local off). Commits: back (schema +
+migrate-prod + rotas no mesmo commit) e front separados.
 
 ### Commits desta sessão (ficam na main dos 2 repos, separados)
 - Back: fix do preço do papel em `/simular-tiragens`.

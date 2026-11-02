@@ -58,6 +58,8 @@ export interface CriarPedidoPropostaInput {
   prazoPagamentoId?: string | null
   acabamentosSelecionados?: Array<{ acabamentoId?: string | null; nome: string; marcado: boolean; detalhe?: string | null }> | null
   tiragensTexto?: string | null
+  // Imagem da FACA do produto (dataURL/base64). Opcional. null limpa.
+  imagemFaca?: string | null
 }
 
 /** Valida regras de negócio da criação/edição (origem, tipo, obrigatórios). */
@@ -105,6 +107,7 @@ function montarDados(input: Partial<CriarPedidoPropostaInput>) {
     'gramatura', 'medidasTexto', 'acabamentos', 'matriz', 'quantidadePorVolume',
     'variacoesArte', 'exportacao', 'dataValidade', 'discriminacao', 'observacoes',
     'produtoId', 'prazoPagamentoId', 'acabamentosSelecionados', 'tiragensTexto',
+    'imagemFaca',
   ] as (keyof CriarPedidoPropostaInput)[]).forEach(set)
 
   // Booleanos: default false quando não informados na criação.
