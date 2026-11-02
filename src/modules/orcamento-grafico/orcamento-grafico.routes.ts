@@ -3410,7 +3410,23 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Sem permissão.' })
     }
     try {
-      return await enviarParaValidacao(user.empresaId, id)
+      const r = await enviarParaValidacao(user.empresaId, id)
+      // Avisa o setor de proposta que o cálculo está pronto para conferência.
+      try {
+        const orc = await prisma.orcamentoGrafico.findFirst({
+          where: { id, empresaId: user.empresaId },
+          select: { numero: true, clienteNome: true },
+        })
+        await criarNotificacaoComercial({
+          empresaId: user.empresaId,
+          tipo: 'CALCULO_PARA_VALIDAR',
+          titulo: `Orçamento nº ${orc?.numero ?? ''} — cálculo pronto`,
+          mensagem: `O cálculo do orçamento nº ${orc?.numero ?? ''}${orc?.clienteNome ? ` (${orc.clienteNome})` : ''} foi concluído e aguarda conferência/validação.`,
+          referenciaTipo: 'ORCAMENTO_GRAFICO',
+          referenciaId: id,
+        })
+      } catch { /* notificação é best-effort — não interrompe */ }
+      return r
     } catch (err) {
       return tratarEtapaErro(err, reply)
     }
@@ -3422,7 +3438,23 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({ senha: z.string().optional() }).parse(request.body ?? {})
     try {
-      return await assinarValidacao(user.empresaId, id, user.id, body.senha)
+      const r = await assinarValidacao(user.empresaId, id, user.id, body.senha)
+      // Avisa o setor de proposta que o cálculo foi VALIDADO (pode enviar a proposta).
+      try {
+        const orc = await prisma.orcamentoGrafico.findFirst({
+          where: { id, empresaId: user.empresaId },
+          select: { numero: true, clienteNome: true },
+        })
+        await criarNotificacaoComercial({
+          empresaId: user.empresaId,
+          tipo: 'CALCULO_VALIDADO',
+          titulo: `Orçamento nº ${orc?.numero ?? ''} — cálculo validado`,
+          mensagem: `O cálculo do orçamento nº ${orc?.numero ?? ''}${orc?.clienteNome ? ` (${orc.clienteNome})` : ''} foi validado e está liberado para envio da proposta ao cliente.`,
+          referenciaTipo: 'ORCAMENTO_GRAFICO',
+          referenciaId: id,
+        })
+      } catch { /* best-effort */ }
+      return r
     } catch (err) {
       return tratarEtapaErro(err, reply)
     }
