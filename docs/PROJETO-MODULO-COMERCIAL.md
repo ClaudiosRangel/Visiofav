@@ -990,3 +990,93 @@ migrate-prod + rotas no mesmo commit) e front separados.
 ### Commits desta sessão (ficam na main dos 2 repos, separados)
 - Back: fix do preço do papel em `/simular-tiragens`.
 - Front: card "Produto / Especificação" na tela de detalhe do orçamento.
+
+---
+
+## 19. SESSÃO 03/11/2026 — correções Checkout/Programação + HANDOFF dos pedidos do Caio
+
+Rodada de ajustes a partir de 4 pontos do Caio (prints no WhatsApp). Decisão do
+usuário: **fazer só as correções (1 e 2) nesta sessão; os pontos 3 e 4 (features
+maiores) ficam para a PRÓXIMA sessão, com spec bem feita.** Este bloco registra
+tudo para a próxima sessão não se perder.
+
+### 19.1 ✅ FEITO — Checkout: um único campo de motivo de parada (código de parada)
+**Problema:** a tela de pausar etapa do Checkout tinha DOIS campos de motivo —
+os 5 botões fixos do enum (`Manutenção/Falta de Material/Acerto/Troca de Turno/
+Outro`) + o seletor de **Código de Parada** (cadastrável). O Caio pediu para
+deixar só um.
+**Decisão:** manter o **Código de Parada** (o que o cliente controla em PCP →
+Gerencial → Códigos de Parada) como campo PRINCIPAL e ÚNICO obrigatório. O enum
+`motivoParada` e o `paradaPlanejada` viraram OPCIONAIS no backend (default
+`'OUTRO'` / `false`) — os relatórios (Pareto) e o `ApontamentoEtapa` continuam
+tendo o enum preenchido, sem o operador precisar escolhê-lo.
+**Arquivos:**
+- Back: `checkout.service.ts` (`pausarEtapaComMotivoSchema`) e `checkout.routes.ts`
+  (`pausarEtapaBodySchema`) — `motivoParada`/`paradaPlanejada` opcionais c/ default.
+- Front Checkout (`VisioFab.Checkout/src/app/etapa/[id]/pausar/page.tsx`): quando
+  há códigos cadastrados, mostra SÓ o seletor "Motivo da parada" (= código);
+  sem códigos, mantém o fallback dos botões fixos + planejada.
+- Commit back `dfb20abd1`.
+
+### 19.2 ✅ FEITO — nomes de produto cortados (Programação + painel do Checkout)
+**Problema:** o nome do produto aparecia truncado ("...ADULTO / BENZOATO DE") na
+Programação do ERP e no painel do operador (Checkout).
+**Correção (CSS/layout, sem backend):**
+- Programação (`VisioFab.Wms.Front/.../pcp/programacao/page.tsx`): a célula
+  "Produto" usava `Group wrap="nowrap"` + `minWidth:200`, cortando o texto. Agora
+  `wrap="wrap"` + `overflowWrap:'anywhere'` + `minWidth:260` → nome COMPLETO em
+  várias linhas. Corrigido nas DUAS visões de grade (blocos ~2851 e ~3139).
+- Painel do Checkout (`VisioFab.Checkout/src/app/painel/painel.module.css`): a
+  classe `.produtoNome` tinha `white-space:nowrap + text-overflow:ellipsis`;
+  trocado por `line-clamp: 3` (até 3 linhas) + `overflow-wrap: anywhere`.
+- Commits: back `dfb20abd1` (checkout css), front `7ddb311` (programação).
+
+### 19.3 🔜 PRÓXIMA SESSÃO — Ponto 3: Central de Consulta do Produto/Acabado
+**O que o Caio quer (transcrição):** "O comercial cadastra um código de acabado
+para cada produto/embalagem. Poderíamos colocar uma forma que, na hora que eu
+pesquiso o código do acabado de um produto OU o nome dele, me apareça TODAS as
+informações dele: arte, medida, OPs que já foram abertas nele, ficha técnica. E
+dando a possibilidade de ALTERAR também essas informações."
+
+**Entendimento inicial (validar na próxima sessão):**
+- Uma tela de **busca única** (por código do acabado OU nome do produto) que
+  consolida, num só lugar: identificação (código/nome/cliente), **arte** (imagem),
+  **medidas/ficha técnica** (tipo embalagem, cartão, gramatura, cores, formato),
+  **histórico de OPs** abertas naquele produto, e os **cálculos/orçamentos** já
+  feitos. Com **edição** dos campos cadastrais ali mesmo.
+- Fontes de dado que já existem no Vizor: `Produto` (código/nome/imagemUrl),
+  `AtributoGrafico`/`TipoEmbalagem` (ficha), `CalculoGrafico` (engenharia/arte via
+  biblioteca), `OrdemProducao` (OPs por produto, inclusive tag `[Produto]` nas
+  observações das migradas), `ItemOrcamentoGrafico`.
+- **Decisões a tomar:** o que é o "código do acabado" exatamente (é o
+  `Produto.codigo`? um campo novo?); quais campos são editáveis e por qual
+  módulo/permissão; onde o menu vive (Comercial? PCP? ambos?).
+- É candidata a **spec própria** (`comercial-central-produto-acabado` ou similar).
+
+### 19.4 🔜 PRÓXIMA SESSÃO — Ponto 4: Acompanhamento de Pedidos (estilo Monday)
+**O que o Caio quer:** hoje eles controlam o andamento das etapas de cada pedido
+num quadro no **Monday** ("Controle de Pedidos") à parte do Vizor, e querem isso
+DENTRO do Vizor. Pelos prints do board Monday:
+- Linhas = pedidos/itens (ex.: "CARTUCHO DISPLAY PROFIG..."), com **Cliente**,
+  **nº do Pedido**, e colunas de ETAPA com status colorido:
+  **Mockup, Arte, Padrão, Ficha Técnica, O.S (nº OS)** — e status configuráveis
+  por etapa: `Em andamento / Feito / Concluído / Reprovado / Aguardando
+  Informação / Em Aprovação / Ag. Contratual / Ag. CQ / Aguardando Cliente`.
+- Agrupamento por **"Em Processo" / "Finalizado"**, filtro/busca por nº de pedido.
+
+**Entendimento inicial (validar):** um **quadro de acompanhamento** (tabela/kanban)
+dentro do Comercial/PCP, com etapas CONFIGURÁVEIS e status CONFIGURÁVEIS por
+empresa (não hardcode — espelhar a flexibilidade do Monday), vinculado ao
+`PedidoProposta`/`OrcamentoGrafico`/`PedidoVenda`/`OrdemProducao`. Precisa de
+schema novo (etapas do pedido + status + histórico), tela de board, e definição
+de o que dispara/atualiza cada etapa (manual vs automático a partir do fluxo
+que já existe no Vizor). É a maior das duas — **spec própria dedicada**
+(`comercial-acompanhamento-pedidos` ou similar).
+
+### 19.5 Como seguir na próxima sessão
+1. Reler este bloco (19.3/19.4) + o doc-mestre.
+2. Alinhar o escopo dos pontos 3 e 4 com o usuário (perguntas-chave acima).
+3. Criar UMA spec por ponto (requirements → design → tasks), fazer algo
+   profissional e não-regressivo, reusando o que já existe (Produto,
+   CalculoGrafico, OrdemProducao, PedidoProposta).
+4. Pontos 1 e 2 já estão no ar (back `dfb20abd1`, front `7ddb311`).
