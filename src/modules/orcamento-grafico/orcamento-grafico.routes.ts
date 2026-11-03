@@ -988,6 +988,60 @@ function extrairMatrizDeOrigem(calc: CalculoGraficoRegistroCompleto): MatrizProj
 }
 
 /**
+ * Resolve o `maquinaId` de impressão de um cálculo puxado quando ele não tem
+ * `maquinaId` próprio (comum nos migrados do Calcgraf). Lê o componente de
+ * IMPRESSÃO da decomposição STC (origem CENTRO DE CUSTO cuja descrição é de uma
+ * máquina de impressão: "Offset ... Heidelberg/Roland/KBA ...") e casa o nome
+ * com um `CentroProducao` de impressão da empresa (por "contém", normalizado).
+ * Multi-tenant (empresaId explícito). Retorna o id ou null se não casar.
+ */
+async function resolverMaquinaDeOrigem(
+  empresaId: string,
+  calc: CalculoGraficoRegistroCompleto,
+): Promise<string | null> {
+  const stc = normalizarCustosStc((calc as { custosCalcgraf?: unknown }).custosCalcgraf)
+  if (!stc) return null
+
+  const norm = (s: string) =>
+    s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+  // O componente de impressão é um CENTRO DE CUSTO cuja descrição cita a máquina.
+  // Ex.: "0001Offset Plana Heidelberg CD 7cores". Extraímos o "miolo" da marca.
+  const regexMaquina = /(heidelberg|roland|kba)[^0-9]*/i
+  const compImpressao = stc.componentes.find(
+    (k) => k.origem === 'CENTRO DE CUSTO' && regexMaquina.test(limparDescStc(k.descricao) || ''),
+  )
+  if (!compImpressao) return null
+
+  const descLimpa = limparDescStc(compImpressao.descricao) || ''
+  const m = descLimpa.match(regexMaquina)
+  // Alvo de busca: do "Heidelberg/Roland/KBA" em diante (ex.: "heidelberg cd 7cores").
+  const alvo = norm(m ? descLimpa.slice(m.index ?? 0) : descLimpa)
+  if (!alvo) return null
+
+  // Candidatas: centros de IMPRESSÃO da empresa (ativos, com formato de folha —
+  // o "mundo B" do orçamento), para não casar com as máquinas do PDF (mundo A).
+  const centros = await prisma.centroProducao.findMany({
+    where: {
+      empresaId,
+      status: true,
+      tipoProcesso: { codigo: 'IMPRESSAO' },
+      formatoFolhaLargura: { gt: 0 },
+    },
+    select: { id: true, descricao: true },
+  })
+  if (centros.length === 0) return null
+
+  // Casamento: a descrição do centro contém o alvo, OU o alvo contém a descrição
+  // do centro (cobre "heidelberg cd 7cores" ↔ "Heidelberg CD 7cores").
+  const casa = centros.find((c) => {
+    const d = norm(c.descricao)
+    return d === alvo || d.includes(alvo) || alvo.includes(d)
+  })
+  return casa?.id ?? null
+}
+
+/**
  * Remove de uma lista de `itensDiversos` o PRIMEIRO item equivalente à matriz
  * (chapa/clichê/RVU), preservando todos os demais. Heurística segura: item
  * `fixo === true` cuja descrição normalizada casa com `/matriz|chapa|clich|rvu/i`.
@@ -5262,6 +5316,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     //    `novaQuantidade > 0` sobrepõe a tiragem do cálculo.
     const { dadosItem } = copiarCalculoParaItem(calc, body.novaQuantidade)
 
+    // 4.1) Máquina de impressão: cálculos migrados não têm `maquinaId`. Deriva do
+    //      componente de impressão (CENTRO DE CUSTO) da decomposição STC, casando
+    //      o nome com um centro de impressão da empresa. Só preenche se estava vazio.
+    if (dadosItem.maquinaId == null) {
+      const maquinaId = await resolverMaquinaDeOrigem(user.empresaId, calc)
+      if (maquinaId) dadosItem.maquinaId = maquinaId
+    }
+
     // 5) Próxima sequência do orçamento (maior sequência + 1).
     const ultimo = await prisma.itemOrcamentoGrafico.findFirst({
       where: { orcamentoId, empresaId: user.empresaId },
@@ -5354,6 +5416,12 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // 3) Reconstrói/copia a FOTO do cálculo para o item (fonte ÚNICA da regra).
     //    `novaQuantidade > 0` sobrepõe a tiragem do cálculo (Req 5.2/5.3).
     const { dadosItem } = copiarCalculoParaItem(calc, body.novaQuantidade)
+
+    // 3.1) Máquina de impressão derivada do STC quando o cálculo migrado não a tem.
+    if (dadosItem.maquinaId == null) {
+      const maquinaId = await resolverMaquinaDeOrigem(user.empresaId, calc)
+      if (maquinaId) dadosItem.maquinaId = maquinaId
+    }
 
     // Quantidade resolvida (Nova_Quantidade sobrepõe; senão a do cálculo).
     const quantidade = body.novaQuantidade && body.novaQuantidade > 0 ? body.novaQuantidade : calc.quantidade
