@@ -696,13 +696,17 @@ export async function registrarApontamentoProducao(
  * pausa.
  */
 export const pausarEtapaComMotivoSchema = z.object({
-  motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']),
-  paradaPlanejada: z.boolean(),
+  // O Checkout agora usa o CÓDIGO DE PARADA (cadastrável) como campo principal.
+  // O enum `motivoParada` virou OPCIONAL com default 'OUTRO' (compat.: o
+  // ApontamentoEtapa e o Pareto continuam tendo o enum preenchido), e
+  // `paradaPlanejada` default false — assim o operador informa só o código.
+  motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']).optional().default('OUTRO'),
+  paradaPlanejada: z.boolean().optional().default(false),
   observacao: z.string().optional(),
-  // Código de parada customizado da empresa (opcional) — mesma lista do painel
-  // de Programação do ERP. Quando informado, é gravado no ApontamentoEtapa e
-  // usado no Pareto do relatório. O enum motivoParada continua obrigatório
-  // (compat.). Lista cadastrada em PCP → Gerencial → Códigos de Parada.
+  // Código de parada customizado da empresa — mesma lista do painel de
+  // Programação do ERP. Quando informado, é gravado no ApontamentoEtapa e
+  // usado no Pareto do relatório. Lista cadastrada em PCP → Gerencial →
+  // Códigos de Parada.
   codigoParadaId: z.string().uuid().optional(),
 })
 

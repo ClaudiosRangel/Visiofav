@@ -38,10 +38,12 @@ const OPCOES_MOTIVO: Array<{ valor: MotivoParada; rotulo: string }> = [
   { valor: 'OUTRO', rotulo: 'Outro' },
 ]
 
-/** Shape do corpo aceito por `PATCH /checkout/etapas/:id/pausar`. */
+/** Shape do corpo aceito por `PATCH /checkout/etapas/:id/pausar`.
+ *  motivoParada/paradaPlanejada são opcionais (backend tem default) quando o
+ *  operador informa o código de parada. */
 interface PausarEtapaBody {
-  motivoParada: MotivoParada
-  paradaPlanejada: boolean
+  motivoParada?: MotivoParada
+  paradaPlanejada?: boolean
   observacao?: string
   codigoParadaId?: string
 }
@@ -97,7 +99,13 @@ export default function PausarEtapaPage() {
     return () => { ativo = false }
   }, [estaAutenticado])
 
-  const camposObrigatoriosPreenchidos = motivoParada !== null && paradaPlanejada !== null
+  // Quando há códigos de parada cadastrados, o CÓDIGO é o campo principal
+  // (e único obrigatório) — o cliente pediu para manter só ele. Sem códigos
+  // cadastrados, caímos no fallback dos motivos fixos (enum) + planejada.
+  const usaCodigoParada = codigosParada.length > 0
+  const camposObrigatoriosPreenchidos = usaCodigoParada
+    ? codigoParadaId !== ''
+    : motivoParada !== null && paradaPlanejada !== null
 
   if (!estaAutenticado) {
     return null
@@ -109,12 +117,19 @@ export default function PausarEtapaPage() {
     setEnviando(true)
     setErro(null)
 
-    const body: PausarEtapaBody = {
-      motivoParada: motivoParada as MotivoParada,
-      paradaPlanejada: paradaPlanejada as boolean,
-      observacao: observacao.trim() ? observacao.trim() : undefined,
-      codigoParadaId: codigoParadaId || undefined,
-    }
+    // Com código de parada, o enum motivoParada/paradaPlanejada são opcionais no
+    // backend (default 'OUTRO'/false) — enviamos só o código. Sem código, envia
+    // os campos fixos como antes.
+    const body: PausarEtapaBody = usaCodigoParada
+      ? {
+          codigoParadaId: codigoParadaId,
+          observacao: observacao.trim() ? observacao.trim() : undefined,
+        }
+      : {
+          motivoParada: motivoParada as MotivoParada,
+          paradaPlanejada: paradaPlanejada as boolean,
+          observacao: observacao.trim() ? observacao.trim() : undefined,
+        }
 
     try {
       const response = await checkoutApiClient.patch<PausarEtapaResultado>(
@@ -167,63 +182,67 @@ export default function PausarEtapaPage() {
 
       <h1 className={styles.titulo}>Pausar etapa</h1>
 
-      <section className={styles.secao}>
-        <h2 className={styles.secaoTitulo}>Motivo da parada</h2>
-        <div className={styles.opcoesMotivo}>
-          {OPCOES_MOTIVO.map((opcao) => (
-            <button
-              key={opcao.valor}
-              type="button"
-              className={`${styles.botaoMotivo} ${motivoParada === opcao.valor ? styles.botaoMotivoSelecionado : ''}`}
-              onClick={() => setMotivoParada(opcao.valor)}
-              disabled={enviando}
-              aria-pressed={motivoParada === opcao.valor}
-            >
-              {opcao.rotulo}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.secao}>
-        <h2 className={styles.secaoTitulo}>A parada é planejada?</h2>
-        <div className={styles.opcoesPlanejada}>
-          <button
-            type="button"
-            className={`${styles.botaoPlanejada} ${paradaPlanejada === true ? styles.botaoPlanejadaSelecionado : ''}`}
-            onClick={() => setParadaPlanejada(true)}
-            disabled={enviando}
-            aria-pressed={paradaPlanejada === true}
-          >
-            Planejada
-          </button>
-          <button
-            type="button"
-            className={`${styles.botaoPlanejada} ${paradaPlanejada === false ? styles.botaoPlanejadaSelecionado : ''}`}
-            onClick={() => setParadaPlanejada(false)}
-            disabled={enviando}
-            aria-pressed={paradaPlanejada === false}
-          >
-            Não planejada
-          </button>
-        </div>
-      </section>
-
-      {codigosParada.length > 0 && (
+      {usaCodigoParada ? (
+        /* Campo ÚNICO e principal: Código de Parada (cadastrável). */
         <section className={styles.secao}>
-          <h2 className={styles.secaoTitulo}>Código de parada (opcional)</h2>
+          <h2 className={styles.secaoTitulo}>Motivo da parada</h2>
           <select
             className={styles.select}
             value={codigoParadaId}
             onChange={(e) => setCodigoParadaId(e.target.value)}
             disabled={enviando}
           >
-            <option value="">Selecione...</option>
+            <option value="">Selecione o motivo...</option>
             {codigosParada.map((c) => (
               <option key={c.id} value={c.id}>{c.descricao}</option>
             ))}
           </select>
         </section>
+      ) : (
+        /* Fallback: sem códigos cadastrados, mantém os motivos fixos + planejada. */
+        <>
+          <section className={styles.secao}>
+            <h2 className={styles.secaoTitulo}>Motivo da parada</h2>
+            <div className={styles.opcoesMotivo}>
+              {OPCOES_MOTIVO.map((opcao) => (
+                <button
+                  key={opcao.valor}
+                  type="button"
+                  className={`${styles.botaoMotivo} ${motivoParada === opcao.valor ? styles.botaoMotivoSelecionado : ''}`}
+                  onClick={() => setMotivoParada(opcao.valor)}
+                  disabled={enviando}
+                  aria-pressed={motivoParada === opcao.valor}
+                >
+                  {opcao.rotulo}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className={styles.secao}>
+            <h2 className={styles.secaoTitulo}>A parada é planejada?</h2>
+            <div className={styles.opcoesPlanejada}>
+              <button
+                type="button"
+                className={`${styles.botaoPlanejada} ${paradaPlanejada === true ? styles.botaoPlanejadaSelecionado : ''}`}
+                onClick={() => setParadaPlanejada(true)}
+                disabled={enviando}
+                aria-pressed={paradaPlanejada === true}
+              >
+                Planejada
+              </button>
+              <button
+                type="button"
+                className={`${styles.botaoPlanejada} ${paradaPlanejada === false ? styles.botaoPlanejadaSelecionado : ''}`}
+                onClick={() => setParadaPlanejada(false)}
+                disabled={enviando}
+                aria-pressed={paradaPlanejada === false}
+              >
+                Não planejada
+              </button>
+            </div>
+          </section>
+        </>
       )}
 
       <section className={styles.secao}>

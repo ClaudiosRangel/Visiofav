@@ -89,11 +89,13 @@ const apontarBodySchema = z.object({
 })
 
 const pausarEtapaBodySchema = z.object({
-  motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']),
-  paradaPlanejada: z.boolean(),
+  // Checkout usa o CÓDIGO DE PARADA como campo principal; o enum é opcional
+  // (default 'OUTRO') e paradaPlanejada opcional (default false).
+  motivoParada: z.enum(['MANUTENCAO', 'FALTA_MATERIAL', 'ACERTO_MAQUINA', 'TROCA_TURNO', 'OUTRO']).optional().default('OUTRO'),
+  paradaPlanejada: z.boolean().optional().default(false),
   observacao: z.string().optional(),
-  // Código de parada customizado (opcional) — lista cadastrada em PCP →
-  // Gerencial → Códigos de Parada. Repassado ao service/ApontamentoEtapa.
+  // Código de parada customizado — lista cadastrada em PCP → Gerencial →
+  // Códigos de Parada. Repassado ao service/ApontamentoEtapa.
   codigoParadaId: z.string().uuid().optional(),
 })
 

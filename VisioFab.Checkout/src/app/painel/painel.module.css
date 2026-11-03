@@ -295,9 +295,14 @@
   font-size: 0.98rem;
   font-weight: 600;
   color: #111827;
+  /* Nome COMPLETO: quebra em até 3 linhas em vez de cortar numa só linha
+     (pedido do cliente — os nomes estavam cortados). */
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow-wrap: anywhere;
 }
 
 .descricao {
