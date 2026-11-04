@@ -86,6 +86,14 @@ const corpoCriar = z.object({
   // base64) — null limpa. Validação leve de prefixo data: no handler quando
   // necessário; aqui só limitamos o tamanho.
   imagemFaca: z.string().max(11_000_000).optional().nullable(),
+  // Respostas_Pedido (status fiel — spec comercial-pedido-status-fiel).
+  situacaoCliente: z.enum(['NOVO', 'EXISTENTE']).optional().nullable(),
+  situacaoFaca: z.enum(['NOVA', 'EXISTENTE', 'NAO_INFORMADA']).optional().nullable(),
+  numeroMatriz: z.string().max(80).optional().nullable(),
+  situacaoArte: z.enum(['CRIAR', 'CLIENTE_ENVIA', 'EXISTENTE_SEM_ALTERACAO', 'EXISTENTE_COM_ALTERACAO', 'NAO_INFORMADA']).optional().nullable(),
+  exigeProva: z.boolean().optional(),
+  referenciaOrigemTipo: z.enum(['CALCULO', 'PROPOSTA', 'OP', 'PEDIDO']).optional().nullable(),
+  referenciaOrigemNumero: z.string().max(60).optional().nullable(),
 })
 
 export async function pedidoPropostaRoutes(app: FastifyInstance) {

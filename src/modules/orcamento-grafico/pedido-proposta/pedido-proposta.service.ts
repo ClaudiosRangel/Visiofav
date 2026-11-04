@@ -17,6 +17,7 @@ import {
   statusMacroDe,
   setorDe,
   converterTipoLegado,
+  derivarTipoPedido,
   type EstadoLegado,
 } from './status-fiel.motor'
 
@@ -67,6 +68,14 @@ export interface CriarPedidoPropostaInput {
   tiragensTexto?: string | null
   // Imagem da FACA do produto (dataURL/base64). Opcional. null limpa.
   imagemFaca?: string | null
+  // Respostas_Pedido (status fiel)
+  situacaoCliente?: 'NOVO' | 'EXISTENTE' | null
+  situacaoFaca?: 'NOVA' | 'EXISTENTE' | 'NAO_INFORMADA' | null
+  numeroMatriz?: string | null
+  situacaoArte?: 'CRIAR' | 'CLIENTE_ENVIA' | 'EXISTENTE_SEM_ALTERACAO' | 'EXISTENTE_COM_ALTERACAO' | 'NAO_INFORMADA' | null
+  exigeProva?: boolean
+  referenciaOrigemTipo?: 'CALCULO' | 'PROPOSTA' | 'OP' | 'PEDIDO' | null
+  referenciaOrigemNumero?: string | null
 }
 
 /** Valida regras de negócio da criação/edição (origem, tipo, obrigatórios). */
@@ -115,6 +124,8 @@ function montarDados(input: Partial<CriarPedidoPropostaInput>) {
     'variacoesArte', 'exportacao', 'dataValidade', 'discriminacao', 'observacoes',
     'produtoId', 'prazoPagamentoId', 'acabamentosSelecionados', 'tiragensTexto',
     'imagemFaca',
+    'situacaoCliente', 'situacaoFaca', 'numeroMatriz', 'situacaoArte',
+    'referenciaOrigemTipo', 'referenciaOrigemNumero',
   ] as (keyof CriarPedidoPropostaInput)[]).forEach(set)
 
   // Booleanos: default false quando não informados na criação.
@@ -153,10 +164,20 @@ export async function criarPedidoProposta(
 
   const dados = montarDados(input)
 
-  // Status fiel inicial (Req 13.10): pedidos novos já nascem no modelo novo.
-  // O tipoPedido legado (REPETICAO|MOSTRUARIO|NOVO) é convertido; sem as
-  // Respostas_Pedido completas, marca classificacaoAConfirmar.
+  // Status fiel inicial (Req 13.10). Se vierem Respostas_Pedido, DERIVA o tipo
+  // pelo motor (fonte da verdade). Senão, converte o tipoPedido legado.
+  const temRespostas = !!(input.situacaoFaca || input.situacaoArte)
+  const deriv = temRespostas
+    ? derivarTipoPedido({
+        situacaoFaca: (input.situacaoFaca as never) ?? null,
+        situacaoArte: (input.situacaoArte as never) ?? null,
+        exigeProva: input.exigeProva ?? false,
+      })
+    : null
   const conv = converterTipoLegado(input.tipoPedido)
+  const tipoDerivado = deriv ? deriv.tipo : conv.tipo
+  const aConfirmar = deriv ? deriv.aConfirmar : conv.aConfirmar
+  const exigeProvaInicial = input.exigeProva ?? conv.exigeProva
 
   const criado = await prisma.pedidoProposta.create({
     data: {
@@ -178,12 +199,14 @@ export async function criarPedidoProposta(
       responsavelDesde: new Date(),
       rodada: 1,
       versao: 0,
-      situacaoCliente: input.jaCliente ? 'EXISTENTE' : 'NOVO',
-      situacaoArte: 'NAO_INFORMADA',
-      exigeProva: conv.exigeProva,
-      tipoPedidoDerivado: conv.tipo,
+      situacaoCliente: input.situacaoCliente ?? (input.jaCliente ? 'EXISTENTE' : 'NOVO'),
+      situacaoFaca: input.situacaoFaca ?? null,
+      numeroMatriz: input.situacaoFaca === 'EXISTENTE' ? (input.numeroMatriz ?? null) : null,
+      situacaoArte: input.situacaoArte ?? 'NAO_INFORMADA',
+      exigeProva: exigeProvaInicial,
+      tipoPedidoDerivado: tipoDerivado,
       tipoPedidoManual: false,
-      classificacaoAConfirmar: true,
+      classificacaoAConfirmar: aConfirmar,
       ...(dados as object),
     } as never,
     select: { id: true, numero: true },
