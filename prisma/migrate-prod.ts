@@ -1,4 +1,16 @@
+// migrate-prod.ts — migrações idempotentes de produção (Render/Neon).
 import { PrismaClient } from '@prisma/client'
+import {
+  situacaoDeEstadoLegado,
+  statusMacroDe,
+  setorDe,
+  situacaoFacaDoTexto,
+  converterTipoLegado,
+  estadoLegadoDe,
+  ESTADOS_LEGADOS_VALIDOS,
+  type EstadoLegado,
+  type Situacao,
+} from '../src/modules/orcamento-grafico/pedido-proposta/status-fiel.motor'
 
 const prisma = new PrismaClient()
 
@@ -5708,6 +5720,172 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "imagem_faca" TEXT`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "imagem_faca" TEXT`)
   console.log('✅ Comercial: pedido_proposta.imagem_faca + orcamento_grafico.imagem_faca (imagem da faca)')
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Status fiel do Pedido/Proposta (spec comercial-pedido-status-fiel / Fundação).
+  // Aditivo e idempotente. Colunas novas em pedido_proposta e log_pedido_proposta,
+  // índices, índice único parcial de idempotência e migração de dados (Req 4).
+  // ───────────────────────────────────────────────────────────────────────────
+  const colsPedido: Array<[string, string]> = [
+    ['situacao_interna', 'VARCHAR(50)'],
+    ['status_macro', 'VARCHAR(30)'],
+    ['setor_responsavel', 'VARCHAR(20)'],
+    ['responsavel_desde', 'TIMESTAMP(3)'],
+    ['rodada', 'INTEGER NOT NULL DEFAULT 1'],
+    ['versao', 'INTEGER NOT NULL DEFAULT 0'],
+    ['situacao_cliente', 'VARCHAR(12)'],
+    ['situacao_faca', 'VARCHAR(16)'],
+    ['numero_matriz', 'VARCHAR(80)'],
+    ['situacao_arte', 'VARCHAR(24)'],
+    ['referencia_origem_tipo', 'VARCHAR(16)'],
+    ['referencia_origem_numero', 'VARCHAR(60)'],
+    ['referencia_origem_texto', 'VARCHAR(200)'],
+    ['referencia_origem_calculo_id', 'TEXT'],
+    ['referencia_origem_nao_localizada', 'BOOLEAN NOT NULL DEFAULT false'],
+    ['exige_prova', 'BOOLEAN NOT NULL DEFAULT false'],
+    ['tipo_pedido_derivado', 'VARCHAR(16)'],
+    ['tipo_pedido_manual', 'BOOLEAN NOT NULL DEFAULT false'],
+    ['tipo_pedido_divergente', 'BOOLEAN NOT NULL DEFAULT false'],
+    ['classificacao_a_confirmar', 'BOOLEAN NOT NULL DEFAULT false'],
+    ['aprovacao_arte_em', 'TIMESTAMP(3)'],
+    ['aprovacao_arte_forma', 'VARCHAR(16)'],
+  ]
+  for (const [col, tipo] of colsPedido) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "${col}" ${tipo}`)
+  }
+
+  const colsLog: Array<[string, string]> = [
+    ['tipo_evento', 'VARCHAR(60)'],
+    ['setor_origem', 'VARCHAR(20)'],
+    ['setor_destino', 'VARCHAR(20)'],
+    ['situacao_anterior', 'VARCHAR(50)'],
+    ['situacao_nova', 'VARCHAR(50)'],
+    ['origem', 'VARCHAR(80)'],
+    ['dados', 'JSONB'],
+    ['idempotencia_chave', 'VARCHAR(100)'],
+  ]
+  for (const [col, tipo] of colsLog) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "log_pedido_proposta" ADD COLUMN IF NOT EXISTS "${col}" ${tipo}`)
+  }
+
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pedido_proposta_empresa_status_macro_idx" ON "pedido_proposta"("empresa_id","status_macro")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pedido_proposta_empresa_setor_idx" ON "pedido_proposta"("empresa_id","setor_responsavel")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "pedido_proposta_empresa_refori_idx" ON "pedido_proposta"("empresa_id","referencia_origem_tipo","referencia_origem_numero")`)
+  // índice único PARCIAL da chave de idempotência (só linhas com chave) — Req 10.11
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "log_pedido_idempotencia_uq" ON "log_pedido_proposta"("empresa_id","idempotencia_chave") WHERE "idempotencia_chave" IS NOT NULL`)
+  console.log('✅ Status fiel: colunas pedido_proposta/log_pedido_proposta + índices')
+
+  await migrarPedidosParaStatusFiel()
+}
+
+/**
+ * Migração de dados do Requisito 4 (spec comercial-pedido-status-fiel).
+ * Idempotente: só age em pedidos com situacao_interna NULL. Processa por
+ * empresa (Req 11.6). Converte Estado_Legado→Situacao/Status, tipoPedido legado
+ * →derivado, preenche Respostas_Pedido do disponível, define rodada=1 e
+ * responsavel_desde (último log ou criadoEm). Não aplica exigências retroativas.
+ */
+async function migrarPedidosParaStatusFiel() {
+  const pendentes = await prisma.pedidoProposta.findMany({
+    where: { situacaoInterna: null },
+    select: {
+      id: true,
+      empresaId: true,
+      estado: true,
+      tipoPedido: true,
+      jaCliente: true,
+      matriz: true,
+      criadoEm: true,
+      orcamentoGraficoId: true,
+    },
+  })
+
+  if (pendentes.length === 0) {
+    console.log('✅ Status fiel: nenhum pedido a migrar (idempotente)')
+    return
+  }
+
+  let migrados = 0
+  let avisos = 0
+
+  for (const p of pendentes) {
+    // 1) Situacao_Interna / Status_Macro a partir do Estado_Legado
+    const estado = p.estado as EstadoLegado
+    let situacao: Situacao
+    if (ESTADOS_LEGADOS_VALIDOS.includes(estado)) {
+      situacao = situacaoDeEstadoLegado(estado)
+    } else {
+      situacao = 'TRIAGEM'
+      avisos++
+      console.log(`⚠️ Status fiel: pedido ${p.id} com estado desconhecido "${p.estado}" → TRIAGEM`)
+    }
+
+    // 1b) ACEITO + OP/PedidoVenda ligados → EM_PRODUCAO/FATURADO (Req 4.2)
+    if (situacao === 'APROVADO' && p.orcamentoGraficoId) {
+      const pv = await prisma.pedidoVenda.findFirst({
+        where: { empresaId: p.empresaId, orcamentoOrigemId: p.orcamentoGraficoId },
+        select: { id: true, status: true },
+      })
+      if (pv) {
+        const op = await prisma.ordemProducao.findFirst({
+          where: { empresaId: p.empresaId, pedidoVendaId: pv.id },
+          select: { status: true },
+        })
+        const faturado = /FATURAD|EFETIVAD/i.test(pv.status ?? '')
+        if (faturado) situacao = 'FATURADO'
+        else if (op && /EM_PRODUCAO|PRODUC/i.test(op.status ?? '')) situacao = 'EM_PRODUCAO'
+      }
+    }
+
+    const statusMacro = statusMacroDe(situacao)
+    const setor = setorDe(situacao)
+
+    // 2) responsavel_desde = data do último log ou criadoEm (Req 4.9)
+    const ultimoLog = await prisma.logPedidoProposta.findFirst({
+      where: { pedidoPropostaId: p.id, empresaId: p.empresaId },
+      orderBy: { criadoEm: 'desc' },
+      select: { criadoEm: true },
+    })
+    const responsavelDesde = ultimoLog?.criadoEm ?? p.criadoEm
+
+    // 3) tipoPedido legado → derivado (Req 4.3/4.4)
+    const conv = converterTipoLegado(p.tipoPedido)
+
+    // 4) Respostas_Pedido do disponível (Req 4.5)
+    const situacaoCliente = p.jaCliente ? 'EXISTENTE' : 'NOVO'
+    const situacaoFaca = situacaoFacaDoTexto(p.matriz)
+    const numeroMatriz = situacaoFaca === 'EXISTENTE' ? (p.matriz ?? null) : null
+    // respostas incompletas → marca aConfirmar (arte sempre NAO_INFORMADA aqui)
+    const classificacaoAConfirmar = conv.aConfirmar || true
+
+    // `estado` legado permanece coerente com a situacao migrada
+    const estadoCoerente = estadoLegadoDe(situacao)
+
+    await prisma.pedidoProposta.update({
+      where: { id: p.id },
+      data: {
+        situacaoInterna: situacao,
+        statusMacro,
+        setorResponsavel: setor,
+        responsavelDesde,
+        rodada: 1,
+        versao: 0,
+        situacaoCliente,
+        situacaoFaca,
+        numeroMatriz,
+        situacaoArte: 'NAO_INFORMADA',
+        exigeProva: conv.exigeProva,
+        tipoPedidoDerivado: conv.tipo,
+        tipoPedidoManual: false,
+        tipoPedidoDivergente: false,
+        classificacaoAConfirmar,
+        estado: estadoCoerente,
+      },
+    })
+    migrados++
+  }
+
+  console.log(`✅ Status fiel: ${migrados} pedido(s) migrado(s)${avisos ? ` (${avisos} aviso(s) de estado desconhecido)` : ''}`)
 }
 
 main()

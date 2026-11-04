@@ -127,6 +127,12 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
       origem: z.string().optional(),
       tipoPedido: z.string().optional(),
       busca: z.string().optional(),
+      // Status fiel (aditivos — Req 5.8/5.9/15.4)
+      statusMacro: z.string().optional(),
+      setorResponsavel: z.string().optional(),
+      refOrigemTipo: z.string().optional(),
+      refOrigemNumero: z.string().optional(),
+      ordenarPorTempoParado: z.coerce.boolean().optional(),
     }).parse(request.query)
     try {
       return await listarPedidosProposta(user.empresaId, q)

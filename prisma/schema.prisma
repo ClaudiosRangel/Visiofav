@@ -4401,6 +4401,39 @@ model PedidoProposta {
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)
   orcamentoGraficoId String? @map("orcamento_grafico_id")
 
+  // ── Status fiel (spec comercial-pedido-status-fiel) — ADITIVO ──────────────
+  // situacaoInterna é a FONTE DA VERDADE do status granular; `estado` legado
+  // acima permanece preenchido/coerente (derivado por estadoLegadoDe). null =
+  // pedido ainda não migrado pelo migrate-prod.
+  situacaoInterna  String?   @map("situacao_interna") @db.VarChar(50)
+  statusMacro      String?   @map("status_macro") @db.VarChar(30) // cópia derivada p/ filtro/índice (nunca editável)
+  setorResponsavel String?   @map("setor_responsavel") @db.VarChar(20) // null quando terminal
+  responsavelDesde DateTime? @map("responsavel_desde")
+  rodada           Int       @default(1)
+  versao           Int       @default(0) // update condicional otimista
+
+  // Respostas_Pedido (Req 1)
+  situacaoCliente        String?  @map("situacao_cliente") @db.VarChar(12) // NOVO | EXISTENTE
+  situacaoFaca           String?  @map("situacao_faca") @db.VarChar(16) // NOVA | EXISTENTE | NAO_INFORMADA
+  numeroMatriz           String?  @map("numero_matriz") @db.VarChar(80)
+  situacaoArte           String?  @map("situacao_arte") @db.VarChar(24) // CRIAR|CLIENTE_ENVIA|EXISTENTE_SEM_ALTERACAO|EXISTENTE_COM_ALTERACAO|NAO_INFORMADA
+  referenciaOrigemTipo   String?  @map("referencia_origem_tipo") @db.VarChar(16) // CALCULO|PROPOSTA|OP|PEDIDO
+  referenciaOrigemNumero String?  @map("referencia_origem_numero") @db.VarChar(60)
+  referenciaOrigemTexto  String?  @map("referencia_origem_texto") @db.VarChar(200) // quando não localizada (Req 1.13)
+  referenciaOrigemCalculoId     String?  @map("referencia_origem_calculo_id") // vínculo quando o cálculo é encontrado
+  referenciaOrigemNaoLocalizada Boolean  @default(false) @map("referencia_origem_nao_localizada")
+  exigeProva             Boolean  @default(false) @map("exige_prova")
+
+  // Tipo derivado + correção manual (D5). O `tipoPedido` legado acima é mantido.
+  tipoPedidoDerivado      String?  @map("tipo_pedido_derivado") @db.VarChar(16) // REPETICAO|ALTERACAO|PRODUTO_NOVO
+  tipoPedidoManual        Boolean  @default(false) @map("tipo_pedido_manual")
+  tipoPedidoDivergente    Boolean  @default(false) @map("tipo_pedido_divergente")
+  classificacaoAConfirmar Boolean  @default(false) @map("classificacao_a_confirmar")
+
+  // Aprovação de arte registrada manualmente (Req 2.7)
+  aprovacaoArteEm    DateTime? @map("aprovacao_arte_em")
+  aprovacaoArteForma String?   @map("aprovacao_arte_forma") @db.VarChar(16) // REPRESENTANTE|EMAIL|PRESENCIAL
+
   criadoPorId  String   @map("criado_por_id")
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
@@ -4411,6 +4444,9 @@ model PedidoProposta {
   @@unique([empresaId, numero])
   @@index([empresaId, estado])
   @@index([empresaId, origem])
+  @@index([empresaId, statusMacro])
+  @@index([empresaId, setorResponsavel])
+  @@index([empresaId, referenciaOrigemTipo, referenciaOrigemNumero])
   @@map("pedido_proposta")
 }
 
@@ -4439,6 +4475,18 @@ model LogPedidoProposta {
   usuarioId        String   @map("usuario_id")
   motivo           String?  @db.Text
   criadoEm         DateTime @default(now()) @map("criado_em")
+
+  // ── Linha_do_Tempo do status fiel (spec comercial-pedido-status-fiel) ──────
+  // Colunas ADITIVAS nullable (D2): linhas antigas seguem válidas só com
+  // estadoAnterior/estadoNovo/motivo. Eventos são somente-inserção (Req 8.4).
+  tipoEvento        String?  @map("tipo_evento") @db.VarChar(60) // AVANCO|RETORNO|RESPOSTAS_ALTERADAS|TIPO_CORRIGIDO|VINCULO_*|APROVACAO_ARTE|...
+  setorOrigem       String?  @map("setor_origem") @db.VarChar(20)
+  setorDestino      String?  @map("setor_destino") @db.VarChar(20)
+  situacaoAnterior  String?  @map("situacao_anterior") @db.VarChar(50)
+  situacaoNova      String?  @map("situacao_nova") @db.VarChar(50)
+  origem            String?  @db.VarChar(80) // "usuario:<id>" | "modulo:<nome>"
+  dados             Json? // payload serializável (<= 64 KB) — Req 10.1
+  idempotenciaChave String?  @map("idempotencia_chave") @db.VarChar(100)
 
   pedidoProposta PedidoProposta @relation(fields: [pedidoPropostaId], references: [id], onDelete: Cascade)
 

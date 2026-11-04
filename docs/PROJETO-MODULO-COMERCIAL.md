@@ -1117,3 +1117,143 @@ que já existe no Vizor). É a maior das duas — **spec própria dedicada**
    profissional e não-regressivo, reusando o que já existe (Produto,
    CalculoGrafico, OrdemProducao, PedidoProposta).
 4. Pontos 1 e 2 já estão no ar (back `dfb20abd1`, front `7ddb311`).
+
+---
+
+## 20. PLANO DO FLUXO COMPLETO (04/11/2026) — Pedido → Pré-Impressão → Produto
+
+> **LER ANTES DE MEXER EM PEDIDO/PROPOSTA, CENTRAL DO PRODUTO OU PRÉ-IMPRESSÃO.**
+> Substitui o escopo do Ponto 4 (§19.4) por um plano maior, combinado com o
+> usuário. Cada pilar = UMA spec própria, na ordem da §20.4.
+
+### 20.1 Fluxo do cliente (como a Wega trabalha)
+
+Pedido chega do **Representante** (portal) ou de **outra origem** (comercial
+interno, e-mail, telefone). Três tipos:
+
+| Tipo | Significado | Caminho |
+|---|---|---|
+| **Repetição** | Produto já existente, sem alteração (pedido de referência) | Puxa produto + cálculo de referência; **pula a pré-impressão** se a arte não mudou → orçamento |
+| **Novo Pedido** | Produto **já existente com alguma alteração** (confirmado 04/11) | Pré-impressão **parcial** (só as etapas afetadas) |
+| **Novo Produto / Mostruário** | Produto novo | Pré-impressão **completa** (Mockup, Arte, Padrão, Ficha Técnica) + pré-cálculo + avaliação Comercial/Rep/Cliente |
+
+### 20.2 Diagnóstico do estado atual (por que hoje confunde)
+
+- O mesmo pedido passa por **6 entidades com status próprio**: Solicitação do
+  Rep, `PedidoProposta`, `OrcamentoGrafico`, `AprovacaoAmostra`, `PedidoVenda`,
+  `OrdemProducao`. Não há uma resposta única para "onde está e com quem".
+- A máquina de estados de `PedidoProposta`
+  (`pedido-proposta-estado.service.ts`) é **linear**: `NOVO → EM_ANALISE →
+  ENVIADO_ORCAMENTO → ORCADO → PROPOSTA_ENVIADA → ACEITO` (+ PERDIDO/CANCELADO).
+  Não tem pré-impressão, nem retornos, nem rodadas, nem distinção por tipo. Por
+  isso o controle real vive no Monday.
+
+### 20.3 Os três pilares
+
+**Pilar 1 — Pedido/Proposta com status fiel**
+- **Status macro calculado** (Recebido → Em Pré-Impressão → Em Orçamento → Em
+  Aprovação → Aprovado → Em Produção → Faturado), derivado das trilhas internas,
+  nunca digitado à mão.
+- **"Com quem está a bola"**: cada status tem um setor responsável (Pré-Impressão,
+  Orçamento, Comercial, Representante, Cliente) e o tempo parado ali.
+- **Retorno explícito** ("Devolver para…") com motivo obrigatório; cada volta
+  incrementa a **rodada**. Linha do tempo única e auditável do pedido.
+- O **tipo do pedido define o caminho** (§20.1).
+
+**Pilar 2 — Central do Produto v2 ("certidão de nascimento")**
+- Conceito de **Item Master**: registro único e versionado que todos os setores
+  consultam.
+- **Base = o `Produto` de Compras/Fiscal** (o mesmo da NF-e), estendido por uma
+  ficha gráfica 1:1. Nada de produto paralelo.
+- **Arte versionada**: até 4 imagens por revisão, revisão **aprovada** marcada (a
+  OP sempre usa a aprovada). **Faca**: imagem + vínculo com `ModeloFaca` (GCad).
+- **Dimensões**: vários conjuntos (produto final, planificado, folha).
+- **Códigos de acabado** (já na v1), **histórico de OPs** (passadas e atuais, com
+  status), cálculos e orçamentos, **totalizadores de venda** por cliente/período
+  e notas emitidas (lidos da NF-e).
+- **Filtros** de localização; incluir/editar; **excluir só sem movimentação**
+  (sem pedido, OP, nota ou histórico). Com movimentação → só **inativar**.
+- **Carga inicial**: trazer os produtos já cadastrados para a Central.
+- **Arquitetado para o SPED (Bloco K)**, sem implementar agora: ficha do produto
+  aponta para a `EstruturaProduto` ativa; o consumo por OP já existe em
+  `ItemOrdemProducao`.
+- A v1 entregue (§19.3) é a base — a v2 estende, não descarta.
+
+**Pilar 3 — Pré-Impressão (substitui o Monday)**
+- Board no estilo Monday (Em Processo / Finalizado), mas cada card **ligado** ao
+  Pedido/Proposta e ao Produto.
+- **Um card por PEDIDO, com vários itens dentro** (decisão 04/11).
+- Etapas configuráveis (Mockup, Arte, Padrão, Ficha Técnica, O.S.) e status
+  configuráveis com cor (Em andamento, Feito, Reprovado, Aguardando Informação,
+  Em Aprovação, Ag. Contratual, Ag. CQ, Aguardando Cliente).
+- Por etapa: responsável, prazo (SLA), anexos versionados, comentários.
+- **Ficha Técnica aprovada alimenta a Central do Produto** — é onde o produto
+  "nasce" oficialmente (liga Pilar 3 → Pilar 2).
+
+**Aprovação externa (decisão 04/11)**
+- Quem aprova a arte é **sempre o CLIENTE** — via representante ou direto pelo
+  comercial (e-mail).
+- Envio de **link para o cliente** ver a arte e responder Aprovar / Pedir ajuste
+  (com comentário). "Pedir ajuste" devolve a etapa à Pré-Impressão e abre nova
+  rodada.
+- Link protegido por **código de acesso que expira** (evita repasse ao
+  concorrente). Token por envio, uso registrado (quem/quando/de onde).
+
+### 20.4 Ordem de execução (uma spec por item)
+
+1. **Fundação** — novo modelo de status do Pedido/Proposta (macro + responsável +
+   retornos + rodadas + linha do tempo). Destrava os demais.
+2. **Central do Produto v2** — modelo de dados mestre + telas.
+3. **Pré-Impressão** — board, etapas/status configuráveis, SLA, comentários,
+   anexos.
+4. **Aprovação externa** — link com código que expira + portal do representante +
+   notificações.
+5. **Preparo fiscal/SPED** — amarração produto ↔ estrutura ↔ OP (sem gerar SPED).
+
+### 20.5 Decisões e pendências
+
+- ✅ "Novo Pedido" = produto existente com alteração.
+- ✅ Aprovação é sempre do cliente; link com código de acesso que expira.
+- ✅ Pré-impressão: um card por pedido, vários itens.
+- ✅ **Não** migrar histórico do Monday — começa do zero no Vizor.
+- ⏳ **"Padrão"** no board: prova de cor contratual OU amostra-padrão física? O
+  usuário vai confirmar com o cliente. Não bloqueia a Fundação.
+
+### 20.6 REVISÃO após análise da planilha real (04/11/2026) — SUBSTITUI a tabela da §20.1
+
+Analisada a planilha `Formulário sem título (respostas).xlsx` (383 pedidos reais
+de 2025). Achados:
+- Não há coluna de tipo de pedido. "Repetição" aparece em 1,3% (texto livre);
+  "Mostruário" não aparece.
+- O caminho é decidido por fatos que o representante já informa: já é cliente
+  (267/116), faca nova ou da casa (~50%/~43%), quem tem a arte.
+- 11,5% citam cálculo/proposta anterior em texto livre → vira campo estruturado.
+- "Variação de arte" = quantidade de artes/SKUs no pedido (26% têm mais de uma),
+  NÃO alteração de arte.
+- Também em texto livre: quantidades escalonadas (28%), concorrente (5%),
+  preço-alvo (3%), arte por WhatsApp/e-mail fora do sistema (7,6%) → backlog da
+  spec do formulário.
+
+Decisões do usuário (04/11):
+- **Repetição também tem aprovação de arte do cliente.** Nenhum tipo pula a
+  pré-impressão; muda só o volume de trabalho.
+- **Existe cálculo gráfico para todos os casos.**
+- **Mostruário = prova** que o cliente aprova antes da tiragem. Vira a flag
+  `Exige_Prova`, não um tipo.
+- O rótulo único é trocado por **perguntas objetivas** (cliente, faca, arte,
+  referência, prova) e o sistema **deriva** a classificação; o comercial pode
+  corrigir com motivo.
+
+Modelo resultante (spec `comercial-pedido-status-fiel`, Req. 1, 2 e 4 reescritos):
+
+| Respostas | Tipo derivado | Pré-impressão |
+|---|---|---|
+| Faca nova OU arte a criar | `PRODUTO_NOVO` | `COMPLETA` |
+| Arte existente com alteração OU cliente envia arte nova | `ALTERACAO` ("Novo Pedido") | `PARCIAL` |
+| Faca existente + arte existente sem alteração | `REPETICAO` | `CONFERENCIA` |
+| Faca ou arte não informada | `PRODUTO_NOVO` + "classificação a confirmar" | `COMPLETA` |
+
+Todo pedido passa por Pré-Impressão E Orçamento (em qualquer ordem) e só chega a
+Aprovado com cálculo concluído + aprovação de arte do cliente (+ prova aprovada
+quando `Exige_Prova`). Até existir o link do cliente (item 4 da §20.4), o
+comercial registra a aprovação de arte manualmente.

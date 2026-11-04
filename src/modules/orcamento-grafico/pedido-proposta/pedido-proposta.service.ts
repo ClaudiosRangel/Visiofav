@@ -12,6 +12,13 @@ import {
   type EstadoProposta,
   PedidoPropostaError,
 } from './pedido-proposta-estado.service'
+import {
+  situacaoDeEstadoLegado,
+  statusMacroDe,
+  setorDe,
+  converterTipoLegado,
+  type EstadoLegado,
+} from './status-fiel.motor'
 
 const ORIGENS = ['REPRESENTANTE', 'VENDEDOR', 'INTERNA'] as const
 const TIPOS_PEDIDO = ['REPETICAO', 'MOSTRUARIO', 'NOVO'] as const
@@ -145,6 +152,12 @@ export async function criarPedidoProposta(
   const numero = (ultimo?.numero ?? 0) + 1
 
   const dados = montarDados(input)
+
+  // Status fiel inicial (Req 13.10): pedidos novos já nascem no modelo novo.
+  // O tipoPedido legado (REPETICAO|MOSTRUARIO|NOVO) é convertido; sem as
+  // Respostas_Pedido completas, marca classificacaoAConfirmar.
+  const conv = converterTipoLegado(input.tipoPedido)
+
   const criado = await prisma.pedidoProposta.create({
     data: {
       empresaId,
@@ -158,6 +171,19 @@ export async function criarPedidoProposta(
       passtime: !!input.passtime,
       acabamentoManual: !!input.acabamentoManual,
       exigeAmostra: !!input.exigeAmostra,
+      // status fiel inicial
+      situacaoInterna: 'TRIAGEM',
+      statusMacro: 'RECEBIDO',
+      setorResponsavel: 'COMERCIAL',
+      responsavelDesde: new Date(),
+      rodada: 1,
+      versao: 0,
+      situacaoCliente: input.jaCliente ? 'EXISTENTE' : 'NOVO',
+      situacaoArte: 'NAO_INFORMADA',
+      exigeProva: conv.exigeProva,
+      tipoPedidoDerivado: conv.tipo,
+      tipoPedidoManual: false,
+      classificacaoAConfirmar: true,
       ...(dados as object),
     } as never,
     select: { id: true, numero: true },
@@ -215,6 +241,12 @@ export interface ListarFiltros {
   origem?: string
   tipoPedido?: string
   busca?: string
+  // Status fiel (aditivos)
+  statusMacro?: string
+  setorResponsavel?: string
+  refOrigemTipo?: string
+  refOrigemNumero?: string
+  ordenarPorTempoParado?: boolean
 }
 
 export async function listarPedidosProposta(empresaId: string, filtros: ListarFiltros) {
@@ -222,6 +254,10 @@ export async function listarPedidosProposta(empresaId: string, filtros: ListarFi
   if (filtros.estado) where.estado = filtros.estado
   if (filtros.origem) where.origem = filtros.origem
   if (filtros.tipoPedido) where.tipoPedido = filtros.tipoPedido
+  if (filtros.statusMacro) where.statusMacro = filtros.statusMacro
+  if (filtros.setorResponsavel) where.setorResponsavel = filtros.setorResponsavel
+  if (filtros.refOrigemTipo) where.referenciaOrigemTipo = filtros.refOrigemTipo
+  if (filtros.refOrigemNumero) where.referenciaOrigemNumero = filtros.refOrigemNumero
   if (filtros.busca?.trim()) {
     const q = filtros.busca.trim()
     where.OR = [
@@ -229,14 +265,24 @@ export async function listarPedidosProposta(empresaId: string, filtros: ListarFi
       { produtoNome: { contains: q, mode: 'insensitive' } },
     ]
   }
+  // Ordenar por tempo parado = responsavelDesde ascendente (mais antigo = mais
+  // tempo parado no setor). Default = mais recentes primeiro (comportamento atual).
+  const orderBy = filtros.ordenarPorTempoParado
+    ? ({ responsavelDesde: 'asc' } as const)
+    : ({ criadoEm: 'desc' } as const)
   return prisma.pedidoProposta.findMany({
     where: where as never,
-    orderBy: { criadoEm: 'desc' },
+    orderBy,
     select: {
       id: true, numero: true, origem: true, representanteId: true, vendedorId: true,
       tipoPedido: true, clienteNome: true, produtoNome: true, tipoEmbalagem: true,
       quantidade: true, estado: true, exigeAmostra: true, orcamentoGraficoId: true,
       criadoEm: true,
+      // Status fiel (aditivo — Req 13.1). Front antigo ignora; novo usa.
+      situacaoInterna: true, statusMacro: true, setorResponsavel: true,
+      responsavelDesde: true, rodada: true, tipoPedidoDerivado: true,
+      tipoPedidoManual: true, tipoPedidoDivergente: true, classificacaoAConfirmar: true,
+      exigeProva: true,
     },
   })
 }
@@ -254,12 +300,26 @@ export async function transicionarEstado(
 ): Promise<{ id: string; estado: EstadoProposta }> {
   const p = await prisma.pedidoProposta.findFirst({
     where: { id, empresaId },
-    select: { id: true, estado: true },
+    select: { id: true, estado: true, situacaoInterna: true, setorResponsavel: true },
   })
   if (!p) throw new PedidoPropostaError(404, 'Pedido/Proposta não encontrado.', 'NAO_ENCONTRADO')
 
   const atual = p.estado as EstadoProposta
   validarTransicao(atual, novoEstado, motivo)
+
+  // Não-regressão (Req 13.2): mantém o status fiel coerente quando o pedido já
+  // foi migrado (tem situacaoInterna). A máquina linear legada é a fonte aqui;
+  // só espelhamos a situacao/status/setor equivalentes do novo `estado`.
+  const jaMigrado = !!p.situacaoInterna
+  const sincronia: Record<string, unknown> = {}
+  if (jaMigrado) {
+    const novaSituacao = situacaoDeEstadoLegado(novoEstado as EstadoLegado)
+    const novoSetor = setorDe(novaSituacao)
+    sincronia.situacaoInterna = novaSituacao
+    sincronia.statusMacro = statusMacroDe(novaSituacao)
+    sincronia.setorResponsavel = novoSetor
+    if (novoSetor !== p.setorResponsavel) sincronia.responsavelDesde = new Date()
+  }
 
   await prisma.$transaction([
     prisma.pedidoProposta.update({
@@ -267,6 +327,7 @@ export async function transicionarEstado(
       data: {
         estado: novoEstado,
         ...(motivo ? { motivo: motivo.trim() } : {}),
+        ...sincronia,
       } as never,
     }),
     prisma.logPedidoProposta.create({

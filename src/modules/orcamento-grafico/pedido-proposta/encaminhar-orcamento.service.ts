@@ -14,6 +14,7 @@
  */
 import { prisma } from '../../../lib/prisma'
 import { PedidoPropostaError } from './pedido-proposta-estado.service'
+import { aoCriarOrcamento } from './pedido-integracoes.service'
 
 /** Normaliza texto p/ comparação: minúsculas, sem acento, trim. */
 function normalizar(texto: string): string {
@@ -200,6 +201,9 @@ export async function criarOrcamentoDePedidoProposta(
 
     return { orcamentoGraficoId: orc.id, numero: orc.numero }
   })
+
+  // Sincroniza o status fiel (best-effort — não derruba o encaminhamento).
+  await aoCriarOrcamento(empresaId, rfq.id, result.orcamentoGraficoId)
 
   return result
 }
