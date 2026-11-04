@@ -1031,7 +1031,44 @@ Programação do ERP e no painel do operador (Checkout).
   trocado por `line-clamp: 3` (até 3 linhas) + `overflow-wrap: anywhere`.
 - Commits: back `dfb20abd1` (checkout css), front `7ddb311` (programação).
 
-### 19.3 🔜 PRÓXIMA SESSÃO — Ponto 3: Central de Consulta do Produto/Acabado
+### 19.3 ✅ ENTREGUE — Ponto 3: Central de Consulta do Produto/Acabado
+
+**STATUS: CONCLUÍDO (local, não commitado).** Spec
+`.kiro/specs/comercial-central-produto-acabado/` (requirements→design→tasks).
+**Zero mudança de schema** — reusa `DeParaImportacao` (vínculo código acabado →
+Produto), `CalculoGrafico.siglaAcabado` (acervo Calcgraf), `AtributoGrafico`
+(ficha), `OrdemProducao` (histórico) e `ItemOrcamentoGrafico` (orçamentos).
+
+- **O "Cód. Acabado"** confirmado = o número do cabeçalho da OP do GPrint (ex.:
+  OP 3.070 NATIVITA = 4294/4297/4298). Já no Vizor via `DeParaImportacao`
+  (`sistemaOrigem='GPRINT'`, `tipoEntidade='PRODUTO'`, `codigoExterno`) e
+  `CalculoGrafico.siglaAcabado` (= `CalculoAcabados.CodAcabado` do Calcgraf).
+- **Backend** (`src/modules/comercial/central-produto/`): funções PURAS
+  (`consolidacao`/`validacao`/`tag`/`arte-ficha`/`permissao`) + services de I/O
+  (`busca`/`detalhe`/`edicao`) com `empresaId` EXPLÍCITO (sem bypass SUPER_ADMIN;
+  OPs com `select` SEM `pdfData`) + schemas Zod + rotas sob
+  `/api/comercial/central-produto` (`GET /busca`, `GET /detalhe`,
+  `GET /permissao`, `PATCH /produto/:id`), registradas em `server.ts`.
+- **Busca única** por código de acabado OU nome; detalhe consolidado
+  (identificação, arte, ficha, OPs, cálculos); edição transacional de cadastro
+  (descrição/arte/vínculos de código acabado) com permissão (`podeEditarCadastros`
+  + ADMIN bypass) e rollback.
+- **Frontend** (`VisioFab.Wms.Front`, `comercial/central-produto/page.tsx` +
+  `EditarCadastroModal.tsx`): tela única reutilizada nos menus Comercial e PCP
+  (item "Central do Produto" nas duas chaves do `ModuleSidebar`; `detectModule`
+  mapeia `/comercial` → Comercial). Build Next OK.
+- **Testes**: 16/16 (11 property-based das funções puras + 5 de I/O multi-tenant),
+  `get_diagnostics` limpo em todos os arquivos.
+- **PENDÊNCIA/limitação consciente**: a edição da FICHA TÉCNICA (atributos
+  gráficos) via selects ficou de fora porque NÃO há endpoint de cadastro de
+  `TipoCartao/TipoFormato/...` nem CRUD de `AtributoGrafico` no backend (o PCP tem
+  a tela `/pcp/cadastros/atributos-graficos`, mas não foi mapeado endpoint
+  consumível aqui). A ficha é EXIBIDA; sua edição é follow-up (criar endpoints
+  dos cadastros gráficos OU reusar os do PCP). O modal edita descrição, arte e
+  vínculos de código acabado — o núcleo do pedido.
+- **Falta**: commitar (back e front repos separados; sem schema, sem migrate).
+
+<!-- Transcrição original do pedido abaixo (mantida para referência). -->
 **O que o Caio quer (transcrição):** "O comercial cadastra um código de acabado
 para cada produto/embalagem. Poderíamos colocar uma forma que, na hora que eu
 pesquiso o código do acabado de um produto OU o nome dele, me apareça TODAS as
