@@ -255,3 +255,92 @@ export async function mudarStatusEtapa(
 
   return { etapa, status, boardConcluido: board.concluido }
 }
+
+// ── Faca do pedido (preenchida pela Pré-Impressão) ───────────────────────────
+
+export interface FacaPedido {
+  imagemFaca: string | null
+  numeroMatriz: string | null
+  produtoId: string | null
+}
+
+/** Lê a imagem da faca e o nº da matriz do pedido. empresaId explícito. */
+export async function obterFacaPedido(empresaId: string, pedidoId: string): Promise<FacaPedido> {
+  const p = await prisma.pedidoProposta.findFirst({
+    where: { id: pedidoId, empresaId },
+    select: { imagemFaca: true, numeroMatriz: true, produtoId: true },
+  })
+  if (!p) throw new PreImpressaoError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
+  return { imagemFaca: p.imagemFaca, numeroMatriz: p.numeroMatriz, produtoId: p.produtoId }
+}
+
+/**
+ * Grava a faca (imagem + nº da matriz) feita pela Pré-Impressão:
+ *  - no pedido; nos orçamentos vinculados (para aparecer no detalhe do orçamento);
+ *  - na Ficha Master do produto (quando o pedido tem produto), para valer nos
+ *    próximos pedidos de repetição.
+ * Campos `undefined` não são alterados; `null` limpa.
+ */
+export async function salvarFacaPedido(
+  empresaId: string,
+  pedidoId: string,
+  usuarioId: string,
+  dados: { imagemFaca?: string | null; numeroMatriz?: string | null },
+): Promise<FacaPedido & { fichaAtualizada: boolean }> {
+  const atual = await obterFacaPedido(empresaId, pedidoId)
+
+  const dataPedido: Record<string, unknown> = {}
+  if (dados.imagemFaca !== undefined) dataPedido.imagemFaca = dados.imagemFaca
+  if (dados.numeroMatriz !== undefined) dataPedido.numeroMatriz = dados.numeroMatriz?.trim() || null
+  if (Object.keys(dataPedido).length === 0) return { ...atual, fichaAtualizada: false }
+
+  let fichaAtualizada = false
+  await prisma.$transaction(async (tx) => {
+    await tx.pedidoProposta.update({ where: { id: pedidoId }, data: dataPedido })
+
+    if (dados.imagemFaca !== undefined) {
+      await tx.orcamentoGrafico.updateMany({
+        where: { empresaId, pedidoPropostaId: pedidoId },
+        data: { imagemFaca: dados.imagemFaca },
+      })
+    }
+
+    if (atual.produtoId) {
+      const fichaData: Record<string, unknown> = {}
+      if (dados.imagemFaca !== undefined) fichaData.imagemFaca = dados.imagemFaca
+      if (dados.numeroMatriz !== undefined) fichaData.matrizManual = dados.numeroMatriz?.trim() || null
+      const ficha = await tx.fichaGraficaProduto.findFirst({
+        where: { empresaId, produtoId: atual.produtoId },
+        select: { id: true },
+      })
+      if (ficha) {
+        await tx.fichaGraficaProduto.update({ where: { id: ficha.id }, data: fichaData })
+      } else {
+        await tx.fichaGraficaProduto.create({
+          data: { empresaId, produtoId: atual.produtoId, ...fichaData },
+        })
+      }
+      fichaAtualizada = true
+    }
+  })
+
+  try {
+    await registrarEvento({
+      empresaId,
+      pedidoId,
+      tipoEvento: 'FACA_ATUALIZADA',
+      origem: `usuario:${usuarioId}`,
+      dados: {
+        imagem: dados.imagemFaca === undefined ? 'inalterada' : dados.imagemFaca ? 'definida' : 'removida',
+        numeroMatriz: dados.numeroMatriz ?? null,
+        fichaAtualizada,
+      },
+      idempotenciaChave: `faca-${pedidoId}-${Date.now()}`,
+    })
+  } catch (e) {
+    console.error('⚠️ [pre-impressao] evento FACA_ATUALIZADA falhou (ignorado):', (e as Error)?.message)
+  }
+
+  const novo = await obterFacaPedido(empresaId, pedidoId)
+  return { ...novo, fichaAtualizada }
+}
