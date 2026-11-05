@@ -199,6 +199,8 @@ import { templatePropostaRoutes } from './modules/orcamento-grafico/template-pro
 import { permissoesComercialRoutes } from './modules/orcamento-grafico/permissoes-comercial.routes'
 import { pedidoPropostaRoutes } from './modules/orcamento-grafico/pedido-proposta/pedido-proposta.routes'
 import { pedidoStatusRoutes } from './modules/orcamento-grafico/pedido-proposta/pedido-status.routes'
+import { aprovacaoArteRoutes } from './modules/orcamento-grafico/pedido-proposta/aprovacao-arte.routes'
+import { aprovacaoArtePublicaRoutes } from './modules/orcamento-grafico/pedido-proposta/aprovacao-arte-publica.routes'
 import { centralProdutoRoutes } from './modules/comercial/central-produto/central-produto.routes'
 import { templateVisualRoutes } from './modules/orcamento-grafico/template-visual/template-visual.routes'
 import { configuradorGraficoRoutes } from './modules/configurador-grafico/configurador-grafico.routes'
@@ -537,6 +539,7 @@ async function bootstrap() {
   await app.register(permissoesComercialRoutes, { prefix: '/api/orcamento-grafico/comercial' })
   await app.register(pedidoPropostaRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(pedidoStatusRoutes, { prefix: '/api/orcamento-grafico' })
+  await app.register(aprovacaoArteRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(centralProdutoRoutes, { prefix: '/api/comercial/central-produto' })
   await app.register(configuradorGraficoRoutes, { prefix: '/api/configurador-grafico' })
   await app.register(importacaoOpRoutes, { prefix: '/api/pcp' })
@@ -560,6 +563,8 @@ async function bootstrap() {
 
   // Acompanhamento público (sem auth) — visão do cliente
   await app.register(acompanhamentoClienteRoutes, { prefix: '/api/acompanhamento' })
+  // Aprovação de arte pública (sem auth) — decisão do cliente por token
+  await app.register(aprovacaoArtePublicaRoutes, { prefix: '/api/aprovar-arte' })
 
   // Fichas Operacionais, OCR e Scanner
   await app.register(fichaOperacionalRoutes, { prefix: '/api/fichas-operacionais' })

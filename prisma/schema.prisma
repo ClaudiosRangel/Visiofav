@@ -4440,6 +4440,7 @@ model PedidoProposta {
 
   anexos AnexoPedidoProposta[]
   logs   LogPedidoProposta[]
+  linksAprovacaoArte LinkAprovacaoArte[]
 
   @@unique([empresaId, numero])
   @@index([empresaId, estado])
@@ -4492,6 +4493,31 @@ model LogPedidoProposta {
 
   @@index([empresaId, pedidoPropostaId])
   @@map("log_pedido_proposta")
+}
+
+/// Link público de aprovação de arte pelo CLIENTE (spec comercial-aprovacao-arte-cliente).
+/// Token opaco (UUID) que expira; o cliente abre a página pública e aprova ou
+/// pede ajuste. A decisão reflete no Pedido via Servico_Eventos.
+model LinkAprovacaoArte {
+  id               String    @id @default(uuid())
+  empresaId        String    @map("empresa_id")
+  pedidoPropostaId String    @map("pedido_proposta_id")
+  token            String    @unique @db.VarChar(40) // UUID v4
+  status           String    @default("PENDENTE") @db.VarChar(20) // PENDENTE|APROVADA|AJUSTE_SOLICITADO|CANCELADO
+  expiraEm         DateTime  @map("expira_em")
+  // Evidência da decisão do cliente
+  decididoEm       DateTime? @map("decidido_em")
+  decididoNome     String?   @map("decidido_nome") @db.VarChar(160)
+  decididoIp       String?   @map("decidido_ip") @db.VarChar(64)
+  motivoAjuste     String?   @map("motivo_ajuste") @db.Text
+  criadoPorId      String    @map("criado_por_id")
+  criadoEm         DateTime  @default(now()) @map("criado_em")
+
+  pedidoProposta PedidoProposta @relation(fields: [pedidoPropostaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId, pedidoPropostaId])
+  @@index([token])
+  @@map("link_aprovacao_arte")
 }
 
 /// Cadastro de Prazos / Condições de Pagamento do Comercial (ligado ao

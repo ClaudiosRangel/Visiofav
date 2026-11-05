@@ -5775,6 +5775,31 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "log_pedido_idempotencia_uq" ON "log_pedido_proposta"("empresa_id","idempotencia_chave") WHERE "idempotencia_chave" IS NOT NULL`)
   console.log('✅ Status fiel: colunas pedido_proposta/log_pedido_proposta + índices')
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Aprovação de arte pelo cliente (spec comercial-aprovacao-arte-cliente).
+  // Tabela link_aprovacao_arte (token que expira). Aditivo e idempotente.
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "link_aprovacao_arte" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "pedido_proposta_id" TEXT NOT NULL,
+    "token" VARCHAR(40) NOT NULL,
+    "status" VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+    "expira_em" TIMESTAMP(3) NOT NULL,
+    "decidido_em" TIMESTAMP(3),
+    "decidido_nome" VARCHAR(160),
+    "decidido_ip" VARCHAR(64),
+    "motivo_ajuste" TEXT,
+    "criado_por_id" TEXT NOT NULL,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "link_aprovacao_arte_token_key" ON "link_aprovacao_arte"("token")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "link_aprovacao_arte_empresa_pedido_idx" ON "link_aprovacao_arte"("empresa_id","pedido_proposta_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "link_aprovacao_arte" ADD CONSTRAINT "link_aprovacao_arte_pedido_fkey" FOREIGN KEY ("pedido_proposta_id") REFERENCES "pedido_proposta"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK link_aprovacao_arte→pedido skip:', e.message?.substring(0, 80)) }
+  console.log('✅ Aprovação de arte: tabela link_aprovacao_arte + índices')
+
   await migrarPedidosParaStatusFiel()
 }
 
