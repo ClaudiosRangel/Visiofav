@@ -169,7 +169,7 @@ describe('totalizadoresVenda — sem notas ⇒ zeros', () => {
     expect(r.valorTotal).toBe(0)
     // filtro de empresa e saída aplicado via relação documento
     const arg = prismaMock.itemDocumentoFiscal.findMany.mock.calls[0][0]
-    expect(arg.where.documento.empresaId).toBe(EMPRESA_A)
-    expect(arg.where.documento.tipoOperacao).toBe(1)
+    expect(arg.where.documentoFiscal.empresaId).toBe(EMPRESA_A)
+    expect(arg.where.documentoFiscal.tipoOperacao).toBe(1)
   })
 })

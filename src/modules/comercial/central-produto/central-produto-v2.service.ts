@@ -412,7 +412,7 @@ export async function totalizadoresVenda(
   const itens = await prisma.itemDocumentoFiscal.findMany({
     where: {
       produtoId,
-      documento: {
+      documentoFiscal: {
         empresaId,
         tipoOperacao: 1,
         status: { in: ['AUTORIZADA', 'AUTORIZADO'] },
@@ -422,7 +422,7 @@ export async function totalizadoresVenda(
     select: {
       quantidade: true,
       valorTotal: true,
-      documento: { select: { destRazao: true, destCpfCnpj: true } },
+      documentoFiscal: { select: { destRazao: true, destCpfCnpj: true } },
     },
   })
 
@@ -438,8 +438,8 @@ export async function totalizadoresVenda(
     const v = Number(it.valorTotal) || 0
     quantidadeTotal += q
     valorTotal += v
-    const chave = it.documento?.destCpfCnpj || it.documento?.destRazao || '—'
-    const nome = it.documento?.destRazao || chave
+    const chave = it.documentoFiscal?.destCpfCnpj || it.documentoFiscal?.destRazao || '—'
+    const nome = it.documentoFiscal?.destRazao || chave
     const acc = porCliente.get(chave) ?? { nome, qtd: 0, valor: 0 }
     acc.qtd += q
     acc.valor += v
@@ -513,13 +513,13 @@ export async function listarProdutos(
 
 async function avaliarExclusao(empresaId: string, produtoId: string) {
   const [pedVenda, pedCompra, ops, itensOrc, saldos, estoques, itensNf] = await Promise.all([
-    prisma.itemPedidoVenda.count({ where: { produtoId, pedido: { empresaId } } }).catch(() => 0),
-    prisma.itemPedidoCompra.count({ where: { produtoId, pedido: { empresaId } } }).catch(() => 0),
+    prisma.itemPedidoVenda.count({ where: { produtoId, pedidoVenda: { empresaId } } }).catch(() => 0),
+    prisma.itemPedidoCompra.count({ where: { produtoId, pedidoCompra: { empresaId } } }).catch(() => 0),
     prisma.ordemProducao.count({ where: { empresaId, produtoId } }),
     prisma.itemOrcamento.count({ where: { produtoId } }).catch(() => 0),
     prisma.saldoEndereco.count({ where: { produtoId } }).catch(() => 0),
     prisma.estoque.count({ where: { produtoId } }).catch(() => 0),
-    prisma.itemDocumentoFiscal.count({ where: { produtoId, documento: { empresaId } } }).catch(() => 0),
+    prisma.itemDocumentoFiscal.count({ where: { produtoId, documentoFiscal: { empresaId } } }).catch(() => 0),
   ])
   return podeExcluir({
     pedidos: pedVenda + pedCompra,
