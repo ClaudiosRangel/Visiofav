@@ -59,7 +59,6 @@ async function detalhePorProduto(
       nome: true,
       descricao: true,
       imagemUrl: true,
-      clienteId: true,
     },
   })
   if (!produto) throw new CentralProdutoError('Produto não encontrado.', 404)
@@ -80,13 +79,7 @@ async function detalhePorProduto(
 
   // cliente
   let clienteNome: string | null = null
-  if (produto.clienteId) {
-    const cliente = await prisma.cliente.findFirst({
-      where: { id: produto.clienteId, empresaId },
-      select: { razaoSocial: true, nomeFantasia: true },
-    })
-    clienteNome = cliente?.nomeFantasia || cliente?.razaoSocial || null
-  }
+  // Produto não tem vínculo direto com cliente no schema (sem clienteId).
 
   // ficha técnica (AtributoGrafico)
   const atributo = await prisma.atributoGrafico.findFirst({

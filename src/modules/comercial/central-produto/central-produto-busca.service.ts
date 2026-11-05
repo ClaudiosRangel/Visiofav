@@ -57,7 +57,6 @@ export async function buscarCentralProduto(
         nome: true,
         descricao: true,
         imagemUrl: true,
-        clienteId: true,
       },
       take: TETO_FONTE,
     }),
@@ -110,7 +109,6 @@ export async function buscarCentralProduto(
         nome: true,
         descricao: true,
         imagemUrl: true,
-        clienteId: true,
       },
     })
   }
@@ -121,7 +119,7 @@ export async function buscarCentralProduto(
     produtoId: dp.entidadeInternaId,
   }))
 
-  const produtos: ProdutoResumo[] = [...produtosRaw, ...produtosExtras]
+  const produtos: ProdutoResumo[] = [...produtosRaw, ...produtosExtras].map((p) => ({ ...p, clienteId: null }))
 
   const calculos: CalculoResumo[] = calculosRaw.map((c) => ({
     id: c.id,

@@ -36,10 +36,11 @@ function dec(v: unknown): number | null {
 async function garantirProduto(empresaId: string, produtoId: string) {
   const p = await prisma.produto.findFirst({
     where: { id: produtoId, empresaId },
-    select: { id: true, codigo: true, nome: true, descricao: true, status: true, clienteId: true },
+    select: { id: true, codigo: true, nome: true, descricao: true, status: true },
   })
   if (!p) throw new CentralProdutoError('Produto não encontrado.', 404)
-  return p
+  // Produto não tem vínculo direto com cliente no schema.
+  return { ...p, clienteId: null as string | null }
 }
 
 // ── Leitura: Ficha Master consolidada ────────────────────────────────────────
