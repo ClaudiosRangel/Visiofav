@@ -522,6 +522,11 @@ model Produto {
   movimentacoesEstoque          MovimentacaoEstoque[]
   skus                          Sku[]
 
+  // Central do Produto v2 (Item Master)
+  fichasGraficas                FichaGraficaProduto[]
+  artesRevisao                  ArteRevisaoProduto[]
+  dimensoes                     DimensaoProduto[]
+
   // Hierarquia Mercadológica — vínculo ao nível folha (Família). Opcional;
   // os níveis superiores são derivados subindo a árvore.
   // Nota: o campo legado `familia` (texto livre) é preservado com outro nome.
@@ -4050,6 +4055,70 @@ model AtributoGrafico {
   @@map("atributo_grafico")
 }
 
+// ── CENTRAL DO PRODUTO v2 (Item Master) ──────────────────────────────────────
+// Extensão gráfica 1:1 do Produto + arte versionada + dimensões. Base = Produto
+// de Compras/Fiscal (nada de produto paralelo). Spec comercial-central-produto-v2.
+
+model FichaGraficaProduto {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  produtoId    String   @map("produto_id")
+  produto      Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  cartao       String?  @db.VarChar(200)
+  gramatura    String?  @db.VarChar(60)
+  numCores     Int?     @map("num_cores")
+  coresDescricao String? @map("cores_descricao") @db.Text
+  acabamentos  String?  @db.Text
+  matrizManual String?  @map("matriz_manual") @db.VarChar(200)
+  imagemFaca   String?  @map("imagem_faca") @db.Text // dataURL/base64 — NUNCA em select de listagem
+  modeloFacaId String?  @map("modelo_faca_id")
+  modeloFaca   ModeloFaca? @relation(fields: [modeloFacaId], references: [id])
+  observacoes  String?  @db.Text
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, produtoId])
+  @@index([empresaId, modeloFacaId])
+  @@map("ficha_grafica_produto")
+}
+
+model ArteRevisaoProduto {
+  id            String   @id @default(uuid())
+  empresaId     String   @map("empresa_id")
+  produtoId     String   @map("produto_id")
+  produto       Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  numero        Int // sequencial por produto
+  estado        String   @default("RASCUNHO") @db.VarChar(16) // RASCUNHO|EM_APROVACAO|APROVADA|REPROVADA|OBSOLETA
+  descricao     String?  @db.VarChar(200)
+  imagens       String[] // dataURLs (até 4) — só no detalhe da revisão
+  aprovadaPorId String?  @map("aprovada_por_id")
+  aprovadaEm    DateTime? @map("aprovada_em")
+  comentario    String?  @db.Text
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, produtoId, numero])
+  @@index([empresaId, produtoId, estado])
+  @@map("arte_revisao_produto")
+}
+
+model DimensaoProduto {
+  id             String   @id @default(uuid())
+  empresaId      String   @map("empresa_id")
+  produtoId      String   @map("produto_id")
+  produto        Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  tipo           String   @db.VarChar(20) // PRODUTO_FINAL|PLANIFICADO|FOLHA
+  larguraMm      Decimal? @map("largura_mm") @db.Decimal(10, 2)
+  alturaMm       Decimal? @map("altura_mm") @db.Decimal(10, 2)
+  profundidadeMm Decimal? @map("profundidade_mm") @db.Decimal(10, 2)
+  observacao     String?  @db.VarChar(200)
+  criadoEm       DateTime @default(now()) @map("criado_em")
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, produtoId])
+  @@map("dimensao_produto")
+}
+
 // ============================================================================
 // ORÇAMENTO GRÁFICO
 // ============================================================================
@@ -4953,7 +5022,8 @@ model ModeloFaca {
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
-  itens ItemOrcamentoGrafico[]
+  itens          ItemOrcamentoGrafico[]
+  fichasGraficas FichaGraficaProduto[]
 
   @@unique([empresaId, codigo])
   @@index([empresaId, status])

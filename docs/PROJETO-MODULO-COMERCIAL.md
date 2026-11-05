@@ -1257,3 +1257,54 @@ Todo pedido passa por Pré-Impressão E Orçamento (em qualquer ordem) e só che
 Aprovado com cálculo concluído + aprovação de arte do cliente (+ prova aprovada
 quando `Exige_Prova`). Até existir o link do cliente (item 4 da §20.4), o
 comercial registra a aprovação de arte manualmente.
+
+---
+
+## 21. SESSÃO 05/11/2026 — Pilar 2 (Central do Produto v2) + fecho da matriz
+
+### 21.1 ✅ MATRIZ / FACA — pendência encerrada (não é re-exportação do Calcgraf)
+Investigação conclusiva (doc `docs/matriz-faca-fonte-de-dados.md`): a base
+Calcgraf restaurada localmente (`CalcgrafCartonWega` no SQL Server) tem TODO o
+subsistema de facas/matrizes VAZIO — `CalculoPlanos.CodFaca = 0` em 100% dos
+14.754 planos e `FichaTecMatrizes`/`FichaTec*` com 0 registros. A Carton Wega
+nunca usou o cadastro de matrizes do Calcgraf. Logo **não há "re-exportação da
+matriz real" possível** — o dado não existe lá.
+
+O número real da faca (ex.: `2529B - COM BRAILLE`) vem do **PDF da OP (G-Print)**
+e **já está no Vizor** como tag `[Matriz]` nas observações da OP. Em produção
+(Neon, Wega): 379 OPs, 289 (76%) com a tag preenchida. A v2 **consome essa tag**
+(função pura `derivarMatriz`), sem importar nada do Calcgraf.
+
+### 21.2 ✅ PILAR 2 — Central do Produto v2 (Item Master) IMPLEMENTADA (local, a commitar)
+Spec `.kiro/specs/comercial-central-produto-v2/` (requirements→design→tasks).
+Estende a v1 (§19.3) sem descartá-la. **Não toca o motor de cálculo.**
+
+- **Schema** (3 tabelas novas, aditivas, idempotentes no MESMO commit do
+  `migrate-prod.ts`): `FichaGraficaProduto` (ficha gráfica 1:1 do Produto, com
+  cartão/gramatura/cores/acabamentos/matriz manual/imagem da faca dataURL/
+  vínculo opcional ModeloFaca/observações), `ArteRevisaoProduto` (arte versionada,
+  até 4 imagens/revisão, estados RASCUNHO→EM_APROVACAO→APROVADA|REPROVADA→OBSOLETA,
+  só 1 aprovada vigente), `DimensaoProduto` (N conjuntos PRODUTO_FINAL/PLANIFICADO/
+  FOLHA). Relações inversas em `Produto` e `ModeloFaca`. prisma generate OK.
+  Migração roda no deploy do Render (Postgres local off).
+- **Backend** (`src/modules/comercial/central-produto/`): motor PURO
+  `central-produto-v2.motor.ts` (proximaRevisao/validarImagensRevisao[1..4]/
+  transicaoArte/aplicarAprovacao/derivarMatriz/resolverMatrizExibida/podeExcluir)
+  + `central-produto-v2.service.ts` (obterFichaMaster, salvarFicha upsert 1:1,
+  arte CRUD + transição, dimensões CRUD, totalizadoresVenda [agrega
+  ItemDocumentoFiscal de SAÍDA autorizada por período/cliente], listarProdutos
+  paginado, inativar/reativar, excluirProduto protegido por movimentação [409]).
+  Rotas aditivas no `central-produto.routes.ts` (mesmo prefixo
+  `/api/comercial/central-produto`, authenticate + podeEditarCadastros na escrita,
+  empresaId EXPLÍCITO). Imagens (dataURL) NUNCA em select de listagem.
+- **Frontend** (`comercial/central-produto/`): `FichaMaster.tsx` (modal com ficha
+  gráfica editável + matriz derivada/manual + imagem da faca + arte versionada com
+  galeria da aprovada e criar/aprovar/reprovar + dimensões + vendas + inativar/
+  excluir com tooltip quando bloqueado). `page.tsx` ganhou botão "Ficha Master"
+  no detalhe + modo "Todos os produtos" (listagem paginada/filtros = carga inicial).
+- **Testes**: motor 18/18 + I/O 9/9; suíte `src/modules/comercial` inteira
+  **43 passed / 0 falhas** (v1 intacta). get_diagnostics limpo (back+front).
+- **SPED Bloco K**: a ficha expõe (leitura) a `EstruturaProduto` ATIVA do produto;
+  nada de SPED gerado (só a amarração pronta).
+- **Falta**: commitar (back: schema+migrate juntos; front à parte; NÃO commitar
+  configurador/produtos nem useProduto). Depois, validar na tela após o deploy.

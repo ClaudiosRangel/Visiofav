@@ -6,15 +6,40 @@ import {
   getPermissoesComercial,
 } from '../../orcamento-grafico/permissoes-comercial.routes'
 import { CentralProdutoError } from './central-produto.errors'
+import { CentralProdutoV2Error } from './central-produto-v2.motor'
 import { buscarCentralProduto } from './central-produto-busca.service'
 import { obterDetalhe } from './central-produto-detalhe.service'
 import { aplicarEdicao } from './central-produto-edicao.service'
 import { permitirEdicao } from './central-produto-permissao'
 import {
+  obterFichaMaster,
+  salvarFicha,
+  listarArtes,
+  obterRevisaoArte,
+  criarRevisaoArte,
+  transicionarRevisao,
+  listarDimensoes,
+  salvarDimensao,
+  removerDimensao,
+  totalizadoresVenda,
+  listarProdutos,
+  inativarProduto,
+  excluirProduto,
+} from './central-produto-v2.service'
+import {
   buscaQuerySchema,
   detalheQuerySchema,
   edicaoBodySchema,
   produtoIdParamSchema,
+  listarProdutosQuerySchema,
+  salvarFichaBodySchema,
+  criarArteBodySchema,
+  transicaoArteBodySchema,
+  salvarDimensaoBodySchema,
+  vendasQuerySchema,
+  statusProdutoBodySchema,
+  revisaoIdParamSchema,
+  dimensaoIdParamSchema,
 } from './central-produto.schemas'
 
 type UserSession = { id: string; empresaId: string; perfil: string }
@@ -117,6 +142,225 @@ export async function centralProdutoRoutes(app: FastifyInstance) {
         return reply.status(err.statusCode).send({ message: err.message })
       }
       throw err
+    }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Central do Produto v2 (Item Master) — rotas aditivas à v1.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Tratamento comum de erro (Zod/domínio v1/v2). */
+  function tratarErro(reply: any, err: unknown) {
+    if (err instanceof ZodError) {
+      return reply.status(400).send({ message: formatarErroZod(err) })
+    }
+    if (err instanceof CentralProdutoError || err instanceof CentralProdutoV2Error) {
+      return reply.status(err.statusCode).send({ message: err.message })
+    }
+    throw err
+  }
+
+  async function exigirEdicao(user: UserSession, reply: any): Promise<boolean> {
+    const pode = await resolverPodeEditar(user)
+    if (!pode) {
+      reply.status(403).send({ message: 'Sem permissão para editar cadastros.' })
+      return false
+    }
+    return true
+  }
+
+  // GET /produtos — listagem paginada (carga inicial / filtros)
+  app.get('/produtos', async (request, reply) => {
+    const user = request.user as UserSession
+    try {
+      const q = listarProdutosQuerySchema.parse(request.query)
+      return await listarProdutos(user.empresaId, {
+        status: q.status,
+        comFicha: q.comFicha === undefined ? undefined : q.comFicha === 'true',
+        texto: q.texto,
+        page: q.page,
+        pageSize: q.pageSize,
+      })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // GET /ficha-master/:produtoId — Item Master consolidado
+  app.get('/ficha-master/:produtoId', async (request, reply) => {
+    const user = request.user as UserSession
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      return await obterFichaMaster(user.empresaId, produtoId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // PUT /ficha-master/:produtoId/ficha — salva ficha gráfica
+  app.put('/ficha-master/:produtoId/ficha', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const body = salvarFichaBodySchema.parse(request.body)
+      return await salvarFicha({ empresaId: user.empresaId, produtoId, ...body })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // GET /ficha-master/:produtoId/artes — lista revisões (resumo)
+  app.get('/ficha-master/:produtoId/artes', async (request, reply) => {
+    const user = request.user as UserSession
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      return await listarArtes(user.empresaId, produtoId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // POST /ficha-master/:produtoId/artes — cria revisão (≤4 imagens)
+  app.post('/ficha-master/:produtoId/artes', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const body = criarArteBodySchema.parse(request.body)
+      const r = await criarRevisaoArte({
+        empresaId: user.empresaId,
+        produtoId,
+        imagens: body.imagens,
+        descricao: body.descricao,
+      })
+      return reply.status(201).send(r)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // GET /artes/:revisaoId — detalhe (com imagens)
+  app.get('/artes/:revisaoId', async (request, reply) => {
+    const user = request.user as UserSession
+    try {
+      const { revisaoId } = revisaoIdParamSchema.parse(request.params)
+      return await obterRevisaoArte(user.empresaId, revisaoId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // PATCH /artes/:revisaoId/estado — transição (aprovar/reprovar/obsoletar)
+  app.patch('/artes/:revisaoId/estado', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { revisaoId } = revisaoIdParamSchema.parse(request.params)
+      const body = transicaoArteBodySchema.parse(request.body)
+      return await transicionarRevisao({
+        empresaId: user.empresaId,
+        revisaoId,
+        novoEstado: body.novoEstado,
+        usuarioId: user.id,
+        comentario: body.comentario,
+      })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // GET /ficha-master/:produtoId/dimensoes
+  app.get('/ficha-master/:produtoId/dimensoes', async (request, reply) => {
+    const user = request.user as UserSession
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      return await listarDimensoes(user.empresaId, produtoId)
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // POST /ficha-master/:produtoId/dimensoes — cria/atualiza dimensão
+  app.post('/ficha-master/:produtoId/dimensoes', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const body = salvarDimensaoBodySchema.parse(request.body)
+      return await salvarDimensao({ empresaId: user.empresaId, produtoId, ...body })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // PUT /ficha-master/:produtoId/dimensoes/:id — atualiza dimensão
+  app.put('/ficha-master/:produtoId/dimensoes/:id', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const { id } = dimensaoIdParamSchema.parse(request.params)
+      const body = salvarDimensaoBodySchema.parse(request.body)
+      return await salvarDimensao({ empresaId: user.empresaId, produtoId, ...body, id })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // DELETE /ficha-master/:produtoId/dimensoes/:id — remove dimensão
+  app.delete('/ficha-master/:produtoId/dimensoes/:id', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const { id } = dimensaoIdParamSchema.parse(request.params)
+      await removerDimensao(user.empresaId, produtoId, id)
+      return { ok: true }
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // GET /ficha-master/:produtoId/vendas — totalizadores
+  app.get('/ficha-master/:produtoId/vendas', async (request, reply) => {
+    const user = request.user as UserSession
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const q = vendasQuerySchema.parse(request.query)
+      return await totalizadoresVenda(user.empresaId, produtoId, {
+        meses: q.meses,
+        topClientes: q.topClientes,
+      })
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // PATCH /produtos/:produtoId/status — inativar/reativar
+  app.patch('/produtos/:produtoId/status', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      const { ativo } = statusProdutoBodySchema.parse(request.body)
+      await inativarProduto(user.empresaId, produtoId, ativo)
+      return { ok: true, ativo }
+    } catch (err) {
+      return tratarErro(reply, err)
+    }
+  })
+
+  // DELETE /produtos/:produtoId — exclusão protegida (409 se movimentado)
+  app.delete('/produtos/:produtoId', async (request, reply) => {
+    const user = request.user as UserSession
+    if (!(await exigirEdicao(user, reply))) return
+    try {
+      const { produtoId } = produtoIdParamSchema.parse(request.params)
+      await excluirProduto(user.empresaId, produtoId)
+      return { ok: true }
+    } catch (err) {
+      return tratarErro(reply, err)
     }
   })
 }

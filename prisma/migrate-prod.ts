@@ -5823,6 +5823,76 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK etapa_pre_impressao→pedido skip:', e.message?.substring(0, 80)) }
   console.log('✅ Pré-Impressão: tabela etapa_pre_impressao + índices')
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Central do Produto v2 (Item Master) — spec comercial-central-produto-v2.
+  // 3 tabelas novas (ficha gráfica 1:1, arte versionada, dimensões). Aditivo.
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ficha_grafica_produto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "cartao" VARCHAR(200),
+      "gramatura" VARCHAR(60),
+      "num_cores" INTEGER,
+      "cores_descricao" TEXT,
+      "acabamentos" TEXT,
+      "matriz_manual" VARCHAR(200),
+      "imagem_faca" TEXT,
+      "modelo_faca_id" TEXT,
+      "observacoes" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ficha_grafica_produto_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "ficha_grafica_produto_empresa_produto_key" ON "ficha_grafica_produto"("empresa_id","produto_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ficha_grafica_produto_empresa_modelo_faca_idx" ON "ficha_grafica_produto"("empresa_id","modelo_faca_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ficha_grafica_produto" ADD CONSTRAINT "ficha_grafica_produto_produto_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK ficha_grafica→produto skip:', e.message?.substring(0, 80)) }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "arte_revisao_produto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "numero" INTEGER NOT NULL,
+      "estado" VARCHAR(16) NOT NULL DEFAULT 'RASCUNHO',
+      "descricao" VARCHAR(200),
+      "imagens" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+      "aprovada_por_id" TEXT,
+      "aprovada_em" TIMESTAMP(3),
+      "comentario" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "arte_revisao_produto_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "arte_revisao_produto_empresa_produto_numero_key" ON "arte_revisao_produto"("empresa_id","produto_id","numero")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "arte_revisao_produto_empresa_produto_estado_idx" ON "arte_revisao_produto"("empresa_id","produto_id","estado")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "arte_revisao_produto" ADD CONSTRAINT "arte_revisao_produto_produto_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK arte_revisao→produto skip:', e.message?.substring(0, 80)) }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "dimensao_produto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "produto_id" TEXT NOT NULL,
+      "tipo" VARCHAR(20) NOT NULL,
+      "largura_mm" DECIMAL(10,2),
+      "altura_mm" DECIMAL(10,2),
+      "profundidade_mm" DECIMAL(10,2),
+      "observacao" VARCHAR(200),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "dimensao_produto_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "dimensao_produto_empresa_produto_idx" ON "dimensao_produto"("empresa_id","produto_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "dimensao_produto" ADD CONSTRAINT "dimensao_produto_produto_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK dimensao_produto→produto skip:', e.message?.substring(0, 80)) }
+  console.log('✅ Central do Produto v2: ficha_grafica_produto + arte_revisao_produto + dimensao_produto')
+
   await migrarPedidosParaStatusFiel()
 }
 
