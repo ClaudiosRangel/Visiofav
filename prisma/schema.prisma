@@ -4465,6 +4465,10 @@ model PedidoProposta {
   // a foto do produto. Campo TEXTO (não bytea) — uma imagem opcional por RFQ;
   // NUNCA incluir em select de listagem (pode ser grande). Transferida ao
   // orçamento no encaminhamento.
+  // Ficha Master em RASCUNHO, preenchida pela Pré-Impressão. Só vai para o cadastro
+  // do produto (FichaGraficaProduto) quando o cliente aprova a arte.
+  fichaRascunho    Json?     @map("ficha_rascunho")
+  fichaPublicadaEm DateTime? @map("ficha_publicada_em")
   imagemFaca String? @map("imagem_faca") @db.Text
 
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)

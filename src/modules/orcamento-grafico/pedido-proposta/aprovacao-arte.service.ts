@@ -21,6 +21,7 @@ import {
 } from './aprovacao-arte.motor'
 import { registrarEvento, solicitarTransicao } from './servico-eventos.service'
 import { isTerminal, type Situacao } from './status-fiel.motor'
+import { publicarFichaDoPedido } from './pre-impressao.service'
 
 function basePublica(): string {
   return (process.env.PUBLIC_WEB_URL || 'https://visiofav-front-wofr.vercel.app').replace(/\/+$/, '')
@@ -263,6 +264,12 @@ export async function decidir(
           data: { aprovacaoArteEm: agora, aprovacaoArteForma: 'CLIENTE_LINK' } as never,
         })
         pedidoAtualizado = true
+        // Cliente aprovou a arte → a Ficha Master (rascunho) passa a valer no cadastro do produto.
+        try {
+          await publicarFichaDoPedido(link.empresaId, link.pedidoPropostaId)
+        } catch (e) {
+          console.error('⚠️ [aprovacao-arte] publicar ficha falhou (ignorado):', (e as Error)?.message)
+        }
       }
     } else {
       // Pedir ajuste → devolve para a pré-impressão (nova rodada), se não terminal.

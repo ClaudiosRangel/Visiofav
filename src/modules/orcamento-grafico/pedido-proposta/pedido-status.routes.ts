@@ -9,6 +9,7 @@ import { authenticate } from '../../../middleware/authenticate'
 import { prisma } from '../../../lib/prisma'
 import { verificarPermissaoComercial } from '../permissoes-comercial.routes'
 import { registrarEvento, solicitarTransicao } from './servico-eventos.service'
+import { publicarFichaDoPedido } from './pre-impressao.service'
 import {
   StatusFielError,
   statusMacroDe,
@@ -351,6 +352,12 @@ export async function pedidoStatusRoutes(app: FastifyInstance) {
         dados: { forma: body.forma },
         idempotenciaChave: `aa-${id}-${Date.now()}`,
       })
+      // Arte aprovada (registro manual) → publica a Ficha Master em rascunho (best-effort).
+      try {
+        await publicarFichaDoPedido(user.empresaId, id, user.id)
+      } catch (e) {
+        console.error('⚠️ [pedido-status] publicar ficha falhou (ignorado):', (e as Error)?.message)
+      }
       return carregar(user.empresaId, id)
     } catch (err) {
       return tratarErro(err, reply)

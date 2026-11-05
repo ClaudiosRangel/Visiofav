@@ -305,23 +305,8 @@ export async function salvarFacaPedido(
       })
     }
 
-    if (atual.produtoId) {
-      const fichaData: Record<string, unknown> = {}
-      if (dados.imagemFaca !== undefined) fichaData.imagemFaca = dados.imagemFaca
-      if (dados.numeroMatriz !== undefined) fichaData.matrizManual = dados.numeroMatriz?.trim() || null
-      const ficha = await tx.fichaGraficaProduto.findFirst({
-        where: { empresaId, produtoId: atual.produtoId },
-        select: { id: true },
-      })
-      if (ficha) {
-        await tx.fichaGraficaProduto.update({ where: { id: ficha.id }, data: fichaData })
-      } else {
-        await tx.fichaGraficaProduto.create({
-          data: { empresaId, produtoId: atual.produtoId, ...fichaData },
-        })
-      }
-      fichaAtualizada = true
-    }
+    // A Ficha Master do produto NÃO é alterada aqui: só recebe os dados depois
+    // que o cliente aprova a arte (ver publicarFichaDoPedido).
   })
 
   try {
@@ -343,4 +328,202 @@ export async function salvarFacaPedido(
 
   const novo = await obterFacaPedido(empresaId, pedidoId)
   return { ...novo, fichaAtualizada }
+}
+
+// ── Ficha Master em RASCUNHO (Pré-Impressão) ─────────────────────────────────
+// A Pré-Impressão preenche a ficha do produto no pedido. Ela só é publicada no
+// cadastro do produto (FichaGraficaProduto) quando o cliente aprova a arte.
+
+export interface DimensaoRascunho {
+  tipo: 'PRODUTO_FINAL' | 'PLANIFICADO' | 'FOLHA'
+  larguraMm: number | null
+  alturaMm: number | null
+  profundidadeMm: number | null
+}
+
+export interface FichaRascunho {
+  cartao: string | null
+  gramatura: string | null
+  numCores: number | null
+  coresDescricao: string | null
+  acabamentos: string | null
+  observacoes: string | null
+  dimensoes: DimensaoRascunho[]
+}
+
+export interface FichaRascunhoView {
+  rascunho: FichaRascunho
+  imagemFaca: string | null
+  numeroMatriz: string | null
+  produtoId: string | null
+  artePorClienteAprovada: boolean
+  publicadaEm: Date | null
+}
+
+const TIPOS_DIM = ['PRODUTO_FINAL', 'PLANIFICADO', 'FOLHA']
+
+function txt(v: unknown, max: number): string | null {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  return t ? t.slice(0, max) : null
+}
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/** Normaliza o JSON do rascunho (tolerante a lixo/ausência de campos). */
+export function normalizarRascunho(raw: unknown): FichaRascunho {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const dims = Array.isArray(r.dimensoes) ? r.dimensoes : []
+  return {
+    cartao: txt(r.cartao, 200),
+    gramatura: txt(r.gramatura, 60),
+    numCores: (() => { const n = num(r.numCores); return n === null ? null : Math.min(20, Math.round(n)) })(),
+    coresDescricao: txt(r.coresDescricao, 2000),
+    acabamentos: txt(r.acabamentos, 4000),
+    observacoes: txt(r.observacoes, 4000),
+    dimensoes: dims
+      .map((d) => d as Record<string, unknown>)
+      .filter((d) => TIPOS_DIM.includes(String(d.tipo)))
+      .slice(0, 10)
+      .map((d) => ({
+        tipo: d.tipo as DimensaoRascunho['tipo'],
+        larguraMm: num(d.larguraMm),
+        alturaMm: num(d.alturaMm),
+        profundidadeMm: num(d.profundidadeMm),
+      })),
+  }
+}
+
+/** Lê o rascunho; se vazio, pré-preenche com o que o vendedor informou no pedido. */
+export async function obterFichaRascunho(empresaId: string, pedidoId: string): Promise<FichaRascunhoView> {
+  const p = await prisma.pedidoProposta.findFirst({
+    where: { id: pedidoId, empresaId },
+    select: {
+      fichaRascunho: true, fichaPublicadaEm: true, imagemFaca: true, numeroMatriz: true,
+      produtoId: true, aprovacaoArteEm: true,
+      cartao: true, gramatura: true, acabamentos: true, matriz: true,
+    },
+  })
+  if (!p) throw new PreImpressaoError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
+
+  const rascunho = p.fichaRascunho
+    ? normalizarRascunho(p.fichaRascunho)
+    : normalizarRascunho({ cartao: p.cartao, gramatura: p.gramatura, acabamentos: p.acabamentos })
+
+  return {
+    rascunho,
+    imagemFaca: p.imagemFaca,
+    numeroMatriz: p.numeroMatriz ?? p.matriz ?? null,
+    produtoId: p.produtoId,
+    artePorClienteAprovada: !!p.aprovacaoArteEm,
+    publicadaEm: p.fichaPublicadaEm,
+  }
+}
+
+/**
+ * Salva o rascunho no pedido (e a imagem da faca nos orçamentos vinculados).
+ * NÃO escreve na Ficha Master do produto.
+ */
+export async function salvarFichaRascunho(
+  empresaId: string,
+  pedidoId: string,
+  usuarioId: string,
+  dados: { rascunho?: unknown; imagemFaca?: string | null; numeroMatriz?: string | null },
+): Promise<FichaRascunhoView> {
+  await carregarPedido(empresaId, pedidoId)
+
+  const data: Record<string, unknown> = {}
+  if (dados.rascunho !== undefined) data.fichaRascunho = normalizarRascunho(dados.rascunho)
+  if (dados.imagemFaca !== undefined) data.imagemFaca = dados.imagemFaca
+  if (dados.numeroMatriz !== undefined) data.numeroMatriz = dados.numeroMatriz?.trim() || null
+
+  if (Object.keys(data).length > 0) {
+    await prisma.$transaction(async (tx) => {
+      await tx.pedidoProposta.update({ where: { id: pedidoId }, data })
+      if (dados.imagemFaca !== undefined) {
+        await tx.orcamentoGrafico.updateMany({
+          where: { empresaId, pedidoPropostaId: pedidoId },
+          data: { imagemFaca: dados.imagemFaca },
+        })
+      }
+    })
+    try {
+      await registrarEvento({
+        empresaId,
+        pedidoId,
+        tipoEvento: 'FICHA_RASCUNHO_ATUALIZADA',
+        origem: `usuario:${usuarioId}`,
+        idempotenciaChave: `ficha-rascunho-${pedidoId}-${Date.now()}`,
+      })
+    } catch (e) {
+      console.error('⚠️ [pre-impressao] evento FICHA_RASCUNHO_ATUALIZADA falhou (ignorado):', (e as Error)?.message)
+    }
+  }
+  return obterFichaRascunho(empresaId, pedidoId)
+}
+
+export interface ResultadoPublicacao {
+  publicada: boolean
+  motivo?: 'SEM_PRODUTO' | 'ARTE_NAO_APROVADA'
+}
+
+/**
+ * Publica o rascunho na Ficha Master do produto (FichaGraficaProduto +
+ * dimensões). Só quando a arte foi aprovada pelo cliente e o pedido tem produto.
+ * Chamada pela aprovação do cliente (best-effort) e pelo botão manual.
+ */
+export async function publicarFichaDoPedido(
+  empresaId: string,
+  pedidoId: string,
+  usuarioId?: string,
+): Promise<ResultadoPublicacao> {
+  const v = await obterFichaRascunho(empresaId, pedidoId)
+  if (!v.artePorClienteAprovada) return { publicada: false, motivo: 'ARTE_NAO_APROVADA' }
+  if (!v.produtoId) return { publicada: false, motivo: 'SEM_PRODUTO' }
+
+  const produtoId = v.produtoId
+  const r = v.rascunho
+  await prisma.$transaction(async (tx) => {
+    const fichaData = {
+      cartao: r.cartao,
+      gramatura: r.gramatura,
+      numCores: r.numCores,
+      coresDescricao: r.coresDescricao,
+      acabamentos: r.acabamentos,
+      matrizManual: v.numeroMatriz,
+      imagemFaca: v.imagemFaca,
+      observacoes: r.observacoes,
+    }
+    const ficha = await tx.fichaGraficaProduto.findFirst({
+      where: { empresaId, produtoId },
+      select: { id: true },
+    })
+    if (ficha) await tx.fichaGraficaProduto.update({ where: { id: ficha.id }, data: fichaData })
+    else await tx.fichaGraficaProduto.create({ data: { empresaId, produtoId, ...fichaData } })
+
+    // Dimensões: substitui as do produto pelas aprovadas neste pedido.
+    if (r.dimensoes.length > 0) {
+      await tx.dimensaoProduto.deleteMany({ where: { empresaId, produtoId } })
+      await tx.dimensaoProduto.createMany({
+        data: r.dimensoes.map((d) => ({ empresaId, produtoId, ...d })),
+      })
+    }
+    await tx.pedidoProposta.update({ where: { id: pedidoId }, data: { fichaPublicadaEm: new Date() } })
+  })
+
+  try {
+    await registrarEvento({
+      empresaId,
+      pedidoId,
+      tipoEvento: 'FICHA_PUBLICADA',
+      origem: usuarioId ? `usuario:${usuarioId}` : 'modulo:aprovacao-cliente',
+      idempotenciaChave: `ficha-publicada-${pedidoId}-${Date.now()}`,
+    })
+  } catch (e) {
+    console.error('⚠️ [pre-impressao] evento FICHA_PUBLICADA falhou (ignorado):', (e as Error)?.message)
+  }
+  return { publicada: true }
 }

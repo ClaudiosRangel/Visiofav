@@ -5893,6 +5893,11 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK dimensao_produto→produto skip:', e.message?.substring(0, 80)) }
   console.log('✅ Central do Produto v2: ficha_grafica_produto + arte_revisao_produto + dimensao_produto')
 
+  // Ficha Master em rascunho no pedido (preenchida pela Pré-Impressão; publicada na aprovação da arte)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "ficha_rascunho" JSONB`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "ficha_publicada_em" TIMESTAMP(3)`)
+  console.log('✅ pedido_proposta: ficha_rascunho + ficha_publicada_em')
+
   await migrarPedidosParaStatusFiel()
 }
 

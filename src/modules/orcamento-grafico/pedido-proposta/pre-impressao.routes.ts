@@ -13,6 +13,9 @@ import {
   mudarStatusEtapa,
   obterFacaPedido,
   salvarFacaPedido,
+  obterFichaRascunho,
+  salvarFichaRascunho,
+  publicarFichaDoPedido,
 } from './pre-impressao.service'
 import { PreImpressaoError, ETAPAS, STATUS_VALIDOS } from './pre-impressao.motor'
 
@@ -92,6 +95,57 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
         return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
       }
       return await salvarFacaPedido(user.empresaId, id, user.id, body)
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Ficha Master em rascunho (Pré-Impressão). Só vai ao cadastro do produto
+  // depois da aprovação da arte pelo cliente.
+  app.get('/pedidos-proposta/:id/ficha-rascunho', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      return await obterFichaRascunho(user.empresaId, id)
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  app.put('/pedidos-proposta/:id/ficha-rascunho', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({
+      rascunho: z.any().optional(),
+      imagemFaca: z.string().max(11_000_000).nullable().optional(),
+      numeroMatriz: z.string().max(200).nullable().optional(),
+    }).parse(request.body)
+    try {
+      if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
+        return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
+      }
+      return await salvarFichaRascunho(user.empresaId, id, user.id, body)
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Publicação manual (quando a aprovação da arte foi registrada manualmente).
+  app.post('/pedidos-proposta/:id/ficha-rascunho/publicar', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
+        return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
+      }
+      const r = await publicarFichaDoPedido(user.empresaId, id, user.id)
+      if (!r.publicada) {
+        const msg = r.motivo === 'SEM_PRODUTO'
+          ? 'Este pedido não tem produto cadastrado vinculado. Vincule um produto para publicar a ficha.'
+          : 'A arte ainda não foi aprovada pelo cliente.'
+        return reply.status(409).send({ message: msg, code: r.motivo })
+      }
+      return r
     } catch (err) {
       return tratarErro(err, reply)
     }
