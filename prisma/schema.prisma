@@ -4441,6 +4441,7 @@ model PedidoProposta {
   anexos AnexoPedidoProposta[]
   logs   LogPedidoProposta[]
   linksAprovacaoArte LinkAprovacaoArte[]
+  etapasPreImpressao EtapaPreImpressao[]
 
   @@unique([empresaId, numero])
   @@index([empresaId, estado])
@@ -4518,6 +4519,28 @@ model LinkAprovacaoArte {
   @@index([empresaId, pedidoPropostaId])
   @@index([token])
   @@map("link_aprovacao_arte")
+}
+
+/// Board da Pré-Impressão (spec comercial-pre-impressao-board). Uma linha por
+/// etapa (MOCKUP/ARTE/PADRAO/FICHA_TECNICA) por Pedido. Substitui o Monday.
+model EtapaPreImpressao {
+  id               String    @id @default(uuid())
+  empresaId        String    @map("empresa_id")
+  pedidoPropostaId String    @map("pedido_proposta_id")
+  etapa            String    @db.VarChar(20) // MOCKUP|ARTE|PADRAO|FICHA_TECNICA
+  status           String    @default("PENDENTE") @db.VarChar(16) // PENDENTE|EM_ANDAMENTO|CONCLUIDA
+  ordem            Int
+  observacao       String?   @db.Text
+  dataInicio       DateTime? @map("data_inicio")
+  dataConclusao    DateTime? @map("data_conclusao")
+  criadoEm         DateTime  @default(now()) @map("criado_em")
+  atualizadoEm     DateTime  @updatedAt @map("atualizado_em")
+
+  pedidoProposta PedidoProposta @relation(fields: [pedidoPropostaId], references: [id], onDelete: Cascade)
+
+  @@unique([pedidoPropostaId, etapa])
+  @@index([empresaId, pedidoPropostaId])
+  @@map("etapa_pre_impressao")
 }
 
 /// Cadastro de Prazos / Condições de Pagamento do Comercial (ligado ao

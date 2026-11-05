@@ -5800,6 +5800,29 @@ async function seedMateriaisFromOPs() {
   } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK link_aprovacao_arte→pedido skip:', e.message?.substring(0, 80)) }
   console.log('✅ Aprovação de arte: tabela link_aprovacao_arte + índices')
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Board da Pré-Impressão (spec comercial-pre-impressao-board). Aditivo/idempotente.
+  // ───────────────────────────────────────────────────────────────────────────
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "etapa_pre_impressao" (
+    "id" TEXT PRIMARY KEY,
+    "empresa_id" TEXT NOT NULL,
+    "pedido_proposta_id" TEXT NOT NULL,
+    "etapa" VARCHAR(20) NOT NULL,
+    "status" VARCHAR(16) NOT NULL DEFAULT 'PENDENTE',
+    "ordem" INTEGER NOT NULL,
+    "observacao" TEXT,
+    "data_inicio" TIMESTAMP(3),
+    "data_conclusao" TIMESTAMP(3),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "etapa_pre_impressao_pedido_etapa_key" ON "etapa_pre_impressao"("pedido_proposta_id","etapa")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "etapa_pre_impressao_empresa_pedido_idx" ON "etapa_pre_impressao"("empresa_id","pedido_proposta_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_pre_impressao" ADD CONSTRAINT "etapa_pre_impressao_pedido_fkey" FOREIGN KEY ("pedido_proposta_id") REFERENCES "pedido_proposta"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch (e: any) { if (!/already exists|já existe/i.test(e.message || '')) console.log('⚠️ FK etapa_pre_impressao→pedido skip:', e.message?.substring(0, 80)) }
+  console.log('✅ Pré-Impressão: tabela etapa_pre_impressao + índices')
+
   await migrarPedidosParaStatusFiel()
 }
 

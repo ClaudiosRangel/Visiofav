@@ -141,6 +141,17 @@ export async function aoVincularOP(empresaId: string, pedidoVendaId: string, ord
   })
 }
 
+/**
+ * Pedido entrou em pré-impressão → garante o board (spec comercial-pre-impressao-board).
+ * Best-effort: idempotente, não derruba a transição de origem.
+ */
+export async function aoEntrarPreImpressao(empresaId: string, pedidoId: string): Promise<void> {
+  await melhorEsforco('aoEntrarPreImpressao', async () => {
+    const { garantirBoard } = await import('./pre-impressao.service')
+    await garantirBoard(empresaId, pedidoId)
+  })
+}
+
 /** Solicitação do portal do representante vira RFQ (Req 9.8). */
 export async function aoVincularSolicitacao(empresaId: string, pedidoId: string, solicitacaoId: string): Promise<void> {
   await melhorEsforco('aoVincularSolicitacao', async () => {
