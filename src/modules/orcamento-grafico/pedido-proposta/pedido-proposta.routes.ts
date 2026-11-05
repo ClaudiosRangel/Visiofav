@@ -165,6 +165,29 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   })
 
   // ── Detalhe ──
+  // Opções de origem do pedido: representantes (Portal Representante) e vendedores
+  // ativos. Rota do Comercial (não exige perfil ADMIN nem módulo Vendas).
+  app.get('/pedidos-proposta/opcoes-origem', async (request) => {
+    const user = request.user as { empresaId: string }
+    const [reps, vends] = await Promise.all([
+      prisma.representanteCredencial.findMany({
+        where: { empresaId: user.empresaId, status: 'ATIVO' },
+        select: { id: true, vendedor: { select: { nome: true } } },
+      }),
+      prisma.vendedor.findMany({
+        where: { empresaId: user.empresaId, status: true },
+        select: { id: true, nome: true },
+        orderBy: { nome: 'asc' },
+      }),
+    ])
+    return {
+      representantes: reps
+        .map((r) => ({ id: r.id, nome: r.vendedor?.nome ?? '(sem nome)' }))
+        .sort((a, b) => a.nome.localeCompare(b.nome)),
+      vendedores: vends,
+    }
+  })
+
   app.get('/pedidos-proposta/:id', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
