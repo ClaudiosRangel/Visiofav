@@ -70,3 +70,26 @@ describe('P3 — validarStatus / validarEtapa', () => {
     expect(() => validarEtapa('FOO')).toThrow(PreImpressaoError)
   })
 })
+
+import { resumoEtapasTooltip } from './pre-impressao.motor'
+
+describe('resumoEtapasTooltip', () => {
+  it('marca a etapa ATUAL como a 1ª relevante não concluída (caminho COMPLETA)', () => {
+    const r = resumoEtapasTooltip('COMPLETA', { MOCKUP: 'CONCLUIDA', ARTE: 'EM_ANDAMENTO' })
+    expect(r.map((e) => e.etapa)).toEqual(['MOCKUP', 'ARTE', 'PADRAO', 'FICHA_TECNICA'])
+    expect(r.find((e) => e.etapa === 'ARTE')?.atual).toBe(true)
+    expect(r.find((e) => e.etapa === 'MOCKUP')?.atual).toBe(false)
+    expect(r.every((e) => e.relevante)).toBe(true)
+  })
+
+  it('CONFERENCIA: só ARTE e FICHA_TECNICA são relevantes; atual é a 1ª não concluída', () => {
+    const r = resumoEtapasTooltip('CONFERENCIA', { ARTE: 'CONCLUIDA' })
+    expect(r.find((e) => e.etapa === 'MOCKUP')?.relevante).toBe(false)
+    expect(r.find((e) => e.etapa === 'FICHA_TECNICA')?.atual).toBe(true)
+  })
+
+  it('tudo concluído: nenhuma etapa marcada como atual', () => {
+    const r = resumoEtapasTooltip('PARCIAL', { ARTE: 'CONCLUIDA', PADRAO: 'CONCLUIDA', FICHA_TECNICA: 'CONCLUIDA' })
+    expect(r.some((e) => e.atual)).toBe(false)
+  })
+})

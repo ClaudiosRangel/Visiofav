@@ -16,6 +16,9 @@ import {
   obterFichaRascunho,
   salvarFichaRascunho,
   publicarFichaDoPedido,
+  obterPreCalculo,
+  solicitarPreCalculo,
+  concluirPreCalculo,
 } from './pre-impressao.service'
 import { PreImpressaoError, ETAPAS, STATUS_VALIDOS } from './pre-impressao.motor'
 
@@ -146,6 +149,45 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
         return reply.status(409).send({ message: msg, code: r.motivo })
       }
       return r
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Pré-cálculo (auxiliar da pré-impressão; não substitui o envio ao orçamento).
+  app.get('/pedidos-proposta/:id/pre-calculo', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      return await obterPreCalculo(user.empresaId, id)
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  app.post('/pedidos-proposta/:id/pre-calculo/solicitar', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ observacao: z.string().max(2000).optional() }).parse(request.body ?? {})
+    try {
+      if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
+        return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
+      }
+      return await solicitarPreCalculo(user.empresaId, id, user.id, body.observacao)
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  app.post('/pedidos-proposta/:id/pre-calculo/concluir', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const body = z.object({ observacao: z.string().max(2000).optional() }).parse(request.body ?? {})
+    try {
+      if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
+        return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
+      }
+      return await concluirPreCalculo(user.empresaId, id, user.id, body.observacao)
     } catch (err) {
       return tratarErro(err, reply)
     }

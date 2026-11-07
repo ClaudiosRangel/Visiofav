@@ -5896,7 +5896,10 @@ async function seedMateriaisFromOPs() {
   // Ficha Master em rascunho no pedido (preenchida pela Pré-Impressão; publicada na aprovação da arte)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "ficha_rascunho" JSONB`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "ficha_publicada_em" TIMESTAMP(3)`)
-  console.log('✅ pedido_proposta: ficha_rascunho + ficha_publicada_em')
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_status" VARCHAR(12)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_solicitado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_obs" TEXT`)
+  console.log('✅ pedido_proposta: ficha_rascunho + ficha_publicada_em + pre_calculo_*')
 
   // Produto provisório (Pré-Impressão): nasce PROVISORIO/inativo e vira DEFINITIVO
   // quando o cliente aprova a arte. Default DEFINITIVO = produtos existentes intactos.

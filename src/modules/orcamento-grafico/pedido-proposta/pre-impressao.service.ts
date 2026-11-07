@@ -11,12 +11,14 @@ import {
   ETAPAS,
   etapasRelevantes,
   boardConcluido,
+  resumoEtapasTooltip,
   validarEtapa,
   validarStatus,
   PreImpressaoError,
   type EtapaPre,
   type StatusEtapa,
   type Caminho,
+  type EtapaResumoTooltip,
 } from './pre-impressao.motor'
 
 function tipoDoPedido(p: { tipoPedidoDerivado: string | null; tipoPedido: string | null }): TipoPedido {
@@ -127,6 +129,8 @@ export interface ResumoPedidoBoard {
   totalRelevantes: number
   setorResponsavel: string | null
   tempoParadoMinutos: number | null
+  etapasResumo: EtapaResumoTooltip[] // para o tooltip (concluídas/atual/faltam)
+  preCalculoStatus: string | null
 }
 
 /** Lista pedidos em EM_PRE_IMPRESSAO com resumo do board. empresaId explícito. */
@@ -138,6 +142,7 @@ export async function listarPedidosEmPreImpressao(empresaId: string): Promise<Re
       id: true, numero: true, clienteNome: true, produtoNome: true,
       tipoEmbalagem: true, tipoPedidoDerivado: true, tipoPedido: true,
       setorResponsavel: true, responsavelDesde: true, situacaoInterna: true,
+      preCalculoStatus: true,
     },
   })
   if (pedidos.length === 0) return []
@@ -184,8 +189,91 @@ export async function listarPedidosEmPreImpressao(empresaId: string): Promise<Re
       totalRelevantes: relevantes.length,
       setorResponsavel: terminal ? null : (p.setorResponsavel ?? (sit ? setorDe(sit) : null)),
       tempoParadoMinutos: tempo,
+      etapasResumo: resumoEtapasTooltip(caminho, st),
+      preCalculoStatus: (p as { preCalculoStatus?: string | null }).preCalculoStatus ?? null,
     }
   })
+}
+
+// ── Pré-cálculo (auxiliar da fase de pré-impressão) ──────────────────────────
+// É um RECURSO opcional da pré-impressão; NÃO substitui o envio ao orçamento.
+
+export interface PreCalculoView {
+  status: 'NENHUM' | 'SOLICITADO' | 'CONCLUIDO'
+  solicitadoEm: Date | null
+  observacao: string | null
+}
+
+export async function obterPreCalculo(empresaId: string, pedidoId: string): Promise<PreCalculoView> {
+  const p = await prisma.pedidoProposta.findFirst({
+    where: { id: pedidoId, empresaId },
+    select: { preCalculoStatus: true, preCalculoSolicitadoEm: true, preCalculoObs: true },
+  })
+  if (!p) throw new PreImpressaoError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
+  return {
+    status: (p.preCalculoStatus as PreCalculoView['status']) ?? 'NENHUM',
+    solicitadoEm: p.preCalculoSolicitadoEm,
+    observacao: p.preCalculoObs,
+  }
+}
+
+/** Solicita um pré-cálculo (marca SOLICITADO + notifica o Orçamento). */
+export async function solicitarPreCalculo(
+  empresaId: string,
+  pedidoId: string,
+  usuarioId: string,
+  observacao?: string,
+): Promise<PreCalculoView> {
+  await carregarPedido(empresaId, pedidoId)
+  await prisma.pedidoProposta.update({
+    where: { id: pedidoId },
+    data: {
+      preCalculoStatus: 'SOLICITADO',
+      preCalculoSolicitadoEm: new Date(),
+      preCalculoObs: observacao?.slice(0, 2000) ?? null,
+    },
+  })
+  try {
+    await registrarEvento({
+      empresaId, pedidoId,
+      tipoEvento: 'PRE_CALCULO_SOLICITADO',
+      origem: `usuario:${usuarioId}`,
+      motivo: observacao,
+      idempotenciaChave: `pre-calc-sol-${pedidoId}-${Date.now()}`,
+    })
+  } catch (e) {
+    console.error('⚠️ [pre-impressao] evento PRE_CALCULO_SOLICITADO falhou (ignorado):', (e as Error)?.message)
+  }
+  return obterPreCalculo(empresaId, pedidoId)
+}
+
+/** Marca o pré-cálculo como concluído (resposta do Orçamento à pré-impressão). */
+export async function concluirPreCalculo(
+  empresaId: string,
+  pedidoId: string,
+  usuarioId: string,
+  observacao?: string,
+): Promise<PreCalculoView> {
+  await carregarPedido(empresaId, pedidoId)
+  await prisma.pedidoProposta.update({
+    where: { id: pedidoId },
+    data: {
+      preCalculoStatus: 'CONCLUIDO',
+      preCalculoObs: observacao?.slice(0, 2000) ?? undefined,
+    },
+  })
+  try {
+    await registrarEvento({
+      empresaId, pedidoId,
+      tipoEvento: 'PRE_CALCULO_CONCLUIDO',
+      origem: `usuario:${usuarioId}`,
+      motivo: observacao,
+      idempotenciaChave: `pre-calc-con-${pedidoId}-${Date.now()}`,
+    })
+  } catch (e) {
+    console.error('⚠️ [pre-impressao] evento PRE_CALCULO_CONCLUIDO falhou (ignorado):', (e as Error)?.message)
+  }
+  return obterPreCalculo(empresaId, pedidoId)
 }
 
 /** Muda o status de uma etapa; grava datas, evento e PRE_IMPRESSAO_CONCLUIDA. */

@@ -4477,6 +4477,11 @@ model PedidoProposta {
   // do produto (FichaGraficaProduto) quando o cliente aprova a arte.
   fichaRascunho    Json?     @map("ficha_rascunho")
   fichaPublicadaEm DateTime? @map("ficha_publicada_em")
+  // Pré-cálculo (auxiliar da fase de pré-impressão; NÃO substitui o envio ao
+  // orçamento). NENHUM | SOLICITADO | CONCLUIDO.
+  preCalculoStatus      String?   @map("pre_calculo_status") @db.VarChar(12)
+  preCalculoSolicitadoEm DateTime? @map("pre_calculo_solicitado_em")
+  preCalculoObs         String?   @map("pre_calculo_obs") @db.Text
   imagemFaca String? @map("imagem_faca") @db.Text
 
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)
