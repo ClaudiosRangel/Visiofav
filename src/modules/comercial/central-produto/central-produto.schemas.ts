@@ -42,6 +42,7 @@ const IMG_MAX = 11_000_000 // ~11MB por imagem (dataURL/base64)
 
 export const listarProdutosQuerySchema = z.object({
   status: z.enum(['ATIVO', 'INATIVO', 'TODOS']).optional(),
+  situacao: z.enum(['DEFINITIVO', 'PROVISORIO', 'TODOS']).optional(),
   comFicha: z.enum(['true', 'false']).optional(),
   texto: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),

@@ -36,7 +36,7 @@ function dec(v: unknown): number | null {
 async function garantirProduto(empresaId: string, produtoId: string) {
   const p = await prisma.produto.findFirst({
     where: { id: produtoId, empresaId },
-    select: { id: true, codigo: true, nome: true, descricao: true, status: true },
+    select: { id: true, codigo: true, nome: true, descricao: true, status: true, situacaoCadastro: true },
   })
   if (!p) throw new CentralProdutoError('Produto não encontrado.', 404)
   // Produto não tem vínculo direto com cliente no schema.
@@ -116,6 +116,7 @@ export async function obterFichaMaster(
     nome: produto.nome,
     descricao: produto.descricao,
     status: produto.status,
+    situacaoCadastro: (produto as { situacaoCadastro?: string }).situacaoCadastro ?? 'DEFINITIVO',
     clienteNome,
     ficha,
     matrizDerivada,
@@ -459,7 +460,7 @@ export async function totalizadoresVenda(
 
 export async function listarProdutos(
   empresaId: string,
-  opts: { status?: 'ATIVO' | 'INATIVO' | 'TODOS'; comFicha?: boolean; texto?: string; page?: number; pageSize?: number },
+  opts: { status?: 'ATIVO' | 'INATIVO' | 'TODOS'; comFicha?: boolean; texto?: string; page?: number; pageSize?: number; situacao?: 'DEFINITIVO' | 'PROVISORIO' | 'TODOS' },
 ): Promise<ListaProdutosResultado> {
   const page = Math.max(1, opts.page ?? 1)
   const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 20))
@@ -467,6 +468,10 @@ export async function listarProdutos(
   const where: Prisma.ProdutoWhereInput = { empresaId }
   if (opts.status === 'ATIVO') where.status = true
   else if (opts.status === 'INATIVO') where.status = false
+  // Por padrão, a Central lista só DEFINITIVOS (provisórios são do fluxo da
+  // Pré-Impressão). 'TODOS'/'PROVISORIO' expõem os provisórios explicitamente.
+  if (opts.situacao === 'PROVISORIO') (where as Record<string, unknown>).situacaoCadastro = 'PROVISORIO'
+  else if (opts.situacao !== 'TODOS') (where as Record<string, unknown>).situacaoCadastro = 'DEFINITIVO'
   if (opts.texto && opts.texto.trim()) {
     const t = opts.texto.trim()
     where.OR = [
@@ -480,7 +485,7 @@ export async function listarProdutos(
     prisma.produto.count({ where }),
     prisma.produto.findMany({
       where,
-      select: { id: true, codigo: true, nome: true, status: true },
+      select: { id: true, codigo: true, nome: true, status: true, situacaoCadastro: true },
       orderBy: { codigo: 'asc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -503,6 +508,7 @@ export async function listarProdutos(
     nome: l.nome,
     status: l.status,
     temFicha: setFicha.has(l.id),
+    situacaoCadastro: (l as { situacaoCadastro?: string }).situacaoCadastro ?? 'DEFINITIVO',
   }))
   if (opts.comFicha === true) itens = itens.filter((i) => i.temFicha)
   else if (opts.comFicha === false) itens = itens.filter((i) => !i.temFicha)

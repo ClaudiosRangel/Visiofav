@@ -176,6 +176,7 @@ export async function centralProdutoRoutes(app: FastifyInstance) {
       const q = listarProdutosQuerySchema.parse(request.query)
       return await listarProdutos(user.empresaId, {
         status: q.status,
+        situacao: q.situacao,
         comFicha: q.comFicha === undefined ? undefined : q.comFicha === 'true',
         texto: q.texto,
         page: q.page,

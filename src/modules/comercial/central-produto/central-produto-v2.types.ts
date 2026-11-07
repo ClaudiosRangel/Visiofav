@@ -51,6 +51,7 @@ export interface FichaMaster {
   nome: string
   descricao: string | null
   status: boolean
+  situacaoCadastro: string
   clienteNome: string | null
   ficha: FichaGraficaView | null
   matrizDerivada: string | null
@@ -83,6 +84,7 @@ export interface ProdutoLista {
   nome: string
   status: boolean
   temFicha: boolean
+  situacaoCadastro: string
 }
 
 export interface ListaProdutosResultado {

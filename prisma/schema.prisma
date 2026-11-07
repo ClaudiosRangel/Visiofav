@@ -473,6 +473,14 @@ model Produto {
   familia                        String?  @map("familia") @db.VarChar(60)
   subFamilia                     String?  @map("sub_familia") @db.VarChar(60)
   classificacaoArmazenagemId     String?  @map("classificacao_armazenagem_id")
+  // Ciclo de vida do cadastro (Comercial/Pré-Impressão). DEFINITIVO = produto
+  // normal (default; não-regressão). PROVISORIO = criado pela Pré-Impressão,
+  // aguardando aprovação da arte do cliente — fica na tabela (histórico) mas
+  // nasce inativo (status=false) e fora do uso normal até ser promovido.
+  situacaoCadastro               String   @default("DEFINITIVO") @map("situacao_cadastro") @db.VarChar(12)
+  pedidoPropostaOrigemId         String?  @map("pedido_proposta_origem_id")
+  provisorioDesde                DateTime? @map("provisorio_desde")
+  definitivoEm                   DateTime? @map("definitivo_em")
   ambienteExigido                String?  @map("ambiente_exigido") @db.VarChar(30) // SECO, REFRIGERADO, CONGELADO
   // Tolerância de quantidade na conferência de entrada — percentual de desvio
   // aceito automaticamente sem gerar divergência. Null usa o padrão da empresa.

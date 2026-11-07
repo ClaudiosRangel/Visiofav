@@ -356,6 +356,7 @@ export interface FichaRascunhoView {
   imagemFaca: string | null
   numeroMatriz: string | null
   produtoId: string | null
+  produtoProvisorio: boolean
   artePorClienteAprovada: boolean
   publicadaEm: Date | null
 }
@@ -397,6 +398,60 @@ export function normalizarRascunho(raw: unknown): FichaRascunho {
   }
 }
 
+/**
+ * Garante que o pedido tenha um PRODUTO (provisório quando criado aqui). Se o
+ * pedido já tem produtoId, retorna. Senão cria um Produto PROVISORIO (inativo,
+ * fora do uso normal), vincula ao pedido e retorna o id. Mantém histórico — o
+ * provisório nunca é apagado; só é promovido a DEFINITIVO na aprovação da arte.
+ */
+async function garantirProdutoProvisorio(
+  empresaId: string,
+  pedido: { id: string; produtoId: string | null; numero: number; produtoNome: string | null; descricao: string | null },
+): Promise<string> {
+  if (pedido.produtoId) return pedido.produtoId
+  const nome = (pedido.produtoNome || pedido.descricao || `Pedido ${pedido.numero}`).slice(0, 200)
+  const codigo = `PROV-${pedido.numero}`
+  const agora = new Date()
+
+  const produtoId = await prisma.$transaction(async (tx) => {
+    // Reaproveita um provisório já criado para este pedido (idempotência).
+    const existente = await tx.produto.findFirst({
+      where: { empresaId, pedidoPropostaOrigemId: pedido.id },
+      select: { id: true },
+    })
+    if (existente) return existente.id
+    // Evita colisão de código (PROV-<numero> único por empresa).
+    const colisao = await tx.produto.findFirst({ where: { empresaId, codigo }, select: { id: true } })
+    const codigoFinal = colisao ? `PROV-${pedido.numero}-${Date.now().toString().slice(-5)}` : codigo
+    const prod = await tx.produto.create({
+      data: {
+        empresaId, codigo: codigoFinal, nome,
+        status: false, // inativo enquanto provisório
+        situacaoCadastro: 'PROVISORIO',
+        pedidoPropostaOrigemId: pedido.id,
+        provisorioDesde: agora,
+        classificacaoPcp: 'PRODUTO_ACABADO',
+      } as never,
+      select: { id: true },
+    })
+    await tx.pedidoProposta.update({ where: { id: pedido.id }, data: { produtoId: prod.id } })
+    return prod.id
+  })
+
+  try {
+    await registrarEvento({
+      empresaId, pedidoId: pedido.id,
+      tipoEvento: 'PRODUTO_PROVISORIO_CRIADO',
+      origem: 'modulo:pre-impressao',
+      dados: { produtoId, codigo },
+      idempotenciaChave: `prod-prov-${pedido.id}`,
+    })
+  } catch (e) {
+    console.error('⚠️ [pre-impressao] evento PRODUTO_PROVISORIO_CRIADO falhou (ignorado):', (e as Error)?.message)
+  }
+  return produtoId
+}
+
 /** Lê o rascunho; se vazio, pré-preenche com o que o vendedor informou no pedido. */
 export async function obterFichaRascunho(empresaId: string, pedidoId: string): Promise<FichaRascunhoView> {
   const p = await prisma.pedidoProposta.findFirst({
@@ -413,11 +468,21 @@ export async function obterFichaRascunho(empresaId: string, pedidoId: string): P
     ? normalizarRascunho(p.fichaRascunho)
     : normalizarRascunho({ cartao: p.cartao, gramatura: p.gramatura, acabamentos: p.acabamentos })
 
+  let produtoProvisorio = false
+  if (p.produtoId) {
+    const prod = await prisma.produto.findFirst({
+      where: { id: p.produtoId, empresaId },
+      select: { situacaoCadastro: true },
+    })
+    produtoProvisorio = prod?.situacaoCadastro === 'PROVISORIO'
+  }
+
   return {
     rascunho,
     imagemFaca: p.imagemFaca,
     numeroMatriz: p.numeroMatriz ?? p.matriz ?? null,
     produtoId: p.produtoId,
+    produtoProvisorio,
     artePorClienteAprovada: !!p.aprovacaoArteEm,
     publicadaEm: p.fichaPublicadaEm,
   }
@@ -433,15 +498,24 @@ export async function salvarFichaRascunho(
   usuarioId: string,
   dados: { rascunho?: unknown; imagemFaca?: string | null; numeroMatriz?: string | null },
 ): Promise<FichaRascunhoView> {
-  await carregarPedido(empresaId, pedidoId)
+  const pedido = await prisma.pedidoProposta.findFirst({
+    where: { id: pedidoId, empresaId },
+    select: { id: true, produtoId: true, numero: true, produtoNome: true, descricao: true },
+  })
+  if (!pedido) throw new PreImpressaoError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
+
+  // Garante um produto PROVISÓRIO para este pedido (fica na tabela, inativo).
+  const produtoId = await garantirProdutoProvisorio(empresaId, pedido)
 
   const data: Record<string, unknown> = {}
   if (dados.rascunho !== undefined) data.fichaRascunho = normalizarRascunho(dados.rascunho)
   if (dados.imagemFaca !== undefined) data.imagemFaca = dados.imagemFaca
   if (dados.numeroMatriz !== undefined) data.numeroMatriz = dados.numeroMatriz?.trim() || null
 
-  if (Object.keys(data).length > 0) {
-    await prisma.$transaction(async (tx) => {
+  const rascunhoNorm = dados.rascunho !== undefined ? normalizarRascunho(dados.rascunho) : null
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(data).length > 0) {
       await tx.pedidoProposta.update({ where: { id: pedidoId }, data })
       if (dados.imagemFaca !== undefined) {
         await tx.orcamentoGrafico.updateMany({
@@ -449,18 +523,40 @@ export async function salvarFichaRascunho(
           data: { imagemFaca: dados.imagemFaca },
         })
       }
-    })
-    try {
-      await registrarEvento({
-        empresaId,
-        pedidoId,
-        tipoEvento: 'FICHA_RASCUNHO_ATUALIZADA',
-        origem: `usuario:${usuarioId}`,
-        idempotenciaChave: `ficha-rascunho-${pedidoId}-${Date.now()}`,
-      })
-    } catch (e) {
-      console.error('⚠️ [pre-impressao] evento FICHA_RASCUNHO_ATUALIZADA falhou (ignorado):', (e as Error)?.message)
     }
+    // Reflete a ficha no PRODUTO PROVISÓRIO (FichaGraficaProduto + dimensões).
+    // Enquanto provisório, o produto está inativo e fora do uso normal.
+    if (rascunhoNorm) {
+      const fichaData = {
+        cartao: rascunhoNorm.cartao, gramatura: rascunhoNorm.gramatura, numCores: rascunhoNorm.numCores,
+        coresDescricao: rascunhoNorm.coresDescricao, acabamentos: rascunhoNorm.acabamentos,
+        matrizManual: dados.numeroMatriz !== undefined ? (dados.numeroMatriz?.trim() || null) : undefined,
+        imagemFaca: dados.imagemFaca !== undefined ? dados.imagemFaca : undefined,
+        observacoes: rascunhoNorm.observacoes,
+      }
+      const ficha = await tx.fichaGraficaProduto.findFirst({ where: { empresaId, produtoId }, select: { id: true } })
+      if (ficha) await tx.fichaGraficaProduto.update({ where: { id: ficha.id }, data: fichaData })
+      else await tx.fichaGraficaProduto.create({ data: { empresaId, produtoId, ...fichaData } })
+
+      await tx.dimensaoProduto.deleteMany({ where: { empresaId, produtoId } })
+      if (rascunhoNorm.dimensoes.length > 0) {
+        await tx.dimensaoProduto.createMany({
+          data: rascunhoNorm.dimensoes.map((d) => ({ empresaId, produtoId, ...d })),
+        })
+      }
+    }
+  })
+
+  try {
+    await registrarEvento({
+      empresaId,
+      pedidoId,
+      tipoEvento: 'FICHA_RASCUNHO_ATUALIZADA',
+      origem: `usuario:${usuarioId}`,
+      idempotenciaChave: `ficha-rascunho-${pedidoId}-${Date.now()}`,
+    })
+  } catch (e) {
+    console.error('⚠️ [pre-impressao] evento FICHA_RASCUNHO_ATUALIZADA falhou (ignorado):', (e as Error)?.message)
   }
   return obterFichaRascunho(empresaId, pedidoId)
 }
@@ -486,7 +582,10 @@ export async function publicarFichaDoPedido(
 
   const produtoId = v.produtoId
   const r = v.rascunho
+  const agora = new Date()
   await prisma.$transaction(async (tx) => {
+    // A ficha já foi gravada no produto (provisório) a cada salvamento do board.
+    // Garante que a versão aprovada esteja consolidada (idempotente).
     const fichaData = {
       cartao: r.cartao,
       gramatura: r.gramatura,
@@ -504,14 +603,20 @@ export async function publicarFichaDoPedido(
     if (ficha) await tx.fichaGraficaProduto.update({ where: { id: ficha.id }, data: fichaData })
     else await tx.fichaGraficaProduto.create({ data: { empresaId, produtoId, ...fichaData } })
 
-    // Dimensões: substitui as do produto pelas aprovadas neste pedido.
     if (r.dimensoes.length > 0) {
       await tx.dimensaoProduto.deleteMany({ where: { empresaId, produtoId } })
       await tx.dimensaoProduto.createMany({
         data: r.dimensoes.map((d) => ({ empresaId, produtoId, ...d })),
       })
     }
-    await tx.pedidoProposta.update({ where: { id: pedidoId }, data: { fichaPublicadaEm: new Date() } })
+
+    // PROMOVE o produto provisório → DEFINITIVO e o ativa (entra no uso normal).
+    // O histórico (provisorioDesde, pedido de origem) é preservado.
+    await tx.produto.updateMany({
+      where: { id: produtoId, empresaId, situacaoCadastro: 'PROVISORIO' },
+      data: { situacaoCadastro: 'DEFINITIVO', status: true, definitivoEm: agora } as never,
+    })
+    await tx.pedidoProposta.update({ where: { id: pedidoId }, data: { fichaPublicadaEm: agora } })
   })
 
   try {

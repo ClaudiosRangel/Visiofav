@@ -5898,6 +5898,15 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "ficha_publicada_em" TIMESTAMP(3)`)
   console.log('✅ pedido_proposta: ficha_rascunho + ficha_publicada_em')
 
+  // Produto provisório (Pré-Impressão): nasce PROVISORIO/inativo e vira DEFINITIVO
+  // quando o cliente aprova a arte. Default DEFINITIVO = produtos existentes intactos.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "situacao_cadastro" VARCHAR(12) NOT NULL DEFAULT 'DEFINITIVO'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "pedido_proposta_origem_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "provisorio_desde" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "produto" ADD COLUMN IF NOT EXISTS "definitivo_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "produto_empresa_situacao_cadastro_idx" ON "produto"("empresa_id","situacao_cadastro")`)
+  console.log('✅ produto: situacao_cadastro + rastreio de provisório')
+
   await migrarPedidosParaStatusFiel()
 }
 
