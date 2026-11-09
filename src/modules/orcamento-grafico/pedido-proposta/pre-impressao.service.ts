@@ -204,6 +204,46 @@ export interface PreCalculoView {
   observacao: string | null
 }
 
+export interface PreCalculoFila {
+  pedidoId: string
+  numero: number
+  clienteNome: string | null
+  produtoNome: string | null
+  status: 'SOLICITADO' | 'CONCLUIDO'
+  solicitadoEm: Date | null
+  observacao: string | null
+}
+
+/**
+ * Fila de pré-cálculos para o setor de Orçamento ver e responder.
+ * Por padrão lista só SOLICITADO; `incluirConcluidos` traz também os concluídos
+ * recentes. empresaId EXPLÍCITO.
+ */
+export async function listarFilaPreCalculo(
+  empresaId: string,
+  incluirConcluidos = false,
+): Promise<PreCalculoFila[]> {
+  const status = incluirConcluidos ? ['SOLICITADO', 'CONCLUIDO'] : ['SOLICITADO']
+  const pedidos = await prisma.pedidoProposta.findMany({
+    where: { empresaId, preCalculoStatus: { in: status } },
+    orderBy: { preCalculoSolicitadoEm: 'asc' },
+    select: {
+      id: true, numero: true, clienteNome: true, produtoNome: true, tipoEmbalagem: true,
+      preCalculoStatus: true, preCalculoSolicitadoEm: true, preCalculoObs: true,
+    },
+    take: 100,
+  })
+  return pedidos.map((p) => ({
+    pedidoId: p.id,
+    numero: p.numero,
+    clienteNome: p.clienteNome,
+    produtoNome: p.produtoNome || p.tipoEmbalagem,
+    status: p.preCalculoStatus as 'SOLICITADO' | 'CONCLUIDO',
+    solicitadoEm: p.preCalculoSolicitadoEm,
+    observacao: p.preCalculoObs,
+  }))
+}
+
 export async function obterPreCalculo(empresaId: string, pedidoId: string): Promise<PreCalculoView> {
   const p = await prisma.pedidoProposta.findFirst({
     where: { id: pedidoId, empresaId },

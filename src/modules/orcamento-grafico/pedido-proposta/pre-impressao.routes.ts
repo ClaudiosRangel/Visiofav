@@ -19,6 +19,7 @@ import {
   obterPreCalculo,
   solicitarPreCalculo,
   concluirPreCalculo,
+  listarFilaPreCalculo,
 } from './pre-impressao.service'
 import { PreImpressaoError, ETAPAS, STATUS_VALIDOS } from './pre-impressao.motor'
 
@@ -149,6 +150,23 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
         return reply.status(409).send({ message: msg, code: r.motivo })
       }
       return r
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Fila de pré-cálculos solicitados — o setor de Orçamento vê e responde.
+  // Rota ESTÁTICA (antes da paramétrica /pedidos-proposta/:id/...).
+  app.get('/pedidos-proposta/pre-calculo/fila', async (request, reply) => {
+    const user = request.user as Usuario
+    const { incluirConcluidos } = z
+      .object({ incluirConcluidos: z.enum(['true', 'false']).optional() })
+      .parse(request.query ?? {})
+    try {
+      if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
+        return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
+      }
+      return await listarFilaPreCalculo(user.empresaId, incluirConcluidos === 'true')
     } catch (err) {
       return tratarErro(err, reply)
     }
