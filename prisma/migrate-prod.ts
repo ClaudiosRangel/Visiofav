@@ -5899,6 +5899,7 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_status" VARCHAR(12)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_solicitado_em" TIMESTAMP(3)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_obs" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "pre_calculo_orcamento_id" TEXT`)
   console.log('✅ pedido_proposta: ficha_rascunho + ficha_publicada_em + pre_calculo_*')
 
   // Produto provisório (Pré-Impressão): nasce PROVISORIO/inativo e vira DEFINITIVO

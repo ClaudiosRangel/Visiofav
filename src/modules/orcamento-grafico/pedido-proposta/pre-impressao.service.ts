@@ -204,46 +204,6 @@ export interface PreCalculoView {
   observacao: string | null
 }
 
-export interface PreCalculoFila {
-  pedidoId: string
-  numero: number
-  clienteNome: string | null
-  produtoNome: string | null
-  status: 'SOLICITADO' | 'CONCLUIDO'
-  solicitadoEm: Date | null
-  observacao: string | null
-}
-
-/**
- * Fila de pré-cálculos para o setor de Orçamento ver e responder.
- * Por padrão lista só SOLICITADO; `incluirConcluidos` traz também os concluídos
- * recentes. empresaId EXPLÍCITO.
- */
-export async function listarFilaPreCalculo(
-  empresaId: string,
-  incluirConcluidos = false,
-): Promise<PreCalculoFila[]> {
-  const status = incluirConcluidos ? ['SOLICITADO', 'CONCLUIDO'] : ['SOLICITADO']
-  const pedidos = await prisma.pedidoProposta.findMany({
-    where: { empresaId, preCalculoStatus: { in: status } },
-    orderBy: { preCalculoSolicitadoEm: 'asc' },
-    select: {
-      id: true, numero: true, clienteNome: true, produtoNome: true, tipoEmbalagem: true,
-      preCalculoStatus: true, preCalculoSolicitadoEm: true, preCalculoObs: true,
-    },
-    take: 100,
-  })
-  return pedidos.map((p) => ({
-    pedidoId: p.id,
-    numero: p.numero,
-    clienteNome: p.clienteNome,
-    produtoNome: p.produtoNome || p.tipoEmbalagem,
-    status: p.preCalculoStatus as 'SOLICITADO' | 'CONCLUIDO',
-    solicitadoEm: p.preCalculoSolicitadoEm,
-    observacao: p.preCalculoObs,
-  }))
-}
-
 export async function obterPreCalculo(empresaId: string, pedidoId: string): Promise<PreCalculoView> {
   const p = await prisma.pedidoProposta.findFirst({
     where: { id: pedidoId, empresaId },
@@ -257,22 +217,133 @@ export async function obterPreCalculo(empresaId: string, pedidoId: string): Prom
   }
 }
 
-/** Solicita um pré-cálculo (marca SOLICITADO + notifica o Orçamento). */
+/** Normaliza texto p/ comparação: minúsculas, sem acento, trim. */
+function normalizarTexto(texto: string): string {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+}
+
+/** Resolve o tipoEmbalagemId por match único de código/descrição (normalizado). */
+async function resolverTipoEmbalagemPorTexto(empresaId: string, textoTipo: string | null): Promise<string | null> {
+  const alvo = normalizarTexto(textoTipo ?? '')
+  if (!alvo) return null
+  const tipos = await prisma.tipoEmbalagem.findMany({
+    where: { empresaId, status: true },
+    select: { id: true, codigo: true, descricao: true },
+  })
+  const matches = tipos.filter((t) => normalizarTexto(t.codigo) === alvo || normalizarTexto(t.descricao) === alvo)
+  return matches.length === 1 ? matches[0].id : null
+}
+
+/** Parse de "C x L x A" (mm) em {P,L,A}. */
+function parseMedidasPreCalc(texto: string | null): Record<string, number> {
+  if (!texto) return {}
+  const nums = (texto.match(/\d+(?:[.,]\d+)?/g) ?? []).map((n) => Number(n.replace(',', '.'))).filter((n) => Number.isFinite(n) && n > 0)
+  const m: Record<string, number> = {}
+  if (nums[0] != null) { m.P = nums[0]; m.comprimento = nums[0] }
+  if (nums[1] != null) { m.L = nums[1]; m.largura = nums[1] }
+  if (nums[2] != null) { m.A = nums[2]; m.altura = nums[2] }
+  return m
+}
+
+/**
+ * Solicita um pré-cálculo: cria um ORÇAMENTO GRÁFICO em RASCUNHO/AGUARDANDO
+ * (entra no grid "A orçar", marcado como PRE_CALCULO) e vincula ao pedido. O
+ * pedido CONTINUA na pré-impressão (o pré-cálculo é auxiliar e não substitui o
+ * encaminhamento oficial). Idempotente: se já há orçamento de pré-cálculo
+ * vinculado, reusa.
+ */
 export async function solicitarPreCalculo(
   empresaId: string,
   pedidoId: string,
   usuarioId: string,
   observacao?: string,
 ): Promise<PreCalculoView> {
-  await carregarPedido(empresaId, pedidoId)
-  await prisma.pedidoProposta.update({
-    where: { id: pedidoId },
-    data: {
-      preCalculoStatus: 'SOLICITADO',
-      preCalculoSolicitadoEm: new Date(),
-      preCalculoObs: observacao?.slice(0, 2000) ?? null,
-    },
+  const rfq = await prisma.pedidoProposta.findFirst({
+    where: { id: pedidoId, empresaId },
+    select: {
+      id: true, numero: true, clienteId: true, clienteNome: true, vendedorId: true,
+      tipoEmbalagem: true, medidasTexto: true, quantidade: true, acabamentos: true,
+      produtoNome: true, produtoId: true, cartao: true, gramatura: true,
+      preCalculoOrcamentoId: true,
+    } as never,
   })
+  if (!rfq) throw new PreImpressaoError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
+  const r = rfq as Record<string, any>
+
+  // Idempotência: já existe orçamento de pré-cálculo para este pedido?
+  if (r.preCalculoOrcamentoId) {
+    const existe = await prisma.orcamentoGrafico.findFirst({
+      where: { id: r.preCalculoOrcamentoId, empresaId }, select: { id: true },
+    })
+    if (existe) {
+      await prisma.pedidoProposta.update({
+        where: { id: pedidoId },
+        data: { preCalculoStatus: 'SOLICITADO', preCalculoSolicitadoEm: new Date(), preCalculoObs: observacao?.slice(0, 2000) ?? undefined } as never,
+      })
+      return obterPreCalculo(empresaId, pedidoId)
+    }
+  }
+
+  const tipoEmbalagemId = await resolverTipoEmbalagemPorTexto(empresaId, r.tipoEmbalagem)
+  if (!tipoEmbalagemId) {
+    throw new PreImpressaoError(
+      400,
+      `Não foi possível identificar o Tipo de Embalagem${r.tipoEmbalagem ? ` para "${r.tipoEmbalagem}"` : ''}. Selecione um Tipo de Embalagem cadastrado no pedido antes de solicitar o pré-cálculo.`,
+      'TIPO_EMBALAGEM_NAO_RESOLVIDO',
+    )
+  }
+
+  const medidas = parseMedidasPreCalc(r.medidasTexto)
+  const gramaturaNum = r.gramatura ? Number(String(r.gramatura).replace(/[^\d.]/g, '')) : null
+  const descricaoProduto = (r.produtoNome && String(r.produtoNome).trim()) ? String(r.produtoNome).trim() : (r.tipoEmbalagem ?? null)
+
+  const obsPartes: string[] = [`Pré-cálculo (rascunho) do Pedido/Proposta nº ${r.numero} (${r.id})`]
+  if (descricaoProduto) obsPartes.push(`Produto: ${descricaoProduto}`)
+  if (r.cartao) obsPartes.push(`Cartão: ${r.cartao}`)
+  if (r.gramatura) obsPartes.push(`Gramatura: ${r.gramatura}`)
+  if (r.medidasTexto) obsPartes.push(`Medidas: ${r.medidasTexto}`)
+  if (r.acabamentos) obsPartes.push(`Acabamentos solicitados: ${r.acabamentos}`)
+  if (observacao) obsPartes.push(`Observação da solicitação: ${observacao}`)
+
+  const agora = new Date()
+  await prisma.$transaction(async (tx) => {
+    const ultimo = await tx.orcamentoGrafico.findFirst({ where: { empresaId }, orderBy: { numero: 'desc' }, select: { numero: true } })
+    const numeroOrc = (ultimo?.numero ?? 0) + 1
+
+    const orc = await tx.orcamentoGrafico.create({
+      data: {
+        empresaId,
+        numero: numeroOrc,
+        versao: 1,
+        clienteId: r.clienteId ?? null,
+        clienteNome: r.clienteNome ?? null,
+        vendedorId: r.vendedorId ?? null,
+        tipoEmbalagemId,
+        medidas,
+        quantidade: r.quantidade ?? 0,
+        status: 'RASCUNHO',
+        etapaCalculo: 'AGUARDANDO',
+        tipo: 'PRE_CALCULO',
+        papelDescricao: r.cartao ?? null,
+        gramatura: gramaturaNum && Number.isFinite(gramaturaNum) && gramaturaNum > 0 ? gramaturaNum : null,
+        observacoes: obsPartes.join('\n'),
+        pedidoPropostaId: r.id,
+        criadoPorId: usuarioId,
+      } as never,
+      select: { id: true },
+    })
+
+    await tx.pedidoProposta.update({
+      where: { id: pedidoId },
+      data: {
+        preCalculoStatus: 'SOLICITADO',
+        preCalculoSolicitadoEm: agora,
+        preCalculoObs: observacao?.slice(0, 2000) ?? null,
+        preCalculoOrcamentoId: orc.id,
+      } as never,
+    })
+  })
+
   try {
     await registrarEvento({
       empresaId, pedidoId,

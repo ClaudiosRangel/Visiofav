@@ -4482,6 +4482,9 @@ model PedidoProposta {
   preCalculoStatus      String?   @map("pre_calculo_status") @db.VarChar(12)
   preCalculoSolicitadoEm DateTime? @map("pre_calculo_solicitado_em")
   preCalculoObs         String?   @map("pre_calculo_obs") @db.Text
+  // Orçamento gráfico RASCUNHO (tipo PRE_CALCULO) criado ao solicitar o
+  // pré-cálculo na Pré-Impressão — entra no grid "A orçar" como rascunho.
+  preCalculoOrcamentoId String?   @map("pre_calculo_orcamento_id")
   imagemFaca String? @map("imagem_faca") @db.Text
 
   // Vínculo ao orçamento criado pelo encaminhamento (0..1)
