@@ -477,6 +477,9 @@ export function registroParaEngenharia(
     // ── Tiragem e fechamento ──
     quantidade: calc.quantidade,
     margemSelecionada: decimalParaNumero(calc.margemSelecionada),
+
+    // ── Paridade (não afeta o custo) — lida do registro persistido ──
+    siglaAcabado: calc.siglaAcabado,
   }
 }
 
@@ -491,7 +494,7 @@ export function registroParaEngenharia(
  *    mapeamento — repassados como estão (ou `undefined` quando `null`);
  *  - campos `null` do body viram `undefined`/null conforme o input espera.
  */
-function bodyParaItemOrcamentoInput(body: ItemBodyMapeado): ItemOrcamentoInput {
+export function bodyParaItemOrcamentoInput(body: ItemBodyMapeado): ItemOrcamentoInput {
   return {
     tipoEmbalagemId: body.tipoEmbalagemId,
     medidas: body.medidas,

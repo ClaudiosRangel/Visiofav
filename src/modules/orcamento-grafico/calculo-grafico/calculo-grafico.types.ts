@@ -165,4 +165,14 @@ export interface CamposEngenhariaCalculo {
   quantidade: number
   /** Margem (markup) selecionada para o Valor Total. */
   margemSelecionada?: number | null
+
+  // ── Paridade (não afeta o custo) — copiado ao puxar quando existe na origem ──
+  /**
+   * Sigla do acabado (paridade Calcgraf). Único Campo_Técnico com fonte na
+   * origem migrada (`CalculoGrafico.siglaAcabado`). Trafega pelo shape de
+   * engenharia apenas por conveniência de reuso do mapeamento ao "Puxar
+   * Cálculo"; NÃO é usado pelo motor de cálculo (`bodyParaItemOrcamentoInput`
+   * não o repassa ao input — o cálculo permanece idêntico).
+   */
+  siglaAcabado?: string | null
 }

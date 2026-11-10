@@ -140,6 +140,8 @@ const arbCalculo: fc.Arbitrary<CamposEngenhariaCalculo> = fc
     camposLivres: fc.option(fc.array(arbCampoLivre, { maxLength: 3 }), { nil: null }),
     quantidade: fc.integer({ min: 1, max: 5_000_000 }),
     margemSelecionada: arbNumNull,
+    // ── Paridade (não afeta o custo) — copiado ao puxar quando existe ──
+    siglaAcabado: arbStrNull,
   })
   .map((r) => {
     const { matriz, tinta, ...rest } = r
@@ -248,10 +250,13 @@ describe('calculo-grafico-mapeamento — exemplo determinístico (shape)', () =>
       camposLivres: null,
       quantidade: 4000,
       margemSelecionada: 30,
+      siglaAcabado: 'CTC',
     }
 
     const body = calculoParaItemBody(calc)
 
+    // Sigla Acabado (paridade) copiada ao body.
+    expect(body.siglaAcabado).toBe('CTC')
     // Matriz vira objeto.
     expect(body.matriz).toEqual({ quantidade: 3, precoUnitario: 100 })
     // Tinta CONSUMO_DIRETO: precoKg reconstruído como 0.
@@ -291,6 +296,7 @@ describe('calculo-grafico-mapeamento — exemplo determinístico (shape)', () =>
       camposLivres: null,
       quantidade: 1000,
       margemSelecionada: null,
+      siglaAcabado: null,
     }
 
     const body = calculoParaItemBody(calc)
@@ -301,5 +307,70 @@ describe('calculo-grafico-mapeamento — exemplo determinístico (shape)', () =>
     const round = itemBodyParaCalculo(body)
     expect(round.matrizQuantidade).toBeNull()
     expect(round.matrizPrecoUnitario).toBeNull()
+  })
+})
+
+// ============================================================================
+// PROPERTY 2 — Campos técnicos MANUAIS nunca são inventados pelo Puxar
+// ============================================================================
+//
+// Spec: orcamento-grafico-experiencia-calcgraf (design Property 2; Req 4.3).
+//
+// O body produzido por `calculoParaItemBody` é um shape de ENGENHARIA + o único
+// Campo_Técnico COPIÁVEL (`siglaAcabado`). Nenhum Campo_Técnico MANUAL
+// (tributacao, processoImpressao, coberturaTintaTexto, fabricante, qtdModelos,
+// arte, microondulado, fornecido, observacao, observacaoAreasOp,
+// acondicionamento, conteudoVolume) pode aparecer como chave do body — o Puxar
+// jamais inventa valor para eles (regra do projeto: nunca inventar).
+
+/** Campos técnicos MANUAIS (sem fonte na origem) — nunca devem sair no body. */
+const CAMPOS_TECNICOS_MANUAIS = [
+  'tributacao',
+  'processoImpressao',
+  'coberturaTintaTexto',
+  'fabricante',
+  'qtdModelos',
+  'arte',
+  'microondulado',
+  'fornecido',
+  'observacao',
+  'observacaoAreasOp',
+  'acondicionamento',
+  'conteudoVolume',
+] as const
+
+/** Único Campo_Técnico COPIÁVEL que o body carrega. */
+const CAMPO_TECNICO_COPIAVEL = 'siglaAcabado' as const
+
+describe('calculo-grafico-mapeamento — Property 2 (técnicos manuais nunca inventados)', () => {
+  // Feature: orcamento-grafico-experiencia-calcgraf, Property 2: Campos técnicos manuais nunca são inventados pelo Puxar — para todo Cálculo Gráfico, o body de calculoParaItemBody não atribui valor a nenhum Campo_Técnico MANUAL (eles permanecem ausentes do ItemBodyMapeado).
+  it('calculoParaItemBody(calc) nunca inclui chave de Campo_Técnico MANUAL', () => {
+    fc.assert(
+      fc.property(arbCalculo, (calc) => {
+        const body = calculoParaItemBody(calc)
+        const chaves = Object.keys(body)
+        for (const campoManual of CAMPOS_TECNICOS_MANUAIS) {
+          expect(chaves).not.toContain(campoManual)
+        }
+      }),
+    )
+  })
+
+  // Feature: orcamento-grafico-experiencia-calcgraf, Property 2: Campos técnicos manuais nunca são inventados pelo Puxar — siglaAcabado (COPIAVEL) é o único Campo_Técnico presente nas chaves do body.
+  it('siglaAcabado é o único Campo_Técnico presente nas chaves do body', () => {
+    fc.assert(
+      fc.property(arbCalculo, (calc) => {
+        const chaves = Object.keys(calculoParaItemBody(calc))
+        // O único técnico que o body carrega é siglaAcabado (COPIAVEL).
+        expect(chaves).toContain(CAMPO_TECNICO_COPIAVEL)
+        // Nenhum outro técnico (MANUAL) aparece junto.
+        const tecnicosPresentes = chaves.filter(
+          (k) =>
+            k === CAMPO_TECNICO_COPIAVEL ||
+            (CAMPOS_TECNICOS_MANUAIS as readonly string[]).includes(k),
+        )
+        expect(tecnicosPresentes).toEqual([CAMPO_TECNICO_COPIAVEL])
+      }),
+    )
   })
 })

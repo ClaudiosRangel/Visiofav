@@ -107,6 +107,14 @@ export interface ItemBodyMapeado {
   // ── Tiragem e fechamento ──
   quantidade: number
   margemSelecionada?: number | null
+
+  // ── Paridade (não afeta o custo) — copiado ao puxar quando existe na origem ──
+  /**
+   * Sigla do acabado (paridade Calcgraf). Trafega no body por conveniência do
+   * round-trip; NÃO vai ao input do motor (`bodyParaItemOrcamentoInput` não o
+   * usa). Único Campo_Técnico com fonte na origem migrada.
+   */
+  siglaAcabado?: string | null
 }
 
 // ============================================================================
@@ -206,6 +214,9 @@ export function calculoParaItemBody(
     // ── Tiragem e fechamento ──
     quantidade: calculo.quantidade,
     margemSelecionada: nuloOuValor(calculo.margemSelecionada),
+
+    // ── Paridade (não afeta o custo) ──
+    siglaAcabado: nuloOuValor(calculo.siglaAcabado),
   }
 }
 
@@ -284,5 +295,8 @@ export function itemBodyParaCalculo(
     // ── Tiragem e fechamento ──
     quantidade: body.quantidade,
     margemSelecionada: nuloOuValor(body.margemSelecionada),
+
+    // ── Paridade (não afeta o custo) ──
+    siglaAcabado: nuloOuValor(body.siglaAcabado),
   }
 }
