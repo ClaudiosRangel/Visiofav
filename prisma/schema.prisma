@@ -3076,9 +3076,38 @@ model CentroProducao {
   acabamentosGraficos AcabamentoGrafico[]
   leiturasContador LeituraContador[]
   excecoesTurno   ExcecaoTurno[]
+  paradasCentro   ParadaCentro[]
 
   @@unique([empresaId, codigo])
   @@map("centro_producao")
+}
+
+/// Parada (downtime) de um Centro de Produção SEM vínculo com OP/etapa.
+/// Registrada pelo Checkout quando a máquina para (ex.: manutenção) sem
+/// nenhuma OP rodando. Isolamento por empresaId (multi-tenant).
+/// Spec: checkout-parada-maquina-sem-op.
+model ParadaCentro {
+  id               String         @id @default(uuid())
+  empresaId        String         @map("empresa_id")
+  centroProducaoId String         @map("centro_producao_id")
+  centroProducao   CentroProducao @relation(fields: [centroProducaoId], references: [id])
+  // Motivo (mesmo enum textual de ApontamentoEtapa.motivoParada):
+  // MANUTENCAO, FALTA_MATERIAL, ACERTO_MAQUINA, TROCA_TURNO, OUTRO.
+  motivoParada     String         @map("motivo_parada") @db.VarChar(50)
+  // Código de parada customizável (opcional) — reusa CodigoParada do PCP
+  // (sem FK dura, mesmo padrão de ApontamentoEtapa.codigoParadaId).
+  codigoParadaId   String?        @map("codigo_parada_id")
+  observacao       String?        @db.Text
+  // Quem registrou (funcionário/operador do terminal), opcional.
+  funcionarioId    String?        @map("funcionario_id")
+  inicio           DateTime       @default(now())
+  fim              DateTime?
+  duracaoMinutos   Int?           @map("duracao_minutos")
+  criadoEm         DateTime       @default(now()) @map("criado_em")
+
+  @@index([empresaId, centroProducaoId])
+  @@index([empresaId, inicio])
+  @@map("parada_centro")
 }
 
 /// Exceção de calendário por centro e por data (spec pcp-excecoes-calendario-gantt).
@@ -3635,6 +3664,14 @@ model ApontamentoEtapa {
   retroativos            ApontamentoEtapa[] @relation("ApontamentoRetroativo")
   motivoRetroativo       String?            @map("motivo_retroativo") @db.Text
   autorizadoPorUsuarioId String?            @map("autorizado_por_usuario_id")
+
+  // Cancelamento com autorização do gerente (spec checkout-cancelar-apontamento-gerente).
+  // Soft-cancel + estorno: o apontamento permanece para auditoria, mas é marcado
+  // como cancelado e seu efeito nos totais da etapa é revertido.
+  cancelado             Boolean   @default(false)
+  canceladoEm           DateTime? @map("cancelado_em")
+  canceladoPorUsuarioId String?   @map("cancelado_por_usuario_id")
+  motivoCancelamento    String?   @map("motivo_cancelamento") @db.Text
 
   @@index([etapaOrdemProducaoId])
   @@index([empresaId, dataHora])

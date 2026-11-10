@@ -388,3 +388,124 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ===========================================================================
+   Parada de Máquina sem OP (spec checkout-parada-maquina-sem-op)
+   =========================================================================== */
+
+.paradaBotaoAbrir {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  border: 2px solid #e8590c;
+  border-radius: 10px;
+  background: #fff4e6;
+  color: #e8590c;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.paradaBotaoAbrir:active {
+  background: #ffe8cc;
+}
+
+.paradaBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #fff0f0;
+  border-left: 6px solid #e03131;
+}
+
+.paradaDetalhe {
+  display: block;
+  margin-top: 2px;
+  color: #c92a2a;
+  font-size: 14px;
+}
+
+.paradaBotaoEncerrar {
+  min-height: 48px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  background: #2f9e44;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.paradaBotaoEncerrar:disabled {
+  opacity: 0.6;
+}
+
+.paradaForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 2px solid #e8590c;
+  border-radius: 10px;
+  background: #fff8f1;
+}
+
+.paradaCampo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.paradaSelect,
+.paradaInput {
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  font-size: 16px;
+  background: #fff;
+}
+
+.paradaAcoes {
+  display: flex;
+  gap: 10px;
+}
+
+.paradaBotaoRegistrar {
+  flex: 1;
+  min-height: 52px;
+  border: none;
+  border-radius: 8px;
+  background: #e8590c;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.paradaBotaoRegistrar:disabled {
+  opacity: 0.6;
+}
+
+.paradaBotaoCancelar {
+  min-height: 52px;
+  padding: 0 18px;
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  background: #fff;
+  color: #495057;
+  font-size: 16px;
+  cursor: pointer;
+}

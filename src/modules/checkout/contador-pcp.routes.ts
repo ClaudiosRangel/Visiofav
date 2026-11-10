@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
-import { historicoDoCentro, corrigirLeitura, ContadorPcpError } from './contador-pcp.service'
+import { historicoDoCentro, corrigirLeitura, paradasDoCentro, ContadorPcpError } from './contador-pcp.service'
 
 /**
  * Rotas do histórico e correção de leituras de contador — lado ERP/PCP
@@ -23,6 +23,11 @@ import { historicoDoCentro, corrigirLeitura, ContadorPcpError } from './contador
 type User = { id: string; empresaId: string; perfil?: string }
 
 const idParamSchema = z.object({ id: z.string().uuid() })
+
+const paradasQuerySchema = z.object({
+  dataInicio: z.string().optional(),
+  dataFim: z.string().optional(),
+})
 
 const corrigirLeituraSchema = z
   .object({
@@ -81,6 +86,30 @@ export async function contadorPcpRoutes(app: FastifyInstance) {
             return reply.status(409).send({ message: err.message })
           }
         }
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // =========================================================================
+  // GET /centros/:id/paradas — Lista as Parada_De_Centro (downtime sem OP) do
+  // centro por período, isolado por empresaId (spec
+  // checkout-parada-maquina-sem-op, Req 5). Centro de outra empresa → 404.
+  // =========================================================================
+  app.get('/centros/:id/paradas', async (request, reply) => {
+    const user = request.user as User
+    const { id } = idParamSchema.parse(request.params)
+    const q = paradasQuerySchema.parse(request.query ?? {})
+
+    try {
+      const paradas = await paradasDoCentro(id, user.empresaId, {
+        dataInicio: q.dataInicio ? new Date(q.dataInicio) : undefined,
+        dataFim: q.dataFim ? new Date(q.dataFim) : undefined,
+      })
+      return reply.status(200).send(paradas)
+    } catch (err) {
+      if (err instanceof ContadorPcpError) {
         return reply.status(err.statusCode).send({ message: err.message })
       }
       throw err

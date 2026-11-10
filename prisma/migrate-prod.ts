@@ -2991,6 +2991,50 @@ async function main() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_email_util_cte_empresa" ON "email_util_cte"("empresa_id")`)
   console.log('✅ CT-e: cidade na tabela de frete + email_util_cte prontos')
 
+  // Parada de Máquina sem OP (Checkout) — spec checkout-parada-maquina-sem-op.
+  // Downtime de um Centro de Produção sem vínculo com OP/etapa.
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "parada_centro" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "centro_producao_id" TEXT NOT NULL,
+      "motivo_parada" VARCHAR(50) NOT NULL,
+      "codigo_parada_id" TEXT,
+      "observacao" TEXT,
+      "funcionario_id" TEXT,
+      "inicio" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "fim" TIMESTAMP(3),
+      "duracao_minutos" INTEGER,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "parada_centro_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_parada_centro_empresa_centro" ON "parada_centro"("empresa_id", "centro_producao_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_parada_centro_empresa_inicio" ON "parada_centro"("empresa_id", "inicio")`)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "parada_centro"
+      ADD CONSTRAINT "parada_centro_centro_producao_id_fkey"
+      FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id")
+      ON DELETE RESTRICT ON UPDATE CASCADE
+    `)
+  } catch (e: any) {
+    // Postgres não tem ADD CONSTRAINT IF NOT EXISTS — ignora se já existe.
+    if (!/already exists|duplicate|já existe/i.test(e?.message ?? '')) {
+      console.log('⚠️ FK parada_centro já existe ou falhou (ok):', e?.message)
+    }
+  }
+  console.log('✅ Parada de Máquina sem OP: tabela parada_centro pronta')
+
+  // Cancelamento de apontamento com autorização do gerente
+  // (spec checkout-cancelar-apontamento-gerente). Colunas aditivas em
+  // apontamento_etapa — soft-cancel + estorno auditável.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "cancelado" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "cancelado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "cancelado_por_usuario_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "apontamento_etapa" ADD COLUMN IF NOT EXISTS "motivo_cancelamento" TEXT`)
+  console.log('✅ Apontamento: colunas de cancelamento (gerente) prontas')
+
   console.log('✅ All migrations applied successfully')
 }
 

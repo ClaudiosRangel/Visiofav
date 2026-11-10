@@ -96,7 +96,15 @@ interface ApontamentoHistorico {
   apontamentoOrigemId: string | null
   motivoRetroativo: string | null
   autorizadoPorUsuarioId: string | null
+  // Cancelamento com autorização do gerente (spec checkout-cancelar-apontamento-gerente).
+  cancelado: boolean
+  canceladoEm: string | null
+  canceladoPorUsuarioId: string | null
+  motivoCancelamento: string | null
 }
+
+/** Tipos de apontamento que podem ser cancelados (afetam contagem). */
+const TIPOS_CANCELAVEIS = new Set(['PRODUCAO', 'PERDA', 'RETRABALHO'])
 
 /** Tradução dos tipos de apontamento para exibição no histórico (task 27.1). */
 const ROTULO_TIPO_APONTAMENTO: Record<string, string> = {
@@ -156,6 +164,15 @@ export default function EtapaPage() {
   const [historico, setHistorico] = useState<ApontamentoHistorico[]>([])
   const [carregandoHistorico, setCarregandoHistorico] = useState(true)
   const [erroHistorico, setErroHistorico] = useState<string | null>(null)
+
+  // Cancelamento de apontamento com autorização do gerente
+  // (spec checkout-cancelar-apontamento-gerente).
+  const [cancelandoId, setCancelandoId] = useState<string | null>(null)
+  const [cancMotivo, setCancMotivo] = useState('')
+  const [cancEmail, setCancEmail] = useState('')
+  const [cancSenha, setCancSenha] = useState('')
+  const [cancErro, setCancErro] = useState<string | null>(null)
+  const [processandoCancelamento, setProcessandoCancelamento] = useState(false)
 
   // Máquina (Centro de Produção) da sessão do terminal — para o rodapé de
   // contexto fixo (mesma rota usada no painel).
@@ -239,6 +256,48 @@ export default function EtapaPage() {
     if (!estaAutenticado) return
     buscarHistorico()
   }, [estaAutenticado, buscarHistorico])
+
+  // Abre/fecha o formulário de cancelamento de um apontamento.
+  function abrirCancelamento(apontamentoId: string) {
+    setCancelandoId(apontamentoId)
+    setCancMotivo('')
+    setCancEmail('')
+    setCancSenha('')
+    setCancErro(null)
+  }
+
+  function fecharCancelamento() {
+    setCancelandoId(null)
+    setCancErro(null)
+  }
+
+  // Envia o cancelamento (estorno) com autorização do gerente (e-mail+senha).
+  async function confirmarCancelamento(apontamentoId: string) {
+    if (processandoCancelamento) return
+    if (!cancMotivo.trim()) {
+      setCancErro('Informe o motivo do cancelamento.')
+      return
+    }
+    if (!cancEmail.trim() || !cancSenha) {
+      setCancErro('Informe e-mail e senha do gerente.')
+      return
+    }
+    setProcessandoCancelamento(true)
+    setCancErro(null)
+    try {
+      await checkoutApiClient.post(`/apontamentos/${apontamentoId}/cancelar`, {
+        motivo: cancMotivo.trim(),
+        autorizacaoSupervisor: { email: cancEmail.trim(), senha: cancSenha },
+      })
+      setCancelandoId(null)
+      await buscarHistorico()
+    } catch (err: unknown) {
+      const resp = (err as { response?: { data?: { message?: string } } })?.response
+      setCancErro(resp?.data?.message || 'Não foi possível cancelar o apontamento.')
+    } finally {
+      setProcessandoCancelamento(false)
+    }
+  }
 
   // Busca os dados da máquina (centro) da sessão — não-bloqueante.
   useEffect(() => {
@@ -591,7 +650,7 @@ export default function EtapaPage() {
                     key={item.id}
                     className={`${styles.historicoItem} ${
                       item.ehRetroativo ? styles.historicoItemRetroativo : ''
-                    }`}
+                    } ${item.cancelado ? styles.historicoItemCancelado : ''}`}
                   >
                     <div className={styles.historicoItemHeader}>
                       <span className={styles.historicoTipo}>
@@ -627,6 +686,67 @@ export default function EtapaPage() {
                         )}
                       </div>
                     )}
+
+                    {/* Cancelamento com autorização do gerente. */}
+                    {item.cancelado ? (
+                      <div className={styles.historicoCanceladoBadge}>
+                        <span className={styles.historicoCanceladoTag}>Cancelado</span>
+                        {item.motivoCancelamento && <span>{item.motivoCancelamento}</span>}
+                      </div>
+                    ) : TIPOS_CANCELAVEIS.has(item.tipo) ? (
+                      cancelandoId === item.id ? (
+                        <div className={styles.cancelamentoForm}>
+                          <input
+                            type="text"
+                            className={styles.cancelamentoInput}
+                            placeholder="Motivo do cancelamento"
+                            value={cancMotivo}
+                            onChange={(e) => setCancMotivo(e.target.value)}
+                          />
+                          <input
+                            type="email"
+                            className={styles.cancelamentoInput}
+                            placeholder="E-mail do gerente"
+                            value={cancEmail}
+                            onChange={(e) => setCancEmail(e.target.value)}
+                          />
+                          <input
+                            type="password"
+                            className={styles.cancelamentoInput}
+                            placeholder="Senha do gerente"
+                            value={cancSenha}
+                            onChange={(e) => setCancSenha(e.target.value)}
+                          />
+                          {cancErro && <p className={styles.cancelamentoErro}>{cancErro}</p>}
+                          <div className={styles.cancelamentoAcoes}>
+                            <button
+                              type="button"
+                              className={styles.cancelamentoConfirmar}
+                              disabled={processandoCancelamento}
+                              onClick={() => confirmarCancelamento(item.id)}
+                            >
+                              {processandoCancelamento ? 'Aguarde...' : 'Confirmar cancelamento'}
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.cancelamentoCancelar}
+                              disabled={processandoCancelamento}
+                              onClick={fecharCancelamento}
+                            >
+                              Voltar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.historicoBotaoCancelar}
+                          onClick={() => abrirCancelamento(item.id)}
+                        >
+                          Cancelar apontamento
+                        </button>
+                      )
+                    ) : null}
                   </li>
                 ))}
               </ul>

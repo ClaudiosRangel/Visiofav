@@ -1686,6 +1686,10 @@ export interface ApontamentoHistoricoResultado {
   apontamentoOrigemId: string | null
   motivoRetroativo: string | null
   autorizadoPorUsuarioId: string | null
+  cancelado: boolean
+  canceladoEm: Date | null
+  canceladoPorUsuarioId: string | null
+  motivoCancelamento: string | null
 }
 
 /**
@@ -1801,6 +1805,11 @@ export async function listarHistoricoApontamentos(
       apontamentoOrigemId: apontamento.apontamentoOrigemId,
       motivoRetroativo: apontamento.motivoRetroativo,
       autorizadoPorUsuarioId: apontamento.autorizadoPorUsuarioId,
+      // Cancelamento com autorização do gerente (spec checkout-cancelar-apontamento-gerente).
+      cancelado: apontamento.cancelado,
+      canceladoEm: apontamento.canceladoEm,
+      canceladoPorUsuarioId: apontamento.canceladoPorUsuarioId,
+      motivoCancelamento: apontamento.motivoCancelamento,
     }
   })
 }
@@ -1995,4 +2004,167 @@ export async function registrarApontamentoContador(
   }
 
   return { apontamento, leituraInicial, leituraFinal: dados.leituraFinal, quantidade, resetDoDia, inicialAjustadaManualmente: usouManual }
+}
+
+// ============================================================================
+// Cancelamento de apontamento com autorização do gerente
+// (spec checkout-cancelar-apontamento-gerente).
+//
+// Soft-cancel + estorno: o apontamento NÃO é apagado (preserva auditoria e o
+// vínculo com retroativos). Marca-se `cancelado` + autor/motivo/data e reverte-
+// se o efeito nos totais da etapa, com piso 0. Reutiliza a autorização de
+// supervisor já existente (`validarCredenciaisSupervisorTerminal`).
+// ============================================================================
+
+/** Tipos de apontamento que afetam contagem e podem ser cancelados. */
+const TIPOS_CANCELAVEIS = new Set(['PRODUCAO', 'PERDA', 'RETRABALHO'])
+
+export const cancelarApontamentoSchema = z.object({
+  motivo: z.string().min(1, 'motivo é obrigatório'),
+})
+
+export type CancelarApontamentoInput = z.infer<typeof cancelarApontamentoSchema>
+
+/**
+ * Estorno de um total da etapa: nunca negativo (piso 0). Função PURA.
+ * `calcularEstorno(totalAtual, apontado) = max(0, totalAtual − apontado)`.
+ */
+export function calcularEstorno(totalAtual: number, apontado: number): number {
+  const t = Number.isFinite(totalAtual) ? totalAtual : 0
+  const a = Number.isFinite(apontado) ? apontado : 0
+  const r = t - a
+  return r > 0 ? r : 0
+}
+
+/**
+ * Cancela (estorna) um apontamento de PRODUCAO/PERDA/RETRABALHO mediante
+ * autorização de um gerente/supervisor (e-mail+senha), revertendo o efeito nos
+ * totais da etapa e gravando a trilha de auditoria.
+ *
+ * - Autorização validada ANTES de qualquer escrita (`validarCredenciaisSupervisorTerminal`).
+ * - `empresaId` da ENTIDADE REAL (a OP da etapa) — apontamento de outra empresa
+ *   resulta em 404 indistinguível (Property 4).
+ * - Guardas: já cancelado → 400; tipo não-cancelável → 400 (Req 3).
+ * - Estorno com piso 0 (`calcularEstorno`) + marcação, em transação atômica.
+ * NÃO altera OP nem o apontamento retroativo vinculado.
+ */
+export async function cancelarApontamento(
+  apontamentoId: string,
+  checkoutUser: { empresaId: string },
+  dadosRecebidos: CancelarApontamentoInput,
+  autorizacaoSupervisor?: AutorizacaoSupervisorInput,
+) {
+  const resultadoDados = cancelarApontamentoSchema.safeParse(dadosRecebidos)
+  if (!resultadoDados.success) {
+    throw new CheckoutError(400, resultadoDados.error.errors[0]?.message ?? 'Dados inválidos para o cancelamento')
+  }
+  const dados = resultadoDados.data
+
+  const resultadoAutorizacao = autorizacaoSupervisorSchema.safeParse(autorizacaoSupervisor)
+  if (!resultadoAutorizacao.success) {
+    throw new CheckoutError(400, resultadoAutorizacao.error.errors[0]?.message ?? 'Autorização do gerente inválida')
+  }
+
+  let usuarioAutorizador
+  try {
+    usuarioAutorizador = await validarCredenciaisSupervisorTerminal(
+      resultadoAutorizacao.data,
+      checkoutUser.empresaId,
+    )
+  } catch (err) {
+    if (err instanceof SessaoTerminalError) {
+      throw new CheckoutError(err.statusCode, err.message)
+    }
+    throw err
+  }
+
+  // Resolve o apontamento pela empresa REAL da OP (isolamento multi-tenant).
+  const apontamento = await prisma.apontamentoEtapa.findFirst({
+    where: {
+      id: apontamentoId,
+      empresaId: checkoutUser.empresaId,
+      etapaOrdemProducao: { ordemProducao: { empresaId: checkoutUser.empresaId } },
+    },
+  })
+  if (!apontamento) {
+    throw new CheckoutError(404, 'Apontamento não encontrado')
+  }
+
+  if (apontamento.cancelado) {
+    throw new CheckoutError(400, 'Este apontamento já foi cancelado.')
+  }
+  if (!TIPOS_CANCELAVEIS.has(apontamento.tipo)) {
+    throw new CheckoutError(400, 'Apenas apontamentos de produção, perda ou retrabalho podem ser cancelados.')
+  }
+
+  const etapa = await prisma.etapaOrdemProducao.findFirst({
+    where: { id: apontamento.etapaOrdemProducaoId, ordemProducao: { empresaId: checkoutUser.empresaId } },
+    select: { id: true, quantidadeProduzida: true, quantidadePerda: true, quantidadeRetrabalho: true },
+  })
+  if (!etapa) {
+    throw new CheckoutError(404, 'Etapa do apontamento não encontrada')
+  }
+
+  // Estorno simétrico, com piso 0 (nunca negativo).
+  const dataEtapa: {
+    quantidadeProduzida?: number
+    quantidadePerda?: number
+    quantidadeRetrabalho?: number
+  } = {}
+  if (apontamento.tipo === 'PRODUCAO') {
+    dataEtapa.quantidadeProduzida = calcularEstorno(
+      Number(etapa.quantidadeProduzida),
+      Number(apontamento.quantidadeProduzida),
+    )
+  } else if (apontamento.tipo === 'PERDA') {
+    dataEtapa.quantidadePerda = calcularEstorno(
+      Number(etapa.quantidadePerda),
+      Number(apontamento.quantidadePerda),
+    )
+  } else if (apontamento.tipo === 'RETRABALHO') {
+    dataEtapa.quantidadeRetrabalho = calcularEstorno(
+      Number(etapa.quantidadeRetrabalho),
+      Number(apontamento.quantidadeRetrabalho),
+    )
+  }
+
+  const agora = new Date()
+  const [apontamentoCancelado, etapaAtualizada] = await prisma.$transaction([
+    prisma.apontamentoEtapa.update({
+      where: { id: apontamento.id },
+      data: {
+        cancelado: true,
+        canceladoEm: agora,
+        canceladoPorUsuarioId: usuarioAutorizador.id,
+        motivoCancelamento: dados.motivo,
+      },
+    }),
+    prisma.etapaOrdemProducao.update({
+      where: { id: etapa.id },
+      data: dataEtapa,
+      select: {
+        id: true,
+        quantidadeProduzida: true,
+        quantidadePerda: true,
+        quantidadeRetrabalho: true,
+      },
+    }),
+  ])
+
+  return {
+    message: 'Apontamento cancelado e totais estornados.',
+    apontamento: {
+      id: apontamentoCancelado.id,
+      cancelado: apontamentoCancelado.cancelado,
+      canceladoEm: apontamentoCancelado.canceladoEm,
+      canceladoPorUsuarioId: apontamentoCancelado.canceladoPorUsuarioId,
+      motivoCancelamento: apontamentoCancelado.motivoCancelamento,
+    },
+    etapa: {
+      id: etapaAtualizada.id,
+      quantidadeProduzida: Number(etapaAtualizada.quantidadeProduzida),
+      quantidadePerda: Number(etapaAtualizada.quantidadePerda),
+      quantidadeRetrabalho: Number(etapaAtualizada.quantidadeRetrabalho),
+    },
+  }
 }

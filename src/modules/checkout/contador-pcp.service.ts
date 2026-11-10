@@ -234,3 +234,70 @@ export async function corrigirLeitura(
     deltaQuantidade,
   }
 }
+
+// ===========================================================================
+// Parada de Máquina sem OP (spec checkout-parada-maquina-sem-op) — leitura PCP.
+// ===========================================================================
+
+export interface ParadaCentroItem {
+  id: string
+  centroProducaoId: string
+  motivoParada: string
+  codigoParadaId: string | null
+  observacao: string | null
+  funcionarioId: string | null
+  inicio: Date
+  fim: Date | null
+  duracaoMinutos: number | null
+}
+
+/**
+ * Lista as ParadaCentro de um centro por período (ordem cronológica asc),
+ * isolada por `empresaId` EXPLÍCITO (centro de outra empresa → erro 404).
+ *
+ * `dataInicio`/`dataFim` são opcionais; quando informados, filtram por
+ * `inicio` dentro do intervalo. Multi-tenant: valida que o centro pertence à
+ * empresa antes de listar (não vaza entre tenants).
+ */
+export async function paradasDoCentro(
+  centroId: string,
+  empresaId: string,
+  filtro?: { dataInicio?: Date; dataFim?: Date },
+): Promise<ParadaCentroItem[]> {
+  const centro = await prisma.centroProducao.findFirst({
+    where: { id: centroId, empresaId },
+    select: { id: true },
+  })
+  if (!centro) {
+    throw new ContadorPcpError(404, 'Centro de produção não encontrado para esta empresa.')
+  }
+
+  const where: {
+    empresaId: string
+    centroProducaoId: string
+    inicio?: { gte?: Date; lte?: Date }
+  } = { empresaId, centroProducaoId: centroId }
+
+  if (filtro?.dataInicio || filtro?.dataFim) {
+    where.inicio = {}
+    if (filtro.dataInicio) where.inicio.gte = filtro.dataInicio
+    if (filtro.dataFim) where.inicio.lte = filtro.dataFim
+  }
+
+  const paradas = await prisma.paradaCentro.findMany({
+    where,
+    orderBy: { inicio: 'asc' },
+  })
+
+  return paradas.map((p) => ({
+    id: p.id,
+    centroProducaoId: p.centroProducaoId,
+    motivoParada: p.motivoParada,
+    codigoParadaId: p.codigoParadaId,
+    observacao: p.observacao,
+    funcionarioId: p.funcionarioId,
+    inicio: p.inicio,
+    fim: p.fim,
+    duracaoMinutos: p.duracaoMinutos,
+  }))
+}

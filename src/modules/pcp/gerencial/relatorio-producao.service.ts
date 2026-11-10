@@ -225,7 +225,22 @@ export async function paretoParadas(empresaId: string, ano: number, mes: number)
   const apts = (await buscarApontamentosMes(empresaId, inicio, fim)).filter((a) => a.tipo === 'PARADA')
   const codigos = await prisma.codigoParada.findMany({ where: { empresaId } })
   const descPorId = new Map(codigos.map((c) => [c.id, { codigo: c.codigo, descricao: c.descricao }]))
-  return paretoParadasPuro(apts, descPorId)
+
+  // Parada de máquina SEM OP (spec checkout-parada-maquina-sem-op, Req 4):
+  // as ParadaCentro ENCERRADAS do período somam no MESMO Pareto, mapeadas
+  // para o shape genérico (tempoParadaMinutos = duracaoMinutos). Filtro por
+  // empresaId explícito; só paradas com fim no intervalo do mês.
+  const paradasCentro = await prisma.paradaCentro.findMany({
+    where: { empresaId, fim: { gte: inicio, lte: fim } },
+    select: { codigoParadaId: true, motivoParada: true, duracaoMinutos: true },
+  })
+  const paradasComoApts = paradasCentro.map((p) => ({
+    codigoParadaId: p.codigoParadaId,
+    motivoParada: p.motivoParada,
+    tempoParadaMinutos: p.duracaoMinutos,
+  }))
+
+  return paretoParadasPuro([...apts, ...paradasComoApts], descPorId)
 }
 
 /**

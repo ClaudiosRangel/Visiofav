@@ -100,6 +100,32 @@ interface EtapaEmAlertaParadaProlongada {
   motivoParada: string | null
 }
 
+/** Parada de máquina sem OP (spec checkout-parada-maquina-sem-op). */
+interface ParadaCentro {
+  id: string
+  motivoParada: string
+  codigoParadaId: string | null
+  observacao: string | null
+  inicio: string
+  fim: string | null
+}
+
+/** Código de parada cadastrado (GET /checkout/codigos-parada). */
+interface CodigoParada {
+  id: string
+  codigo: string
+  descricao: string
+}
+
+/** Motivos de parada (mesmo enum do backend). */
+const MOTIVOS_PARADA: Array<{ valor: string; rotulo: string }> = [
+  { valor: 'MANUTENCAO', rotulo: 'Manutenção' },
+  { valor: 'FALTA_MATERIAL', rotulo: 'Falta de material' },
+  { valor: 'ACERTO_MAQUINA', rotulo: 'Acerto de máquina' },
+  { valor: 'TROCA_TURNO', rotulo: 'Troca de turno' },
+  { valor: 'OUTRO', rotulo: 'Outro' },
+]
+
 /** Status de Etapa que não navegam para `etapa/[id]` a partir do painel. */
 const STATUS_NAO_NAVEGAVEL = new Set(['CONCLUIDA'])
 
@@ -143,6 +169,15 @@ export default function PainelPage() {
     etapa: string
     folhas: number | null
   } | null>(null)
+
+  // Parada de máquina sem OP (spec checkout-parada-maquina-sem-op).
+  const [paradaAberta, setParadaAberta] = useState<ParadaCentro | null>(null)
+  const [codigosParada, setCodigosParada] = useState<CodigoParada[]>([])
+  const [formParadaAberto, setFormParadaAberto] = useState(false)
+  const [motivoParada, setMotivoParada] = useState('MANUTENCAO')
+  const [codigoParadaId, setCodigoParadaId] = useState('')
+  const [obsParada, setObsParada] = useState('')
+  const [processandoParada, setProcessandoParada] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -229,6 +264,59 @@ export default function PainelPage() {
     }
   }
 
+  // Parada de máquina (sem OP): busca a parada aberta + os códigos de parada.
+  const buscarParada = useCallback(async () => {
+    try {
+      const r = await checkoutApiClient.get<ParadaCentro | null>('/parada-maquina')
+      setParadaAberta(r.data ?? null)
+    } catch {
+      setParadaAberta(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!estaAutenticado) return
+    buscarParada()
+    checkoutApiClient
+      .get<CodigoParada[]>('/codigos-parada')
+      .then((r) => setCodigosParada(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setCodigosParada([]))
+  }, [estaAutenticado, buscarParada])
+
+  async function registrarParada() {
+    if (processandoParada) return
+    setProcessandoParada(true)
+    try {
+      await checkoutApiClient.post('/parada-maquina', {
+        motivoParada,
+        codigoParadaId: codigoParadaId || undefined,
+        observacao: obsParada.trim() || undefined,
+      })
+      setFormParadaAberto(false)
+      setObsParada('')
+      setCodigoParadaId('')
+      setMotivoParada('MANUTENCAO')
+      await buscarParada()
+    } catch {
+      // silencioso — recarrega no próximo refresh
+    } finally {
+      setProcessandoParada(false)
+    }
+  }
+
+  async function encerrarParada() {
+    if (processandoParada) return
+    setProcessandoParada(true)
+    try {
+      await checkoutApiClient.patch('/parada-maquina/encerrar', {})
+      await buscarParada()
+    } catch {
+      // silencioso
+    } finally {
+      setProcessandoParada(false)
+    }
+  }
+
   const buscarAlertas = useCallback(async () => {
     try {
       const response = await checkoutApiClient.get<EtapaEmAlertaParadaProlongada[]>(
@@ -311,6 +399,108 @@ export default function PainelPage() {
             Identificar-se
           </Link>
         </div>
+      )}
+
+      {/* Parada de Máquina SEM OP (spec checkout-parada-maquina-sem-op).
+          Disponível sempre (independe de haver etapas/RCs na fila). Quando há
+          parada aberta, mostra faixa de destaque + Encerrar; senão, botão
+          Registrar parada + form inline (motivo / código / observação). */}
+      {paradaAberta ? (
+        <div className={styles.paradaBanner}>
+          <div>
+            <strong>⛔ Máquina em parada</strong>
+            <span className={styles.paradaDetalhe}>
+              {MOTIVOS_PARADA.find((m) => m.valor === paradaAberta.motivoParada)?.rotulo ??
+                paradaAberta.motivoParada}
+              {' · desde '}
+              {new Date(paradaAberta.inicio).toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </span>
+          </div>
+          <button
+            type="button"
+            className={styles.paradaBotaoEncerrar}
+            disabled={processandoParada}
+            onClick={encerrarParada}
+          >
+            {processandoParada ? 'Aguarde...' : 'Encerrar parada'}
+          </button>
+        </div>
+      ) : formParadaAberto ? (
+        <div className={styles.paradaForm}>
+          <label className={styles.paradaCampo}>
+            <span>Motivo da parada</span>
+            <select
+              value={motivoParada}
+              onChange={(e) => setMotivoParada(e.target.value)}
+              className={styles.paradaSelect}
+            >
+              {MOTIVOS_PARADA.map((m) => (
+                <option key={m.valor} value={m.valor}>
+                  {m.rotulo}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {codigosParada.length > 0 && (
+            <label className={styles.paradaCampo}>
+              <span>Código de parada (opcional)</span>
+              <select
+                value={codigoParadaId}
+                onChange={(e) => setCodigoParadaId(e.target.value)}
+                className={styles.paradaSelect}
+              >
+                <option value="">— sem código —</option>
+                {codigosParada.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.codigo} — {c.descricao}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <label className={styles.paradaCampo}>
+            <span>Observação (opcional)</span>
+            <input
+              type="text"
+              value={obsParada}
+              onChange={(e) => setObsParada(e.target.value)}
+              className={styles.paradaInput}
+              placeholder="Ex.: troca de rolamento"
+            />
+          </label>
+
+          <div className={styles.paradaAcoes}>
+            <button
+              type="button"
+              className={styles.paradaBotaoRegistrar}
+              disabled={processandoParada}
+              onClick={registrarParada}
+            >
+              {processandoParada ? 'Aguarde...' : 'Confirmar parada'}
+            </button>
+            <button
+              type="button"
+              className={styles.paradaBotaoCancelar}
+              disabled={processandoParada}
+              onClick={() => setFormParadaAberto(false)}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={styles.paradaBotaoAbrir}
+          onClick={() => setFormParadaAberto(true)}
+        >
+          ⛔ Registrar parada da máquina
+        </button>
       )}
 
       {/* Resumo da última conclusão de RC (R2 — histórico ao concluir). Como a

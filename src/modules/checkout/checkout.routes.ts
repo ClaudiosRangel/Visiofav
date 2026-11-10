@@ -30,9 +30,17 @@ import {
   listarEtapasEmAlertaParadaProlongada,
   estadoContadorDaEtapa,
   registrarApontamentoContador,
+  cancelarApontamento,
+  cancelarApontamentoSchema,
   CheckoutError,
 } from './checkout.service'
 import { ContadorError } from './contador-maquina.service'
+import {
+  registrarParadaCentro,
+  encerrarParadaCentro,
+  paradaAbertaDoCentro,
+  registrarParadaCentroSchema,
+} from './parada-centro.service'
 
 /**
  * Rotas operacionais do Checkout de Apontamento (task 12 do spec
@@ -128,6 +136,13 @@ const operadorBodySchema = z.object({
 // `CheckoutError` apropriado.
 // =============================================================================
 const registrarApontamentoRetroativoBodySchema = registrarApontamentoRetroativoSchema.extend({
+  autorizacaoSupervisor: autorizacaoSupervisorSchema.optional(),
+})
+
+// Corpo de POST /apontamentos/:id/cancelar — motivo + autorização do gerente
+// (spec checkout-cancelar-apontamento-gerente). `autorizacaoSupervisor` é
+// opcional nesta camada; o service bloqueia quando ausente/ inválida.
+const cancelarApontamentoBodySchema = cancelarApontamentoSchema.extend({
   autorizacaoSupervisor: autorizacaoSupervisorSchema.optional(),
 })
 
@@ -549,6 +564,28 @@ export async function checkoutRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // POST /apontamentos/:id/cancelar — Cancela (estorna) um apontamento de
+  // PRODUCAO/PERDA/RETRABALHO mediante autorização do gerente (e-mail+senha),
+  // revertendo os totais da etapa e gravando a auditoria. Soft-cancel (o
+  // apontamento permanece para histórico). Spec
+  // checkout-cancelar-apontamento-gerente.
+  // =========================================================================
+  app.post('/apontamentos/:id/cancelar', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const { autorizacaoSupervisor, ...dados } = cancelarApontamentoBodySchema.parse(request.body)
+
+    try {
+      const resultado = await cancelarApontamento(id, request.checkoutUser, dados, autorizacaoSupervisor)
+      return reply.status(200).send(resultado)
+    } catch (err) {
+      if (err instanceof CheckoutError || err instanceof EtapaOperacionalError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // =========================================================================
   // POST /etapas/:id/pendencia-material — Registra falta de material
   // identificada durante a execução de uma Etapa `EM_ANDAMENTO`
   // (Requirement 12.1). Delega para
@@ -632,6 +669,53 @@ export async function checkoutRoutes(app: FastifyInstance) {
       return reply.status(200).send(alertas)
     } catch (err) {
       if (err instanceof CheckoutError || err instanceof EtapaOperacionalError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // =========================================================================
+  // PARADA DE MÁQUINA SEM OP (spec checkout-parada-maquina-sem-op).
+  // Downtime do CENTRO (máquina), independente de etapa/OP — resolve o caso
+  // "máquina em manutenção sem nenhuma OP rodando". Isolado pela sessão do
+  // terminal (empresaId + centroProducaoId).
+  // =========================================================================
+
+  // GET /parada-maquina — parada aberta atual do terminal (ou null) (Req 3).
+  app.get('/parada-maquina', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    try {
+      const parada = await paradaAbertaDoCentro(request.checkoutUser)
+      return reply.status(200).send(parada)
+    } catch (err) {
+      if (err instanceof CheckoutError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // POST /parada-maquina — registra parada sem OP (Req 1).
+  app.post('/parada-maquina', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    const body = registrarParadaCentroSchema.parse(request.body)
+    try {
+      const parada = await registrarParadaCentro(request.checkoutUser, body)
+      return reply.status(201).send(parada)
+    } catch (err) {
+      if (err instanceof CheckoutError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+  })
+
+  // PATCH /parada-maquina/encerrar — encerra a parada aberta (Req 2).
+  app.patch('/parada-maquina/encerrar', { preHandler: [checkoutAuth] }, async (request, reply) => {
+    try {
+      const parada = await encerrarParadaCentro(request.checkoutUser)
+      return reply.status(200).send(parada)
+    } catch (err) {
+      if (err instanceof CheckoutError) {
         return reply.status(err.statusCode).send({ message: err.message })
       }
       throw err

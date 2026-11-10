@@ -504,3 +504,106 @@
   font-style: italic;
   color: #9a3412;
 }
+
+/* ===========================================================================
+   Cancelamento de apontamento com autorização do gerente
+   (spec checkout-cancelar-apontamento-gerente)
+   =========================================================================== */
+
+.historicoItemCancelado {
+  opacity: 0.7;
+}
+
+.historicoItemCancelado .historicoTipo,
+.historicoItemCancelado .historicoQuantidade {
+  text-decoration: line-through;
+}
+
+.historicoCanceladoBadge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #c92a2a;
+}
+
+.historicoCanceladoTag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #ffe3e3;
+  color: #c92a2a;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.historicoBotaoCancelar {
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid #ffa8a8;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #c92a2a;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancelamentoForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #ffa8a8;
+  border-radius: 8px;
+  background: #fff5f5;
+}
+
+.cancelamentoInput {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+.cancelamentoErro {
+  margin: 0;
+  color: #c92a2a;
+  font-size: 13px;
+}
+
+.cancelamentoAcoes {
+  display: flex;
+  gap: 8px;
+}
+
+.cancelamentoConfirmar {
+  flex: 1;
+  min-height: 46px;
+  border: none;
+  border-radius: 6px;
+  background: #e03131;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cancelamentoConfirmar:disabled {
+  opacity: 0.6;
+}
+
+.cancelamentoCancelar {
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #fff;
+  color: #495057;
+  font-size: 15px;
+  cursor: pointer;
+}
