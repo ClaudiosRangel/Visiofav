@@ -2720,6 +2720,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       origem: 'PRODUTO' | 'RASCUNHO' | 'ORCAMENTO' | 'VAZIO'
       imagemFaca: string | null
       arte: string | null
+      /** Caminho relativo da API para a arte servida como binário (anexo). */
+      arteUrl: string | null
       cartao: string | null
       gramatura: string | null
       numCores: number | null
@@ -2728,7 +2730,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       matriz: string | null
     }
     const vazio: FichaMaster = {
-      origem: 'VAZIO', imagemFaca: null, arte: null, cartao: null, gramatura: null,
+      origem: 'VAZIO', imagemFaca: null, arte: null, arteUrl: null, cartao: null, gramatura: null,
       numCores: null, coresDescricao: null, acabamentos: null, matriz: null,
     }
 
@@ -2777,18 +2779,32 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           : {})
         const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null)
         const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
+
+        // Arte da Pré-Impressão = 1º anexo de imagem do pedido (mockup/arte que o
+        // cliente aprova). Retornamos o CAMINHO relativo da API; o frontend monta
+        // a URL final com base + token (a rota de anexo aceita ?token=).
+        const anexoImg = await prisma.anexoPedidoProposta.findFirst({
+          where: { pedidoPropostaId: orc.pedidoPropostaId, empresaId: user.empresaId, tipo: { startsWith: 'image/' } },
+          orderBy: { criadoEm: 'asc' },
+          select: { id: true },
+        })
+        const arteUrl = anexoImg
+          ? `/orcamento-grafico/pedidos-proposta/${orc.pedidoPropostaId}/anexos/${anexoImg.id}`
+          : null
+
         return reply.send({
           ...vazio,
           origem: 'RASCUNHO',
           imagemFaca: ped.imagemFaca ?? orc.imagemFaca ?? null,
           arte: null,
+          arteUrl,
           cartao: str(r.cartao) ?? ped.cartao ?? null,
           gramatura: str(r.gramatura) ?? ped.gramatura ?? null,
           numCores: num(r.numCores),
           coresDescricao: str(r.coresDescricao),
           acabamentos: str(r.acabamentos) ?? ped.acabamentos ?? null,
           matriz: ped.numeroMatriz ?? null,
-        } satisfies FichaMaster)
+        })
       }
     }
 
