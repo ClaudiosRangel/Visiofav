@@ -2695,6 +2695,112 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   })
 
   /**
+   * GET /api/orcamento-grafico/:id/ficha-master
+   * Consolida a FICHA MASTER do produto para o editor de item: imagem da faca,
+   * arte (revisão aprovada mais recente) e campos gráficos (cartão, gramatura,
+   * nº de cores, cores, acabamentos, matriz).
+   *
+   * Prioridade de fonte (Req 3.2/4.1):
+   *   1) DEFINITIVO: FichaGraficaProduto do `produtoId` do orçamento.
+   *   2) RASCUNHO: fichaRascunho/imagemFaca do PedidoProposta (pedidoPropostaId).
+   *   3) FALLBACK: imagemFaca do próprio orçamento.
+   * empresaId EXPLÍCITO em toda query.
+   */
+  app.get('/:id/ficha-master', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+    const orc = await prisma.orcamentoGrafico.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true, produtoId: true, pedidoPropostaId: true, imagemFaca: true },
+    })
+    if (!orc) return reply.status(404).send({ message: 'Orçamento não encontrado' })
+
+    type FichaMaster = {
+      origem: 'PRODUTO' | 'RASCUNHO' | 'ORCAMENTO' | 'VAZIO'
+      imagemFaca: string | null
+      arte: string | null
+      cartao: string | null
+      gramatura: string | null
+      numCores: number | null
+      coresDescricao: string | null
+      acabamentos: string | null
+      matriz: string | null
+    }
+    const vazio: FichaMaster = {
+      origem: 'VAZIO', imagemFaca: null, arte: null, cartao: null, gramatura: null,
+      numCores: null, coresDescricao: null, acabamentos: null, matriz: null,
+    }
+
+    // 1) DEFINITIVO — Ficha Gráfica do produto + arte aprovada mais recente.
+    if (orc.produtoId) {
+      const ficha = await prisma.fichaGraficaProduto.findFirst({
+        where: { empresaId: user.empresaId, produtoId: orc.produtoId },
+        select: {
+          cartao: true, gramatura: true, numCores: true, coresDescricao: true,
+          acabamentos: true, matrizManual: true, imagemFaca: true,
+        },
+      })
+      const arte = await prisma.arteRevisaoProduto.findFirst({
+        where: { empresaId: user.empresaId, produtoId: orc.produtoId, estado: 'APROVADA' },
+        orderBy: { numero: 'desc' },
+        select: { imagens: true },
+      })
+      if (ficha || arte) {
+        return reply.send({
+          ...vazio,
+          origem: 'PRODUTO',
+          imagemFaca: ficha?.imagemFaca ?? orc.imagemFaca ?? null,
+          arte: arte?.imagens?.[0] ?? null,
+          cartao: ficha?.cartao ?? null,
+          gramatura: ficha?.gramatura ?? null,
+          numCores: ficha?.numCores ?? null,
+          coresDescricao: ficha?.coresDescricao ?? null,
+          acabamentos: ficha?.acabamentos ?? null,
+          matriz: ficha?.matrizManual ?? null,
+        } satisfies FichaMaster)
+      }
+    }
+
+    // 2) RASCUNHO — ficha em rascunho do pedido/proposta de origem.
+    if (orc.pedidoPropostaId) {
+      const ped = await prisma.pedidoProposta.findFirst({
+        where: { id: orc.pedidoPropostaId, empresaId: user.empresaId },
+        select: {
+          fichaRascunho: true, imagemFaca: true, numeroMatriz: true,
+          cartao: true, gramatura: true, acabamentos: true,
+        },
+      })
+      if (ped) {
+        const r = (ped.fichaRascunho && typeof ped.fichaRascunho === 'object'
+          ? (ped.fichaRascunho as Record<string, unknown>)
+          : {})
+        const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null)
+        const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
+        return reply.send({
+          ...vazio,
+          origem: 'RASCUNHO',
+          imagemFaca: ped.imagemFaca ?? orc.imagemFaca ?? null,
+          arte: null,
+          cartao: str(r.cartao) ?? ped.cartao ?? null,
+          gramatura: str(r.gramatura) ?? ped.gramatura ?? null,
+          numCores: num(r.numCores),
+          coresDescricao: str(r.coresDescricao),
+          acabamentos: str(r.acabamentos) ?? ped.acabamentos ?? null,
+          matriz: ped.numeroMatriz ?? null,
+        } satisfies FichaMaster)
+      }
+    }
+
+    // 3) FALLBACK — só a imagem da faca do próprio orçamento.
+    return reply.send({
+      ...vazio,
+      origem: orc.imagemFaca ? 'ORCAMENTO' : 'VAZIO',
+      imagemFaca: orc.imagemFaca ?? null,
+    } satisfies FichaMaster)
+  })
+
+  /**
    * POST /api/orcamento-grafico
    * Cria e salva um orçamento gráfico.
    * Se `resultadoCalculo` for fornecido diretamente, salva sem recalcular.
