@@ -195,6 +195,11 @@ import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { excecaoTurnoRoutes } from './modules/pcp/excecao-turno.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { calculoGraficoRoutes } from './modules/orcamento-grafico/calculo-grafico/calculo-grafico.routes'
+import { linhaProdutoRoutes } from './modules/orcamento-grafico/cadastros/linha-produto.routes'
+import { materialMicroonduladoRoutes } from './modules/orcamento-grafico/cadastros/material-microondulado.routes'
+import { coberturaTintaRoutes } from './modules/orcamento-grafico/cadastros/cobertura-tinta.routes'
+import { processoImpressaoRoutes } from './modules/orcamento-grafico/cadastros/processo-impressao.routes'
+import { materialAcabamentoRoutes } from './modules/orcamento-grafico/cadastros/material-acabamento.routes'
 import { templatePropostaRoutes } from './modules/orcamento-grafico/template-proposta.routes'
 import { permissoesComercialRoutes } from './modules/orcamento-grafico/permissoes-comercial.routes'
 import { pedidoPropostaRoutes } from './modules/orcamento-grafico/pedido-proposta/pedido-proposta.routes'
@@ -535,6 +540,12 @@ async function bootstrap() {
   await app.register(excecaoTurnoRoutes, { prefix: '/api/pcp' })
   await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(calculoGraficoRoutes, { prefix: '/api/calculo-grafico' })
+  // Cadastros novos do orçamento gráfico (paridade Calcgraf — Req 6/10/11/12)
+  await app.register(linhaProdutoRoutes, { prefix: '/api/orcamento-grafico/linhas-produto' })
+  await app.register(materialMicroonduladoRoutes, { prefix: '/api/orcamento-grafico/materiais-microondulado' })
+  await app.register(coberturaTintaRoutes, { prefix: '/api/orcamento-grafico/coberturas-tinta' })
+  await app.register(processoImpressaoRoutes, { prefix: '/api/orcamento-grafico/processos-impressao' })
+  await app.register(materialAcabamentoRoutes, { prefix: '/api/orcamento-grafico/materiais-acabamento' })
   await app.register(templatePropostaRoutes, { prefix: '/api/orcamento-grafico/templates-proposta' })
   await app.register(templateVisualRoutes, { prefix: '/api/orcamento-grafico/templates-visuais' })
   await app.register(permissoesComercialRoutes, { prefix: '/api/orcamento-grafico/comercial' })

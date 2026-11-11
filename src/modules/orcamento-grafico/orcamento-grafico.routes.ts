@@ -37,6 +37,11 @@ import {
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
+import {
+  somarMateriaisComputados,
+  aplicarMateriaisComputadosAoResultado,
+  type MaterialAcabamentoVinculo,
+} from './calculo-grafico/materiais-computados.service'
 import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/converter-orcamento.service'
 import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.service'
 import { enriquecerCnpj } from '../prospeccao/provider'
@@ -365,6 +370,39 @@ const itemOrcamentoBodySchema = z.object({
   acabamentosRicos: z
     .array(acabamentoRicoRequestSchema.extend({ restricaoAcabamentoId: z.string().uuid().optional() }))
     .optional(),
+  // ── Materiais de acabamento com opção de computar no custo (Req 6) ──
+  // Lista solta persistida em ItemOrcamentoGrafico.materiaisAcabamento. Quando
+  // computarCusto=true, (valorUnitario × quantidade) é somado ao MATERIAL DIRETO
+  // e propaga ao custo de produção/preço (ver handlers). Validação de range
+  // (R6.8): para itens computados, `valorUnitario` ∈ [0 ; 9.999.999,99] — a
+  // mensagem abaixo é retornada como 400 quando viola o intervalo. Itens com
+  // computarCusto=false não entram no custo e não têm o range exigido.
+  materiaisAcabamento: z
+    .array(
+      z
+        .object({
+          materialAcabamentoId: z.string().uuid().optional().nullable(),
+          nome: z.string().max(200).optional().nullable(),
+          computarCusto: z.boolean().optional().default(false),
+          valorUnitario: z.coerce.number().optional().nullable(),
+          quantidade: z.coerce.number().min(0).optional().nullable(),
+        })
+        .superRefine((m, ctx) => {
+          if (m.computarCusto === true) {
+            const v = Number(m.valorUnitario)
+            if (!Number.isFinite(v) || v < 0 || v > 9999999.99) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['valorUnitario'],
+                message: 'valor unitário deve estar no intervalo de 0 a 9.999.999,99',
+              })
+            }
+          }
+        }),
+    )
+    .max(100)
+    .optional()
+    .nullable(),
   // Itens Diversos / Fornecidos / Campos Livres (Req 12) — persistidos.
   // `quantidade`/`fixo` são OPCIONAIS (default 1/false): o custo relevante é o
   // `valor` (achatado por fixo no mapeamento). Isso permite que a PRÉVIA do
@@ -412,6 +450,8 @@ const itemOrcamentoBodySchema = z.object({
   coberturaTintaTexto: z.string().max(60).optional().nullable(),
   fabricante: z.string().max(120).optional().nullable(),
   microondulado: z.boolean().optional(),
+  // ── Fase 2 (Req 8) — material microondulado escolhido (aditivo/opcional) ──
+  materialMicroonduladoId: z.string().uuid().optional().nullable(),
   fornecido: z.boolean().optional(),
   qtdModelos: z.number().int().min(0).optional(),
   arte: z.string().max(60).optional().nullable(),
@@ -636,6 +676,8 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     tintaModo: body.tinta?.modo ?? null,
     tintaConsumoKg: body.tinta && body.tinta.modo === 'CONSUMO_DIRETO' ? body.tinta.consumoKg : null,
     acabamentosRicos: (body.acabamentosRicos ?? undefined) as any,
+    // Materiais de acabamento (computar custo) — persistidos no Json do item.
+    materiaisAcabamento: (body.materiaisAcabamento ?? undefined) as any,
     modeloFacaId: body.modeloFacaId ?? null,
     itensDiversos: (body.itensDiversos ?? undefined) as any,
     itensFornecidos: (body.itensFornecidos ?? undefined) as any,
@@ -652,6 +694,7 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     coberturaTintaTexto: body.coberturaTintaTexto ?? null,
     fabricante: body.fabricante ?? null,
     microondulado: body.microondulado ?? false,
+    materialMicroonduladoId: body.materialMicroonduladoId ?? null,
     fornecido: body.fornecido ?? false,
     qtdModelos: body.qtdModelos ?? 0,
     arte: body.arte ?? null,
@@ -2563,6 +2606,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     aprovadoEm: true,
     pedidoVendaId: true,
     produtoId: true,
+    // Linha de Produto selecionada (1ª escolha do fluxo de criação). Exposta
+    // para a tela reabrir com a linha selecionada e para derivar os campos
+    // condicionais por linha no editor de item. Aditivo/nullable.
+    linhaProdutoId: true,
     tipo: true,
     variacoes: true,
     observacoes: true,
@@ -2633,6 +2680,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       // ── Cabeçalho multi-item (spec multi-item-gcad §5.3) — aditivos opcionais ──
       serie: z.string().min(1).max(10).optional().nullable(),
       dataOrcamento: z.coerce.date().optional().nullable(),
+      // ── Paridade: cadastros editáveis vinculados ao cabeçalho (aditivos) ──
+      linhaProdutoId: z.string().uuid().optional().nullable(),
+      coberturaTintaId: z.string().uuid().optional().nullable(),
+      processoImpressaoId: z.string().uuid().optional().nullable(),
     }).parse(request.body)
 
     // Verificar tipo de embalagem
@@ -2798,6 +2849,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           variacoes: body.variacoes ?? undefined,
           observacoes: body.observacoes ?? null,
           produtoId: body.produtoId ?? null,
+          linhaProdutoId: body.linhaProdutoId ?? null,
+          coberturaTintaId: body.coberturaTintaId ?? null,
+          processoImpressaoId: body.processoImpressaoId ?? null,
           criadoPorId: user.id,
         },
         select: orcamentoGraficoSelect,
@@ -2968,6 +3022,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             coberturaTintaTexto: true,
             fabricante: true,
             microondulado: true,
+            materialMicroonduladoId: true,
             fornecido: true,
             qtdModelos: true,
             arte: true,
@@ -3117,7 +3172,19 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }
     } catch { /* não quebra o GET se a resolução falhar */ }
 
-    return { ...orcamento, produtoNome, imagemProdutoUrl, calculoOrigem: calculoOrigemInfo }
+    // Observação do cliente (paridade — alerta destacado no topo + proposta PDF).
+    // Lookup por empresaId EXPLÍCITO (steering ATENCAO §2.1). String|null.
+    let clienteObservacao: string | null = null
+    const clienteIdOrc = (orcamento as { clienteId?: string | null }).clienteId ?? null
+    if (clienteIdOrc) {
+      const cliente = await prisma.cliente.findFirst({
+        where: { id: clienteIdOrc, empresaId: user.empresaId },
+        select: { observacao: true },
+      })
+      clienteObservacao = cliente?.observacao ?? null
+    }
+
+    return { ...orcamento, produtoNome, imagemProdutoUrl, calculoOrigem: calculoOrigemInfo, clienteObservacao }
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3373,6 +3440,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       variacoes: z.any().optional().nullable(),
       observacoes: z.string().optional().nullable(),
       validadeAte: z.coerce.date().optional().nullable(),
+      // ── Paridade: cadastros editáveis vinculados ao cabeçalho (aditivos) ──
+      linhaProdutoId: z.string().uuid().optional().nullable(),
+      coberturaTintaId: z.string().uuid().optional().nullable(),
+      processoImpressaoId: z.string().uuid().optional().nullable(),
     }).parse(request.body)
 
     // Buscar orçamento existente
@@ -3403,6 +3474,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (body.observacoes !== undefined) updateData.observacoes = body.observacoes
     if (body.validadeAte !== undefined) updateData.validadeAte = body.validadeAte
     if (body.produtoId !== undefined) updateData.produtoId = body.produtoId
+    if (body.linhaProdutoId !== undefined) updateData.linhaProdutoId = body.linhaProdutoId
+    if (body.coberturaTintaId !== undefined) updateData.coberturaTintaId = body.coberturaTintaId
+    if (body.processoImpressaoId !== undefined) updateData.processoImpressaoId = body.processoImpressaoId
 
     // Recalcular se temos parâmetros suficientes
     const tipoEmbalagemId = body.tipoEmbalagemId ?? existente.tipoEmbalagemId
@@ -4624,16 +4698,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
 
     // Buscar dados do cliente se houver clienteId
-    let clienteData: { nome: string; cnpj?: string | null } = {
+    let clienteData: { nome: string; cnpj?: string | null; observacao?: string | null } = {
       nome: orcamento.clienteNome || 'Cliente não informado',
     }
     if (orcamento.clienteId) {
       const cliente = await prisma.cliente.findFirst({
         where: { id: orcamento.clienteId, empresaId: user.empresaId },
-        select: { razaoSocial: true, cpfCnpj: true },
+        select: { razaoSocial: true, cpfCnpj: true, observacao: true },
       })
       if (cliente) {
-        clienteData = { nome: cliente.razaoSocial, cnpj: cliente.cpfCnpj }
+        clienteData = { nome: cliente.razaoSocial, cnpj: cliente.cpfCnpj, observacao: cliente.observacao ?? null }
       }
     }
 
@@ -4732,15 +4806,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
 
     // Buscar dados do cliente
-    let clienteData: { nome: string; cnpj?: string | null } = {
+    let clienteData: { nome: string; cnpj?: string | null; observacao?: string | null } = {
       nome: orcamento.clienteNome || 'Cliente',
     }
     if (orcamento.clienteId) {
       const cliente = await prisma.cliente.findFirst({
         where: { id: orcamento.clienteId, empresaId: user.empresaId },
-        select: { razaoSocial: true, cpfCnpj: true },
+        select: { razaoSocial: true, cpfCnpj: true, observacao: true },
       })
-      if (cliente) clienteData = { nome: cliente.razaoSocial, cnpj: cliente.cpfCnpj }
+      if (cliente) clienteData = { nome: cliente.razaoSocial, cnpj: cliente.cpfCnpj, observacao: cliente.observacao ?? null }
     }
 
     // Gerar PDF
@@ -5243,6 +5317,15 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       throw err
     }
 
+    // Req 6.3/6.6/6.7 — soma ADITIVA dos materiais de acabamento computados ao
+    // MD/custo de produção/preço. Item NOVO não tem âncora (ancorarCustoCalcgraf
+    // só se aplica a item persistido vindo de cálculo), logo somamos por cima do
+    // recálculo do motor. Delta 0 (sem materiais computados) = sem efeito.
+    aplicarMateriaisComputadosAoResultado(
+      resultado,
+      somarMateriaisComputados(body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined),
+    )
+
     // sequencia = max(sequencia)+1 do orçamento (Req 1.5)
     const ultimo = await prisma.itemOrcamentoGrafico.findFirst({
       where: { orcamentoId: id, empresaId: user.empresaId },
@@ -5391,6 +5474,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           .int({ message: 'novaQuantidade deve ser um número inteiro positivo' })
           .positive({ message: 'novaQuantidade deve ser um número inteiro positivo' })
           .optional(),
+        // Paridade: Linha de Produto escolhida como etapa inicial (aditivo).
+        linhaProdutoId: z.string().uuid().optional().nullable(),
       })
       .parse(request.body)
 
@@ -5466,6 +5551,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             status: 'RASCUNHO',
             // Orçamento de REPETIÇÃO (puxado de um cálculo da biblioteca).
             tipo: 'REPETICAO',
+            // Paridade: Linha de Produto escolhida no ato de puxar (default null).
+            linhaProdutoId: body.linhaProdutoId ?? null,
             custoProducaoConsolidado: consolidado.custoProducaoConsolidado,
             valorTotalConsolidado: consolidado.valorTotalConsolidado,
             criadoPorId: user.id,
@@ -5580,6 +5667,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // motor sobrescrever o valor fiel do Calcgraf).
     await ancorarCustoCalcgraf(user.empresaId, itemId, resultado)
 
+    // Req 6.3/6.6 — soma ADITIVA dos materiais computados POR CIMA, DEPOIS da
+    // ancoragem: NÃO substitui a âncora (valor de origem); apenas adiciona o
+    // delta dos materiais ao MD/custo de produção/preço. Delta 0 = não-regressão.
+    aplicarMateriaisComputadosAoResultado(
+      resultado,
+      somarMateriaisComputados(body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined),
+    )
+
     const item = await prisma.itemOrcamentoGrafico.update({
       where: { id: itemId },
       data: dadosPersistenciaItem(body, resultado),
@@ -5656,6 +5751,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // Ancora o custo/preço no valor REAL do Calcgraf (item de repetição) — a
     // prévia de edição (StepRevisao) e o valor persistido batem com o Calcgraf.
     await ancorarCustoCalcgraf(user.empresaId, itemId, resultado)
+
+    // Req 6.3/6.6 — soma ADITIVA dos materiais computados DEPOIS da ancoragem
+    // (não substitui a âncora; só adiciona o delta). Delta 0 = não-regressão.
+    aplicarMateriaisComputadosAoResultado(
+      resultado,
+      somarMateriaisComputados(body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined),
+    )
 
     const fech = fechamentoDoResultado(resultado, body.margemSelecionada)
     // Regrava também o formato de corte/aproveitamento (não perder na atualização).

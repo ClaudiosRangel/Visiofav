@@ -4086,6 +4086,91 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "endereco" ADD COLUMN IF NOT EXISTS "permite_perigosos" BOOLEAN NOT NULL DEFAULT false`)
   console.log('Atributos Logisticos e Shelf Life: colunas em produto/cliente/endereco criadas')
 
+  // ==========================================================================
+  // Orçamento Gráfico — Paridade Total (spec orcamento-grafico-paridade-total-calcgraf)
+  // Cadastros novos (Linha de Produto, Cobertura de Tinta, Processo de Impressão,
+  // Material de Acabamento) + campos aditivos (cliente.observacao, orçamento e
+  // item). Tudo idempotente e nullable (não-regressão).
+  // ==========================================================================
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "linha_produto" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(60) NOT NULL,
+      "nome" VARCHAR(120) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "linha_produto_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "linha_produto_empresa_id_codigo_key" ON "linha_produto"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "cobertura_tinta" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(60) NOT NULL,
+      "nome" VARCHAR(120) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "cobertura_tinta_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "cobertura_tinta_empresa_id_codigo_key" ON "cobertura_tinta"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "processo_impressao" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(60) NOT NULL,
+      "nome" VARCHAR(120) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "processo_impressao_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "processo_impressao_empresa_id_codigo_key" ON "processo_impressao"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "material_acabamento" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(60) NOT NULL,
+      "nome" VARCHAR(200) NOT NULL,
+      "valor_referencia" DECIMAL(12,4) NOT NULL DEFAULT 0,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "material_acabamento_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "material_acabamento_empresa_id_codigo_key" ON "material_acabamento"("empresa_id","codigo")`)
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cliente" ADD COLUMN IF NOT EXISTS "observacao" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "linha_produto_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "cobertura_tinta_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "processo_impressao_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "materiais_acabamento" JSONB`)
+  // Fase 2 (Req 8) — material microondulado (cadastro + vínculo no item).
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "material_microondulado" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "codigo" VARCHAR(60) NOT NULL,
+      "nome" VARCHAR(200) NOT NULL,
+      "ativo" BOOLEAN NOT NULL DEFAULT true,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "material_microondulado_pkey" PRIMARY KEY ("id")
+    )
+  `)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "material_microondulado_empresa_id_codigo_key" ON "material_microondulado"("empresa_id","codigo")`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "material_microondulado_id" TEXT`)
+  console.log('Orçamento Gráfico Paridade Total: linha_produto/cobertura_tinta/processo_impressao/material_acabamento/material_microondulado + colunas aditivas criadas')
+
 
   // ==========================================================================
   // F1 — Financeiro Operacional Completo

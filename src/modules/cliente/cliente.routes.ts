@@ -76,6 +76,9 @@ export async function clienteRoutes(app: FastifyInstance) {
       rotaId: z.string().uuid().optional().nullable(),
       // Shelf life mínimo de expedição exigido pelo cliente (dias). Opcional.
       shelfLifeMinimoExpedicaoDias: z.number().int().min(0).nullable().optional(),
+      // Observação do cliente (paridade) — exibida como alerta no orçamento e
+      // impressa na proposta. Texto livre, até 1000 caracteres.
+      observacao: z.string().max(1000).optional().nullable(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(
@@ -123,6 +126,9 @@ export async function clienteRoutes(app: FastifyInstance) {
       rotaId: z.string().uuid().optional().nullable(),
       // Shelf life mínimo de expedição exigido pelo cliente (dias). Opcional.
       shelfLifeMinimoExpedicaoDias: z.number().int().min(0).nullable().optional(),
+      // Observação do cliente (paridade) — exibida como alerta no orçamento e
+      // impressa na proposta. Texto livre, até 1000 caracteres.
+      observacao: z.string().max(1000).optional().nullable(),
     })
 
     const schema = baseSchema.merge(coordenadasOptionalSchema.innerType()).refine(

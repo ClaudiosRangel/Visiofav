@@ -421,6 +421,11 @@ model Cliente {
   // vencer). Aplicado no picking/FEFO. Opcional (spec atributos-logisticos-shelf-life).
   shelfLifeMinimoExpedicaoDias Int? @map("shelf_life_minimo_expedicao_dias")
 
+  // Observação do cliente exibida como alerta destacado ao abrir/editar um
+  // orçamento deste cliente e impressa na proposta (spec
+  // orcamento-grafico-paridade-total-calcgraf, Req 4). Migrada do sistema legado.
+  observacao String? @db.Text
+
   pedidosVenda         PedidoVenda[]
   orcamentos           Orcamento[]
   contasReceber        ContaReceber[]
@@ -3248,6 +3253,92 @@ model RestricaoAcabamento {
   @@map("restricao_acabamento")
 }
 
+/// Linha de Produto — classifica o tipo de trabalho gráfico (ex.: LÂMINAS,
+/// LÂMINA SIMPLES, CARTUCHO, SACOLA, CARTUCHO COMPOSTO). Cadastro SEPARADO do
+/// TipoEmbalagem; é o seletor inicial do orçamento e orienta quais campos
+/// aparecem (mapeamento de campos é fixo no frontend). Migrado do sistema
+/// legado — só as linhas ativas. Spec orcamento-grafico-paridade-total-calcgraf.
+model LinhaProduto {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  codigo       String   @db.VarChar(60)
+  nome         String   @db.VarChar(120)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("linha_produto")
+}
+
+/// Cobertura de Tinta (ex.: Escala, Especial) — cadastro editável que alimenta
+/// o seletor do orçamento, substituindo o texto livre. Spec
+/// orcamento-grafico-paridade-total-calcgraf (Req 10).
+model CoberturaTinta {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  codigo       String   @db.VarChar(60)
+  nome         String   @db.VarChar(120)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("cobertura_tinta")
+}
+
+/// Processo de Impressão (ex.: Offset Plana) — cadastro editável que alimenta
+/// o seletor do orçamento, substituindo o texto livre. Spec
+/// orcamento-grafico-paridade-total-calcgraf (Req 11).
+model ProcessoImpressao {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  codigo       String   @db.VarChar(60)
+  nome         String   @db.VarChar(120)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("processo_impressao")
+}
+
+/// Catálogo de Material de Acabamento (ex.: laminação/BOPP) com preço de
+/// referência. Pode OPCIONALMENTE ser computado no custo do orçamento — o
+/// vínculo com o item (flag computarCusto + valor + quantidade) vive no Json
+/// ItemOrcamentoGrafico.materiaisAcabamento. Spec
+/// orcamento-grafico-paridade-total-calcgraf (Req 6/7).
+model MaterialAcabamento {
+  id              String   @id @default(uuid())
+  empresaId       String   @map("empresa_id")
+  codigo          String   @db.VarChar(60)
+  nome            String   @db.VarChar(200)
+  valorReferencia Decimal  @default(0) @map("valor_referencia") @db.Decimal(12, 4)
+  ativo           Boolean  @default(true)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("material_acabamento")
+}
+
+/// Material Microondulado (Fase 2 — spec orcamento-grafico-paridade-total-calcgraf,
+/// Req 8). Lista escolhível quando o orçamento é marcado como microondulado.
+/// Cadastro editável, isolado por empresaId. Aditivo/opcional (não-regressão:
+/// orçamento não-microondulado nunca exige seleção).
+model MaterialMicroondulado {
+  id           String   @id @default(uuid())
+  empresaId    String   @map("empresa_id")
+  codigo       String   @db.VarChar(60)
+  nome         String   @db.VarChar(200)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigo])
+  @@map("material_microondulado")
+}
+
 /// Cadastro de Tipo de Processo produtivo (ex: Cortadeira, Impressão,
 /// Acabamento) — substitui o antigo enum fixo `tipoMaquina` do
 /// CentroProducao. Cada Centro de Produção deve obrigatoriamente pertencer
@@ -4409,6 +4500,13 @@ model OrcamentoGrafico {
   // NOVO (em branco) | REPETICAO (criado puxando um CalculoGrafico da biblioteca).
   // Distinto de `produtoId` (repetição por produto cadastrado) — coexistem.
   tipo             String        @default("NOVO") @map("tipo") @db.VarChar(12)
+  // Paridade total (spec orcamento-grafico-paridade-total-calcgraf): seletor
+  // inicial Linha de Produto + cadastros editáveis de cobertura/processo. Todos
+  // nullable/aditivos (não-regressão). Os campos texto-livre pré-existentes
+  // (coberturaTintaTexto/processoImpressao no item) continuam para orçamentos antigos.
+  linhaProdutoId      String? @map("linha_produto_id")
+  coberturaTintaId    String? @map("cobertura_tinta_id")
+  processoImpressaoId String? @map("processo_impressao_id")
   // Variações de tiragem (simulações)
   variacoes        Json? // [{quantidade, precoUnitario, precoTotal}]
   observacoes      String?       @db.Text
@@ -4727,6 +4825,16 @@ model ItemOrcamentoGrafico {
 
   // ── Acabamentos (ricos: hora-máquina / material kg / material un / fixo) ──
   acabamentosRicos Json? @map("acabamentos_ricos")
+
+  // ── Materiais de acabamento com opção de computar custo (Req 6) ──
+  // [{ materialAcabamentoId, nome, computarCusto, valorUnitario, quantidade }]
+  // Quando computarCusto=true, soma (valorUnitario*quantidade) ao Material Direto.
+  // Spec orcamento-grafico-paridade-total-calcgraf.
+  materiaisAcabamento Json? @map("materiais_acabamento")
+
+  // ── Fase 2 (Req 8) — material microondulado escolhido quando `microondulado`
+  // está marcado. Nullable/aditivo (não-regressão). FK lógica p/ MaterialMicroondulado.
+  materialMicroonduladoId String? @map("material_microondulado_id")
 
   // ── GCad / Faca (Req 6) ──
   modeloFacaId String? @map("modelo_faca_id")

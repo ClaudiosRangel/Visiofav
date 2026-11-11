@@ -9,6 +9,9 @@ interface DadosCliente {
   cnpj?: string | null
   contato?: string | null
   email?: string | null
+  // Observação cadastrada no cliente (paridade). Quando presente, é impressa
+  // em um bloco destacado na proposta. Migrada do sistema legado.
+  observacao?: string | null
 }
 
 interface DadosEmpresa {
@@ -192,6 +195,9 @@ export async function gerarPropostaPdf(params: ParamsPropostaPdf): Promise<Buffe
       }
       doc.moveDown(1)
 
+      // ── Observação do cliente (bloco destacado) ──
+      renderObservacaoCliente(doc, cliente.observacao, pageWidth)
+
       // ── Detalhes do Produto (bloco engenharia) ──
       if (blocos.engenharia) {
         doc.fontSize(12).font('Helvetica-Bold').text('DETALHES DO PRODUTO')
@@ -368,6 +374,9 @@ function renderWega(doc: PDFKit.PDFDocument, ctx: RenderWegaCtx): void {
   if (cliente.email) doc.text(`E-mail: ${cliente.email}`, left)
   doc.moveDown(0.5)
 
+  // 3.1 Observação do cliente (bloco destacado), quando houver.
+  renderObservacaoCliente(doc, cliente.observacao, pageWidth)
+
   // 4. Saudação (editável via textos.introducao).
   const saudacao = config.textos.introducao
     || 'Prezado(s) senhor(es),\nConforme solicitado, encaminhamos abaixo nossa proposta:'
@@ -493,6 +502,40 @@ function renderWega(doc: PDFKit.PDFDocument, ctx: RenderWegaCtx): void {
   doc.moveDown(1)
   doc.text('Atenciosamente,', left)
   doc.text(config.textos.rodape || `${empresa.razaoSocial} Indústria de Embalagens`, left)
+}
+
+/**
+ * Renderiza um bloco destacado "Observação do cliente:" quando o cliente tem
+ * observação preenchida (ao menos 1 caractere não vazio). Caixa com fundo de
+ * atenção (âmbar claro) e borda, para o calculista/vendedor não perder o aviso
+ * ao gerar/enviar a proposta. Sem observação → não desenha nada (não-regressão).
+ */
+function renderObservacaoCliente(doc: PDFKit.PDFDocument, observacao: string | null | undefined, pageWidth: number): void {
+  const texto = (observacao ?? '').trim()
+  if (!texto) return
+
+  const left = 50
+  const padding = 8
+  const larguraInterna = pageWidth - padding * 2
+  // Altura estimada: título + texto (pode quebrar em várias linhas).
+  const alturaTitulo = 14
+  const alturaTexto = doc.heightOfString(texto, { width: larguraInterna })
+  const alturaCaixa = padding * 2 + alturaTitulo + alturaTexto + 2
+
+  const yTopo = doc.y
+  doc.save()
+  doc.rect(left, yTopo, pageWidth, alturaCaixa).fill('#FFF4E5') // fundo âmbar claro
+  doc.lineWidth(1).strokeColor('#E8A33D').rect(left, yTopo, pageWidth, alturaCaixa).stroke()
+  doc.restore()
+
+  doc.fillColor('#8A5300').fontSize(10).font('Helvetica-Bold')
+    .text('Observação do cliente:', left + padding, yTopo + padding, { width: larguraInterna })
+  doc.fillColor('#333333').fontSize(9).font('Helvetica')
+    .text(texto, left + padding, yTopo + padding + alturaTitulo, { width: larguraInterna })
+
+  doc.fillColor('#000000')
+  doc.y = yTopo + alturaCaixa + 8
+  doc.moveDown(0.2)
 }
 
 // ── Utilitários ──
