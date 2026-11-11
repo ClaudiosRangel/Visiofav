@@ -2619,6 +2619,82 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   } as const
 
   /**
+   * POST /api/orcamento-grafico/cabecalho
+   * Cria um orçamento RASCUNHO apenas com o CABEÇALHO (cliente/vendedor/linha de
+   * produto), SEM item — para o fluxo "Novo Orçamento" abrir direto o Editor de
+   * página única e montar o produto do primeiro item lá dentro.
+   *
+   * Diferente do `POST /` (que exige tipo/medidas/quantidade), aqui o produto
+   * ainda não foi escolhido: gravamos placeholders seguros (medidas {},
+   * quantidade 0) e um tipoEmbalagem placeholder = o 1º tipo ativo da empresa (o
+   * usuário troca no editor). Sem isso o NOT NULL do schema impediria a criação.
+   */
+  app.post('/cabecalho', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeCriarOrcamento'))) {
+      return reply.status(403).send({ message: 'Sem permissão para criar orçamentos no Comercial.' })
+    }
+
+    const body = z.object({
+      clienteId: z.string().uuid().optional().nullable(),
+      clienteNome: z.string().max(200).optional().nullable(),
+      vendedorId: z.string().uuid().optional().nullable(),
+      linhaProdutoId: z.string().uuid().optional().nullable(),
+    }).parse(request.body)
+
+    if (!body.clienteId && !body.clienteNome?.trim()) {
+      return reply.status(400).send({ message: 'Informe o cliente (cadastrado ou nome livre).' })
+    }
+
+    // Placeholder de tipo de embalagem — o produto real é escolhido no editor.
+    const tipoPlaceholder = await prisma.tipoEmbalagem.findFirst({
+      where: { empresaId: user.empresaId },
+      orderBy: { codigo: 'asc' },
+      select: { id: true },
+    })
+    if (!tipoPlaceholder) {
+      return reply.status(400).send({
+        message: 'Cadastre ao menos um Tipo de Embalagem antes de criar orçamentos (Cadastros → Tipos de Embalagem).',
+      })
+    }
+
+    // Numeração sequencial por empresa (mesma regra do POST /).
+    const ultimo = await prisma.orcamentoGrafico.findFirst({
+      where: { empresaId: user.empresaId },
+      orderBy: { numero: 'desc' },
+      select: { numero: true },
+    })
+    const numero = (ultimo?.numero ?? 0) + 1
+
+    try {
+      const orcamento = await prisma.orcamentoGrafico.create({
+        data: {
+          empresaId: user.empresaId,
+          numero,
+          versao: 1,
+          clienteId: body.clienteId ?? null,
+          clienteNome: body.clienteNome ?? null,
+          vendedorId: body.vendedorId ?? null,
+          tipoEmbalagemId: tipoPlaceholder.id,
+          medidas: {},
+          quantidade: 0,
+          status: 'RASCUNHO',
+          etapaCalculo: 'EM_CALCULO',
+          linhaProdutoId: body.linhaProdutoId ?? null,
+          criadoPorId: user.id,
+        },
+        select: { id: true, numero: true },
+      })
+      return reply.status(201).send(orcamento)
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
+      }
+      throw err
+    }
+  })
+
+  /**
    * POST /api/orcamento-grafico
    * Cria e salva um orçamento gráfico.
    * Se `resultadoCalculo` for fornecido diretamente, salva sem recalcular.
