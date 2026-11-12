@@ -36,6 +36,7 @@ import {
   garantirEngenhariaCompleta,
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
+import { mapearFotoPlanos, type PlanoMapeado } from './calculo-grafico/foto-planos.service'
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
 import {
   somarMateriaisComputados,
@@ -1245,6 +1246,97 @@ function copiarCalculoParaItem(
   return {
     dadosItem: dadosPersistenciaItem(itemBody, fotoResultado),
     fotoResultado,
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLANOS FIÉIS AO CALCGRAF (spec orcamento-grafico-planos-fieis-calcgraf)
+// Materializa os planos da FOTO ao puxar um cálculo. NÃO recalcula pelo motor
+// (seria pesado/timeout) e NÃO altera o custo do item (ancoragem preservada —
+// os planos entram como DETALHAMENTO; custoSuporte/Impressao/Acabamento = 0).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Dados de criação de um `PlanoCalculoGrafico` a partir de um PlanoMapeado da
+ *  foto (espelho, sem motor). Custos zerados (detalhamento). empresaId explícito.
+ *  Formato inválido/ausente cai para 0.01 (a coluna é NOT NULL > 0 no schema). */
+function dadosPlanoEspelhoDaFoto(
+  plano: PlanoMapeado,
+  empresaId: string,
+  itemId: string,
+  sequencia: number,
+) {
+  const larg = plano.formatoLarguraMm != null && plano.formatoLarguraMm > 0 ? plano.formatoLarguraMm : 0.01
+  const alt = plano.formatoAlturaMm != null && plano.formatoAlturaMm > 0 ? plano.formatoAlturaMm : 0.01
+  return {
+    empresaId,
+    itemId,
+    sequencia,
+    nome: plano.nome,
+    suporteId: null,
+    suporteProducaoId: null,
+    gramatura: plano.gramatura ?? null,
+    formatoLarguraMm: larg,
+    formatoAlturaMm: alt,
+    numCores: plano.numCores ?? 0,
+    custoSuporte: 0,
+    custoImpressao: 0,
+    custoAcabamento: 0,
+  }
+}
+
+/**
+ * Deriva os bodies de plano a partir da foto do cálculo (regra D1):
+ *  - 2+ planos na foto → materializa TODOS (fiel ao multi-plano);
+ *  - 0/1 plano → materializa 1 "Plano 1" com a engenharia do item achatado,
+ *    para o item nunca aparecer "sem plano" (fidelidade ao Calcgraf).
+ * `dadosItem` é o resultado de `dadosPersistenciaItem` (engenharia do item).
+ */
+function planosParaMaterializar(
+  calc: { resultadoCalculo?: unknown },
+  dadosItem: { gramatura?: unknown; numCores?: unknown; formatoCorteLarguraMm?: unknown; formatoCorteAlturaMm?: unknown },
+): PlanoMapeado[] {
+  const fotoPlanos = (calc.resultadoCalculo as { planos?: unknown } | null)?.planos
+  const mapeados = mapearFotoPlanos(Array.isArray(fotoPlanos) ? (fotoPlanos as never) : undefined)
+  if (mapeados.length >= 2) return mapeados
+
+  // 0/1 plano → "Plano 1" da engenharia do item (D1).
+  const larg = dadosItem.formatoCorteLarguraMm != null ? Number(dadosItem.formatoCorteLarguraMm) : null
+  const alt = dadosItem.formatoCorteAlturaMm != null ? Number(dadosItem.formatoCorteAlturaMm) : null
+  const base = mapeados[0]
+  return [
+    {
+      nome: base?.nome ?? 'Plano 1',
+      suporteDescricao: base?.suporteDescricao ?? null,
+      gramatura: base?.gramatura ?? (dadosItem.gramatura != null ? Number(dadosItem.gramatura) : null),
+      numCores: base?.numCores ?? (dadosItem.numCores != null ? Number(dadosItem.numCores) : 0),
+      formatoLarguraMm: base?.formatoLarguraMm ?? larg,
+      formatoAlturaMm: base?.formatoAlturaMm ?? alt,
+      aproveitamento: base?.aproveitamento ?? null,
+      tiragem: base?.tiragem ?? null,
+    },
+  ]
+}
+
+/**
+ * Cria os `PlanoCalculoGrafico` de um item recém-puxado a partir da foto do
+ * cálculo. Usa o client/transação recebido (`db`), gravando 1..N planos em
+ * sequência. NÃO reconsolida o custo do item (ancoragem preservada — Req 3).
+ * Isolamento por empresaId explícito. Nunca lança por dado de plano ausente.
+ */
+async function materializarPlanosDoCalculo(
+  db: { planoCalculoGrafico: { create: (args: { data: Record<string, unknown> }) => Promise<unknown> } },
+  calc: { resultadoCalculo?: unknown },
+  dadosItem: Record<string, unknown>,
+  empresaId: string,
+  itemId: string,
+): Promise<void> {
+  const planos = planosParaMaterializar(calc, dadosItem)
+  let seq = 1
+  for (const p of planos) {
+    await db.planoCalculoGrafico.create({
+      data: dadosPlanoEspelhoDaFoto(p, empresaId, itemId, seq),
+    })
+    seq += 1
   }
 }
 
@@ -5655,6 +5747,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       )
     }
 
+    // 5.1) Materializa os PLANOS do cálculo (spec planos-fiéis-calcgraf).
+    //      NÃO altera o custo do item (ancoragem) — planos são detalhamento.
+    try {
+      await materializarPlanosDoCalculo(prisma, calc, dadosItem, user.empresaId, item.id)
+    } catch {
+      /* falha ao materializar planos não quebra o puxar */
+    }
+
     // 6) Reconsolida os totais do orçamento.
     await reconsolidarOrcamento(orcamentoId, user.empresaId)
 
@@ -5801,6 +5901,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             Number(aprov), itemCriado.id,
           )
         }
+
+        // Materializa os PLANOS do cálculo (spec planos-fiéis-calcgraf) na mesma
+        // transação. NÃO altera o custo do item (ancoragem) — detalhamento.
+        await materializarPlanosDoCalculo(tx as never, calc, dadosItem, user.empresaId, itemCriado.id)
 
         return criado
       })
