@@ -1222,6 +1222,26 @@ function copiarCalculoParaItem(
     precoVenda: valorReal > 0 ? valorReal : fotoBase.precoVenda,
   } as ResultadoOrcamento
 
+  // ── CAMPOS TÉCNICOS/PARIDADE herdados do cálculo (Task "campos técnicos") ──
+  // Ao puxar um cálculo migrado, alguns campos técnicos da ficha do item ficavam
+  // vazios mesmo existindo na foto rica do pré-cálculo. Aqui projetamos no body
+  // (que `dadosPersistenciaItem` grava) os campos que TÊM fonte confiável:
+  //  - `tributacao`     ← `cabecalho.tributacao` (existe na foto rica);
+  //  - `siglaAcabado`   ← reforço com `cabecalho.siglaAcabado` (caso não tenha
+  //                        vindo pela engenharia);
+  //  - `processoImpressao` ← default "Offset Plana" para migrados do Calcgraf
+  //                        (processo fixo do sistema de origem).
+  // Os demais (cobertura de tinta, fabricante, arte, observação, microondulado,
+  // fornecido, qtdModelos) NÃO têm fonte por-cálculo e permanecem MANUAIS —
+  // nunca inventados.
+  const cab = (calc.resultadoCalculo as { cabecalho?: { tributacao?: string | null; siglaAcabado?: string | null } } | null)
+    ?.cabecalho
+  if (!itemBody.tributacao && cab?.tributacao) itemBody.tributacao = cab.tributacao
+  if (!itemBody.siglaAcabado && cab?.siglaAcabado) itemBody.siglaAcabado = cab.siglaAcabado
+  if (!itemBody.processoImpressao && calc.origem === 'MIGRADO_CALCGRAF') {
+    itemBody.processoImpressao = 'Offset Plana'
+  }
+
   return {
     dadosItem: dadosPersistenciaItem(itemBody, fotoResultado),
     fotoResultado,
