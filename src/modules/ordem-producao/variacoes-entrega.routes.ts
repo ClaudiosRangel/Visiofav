@@ -184,6 +184,51 @@ export async function variacoesEntregaRoutes(app: FastifyInstance) {
     return atualizada
   })
 
+  /**
+   * PATCH /api/ordens-producao/:id/programacao-entrega/:progId
+   * Edita a programação de entrega (data, quantidade, pedido, observação).
+   * Todos os campos opcionais — só o que vier é atualizado. Valida que a
+   * programação pertence à OP da empresa (isolamento explícito).
+   */
+  app.patch('/:id/programacao-entrega/:progId', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { id } = idParamsSchema.parse(request.params)
+    const { progId } = z.object({ progId: z.string().uuid() }).parse(request.params)
+    const body = z
+      .object({
+        dataEntrega: z.coerce.date().optional(),
+        quantidade: z.number().positive().optional(),
+        codigoPedido: z.string().max(60).optional().nullable(),
+        observacao: z.string().max(500).optional().nullable(),
+      })
+      .parse(request.body)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    // Garante que a programação é DESTA OP (evita editar entrega de outra OP).
+    const prog = await prisma.programacaoEntrega.findFirst({
+      where: { id: progId, ordemProducaoId: id },
+      select: { id: true },
+    })
+    if (!prog) return reply.status(404).send({ message: 'Programação de entrega não encontrada' })
+
+    const atualizada = await prisma.programacaoEntrega.update({
+      where: { id: progId },
+      data: {
+        ...(body.dataEntrega !== undefined ? { dataEntrega: body.dataEntrega } : {}),
+        ...(body.quantidade !== undefined ? { quantidade: body.quantidade } : {}),
+        ...(body.codigoPedido !== undefined ? { codigoPedido: body.codigoPedido ?? null } : {}),
+        ...(body.observacao !== undefined ? { observacao: body.observacao ?? null } : {}),
+      },
+    })
+
+    return atualizada
+  })
+
   /** DELETE /api/ordens-producao/:id/programacao-entrega/:progId */
   app.delete('/:id/programacao-entrega/:progId', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
