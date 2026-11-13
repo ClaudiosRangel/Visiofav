@@ -1611,6 +1611,9 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       quantidade: Number(e.ordemProducao.quantidade),
       quantidadeProduzida: Number(e.quantidadeProduzida),
       centroDescricao: e.centroProducao?.descricao || e.centroProducao?.codigo || '',
+      // Tipo de processo do centro — usado pelo front para decidir a permissão
+      // granular `podeRetornarEtapa` (voltar etapa sem credencial de admin).
+      centroTipoProcessoId: e.centroProducao?.tipoProcessoId ?? null,
       dataFimReal: e.dataFimReal,
     }))
   })
@@ -1623,28 +1626,61 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string; perfil: string }
     const { id } = idSchema.parse(request.params)
 
+    // Credenciais de admin agora são OPCIONAIS: quando o usuário tem a permissão
+    // `podeRetornarEtapa` (global ou por tipo de processo), a ação é direta.
     const body = z.object({
-      emailAdmin: z.string().min(1),
-      senhaAdmin: z.string().min(1),
-    }).parse(request.body)
+      emailAdmin: z.string().optional(),
+      senhaAdmin: z.string().optional(),
+    }).parse(request.body ?? {})
 
-    // Verificar credenciais do admin/supervisor — busca por email exato ou por email contendo o texto
-    let admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
-    if (!admin) {
-      // Tentar busca parcial (ex: "admin" → "admin@visiofab.com")
-      admin = await prisma.usuario.findFirst({
-        where: { email: { contains: body.emailAdmin, mode: 'insensitive' } },
+    // Caminho 1 — usuário com permissão própria de retornar etapa (dispensa
+    // credencial de admin). ADMIN/SUPER_ADMIN já passam pelo bypass do helper.
+    const { permitido: temPermissaoPropria } = await verificarPermissaoEtapa(
+      user,
+      id,
+      'podeRetornarEtapa',
+    )
+
+    // `usuarioLog` = quem fica registrado na auditoria (o próprio usuário quando
+    // tem permissão; o admin informado quando usa o fluxo de credencial).
+    let usuarioLogId = user.id
+    let usuarioLogNome = 'usuário'
+    let usuarioLogEmail = ''
+
+    if (!temPermissaoPropria) {
+      // Caminho 2 (legado) — exige credencial de admin/supervisor.
+      if (!body.emailAdmin || !body.senhaAdmin) {
+        return reply
+          .status(403)
+          .send({ message: 'Sem permissão para retornar etapa. Informe a credencial de um administrador.' })
+      }
+      let admin = await prisma.usuario.findFirst({ where: { email: body.emailAdmin } })
+      if (!admin) {
+        admin = await prisma.usuario.findFirst({
+          where: { email: { contains: body.emailAdmin, mode: 'insensitive' } },
+        })
+      }
+      if (!admin) {
+        return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+      }
+      const senhaValida = bcrypt.compareSync(body.senhaAdmin, admin.senha)
+      if (!senhaValida) {
+        return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
+      }
+      if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR'].includes(admin.perfil)) {
+        return reply.status(403).send({ message: 'Perfil não autorizado para esta operação' })
+      }
+      usuarioLogId = admin.id
+      usuarioLogNome = admin.nome
+      usuarioLogEmail = admin.email
+    } else {
+      // Resolve o nome/email do próprio usuário para a auditoria.
+      const self = await prisma.usuario.findFirst({
+        where: { id: user.id },
+        select: { nome: true, email: true },
       })
-    }
-    if (!admin) {
-      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
-    }
-    const senhaValida = bcrypt.compareSync(body.senhaAdmin, admin.senha)
-    if (!senhaValida) {
-      return reply.status(401).send({ message: 'Credenciais de administrador inválidas' })
-    }
-    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR'].includes(admin.perfil)) {
-      return reply.status(403).send({ message: 'Perfil não autorizado para esta operação' })
+      usuarioLogNome = self?.nome ?? 'usuário'
+      usuarioLogEmail = self?.email ?? ''
     }
 
     // Verificar que a etapa pertence à empresa e está CONCLUIDA
@@ -1681,10 +1717,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     await prisma.logOrdemProducao.create({
       data: {
         ordemProducaoId: etapa.ordemProducao.id,
-        usuarioId: admin.id,
+        usuarioId: usuarioLogId,
         statusAnterior: 'CONCLUIDA',
         statusNovo: 'PENDENTE',
-        observacao: `Etapa retornada à fila por ${admin.nome} (${admin.email})`,
+        observacao: `Etapa retornada à fila por ${usuarioLogNome}${usuarioLogEmail ? ` (${usuarioLogEmail})` : ''}`,
       },
     })
 
@@ -2179,6 +2215,27 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     return match ? `${match[1]}x${match[2]}` : null
   }
 
+  // Extrai o MICRO (material microondulado) dos itens de material da OP — o
+  // setor de ACOPLAGEM precisa ver o formato do Micro, não o cartão principal
+  // (pedido do Caio). O Micro é um item PAPEL cuja descrição contém "micro"
+  // (ex.: "Formato Micro Maculado Onda E 290g · 79,5 x 65,5 cm"). Retorna
+  // material/gramatura/formato do micro, ou nulos quando não há item micro.
+  function extrairMicroDosItens(
+    itens: Array<{ descricaoProduto: string; tipoMaterial: string | null }> | undefined,
+  ): { material: string | null; gramatura: string | null; formato: string | null } {
+    const vazio = { material: null, gramatura: null, formato: null }
+    if (!Array.isArray(itens)) return vazio
+    const micro = itens.find(
+      (i) => i.tipoMaterial === 'PAPEL' && /micro\s*(pardo|maculado|ondulad)/i.test(i.descricaoProduto),
+    )
+    if (!micro) return vazio
+    return {
+      material: micro.descricaoProduto,
+      gramatura: extrairGramatura(micro.descricaoProduto),
+      formato: extrairFormato(micro.descricaoProduto),
+    }
+  }
+
   app.get('/programacao/painel', async (request) => {
     const user = request.user as { id: string; empresaId: string }
 
@@ -2603,6 +2660,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             gramatura: ((e.plano as any)?.gramatura != null ? Number((e.plano as any).gramatura) : null) || (papel ? extrairGramatura(papel.descricaoProduto) : null) || extrairGramatura(e.ordemProducao.observacoes || ''),
             formato: ((e.plano as any)?.formato) || extrairFormatoObs(e.ordemProducao.observacoes) || (papel ? extrairFormato(papel.descricaoProduto) : null) || extrairFormato(e.ordemProducao.observacoes || ''),
             pesoKg: ((e.plano as any)?.pesoKg != null ? Number((e.plano as any).pesoKg) : null) || (papel ? Number(papel.quantidade) : null),
+            // MICRO (material microondulado) — o setor de ACOPLAGEM exibe o
+            // formato do Micro, não o cartão. Campos aditivos; o front usa só
+            // nos centros ACOPLAGEM (pedido do Caio). Nulos quando não há micro.
+            ...(() => {
+              const micro = extrairMicroDosItens(e.ordemProducao.itens)
+              return {
+                materialMicro: micro.material,
+                gramaturaMicro: micro.gramatura,
+                formatoMicro: micro.formato,
+              }
+            })(),
             materialEncomendado: temMaterialEncomendado(e),
             // Availability check parcial: quando a OP tem estoque parcial, o
             // card no centro mostra quanto está liberado vs aguardando material.
