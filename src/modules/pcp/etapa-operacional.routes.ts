@@ -921,13 +921,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     // Atualizar observações: remover tags antigas e adicionar novas
     let obsAtual = op.observacoes || ''
-    obsAtual = obsAtual.replace(/\[Matriz\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').replace(/\[Cores\].*\n?/g, '').trim()
+    obsAtual = obsAtual.replace(/\[Matriz\].*\n?/g, '').replace(/\[FormatoMicro\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').replace(/\[Cores\].*\n?/g, '').trim()
 
     const novasTags: string[] = []
     if (dados.observacoes.tipoOp) novasTags.push(`[TipoOp] ${dados.observacoes.tipoOp}`)
     if (dados.observacoes.matriz) novasTags.push(`[Matriz] ${dados.observacoes.matriz}`)
     if (dados.observacoes.formatoPlano) novasTags.push(`[Formato] ${dados.observacoes.formatoPlano}`)
     if (dados.observacoes.coresPlano) novasTags.push(`[Cores] ${dados.observacoes.coresPlano}`)
+    if (dados.observacoes.formatoMicro) novasTags.push(`[FormatoMicro] ${dados.observacoes.formatoMicro}`)
 
     const obsAtualizada = novasTags.length > 0
       ? obsAtual + '\n' + novasTags.join('\n')
@@ -1734,8 +1735,17 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
 
     const centros = await prisma.centroProducao.findMany({
-      // Só centros ATIVOS e disponíveis para programação (fora de programação não entra no quadro)
-      where: { empresaId: user.empresaId, status: true, disponivelProgramacao: true },
+      // Quadro de Produção (TV): centros ATIVOS, disponíveis para programação E
+      // com disponivelQuadroProducao=true (pedido do Caio — permite ocultar do
+      // quadro centros "organizacionais" como Fila Colagem sem tirá-los da
+      // Programação). Filtro por campo via SQL raw (client pode não estar
+      // tipado ainda) para não quebrar antes do prisma generate do deploy.
+      where: {
+        empresaId: user.empresaId,
+        status: true,
+        disponivelProgramacao: true,
+        ...( { disponivelQuadroProducao: true } as any ),
+      },
       include: {
         tipoProcesso: { select: { id: true, codigo: true, descricao: true, posicao: true } },
         // Turno da máquina — usado para NÃO contabilizar o tempo fora do turno
@@ -2426,6 +2436,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       const m = obs.match(/\[TipoOp\]\s*(.+?)(?:\n|$)/)
       return m ? m[1].trim() : null
     }
+    // Formato do MICRO (tag [FormatoMicro], gravada na importação/reextração) —
+    // fonte primária do formato exibido na folha de ACOPLAGEM (pedido do Caio).
+    function extrairFormatoMicroObs(obs: string | null): string | null {
+      if (!obs) return null
+      const m = obs.match(/\[FormatoMicro\]\s*(.+?)(?:\n|$)/)
+      return m ? m[1].trim() : null
+    }
     function extrairMatrizObs(obs: string | null): string | null {
       if (!obs) return null
       const m = obs.match(/\[Matriz\]\s*(.+?)(?:\n|$)/)
@@ -2663,12 +2680,16 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
             // MICRO (material microondulado) — o setor de ACOPLAGEM exibe o
             // formato do Micro, não o cartão. Campos aditivos; o front usa só
             // nos centros ACOPLAGEM (pedido do Caio). Nulos quando não há micro.
+            // O FORMATO prioriza a tag [FormatoMicro] (linha "(M)" da tabela de
+            // planos do PDF, 795 x 655), caindo para a medida da descrição do
+            // item quando a tag não existe (OPs antigas antes da reextração).
             ...(() => {
               const micro = extrairMicroDosItens(e.ordemProducao.itens)
+              const formatoMicroTag = extrairFormatoMicroObs(e.ordemProducao.observacoes)
               return {
                 materialMicro: micro.material,
                 gramaturaMicro: micro.gramatura,
-                formatoMicro: micro.formato,
+                formatoMicro: formatoMicroTag || micro.formato,
               }
             })(),
             materialEncomendado: temMaterialEncomendado(e),

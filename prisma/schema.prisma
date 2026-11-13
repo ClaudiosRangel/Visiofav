@@ -3062,6 +3062,11 @@ model CentroProducao {
   // recebe etapas por lá), mesmo estando ATIVO. Útil para centros que
   // existem para orçamento/roteiro mas não devem aparecer no chão de fábrica.
   disponivelProgramacao Boolean  @default(true) @map("disponivel_programacao")
+  // Quando false, o centro NÃO aparece no Quadro de Produção (TV), mesmo
+  // estando na Programação. Útil p/ centros "organizacionais" (ex.: Fila
+  // Colagem) que ajudam a sequenciar mas não devem poluir o quadro de chão.
+  // Pedido do Caio. Default true (não-regressão).
+  disponivelQuadroProducao Boolean @default(true) @map("disponivel_quadro_producao")
   // Modo de contagem de PRODUÇÃO no Checkout (spec checkout-contagem-por-contador):
   // QUANTIDADE (digitada, padrão) | CONTADOR (leitura do display/odômetro da
   // máquina — quantidade = leituraFinal − leituraInicial). Perda/Retrabalho

@@ -585,3 +585,50 @@ describe('parseGprintPdf — frente/costa (Fase C)', () => {
     expect(dados.etapas.filter((e) => e.tipo !== 'IMPRESSAO' && e.planoNome === 'COSTA')).toHaveLength(0)
   })
 })
+
+describe('parseGprintPdf — formato do MICRO (folha de ACOPLAGEM, pedido do Caio)', () => {
+  it('extrai o formato da linha "(M)" da tabela de planos (Micro Pardo)', () => {
+    // Linha de micro da OP 3.201 real: "Cartão (M)  Micro Pardo Formato 290
+    // 795 x 655 ...". O formatoMicro deve ser "795 x 655" (não o cartão).
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.201 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   CAFÉ 3 CORAÇÕES',
+      'Produto:   Cartucho Composto',
+      'Descrição:   Cartucho Display para 50 sachês de 20g',
+      'Quantidade:   120.000',
+      'Plano   Material   Formato   Quant(Kg)   TR   Form. Corte   Form   Aprov',
+      'Cartão   Klabin Klafold 227   720 x 805   8.683,57   N   665 x 805   1/1   2',
+      'Cartão (M)   Micro Pardo Formato 290   795 x 655   9.966,68   N   795 x 655   1/1   2',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'Cartão   665 x 805   2x1   66.000   6x0 +V   Heidelberg CD 7cores   6   Cortadeira (Grande), Guilhotina maior, Verniz, Bobst E (Corte e Vi, Destacar, Diana (Coladeira)',
+      'Cartão (M)   795 x 655   2x1   66.000   0x0   Mazola (acoplagem)',
+      'Impressão   Fixo   Variável',
+      'Offset Plana Heidelberg CD 7cores   04:06   06:00',
+      'Materiais   Qtde.',
+      'Klabin Klafold 227   8.683,57   KG',
+      'Micro Pardo Formato 290   9.966,68   KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    expect(dados.observacoes.formatoMicro).toBe('795 x 655')
+    // Não confunde com o formato do cartão (que vai para formatoPlano).
+    expect(dados.observacoes.formatoMicro).not.toBe('720 x 805')
+  })
+
+  it('formatoMicro = null quando a OS não tem linha de micro', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 2.997 R',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   COMPACTOR',
+      'Produto:   Cartuchos',
+      'Descrição:   CAIXA KIT',
+      'Quantidade:   16.000',
+      'Impressão   Fixo   Variável',
+      'Offset Plana Heidelberg CD 6cores   03:30   10:29',
+      'Materiais   Qtde.',
+      'Stora Enzo Bobina 290  337,34  KG',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    expect(dados.observacoes.formatoMicro).toBeNull()
+  })
+})

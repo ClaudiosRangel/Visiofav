@@ -202,6 +202,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
       ...(dados.observacoes.matriz ? [`[Matriz] ${dados.observacoes.matriz}`] : []),
       ...(dados.observacoes.formatoPlano ? [`[Formato] ${dados.observacoes.formatoPlano}`] : []),
       ...(dados.observacoes.coresPlano ? [`[Cores] ${dados.observacoes.coresPlano}`] : []),
+      ...(dados.observacoes.formatoMicro ? [`[FormatoMicro] ${dados.observacoes.formatoMicro}`] : []),
       ...(dados.observacoes.gerais || []),
       ...(dados.observacoes.producao || []),
       ...(dados.observacoes.bobinas.map(b => `[Bobina] ${b}`) || []),

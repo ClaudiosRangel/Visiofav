@@ -2930,7 +2930,10 @@ async function main() {
   // Flag: quando false, o centro não é listado no painel de Programação.
   // Default true preserva o comportamento atual dos centros já cadastrados.
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "disponivel_programacao" BOOLEAN NOT NULL DEFAULT true`)
-  console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm, disponivel_programacao adicionados')
+  // Flag: quando false, o centro NÃO aparece no Quadro de Produção (TV),
+  // mesmo estando na Programação (pedido do Caio). Default true (não-regressão).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "disponivel_quadro_producao" BOOLEAN NOT NULL DEFAULT true`)
+  console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm, disponivel_programacao, disponivel_quadro_producao adicionados')
 
   // =========================================================================
   // ORÇAMENTO GRÁFICO — Seed de Tipos de Embalagem Pré-Configurados

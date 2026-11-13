@@ -149,6 +149,10 @@ export interface ObservacoesOp {
   matriz: string | null   // Ex: "1376B", "2529B - COM BRAILLE" (extraído da seção Acabamentos)
   formatoPlano: string | null // Ex: "600 x 910" (extraído de Form.Corte do Plano)
   coresPlano: string | null // Ex: "6x0", "5x0 +V" (extraído da coluna Cores do Plano)
+  // Formato do MICRO (linha "(M)" da tabela de planos — ex.: "Cartão (M)
+  // Micro Pardo Formato 290  795 x 655 ..."). Usado na folha de ACOPLAGEM
+  // (pedido do Caio). Null quando a OS não tem plano de micro.
+  formatoMicro: string | null
 }
 
 export interface EmbalagemOp {
@@ -1380,7 +1384,7 @@ function extrairMontagem(texto: string): MontagemOp | null {
 // ============================================================================
 
 function extrairObservacoes(texto: string): ObservacoesOp {
-  const obs: ObservacoesOp = { gerais: [], producao: [], bobinas: [], expedicao: [], tipoOp: null, matriz: null, formatoPlano: null, coresPlano: null }
+  const obs: ObservacoesOp = { gerais: [], producao: [], bobinas: [], expedicao: [], tipoOp: null, matriz: null, formatoPlano: null, coresPlano: null, formatoMicro: null }
 
   // Tipo OP: "Obs.: Serviço Novo" / "Serviço Repetição" / "Serviço Alteração" / "Serviço Piloto" etc.
   const matchTipoOp = texto.match(/Servi[çc]o\s+(Novo|Repeti[çc][ãa]o|Altera[çc][ãa]o|Piloto|Piloto\s*\/\s*Em\s*branco|[Vv]enda\s*de\s*cart[ãa]o)(?:\s*\/\s*(Novo|Repeti[çc][ãa]o|Altera[çc][ãa]o|Piloto))?/i)
@@ -1472,6 +1476,28 @@ function extrairObservacoes(texto: string): ObservacoesOp {
   const matchColagem = texto.match(/Colagem:\s*(.+?)(?=\s{2,}|Materiais|$)/i)
   if (matchColagem && matchColagem[1].trim().length < 50) {
     obs.gerais.push(`Colagem: ${matchColagem[1].trim()}`)
+  }
+
+  // Formato do MICRO: linha "(M)" da tabela de planos (Plano/Material/Formato).
+  // Ex.: "Cartão (M)  Micro Pardo Formato 290  795 x 655  9.966,68  N  795 x 655  1/1  2"
+  // O nome termina com "(M)" e o material contém "Micro". Pega o 1º "NNN x NNN"
+  // (coluna Formato). Só a 1ª ocorrência (plano único de micro). Pedido do Caio
+  // (folha de ACOPLAGEM exibe o formato do micro, não o do cartão).
+  {
+    const secaoPlanos = texto.match(/Plano\s+Material\s+Formato\s+Quant\(Kg\)[\s\S]*?Aprov([\s\S]*?)(?=Plano\s+Formato\s+Mont|Impress[ãa]o|Obs\.?:|$)/i)
+    if (secaoPlanos) {
+      const linhas = secaoPlanos[1].split('\n').map((l) => l.trim()).filter(Boolean)
+      for (const linha of linhas) {
+        // Linha de micro: nome termina com "(M)" e tem "Micro" no material.
+        if (!/\(M\)\s{2,}/i.test(linha) && !/\(M\)\s+Micro/i.test(linha)) continue
+        if (!/micro/i.test(linha)) continue
+        const mFmt = linha.match(/(\d{3,4})\s*x\s*(\d{3,4})/)
+        if (mFmt) {
+          obs.formatoMicro = `${mFmt[1]} x ${mFmt[2]}`
+          break
+        }
+      }
+    }
   }
 
   // Bobinas em estoque/encomendadas — formato: "Bobina Stora Enzo 222g - 72,0 cm em estoque (13.793,0 kg)"
