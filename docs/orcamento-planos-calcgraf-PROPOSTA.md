@@ -93,9 +93,20 @@ equivalente são listados no relatório, nunca inventados. Execução em produç
 4. **Atividade → restrição e material** no formulário, com valores informativos primeiro.
 5. **Backfill** dos itens já puxados (só RASCUNHO), com autorização.
 
-## 6. Riscos e decisões que preciso de você
-1. Aprova a **tabela genérica de relações** (seção 2.1)? Alternativa: junções separadas, mais seguras e mais trabalhosas.
-2. O **material escolhido** (Cola Branca ou Quente) deve influenciar preço agora ou só ser informativo? Hoje o Vizor só informa.
-3. **Campos livres (ARTE, PADRÃO):** sem fonte no banco. Aceita cadastro simples por produto?
-4. Prioridade das fases: confirma começar pela fase 1 e pelo Cartucho na fase 2?
-5. O custo de planos extras (Cartucho Composto) continua em 0 como hoje, ou quer que cada plano calcule o próprio custo?
+## 6. Decisões fixadas (14/11/2026, com base em como o Calcgraf faz; ver handoff seção 15)
+1. **Relações:** tabela genérica única, igual à `RelTabelas`. Validar o par permitido no serviço e na importação.
+2. **Material escolhido** (Cola Branca ou Quente, BOPP etc.) **influencia o preço**, como no Calcgraf.
+   Vale só para itens novos ou recalculados. **Itens puxados do acervo mantêm o custo ancorado** (não mudam).
+   O significado de `ParamAcab1/2` ainda não está confirmado; até confirmar, o consumo usa a regra atual do Vizor.
+3. **Campos livres (ARTE, PADRÃO):** cadastro simples por produto, informativo, sem efeito no preço.
+4. **Ordem das fases:** fase 1 (cadastros e relações), depois Cartucho na fase 2, como na seção 5.
+5. **Custo por plano:** o Calcgraf calcula por plano (atividades e materiais gravam o plano). No Vizor:
+   - nos itens puxados, o custo dos planos continua em 0 (detalhamento), para não mexer no total ancorado;
+   - nos itens novos, o custo do plano é a soma das suas atividades e materiais, e o total do item é a soma dos planos.
+   - dividir o custo dos itens puxados por plano fica para fase posterior, usando as linhas por plano da base de cálculo.
+
+## 7. Riscos que continuam abertos
+- Significado de `ParamAcab1/2` e `TipoParamAcab` (consumo do material).
+- Fonte de ARTE e PADRÃO.
+- Tabela 9 da `RelTabelas`.
+- Telas de Editorial e Rótulo, se vierem a ser usadas.

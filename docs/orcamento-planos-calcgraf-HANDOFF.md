@@ -942,3 +942,29 @@ Códigos agora fechados: 0 Suportes, 1 Itens Diversos, 2 Planos, 3 Coberturas de
   "Unitário", unidade "Unidade", prazo 0, tributação 2026 "ICMS + IPI", tributação 2027 vazia,
   classificação fiscal vazia. Acab. prod. oferecidas: Caixa Padrão, Colagem Manual, Colocação de Alça,
   Embalar, Envase (batem com a relação Produto×Atividade da seção 13.2).
+
+
+---
+
+## 15. Como o Calcgraf resolve as decisões da proposta (verificado na base, 14/11/2026)
+
+1. **Relações:** o Calcgraf usa UMA tabela genérica (`RelTabelas`) para todos os pares. Não há
+   chave estrangeira; a tela de "Relacionamento entre Tabelas" é a mesma para qualquer cadastro.
+2. **Material escolhido influencia o preço (não é só informativo).**
+   - O cálculo grava a escolha em `CalculoMatAcabamento` (`CodMaterial`, `codAtvAcabamento`,
+     `codPlanoAcabado`, `ParamAcab1`, `ParamAcab2`, `TipoParamAcab`).
+   - O custo vira uma linha em `CalculoSTC`. Exemplo 12992: material 14 (BOPP Brilho) na atividade 37
+     (Laminação maior), plano 1, `ParamAcab1 = 100`, custo R$ 581,82. Exemplo 11121: Cola Branca = R$ 306,23.
+   - Preços da Tabela de Custo vigente (2): Cola Branca R$ 29,15/kg, **Cola Quente R$ 56,10/kg**,
+     BOPP Brilho e Fosco R$ 0,605/m², Caixa Padrão R$ 7,70, Kraft R$ 1,10. Ou seja, escolher Quente
+     em vez de Branca quase dobra o custo da cola.
+   - Uso real: Cola Branca em 7.628 cálculos, Cola Quente em 776.
+   - `ParamAcab1/2` e `TipoParamAcab`: parâmetro de consumo do material (provável % de cobertura ou
+     medida). **Significado exato não confirmado.**
+3. **Custo por plano: o Calcgraf calcula por plano.** Cada atividade e cada material grava
+   `codPlanoAcabado`, e as linhas de `CalculoSTC` trazem o número do plano como prefixo da descrição
+   ("0001Stora Enzo Bobina 181", "0002Micro Pardo Formato 230", "0002Mazola (acoplagem)"). O custo do
+   plano é a soma das linhas do plano. No 11121 o plano 2 (Micro) pesa muito mais que o plano 1.
+4. **Campos livres:** o Calcgraf guarda valores livres por OP (`CampoDicxOpHeader`, ex.: FORMPAG,
+   FORMEMB). Não entram em preço. ARTE e PADRÃO seguem sem fonte localizada.
+5. **Defaults e tudo por produto:** o produto define o que vem pré-preenchido, e o usuário altera.
