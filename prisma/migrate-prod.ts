@@ -6311,6 +6311,7 @@ async function migrarOrcamentoGraficoCadastrosRelacoes() {
   await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "conteudo_rolo_metros" DECIMAL(12,2)`)
   await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "consumo_minimo" DECIMAL(14,4)`)
   await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "texto_proposta" TEXT`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "tipo_param" INTEGER`)
 
   await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_grafico_id" TEXT`)
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)

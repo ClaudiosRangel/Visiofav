@@ -45,6 +45,12 @@ const putSchema = z.object({
 
 const getSchema = z.object({ itemId: ID })
 
+const deleteSchema = z.object({
+  itemId: ID,
+  acabamentoId: ID,
+  planoId: ID.nullable().optional(),
+})
+
 function erroZod(reply: FastifyReply, error: z.ZodError) {
   const msg = error.errors
     .map((e) => (e.path.length ? `${e.path.join('.')}: ${e.message}` : e.message))
@@ -293,6 +299,83 @@ export async function selecaoMaterialRoutes(app: FastifyInstance) {
       motivo: saida.motivo ?? null,
       resumoCustos,
     })
+  })
+
+  // DELETE /selecao-material: remove a seleção de (item, plano, atividade). Idempotente
+  // (removidas=0 se não existir). Reflete as restantes no Json; não recalcula resultadoCalculo.
+  app.delete('/selecao-material', async (request, reply) => {
+    const user = request.user as UserToken
+    const entrada = {
+      ...((request.query as Record<string, unknown> | null) ?? {}),
+      ...((request.body as Record<string, unknown> | null) ?? {}),
+    }
+    const parsed = deleteSchema.safeParse(entrada)
+    if (!parsed.success) return erroZod(reply, parsed.error)
+    const b = parsed.data
+    const empresaId = user.empresaId
+    const planoId = b.planoId ?? null
+
+    const item = await prisma.itemOrcamentoGrafico.findFirst({
+      where: { id: b.itemId, empresaId },
+      select: {
+        id: true,
+        materiaisAcabamento: true,
+        custoProducao: true,
+        calculoGraficoOrigemId: true,
+      },
+    })
+    if (!item) return reply.status(404).send({ message: 'Item do orçamento não encontrado' })
+
+    const { removidas, todas } = await prisma.$transaction(async (tx) => {
+      const apagadas = await tx.selecaoMaterialAcabamento.deleteMany({
+        where: { empresaId, itemId: item.id, planoId, acabamentoId: b.acabamentoId },
+      })
+      const lista = await tx.selecaoMaterialAcabamento.findMany({
+        where: { empresaId, itemId: item.id },
+        orderBy: { criadoEm: 'asc' },
+      })
+      const materiais = await tx.materialAcabamento.findMany({
+        where: { empresaId, id: { in: [...new Set(lista.map((s) => s.materialId))] } },
+        select: { id: true, nome: true },
+      })
+      const nomes = new Map(materiais.map((m) => [m.id, m.nome]))
+      const json = refletirSelecoesNoJson(
+        item.materiaisAcabamento,
+        lista.map((s) => ({
+          selecaoId: s.id,
+          materialId: s.materialId,
+          nome: nomes.get(s.materialId) ?? '',
+          valorUnitario: n(s.valorUnitario),
+          consumo: n(s.consumo),
+          aplicaNoPreco: s.aplicaNoPreco,
+        })),
+      )
+      await tx.itemOrcamentoGrafico.updateMany({
+        where: { id: item.id, empresaId },
+        data: { materiaisAcabamento: json as Prisma.InputJsonValue },
+      })
+      return { removidas: apagadas.count, todas: lista }
+    })
+
+    const itemPuxado = !!item.calculoGraficoOrigemId
+    const porPlano = new Map<string, number[]>()
+    for (const s of todas) {
+      const chave = s.planoId ?? 'ITEM'
+      const arr = porPlano.get(chave) ?? []
+      if (s.aplicaNoPreco) arr.push(n(s.custo) ?? 0)
+      porPlano.set(chave, arr)
+    }
+    const resumoCustos = somarCustoPlanos({
+      itemPuxado,
+      custoAncoradoItem: n(item.custoProducao) ?? 0,
+      planos: [...porPlano.entries()].map(([id, custosMateriais]) => ({
+        planoId: id,
+        custosAtividades: [],
+        custosMateriais,
+      })),
+    })
+
+    return reply.send({ removidas, resumoCustos })
   })
 
   app.get('/selecao-material', async (request, reply) => {

@@ -333,6 +333,8 @@ const corItemSchema = z.object({
  */
 const itemOrcamentoBodySchema = z.object({
   tipoEmbalagemId: z.string().uuid(),
+  // Catálogo (Fase 2): ausente não altera; null limpa.
+  produtoGraficoId: z.string().uuid().optional().nullable(),
   descricao: z.string().max(200).optional().nullable(),
   medidas: z.record(z.coerce.number()),
   papelId: z.string().uuid().optional().nullable(),
@@ -663,9 +665,25 @@ async function ancorarCustoCalcgraf(
   return resultado
 }
 
+/** Valida (422 legível) que o produto gráfico existe na empresa. Retorna a mensagem de erro ou null. */
+async function validarProdutoGraficoDaEmpresa(empresaId: string, id: string | null | undefined): Promise<string | null> {
+  if (!id) return null
+  const achou = await prisma.produtoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
+  return achou ? null : 'Produto gráfico não encontrado nesta empresa.'
+}
+
+/** Valida (422 legível) que o tipo de plano existe na empresa. Retorna a mensagem de erro ou null. */
+async function validarTipoPlanoDaEmpresa(empresaId: string, id: string | null | undefined): Promise<string | null> {
+  if (!id) return null
+  const achou = await prisma.tipoPlanoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
+  return achou ? null : 'Tipo de plano não encontrado nesta empresa.'
+}
+
 function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrcamento) {
   const fech = fechamentoDoResultado(resultado, body.margemSelecionada)
   return {
+    // Gravação condicional: ausente não altera; null limpa.
+    ...(body.produtoGraficoId !== undefined ? { produtoGraficoId: body.produtoGraficoId } : {}),
     tipoEmbalagemId: body.tipoEmbalagemId,
     descricao: body.descricao ?? null,
     medidas: body.medidas,
@@ -764,6 +782,8 @@ async function reconsolidarOrcamento(orcamentoId: string, empresaId: string): Pr
  */
 const planoBodySchema = z.object({
   nome: z.string().min(1).max(60),
+  // Catálogo (Fase 2): ausente não altera; null limpa.
+  tipoPlanoId: z.string().uuid().optional().nullable(),
   suporteId: z.string().uuid().optional().nullable(),
   suporteProducaoId: z.string().uuid().optional().nullable(),
   gramatura: z.number().positive().optional(),
@@ -3400,6 +3420,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             // Origem do item (repetição): cálculo da biblioteca de onde foi
             // copiado — habilita a Conferência foto×recálculo (spec repetição).
             calculoGraficoOrigemId: true,
+            produtoGraficoId: true,
             // ── Fase 2 (Task 9/11) — planos do cálculo para hidratar a tela ──
             planos: {
               orderBy: { sequencia: 'asc' },
@@ -3407,6 +3428,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
                 id: true,
                 sequencia: true,
                 nome: true,
+                tipoPlanoId: true,
                 suporteId: true,
                 suporteProducaoId: true,
                 gramatura: true,
@@ -5661,6 +5683,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const orcamento = await carregarOrcamentoDaEmpresa(id, user.empresaId)
     if (!orcamento) return reply.status(404).send({ message: 'Orçamento não encontrado' })
 
+    const erroProduto = await validarProdutoGraficoDaEmpresa(user.empresaId, body.produtoGraficoId)
+    if (erroProduto) return reply.status(422).send({ message: erroProduto })
+
     // Calcular o item (envelope do motor) — mapeia ItemOrcamentoError → status.
     let resultado: ResultadoOrcamento
     try {
@@ -6015,6 +6040,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       select: { id: true },
     })
     if (!existente) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const erroProduto = await validarProdutoGraficoDaEmpresa(user.empresaId, body.produtoGraficoId)
+    if (erroProduto) return reply.status(422).send({ message: erroProduto })
 
     // Preserva formato de corte/aproveitamento persistidos quando o body não traz.
     await preservarEngenhariaDoItem(body, itemId)
@@ -6439,6 +6467,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       itemId,
       sequencia,
       nome: body.nome,
+      ...(body.tipoPlanoId !== undefined ? { tipoPlanoId: body.tipoPlanoId } : {}),
       suporteId: body.suporteId ?? null,
       // Suporte de produção inicia = suporte orçado (Req 6.2).
       suporteProducaoId: body.suporteProducaoId ?? body.suporteId ?? null,
@@ -6472,6 +6501,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
     if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+
+    const erroTipoPlano = await validarTipoPlanoDaEmpresa(user.empresaId, body.tipoPlanoId)
+    if (erroTipoPlano) return reply.status(422).send({ message: erroTipoPlano })
 
     const precoItem = await precoKgPapelDoItem(item.papelId, user.empresaId)
     const inputBase = reconstruirInputBaseDoItem(item, precoItem)
@@ -6523,6 +6555,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (!existente) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
 
+    const erroTipoPlano = await validarTipoPlanoDaEmpresa(user.empresaId, body.tipoPlanoId)
+    if (erroTipoPlano) return reply.status(422).send({ message: erroTipoPlano })
+
     const precoItem = await precoKgPapelDoItem(item.papelId, user.empresaId)
     const inputBase = reconstruirInputBaseDoItem(item, precoItem)
 
@@ -6541,6 +6576,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       // empresaId/itemId/sequencia não mudam no update (chaves de identidade).
       data: {
         nome: dados.nome,
+        ...(body.tipoPlanoId !== undefined ? { tipoPlanoId: body.tipoPlanoId } : {}),
         suporteId: dados.suporteId,
         suporteProducaoId: dados.suporteProducaoId,
         gramatura: dados.gramatura,

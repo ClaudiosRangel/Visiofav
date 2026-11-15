@@ -25,7 +25,7 @@
  *     [--relatorio cartoon/export/relatorio-importacao-cadastros.json]
  *
  *   Fases (ordem padrão): catalogos, produtos, planos, atividades, materiais,
- *   itens-diversos, relacoes, roteiros, defaults, campos-livres, ajustes, quebras,
+ *   materiais-tipo-param (moda de TipoParamAcab por CodMaterial; só campo vazio), itens-diversos, relacoes, roteiros, defaults, campos-livres, ajustes, quebras,
  *   limites-montagem, parametros.
  *
  *   `--fase` isolada funciona: os ids das fases anteriores vêm do banco (por
@@ -89,6 +89,7 @@ import {
   type LinhaRoteiro,
   type RelacaoParaOrdem,
 } from '../src/modules/orcamento-grafico/cadastros-graficos/importacao/roteiro'
+import { modaTipoParamPorMaterial } from '../src/modules/orcamento-grafico/cadastros-graficos/importacao/tipo-param'
 import {
   formatarRelatorio,
   relatorioVazio,
@@ -109,6 +110,7 @@ const FASES_ORDEM = [
   'planos',
   'atividades',
   'materiais',
+  'materiais-tipo-param',
   'itens-diversos',
   'relacoes',
   'roteiros',
@@ -535,6 +537,53 @@ async function faseMateriais(c: Ctx): Promise<RelatorioFase[]> {
 }
 
 // ============================================================================
+// FASE materiais-tipo-param — MaterialAcabamento.tipoParam (moda de TipoParamAcab
+// por CodMaterial). Só preenche campo VAZIO; respeita --dry-run. Spec
+// orcamento-grafico-catalogo-no-editor, tarefa 1.6.
+// ============================================================================
+
+async function faseMateriaisTipoParam(c: Ctx): Promise<RelatorioFase[]> {
+  const rel = relatorioVazio('materiais-tipo-param')
+  const modas = modaTipoParamPorMaterial(tabela(c, 'MateriaisTipoParam'))
+  const d = delegate(prisma.materialAcabamento)
+  const linhas = await comRetry(() =>
+    d.findMany({ where: { empresaId: c.empresaId, codigoOrigem: { not: null } }, select: { id: true, codigoOrigem: true, nome: true, tipoParam: true } }),
+  )
+  const porOrigem = new Map<number, Record<string, unknown>>()
+  for (const l of linhas) if (typeof l.codigoOrigem === 'number') porOrigem.set(l.codigoOrigem, l)
+
+  const ignorar = (motivo: string) => {
+    rel.ignorados++
+    rel.ignoradosPorMotivo[motivo] = (rel.ignoradosPorMotivo[motivo] ?? 0) + 1
+  }
+  for (const [cod, moda] of modas) {
+    const mat = porOrigem.get(cod)
+    if (!mat) {
+      rel.naoCasados.push({ codigoOrigem: cod, nome: `material ${cod}`, motivo: 'MATERIAL_NAO_ENCONTRADO', detalhe: `tipoParam ${moda.tipoParam} sem MaterialAcabamento com este codigoOrigem` })
+      continue
+    }
+    if (mat.tipoParam !== null && mat.tipoParam !== undefined) {
+      ignorar('JA_PREENCHIDO')
+      continue
+    }
+    if (moda.empate) {
+      rel.naoCasados.push({ codigoOrigem: cod, nome: textoDe(mat.nome), motivo: 'EMPATE_NA_MODA', detalhe: `gravado o menor tipo (${moda.tipoParam}); revisar` })
+    }
+    if (!c.dryRun) {
+      // `tipoParam: null` no where: nunca sobrescreve valor já preenchido.
+      await comRetry(() => d.updateMany({ where: { id: String(mat.id), empresaId: c.empresaId, tipoParam: null }, data: { tipoParam: moda.tipoParam } }))
+    }
+    rel.atualizados++
+  }
+  const semUso = [...porOrigem.keys()].filter((cod) => !modas.has(cod)).length
+  if (semUso > 0) {
+    rel.ignorados += semUso
+    rel.ignoradosPorMotivo.SEM_USO_NO_CALCGRAF = semUso
+  }
+  return [rel]
+}
+
+// ============================================================================
 // FASE itens-diversos — ItemDiversoGrafico
 // ============================================================================
 
@@ -865,6 +914,7 @@ const FASES: Record<NomeFase, (c: Ctx) => Promise<RelatorioFase[]>> = {
   planos: fasePlanos,
   atividades: faseAtividades,
   materiais: faseMateriais,
+  'materiais-tipo-param': faseMateriaisTipoParam,
   'itens-diversos': faseItensDiversos,
   relacoes: faseRelacoes,
   roteiros: faseRoteiros,

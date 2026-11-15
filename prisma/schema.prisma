@@ -3363,6 +3363,8 @@ model MaterialAcabamento {
   conteudoRoloMetros Decimal? @map("conteudo_rolo_metros") @db.Decimal(12, 2)
   consumoMinimo     Decimal? @map("consumo_minimo") @db.Decimal(14, 4)
   textoProposta     String?  @map("texto_proposta") @db.Text
+  /// Tipo de parâmetro de consumo no Calcgraf (TipoParamAcab, 0..4). Spec orcamento-grafico-catalogo-no-editor (1.6).
+  tipoParam         Int?     @map("tipo_param")
 
   criadoEm        DateTime @default(now()) @map("criado_em")
   atualizadoEm    DateTime @updatedAt @map("atualizado_em")

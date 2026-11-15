@@ -162,6 +162,15 @@ function unicoPorCodigo(rows) {
   return [...porCodigo.values()]
 }
 exportar('Materiais', `${ITEM_COM_ITC} WHERE d.Origem = N'MAT.ACABAMENTO'`, unicoPorCodigo)
+// Fase `materiais-tipo-param` (spec orcamento-grafico-catalogo-no-editor, 1.6): uso real de
+// TipoParamAcab por material (CalculoMatAcabamento). O importador calcula a moda por CodMaterial.
+exportar(
+  'MateriaisTipoParam',
+  `SELECT m.CodMaterial AS codMaterial, m.TipoParamAcab AS tipoParamAcab, COUNT(*) AS usos
+   FROM CalculoMatAcabamento m
+   WHERE m.CodMaterial IS NOT NULL AND m.TipoParamAcab IS NOT NULL
+   GROUP BY m.CodMaterial, m.TipoParamAcab`,
+)
 exportar('ItensDiversos', `${ITEM_COM_ITC} WHERE d.Origem <> N'MAT.ACABAMENTO'`, unicoPorCodigo)
 
 exportar(
