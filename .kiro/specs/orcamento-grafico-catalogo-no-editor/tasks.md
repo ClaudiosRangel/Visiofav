@@ -76,46 +76,46 @@ Caminhos do front abaixo sÃ£o relativos a `src/app/(interna)/orcamento-grafico
   - Back: tarefas 1.1 a 1.5 verdes e deploy no Render confirmado (os campos novos precisam estar no ar antes do front usÃ¡-los). Front: tarefas 2.x verdes, `get_diagnostics` limpo. Perguntar ao usuÃ¡rio as decisÃµes 1 a 7 do `design.md` (seÃ§Ã£o 10) e se a coluna `tipoParam` (1.6) entra agora
 
 - [ ] 4. Front â€” editor ligado ao catÃ¡logo
-  - [~] 4.1 Hook `[id]/editor/catalogo/useCatalogoItem.ts`
+  - [x] 4.1 Hook `[id]/editor/catalogo/useCatalogoItem.ts`
     - Carrega `catalogoApi.produto` uma vez, descobre o plano fixo e carrega `catalogoApi.plano`; tipos nÃ£o fixos sob demanda com cache; estados carregando, vazio e erro; `null` sem produto
     - _Requisitos: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
-  - [~] 4.2 `SeletorProdutoGrafico` e integraÃ§Ã£o em `SecaoProduto`
+  - [x] 4.2 `SeletorProdutoGrafico` e integraÃ§Ã£o em `SecaoProduto`
     - Filtra por `linhaProdutoId` do orÃ§amento, opcional e limpÃ¡vel; produto inativo exibido como inativo; aviso quando a linha trocada nÃ£o bate; aplica defaults em item novo
     - `EditorItem` chama o hook e repassa o catÃ¡logo Ã s seÃ§Ãµes
     - _Requisitos: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 5.1, 13.4_
-  - [~] 4.3 `[id]/page.tsx`
+  - [x] 4.3 `[id]/page.tsx`
     - `abrirEditorPagina` passa `produtoGraficoId`, `materiaisAcabamento` e `planos[].tipoPlanoId`; interface `ItemOrcamento` ganha os campos; `PlanosDoItem` recebe `produtoGraficoId`
     - Conferir quais outros campos tÃ©cnicos ficam de fora ao reabrir e registrar no handoff (ponto a verificar)
     - _Requisitos: 8.3, 4.3_
-  - [~] 4.4 `novo/StepAcabamentos.tsx` com prop `catalogo`
+  - [x] 4.4 `novo/StepAcabamentos.tsx` com prop `catalogo`
     - Grupos Atividades, Acondicionamento e Fora do catÃ¡logo, na ordem do catÃ¡logo; busca e filtro por natureza mantidos; restriÃ§Ãµes do catÃ¡logo; prÃ©-marcaÃ§Ã£o sÃ³ em item novo sem marcaÃ§Ã£o
     - Sem catÃ¡logo: nenhum cÃ³digo novo executa; o wizard `/novo` nÃ£o recebe a prop
     - _Requisitos: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.9, 11.1, 11.6_
-  - [~] 4.5 `SeletorMaterialAtividade` e `AvisoAVerificar`
+  - [x] 4.5 `SeletorMaterialAtividade` e `AvisoAVerificar`
     - Select com os materiais permitidos (padrÃ£o prÃ©-selecionado), parÃ¢metros por `tipoParam`, resumo de consumo, unidade e custo; selo A_VERIFICAR discreto; selo "informativo" em item puxado
     - _Requisitos: 7.1, 7.4, 7.5, 7.7, 7.8, 7.11, 13.5_
-  - [~] 4.6 Fluxo de seleÃ§Ã£o no editor
+  - [x] 4.6 Fluxo de seleÃ§Ã£o no editor
     - Item salvo: `PUT` imediato e linha `SELECAO` no formulÃ¡rio; desmarcar atividade ou limpar material chama o `DELETE`; erro 422 mostra os permitidos sem alterar a seleÃ§Ã£o anterior
     - Item novo: guarda em `_selecoesPendentes`
     - _Requisitos: 7.2, 7.3, 7.6, 7.10, 8.6_
-  - [~] 4.7 Salvar em passes e cancelar
+  - [x] 4.7 Salvar em passes e cancelar
     - `EditorItem.salvar`: salvar item, aplicar pendentes e remoÃ§Ãµes com o id devolvido, mesclar as linhas e regravar o item para recalcular; aviso quando alguma seleÃ§Ã£o falhar
     - Cancelar com escolhas gravadas e fora do preÃ§o: perguntar se quer salvar
     - _Requisitos: 7.10, 8.1, 8.5, 8.6_
-  - [~] 4.8 `SecaoMateriaisAcabamento`
+  - [x] 4.8 `SecaoMateriaisAcabamento`
     - Exibir as linhas `SELECAO` como somente leitura, com o nome da atividade, e manter a lista manual atual intacta
     - _Requisitos: 7.8, 8.6, 11.1_
-  - [~] 4.9 `PlanosDoItem`: tipo de plano, defaults e atividades
+  - [x] 4.9 `PlanosDoItem`: tipo de plano, defaults e atividades
     - Prop `produtoGraficoId`; Select "Tipo de plano" (obrigatÃ³rio para plano novo quando hÃ¡ produto e catÃ¡logo com tipos); defaults sÃ³ em campo nÃ£o tocado; atividades do tipo em `acabamentosRicos`; `tipoPlanoId` no POST e no PUT
     - Sem a prop, modal idÃªntico ao atual; confirmar ids de suporte antes de restringir o seletor
     - _Requisitos: 4.1, 4.2, 4.3, 4.4, 4.5, 4.7, 5.2, 6.8_
-  - [~] 4.10 `SecaoPlanos`: coluna "Tipo de plano"
+  - [x] 4.10 `SecaoPlanos`: coluna "Tipo de plano"
     - SÃ³ quando houver `tipoPlanoId`; planos sem tipo ficam como hoje
     - _Requisitos: 4.6_
-  - [~] 4.11 `SugestaoItensDiversos` em `SecaoItensComplementares`
+  - [x] 4.11 `SugestaoItensDiversos` em `SecaoItensComplementares`
     - Bloco "Sugeridos pelo plano" com "Adicionar" e "Adicionar todos"; nunca adiciona sozinho; marca linha sem custo cadastrado
     - _Requisitos: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6_
-  - [~] 4.12 RevisÃ£o transversal
+  - [x] 4.12 RevisÃ£o transversal
     - Estados de carregamento, vazio e erro; tokens adaptativos nos temas claro e escuro; nenhuma menÃ§Ã£o ao sistema legado; nenhum texto sugere que Ajustes, Quebras ou Limites alteram o cÃ¡lculo
     - _Requisitos: 13.2, 13.3, 13.4, 13.5, 13.6, 13.7_
   - [ ]* 4.13 Testes de componente (Testing Library) dos fluxos crÃ­ticos
@@ -126,7 +126,7 @@ Caminhos do front abaixo sÃ£o relativos a `src/app/(interna)/orcamento-grafico
     - _Requisitos: 10.4_
 
 - [ ] 5. DocumentaÃ§Ã£o e fechamento
-  - [~] 5.1 Atualizar `docs/orcamento-planos-calcgraf-HANDOFF.md` (nova seÃ§Ã£o "19. Fase 2") e `.kiro/steering/migracao-calcgraf-carton-wega.md` com resumo curto
+  - [x] 5.1 Atualizar `docs/orcamento-planos-calcgraf-HANDOFF.md` (nova seÃ§Ã£o "19. Fase 2") e `.kiro/steering/migracao-calcgraf-carton-wega.md` com resumo curto
     - _Requisitos: 11.5_
   - [~] 5.2 Checkpoint final
     - Testes verdes nos dois repositÃ³rios, `get_diagnostics` limpo, conferÃªncia manual (design 12) com o usuÃ¡rio; perguntar sobre commit e deploy do front

@@ -21,6 +21,14 @@ preenchidos); 249 não casados pendentes (centros/suportes com nome diferente, t
 Ajustes/Quebras/Limites ainda NÃO influenciam motor nem PCP. Item puxado mantém custo ancorado.
 Detalhe completo: `docs/orcamento-planos-calcgraf-HANDOFF.md` §18.
 
+### FASE 2 — CATÁLOGO NO EDITOR DO ITEM (implementada; deploy do front e conferência pendentes)
+Spec `orcamento-grafico-catalogo-no-editor` (back `dc5a94cb8` + ajuste do `GET /:id` a confirmar). O editor do item usa o catálogo:
+Produto Gráfico, tipo de plano, defaults, atividades filtradas, seleção de material por atividade e sugestão de itens diversos.
+Back: `produtoGraficoId`/`tipoPlanoId` gravados e devolvidos; `GET /:id` devolve `materiaisAcabamento`; `DELETE /cadastros/selecao-material`;
+coluna `tipoParam` em `MaterialAcabamento`. A fase `materiais-tipo-param` do importador **NÃO foi rodada em produção** (precisa de novo export
+do legado e dry-run autorizado). Ajustes/Quebras/Limites seguem sem influenciar o motor. Campos livres ficam para a fase 3.
+Pendências e pontos a conferir: `docs/orcamento-planos-calcgraf-HANDOFF.md` §19.
+
 ## 🟢🟢 DIFERENÇA ZERO AO PUXAR CÁLCULO — RESOLVIDO DEFINITIVO (23/10/2026)
 
 **O orçamento de repetição ("Puxar Cálculo") agora bate 100% com o Calcgraf, para

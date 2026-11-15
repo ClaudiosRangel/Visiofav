@@ -3421,6 +3421,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             // copiado — habilita a Conferência foto×recálculo (spec repetição).
             calculoGraficoOrigemId: true,
             produtoGraficoId: true,
+            materiaisAcabamento: true,
             // ── Fase 2 (Task 9/11) — planos do cálculo para hidratar a tela ──
             planos: {
               orderBy: { sequencia: 'asc' },

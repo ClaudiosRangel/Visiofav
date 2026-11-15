@@ -1121,3 +1121,67 @@ produto) e a influência de Ajustes/Quebras/Limites no cálculo e no PCP.
 **Armadilha do ambiente descoberta:** o PSReadLine do PowerShell quebra com comandos longos
 (`ArgumentOutOfRangeException ... SetCursorPosition`) e corta os comandos seguintes com `^C`.
 Foi isso que "cancelou" subagentes. Usar comandos curtos, arquivos `.cmd` e saída em arquivo.
+
+## 19. Fase 2 — Catálogo no editor do item
+
+Spec: `.kiro/specs/orcamento-grafico-catalogo-no-editor/`. Usa no editor do item os cadastros da Fase 1 (seção 18).
+Implementação feita; **commit/deploy do front e conferência manual pendentes** (tarefa 5.2).
+
+**Commits**
+- Back: `dc5a94cb8` + um commit de ajuste do `GET /:id` (**a confirmar o hash**).
+- Front: ainda não commitado.
+
+**Back (repo `VisioFab.Wms.Back`)**
+- `produtoGraficoId` (item) e `tipoPlanoId` (plano) são aceitos, gravados e devolvidos. Ausente não altera, `null` limpa,
+  id de outra empresa responde 422 legível. Validação por `{ id, empresaId }`.
+- `GET /orcamento-grafico/:id` passou a devolver também `materiaisAcabamento` de cada item (antes o editor não via as linhas `SELECAO`).
+- `DELETE /orcamento-grafico/cadastros/selecao-material` (`itemId`, `acabamentoId`, `planoId?`): apaga a seleção, reflete no Json
+  `materiaisAcabamento`, idempotente, 404 se o item não for da empresa. Não recalcula `resultadoCalculo`.
+- Coluna `tipoParam` (`tipo_param Int?`) em `MaterialAcabamento` (schema + `migrate-prod.ts` idempotente) e fase `materiais-tipo-param`
+  no exportador/importador da Fase 1 (moda de `TipoParamAcab` por `CodMaterial`; só preenche campo vazio; `--dry-run`).
+- **A fase `materiais-tipo-param` AINDA NÃO foi rodada em produção.** Depende de um novo export do legado e de dry-run revisado
+  com autorização explícita. Até lá `tipoParam` fica nulo e o front usa o mapa provisório por `tipoMaterial` (conservador, cai em informativo).
+- Não foram alterados `ancorarCustoCalcgraf`, o motor de cálculo nem os testes de decomposição.
+
+**Front (repo `VisioFab.Wms.Front`, `src/app/(interna)/orcamento-grafico/`)**
+- `SeletorProdutoGrafico` em `SecaoProduto`: filtra por linha do orçamento, opcional e limpável; produto inativo aparece como inativo.
+- `useCatalogoItem` (carrega produto, plano fixo e tipos de plano sob demanda, com cache) e `[id]/editor/catalogo/catalogo-puro.ts`
+  (defaults sem sobrescrever, filtro/ordem de atividades, pré-marcação, `tipoParam`, mescla de linhas, sugestão de itens diversos).
+- `useSelecaoMaterial` + `SeletorMaterialAtividade` (com `AvisoAVerificar`): escolha do material por atividade, parâmetros por `tipoParam`,
+  resumo de consumo e custo. Item puxado mostra selo "informativo" (custo ancorado intacto).
+- `StepAcabamentos` com prop `catalogo` (grupos Atividades, Acondicionamento e Fora do catálogo); o wizard `/novo` não recebe a prop.
+- `PlanosDoItem`: Select "Tipo de plano" (obrigatório em plano novo quando há produto e catálogo com tipos), defaults só em campo não tocado,
+  atividades do tipo em `acabamentosRicos`, `tipoPlanoId` no POST/PUT. `SecaoPlanos` ganha a coluna "Tipo de plano".
+- `SugestaoItensDiversos` em `SecaoItensComplementares`: "Adicionar" e "Adicionar todos"; nunca adiciona sozinho; marca linha sem custo cadastrado.
+- Salvar em passes (item, seleções pendentes/remoções com o id devolvido, mescla das linhas, regravação para recalcular) e modal ao
+  cancelar o editor quando há escolhas de material gravadas e fora do preço.
+- `SecaoMateriaisAcabamento` mostra as linhas `SELECAO` somente leitura.
+
+**Decisões 1 a 7 (design, seção 10) — aprovadas**
+1. Campos livres (ARTE/PADRÃO) adiados para a Fase 3.
+2. Material em item novo: passes automáticos após o primeiro salvamento.
+3. Coluna `tipoParam` criada (importação em produção pendente, ver acima).
+4. Tipo de plano obrigatório em plano novo quando o item tem produto; planos antigos seguem sem tipo.
+5. Item puxado pode escolher Produto Gráfico (só organização, sem defaults nem mudança de custo).
+6. Cálculo ao vivo NÃO passa a considerar `materiaisAcabamento` em itens sem produto nesta fase.
+7. Cancelar o editor com escolhas de material já gravadas e fora do preço: perguntar se quer salvar.
+
+**Pendências e pontos a conferir (não bloqueiam)**
+- Ids de restrição do catálogo vs cadastro: confirmar que os ids usados nas restrições do catálogo são os mesmos do cadastro de acabamentos/suportes
+  (e, no plano, os ids do seletor de suportes são os da relação PLANO→SUPORTE) antes de restringir o seletor.
+- Falha de seleção no primeiro salvamento (item novo) fecha o editor: o aviso aparece, mas o usuário precisa reabrir o item para refazer a escolha.
+- Produtos com vários planos não fixos não mostram seletor de material (só há plano fixo quando o produto tem um único tipo de plano).
+- Limite de 100 acabamentos carregados em `StepAcabamentos`: confirmar se a empresa passa disso; atividade do catálogo fora dos 100 pode não aparecer.
+- `abrirEditorPagina` passa `produtoGraficoId`, `materiaisAcabamento` e `planos[].tipoPlanoId`, mas **não repassa ao reabrir** estes campos técnicos do item:
+  `modeloFacaId`, `tintaModo`, `tintaConsumoKg`, `siglaAcabado`, `tributacao`, `processoImpressao`, `coberturaTintaTexto`, `fabricante`,
+  `microondulado`, `fornecido`, `arte`, `observacao`, medidas técnicas, `montagemLinhas`/`montagemColunas`, formatos de suporte/corte,
+  `suporteProducaoId` e `aproveitamentoManual`. Conferir se algum é regravado como vazio ao salvar pelo editor.
+- Fórmulas dos TipoParam 2 e 3: informativas (custo 0, `A_VERIFICAR`). Mapa provisório por `tipoMaterial` precisa de conferência contra cálculos reais.
+- `reaproveitar` e `de-calculo` ainda não copiam `produtoGraficoId` e `tipoPlanoId`.
+- Cobertura do catálogo da Wega com os 249 itens não casados da importação (seção 18): produtos podem aparecer com catálogo incompleto.
+- Vínculo entre Produto Gráfico e Tipo de Embalagem segue inexistente (os dois seletores são independentes).
+
+**Adiado para a Fase 3:** campos livres (ARTE, PADRÃO) como sugestão de rótulos no item.
+
+**Ajustes, Quebras e Limites de Montagem continuam SEM influenciar o motor de cálculo nem o PCP** (só cadastro e visualização).
+Nenhum texto da tela deve sugerir o contrário.
