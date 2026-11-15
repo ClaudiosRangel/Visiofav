@@ -100,32 +100,32 @@ Tarefas marcadas com `*` são opcionais (testes de propriedade extras).
   - [x] 7.6 Testes do importador com arquivo de amostra
     - `--dry-run` não grava; segunda execução cria zero; relatório lista não casados; acentos preservados
     - _Requisitos: 14.2, 14.3, 14.6, 14.9_
-  - [~] 7.7 Rodar o importador no banco local (se disponível) e, em produção, **somente após dry-run revisado e autorização explícita do usuário**
+  - [x] 7.7 Rodar o importador no banco local (se disponível) e, em produção, **somente após dry-run revisado e autorização explícita do usuário**
     - Conexão de produção por variável de ambiente, nunca em arquivo versionado
     - _Requisitos: 14.10_
 
-- [~] 8. Checkpoint do back
+- [x] 8. Checkpoint do back
   - Rodar a suíte do módulo de orçamento gráfico e os novos testes; `get_diagnostics` nos arquivos tocados; confirmar migração 2x. Perguntar ao usuário antes de seguir
 
 - [ ] 9. Telas de cadastro (front)
-  - [~] 9.1 Criar hooks e tipos de acesso à API (padrão do projeto) e itens de menu em Orçamento Gráfico → Cadastros com a permissão do módulo
+  - [x] 9.1 Criar hooks e tipos de acesso à API (padrão do projeto) e itens de menu em Orçamento Gráfico → Cadastros com a permissão do módulo
     - _Requisitos: 15.7_
-  - [~] 9.2 Tela de Produtos (abas Dados, Tributação, Defaults por plano, Relações)
+  - [x] 9.2 Tela de Produtos (abas Dados, Tributação, Defaults por plano, Relações)
     - _Requisitos: 1.1, 1.2, 3.1, 15.1, 15.6_
-  - [~] 9.3 Tela de Tipos de Plano
+  - [x] 9.3 Tela de Tipos de Plano
     - _Requisitos: 2.1, 2.2, 2.3, 15.1_
-  - [~] 9.4 Tela de Relações com matriz de marcação (par, origem, destinos, salvar substituindo)
+  - [x] 9.4 Tela de Relações com matriz de marcação (par, origem, destinos, salvar substituindo)
     - _Requisitos: 4.4, 15.2_
-  - [~] 9.5 Tela de Itens Diversos com vínculo de atividades
+  - [x] 9.5 Tela de Itens Diversos com vínculo de atividades
     - _Requisitos: 9.1, 9.2, 15.1_
-  - [~] 9.6 Tela de Campos Livres e suas opções
+  - [x] 9.6 Tela de Campos Livres e suas opções
     - _Requisitos: 10.1, 10.2, 10.3, 15.1_
-  - [~] 9.7 Telas de Ajustes de Produtividade (com aba Restrições Automáticas), Quebras e Limites de Montagem
+  - [x] 9.7 Telas de Ajustes de Produtividade (com aba Restrições Automáticas), Quebras e Limites de Montagem
     - Aviso de que ainda não influenciam o cálculo nem o PCP
     - _Requisitos: 11.2, 11.3, 12.1, 12.2, 12.3, 15.3_
-  - [~] 9.8 Tela de Parâmetros do orçamento
+  - [x] 9.8 Tela de Parâmetros do orçamento
     - _Requisitos: 13.1, 13.2, 15.1_
-  - [~] 9.9 Abas Restrições e Materiais na tela de Acabamentos e campos novos na tela de Materiais de Acabamento
+  - [x] 9.9 Abas Restrições e Materiais na tela de Acabamentos e campos novos na tela de Materiais de Acabamento
     - Indicação "Acondicionamento" e aviso discreto de `A_VERIFICAR`
     - _Requisitos: 6.3, 6.4, 15.4_
   - [~] 9.10 Revisão transversal das telas
@@ -135,7 +135,7 @@ Tarefas marcadas com `*` são opcionais (testes de propriedade extras).
     - _Requisitos: 15.2_
 
 - [ ] 10. Documentação e fechamento
-  - [~] 10.1 Atualizar `docs/orcamento-planos-calcgraf-HANDOFF.md` com o estado da fase 1 e `.kiro/steering/migracao-calcgraf-carton-wega.md` com um resumo curto
+  - [x] 10.1 Atualizar `docs/orcamento-planos-calcgraf-HANDOFF.md` com o estado da fase 1 e `.kiro/steering/migracao-calcgraf-carton-wega.md` com um resumo curto
     - _Requisitos: 16.5_
   - [~] 10.2 Checkpoint final: testes verdes, `get_diagnostics` limpo nos dois repositórios, perguntar ao usuário sobre commit e sobre a execução do importador em produção
     - _Requisitos: 14.10, 16.5_

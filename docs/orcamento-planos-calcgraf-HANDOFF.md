@@ -1066,3 +1066,58 @@ proprietário (solicitação, pedido)**, definidos em `ParamCl`.
 3. Os **parâmetros gerais** (refile, contra-pinça, partida de tinta, juros, prazo médio) devem ser lidos de
    configuração da empresa, não fixos no código. Conferir o que o motor atual já usa (tinta: partida de 0,2 kg
    já bate).
+
+## 18. FASE 1 ENTREGUE (15/11/2026): cadastros e relações no ar
+
+Spec: `.kiro/specs/orcamento-grafico-cadastros-relacoes/`. Back `a28fa0b33`, front `41dd0c2`, ambos na `main`.
+
+**Back**
+- Schema: 12 tabelas novas (`produto_grafico`, `tipo_plano_grafico`, `default_produto_plano`,
+  `relacao_cadastro_grafico`, `item_diverso_grafico`, `campo_livre`, `campo_livre_opcao`,
+  `ajuste_produtividade`, `quebra_grafica`, `quebra_grafica_limite`, `limite_montagem`,
+  `selecao_material_acabamento`) + colunas aditivas (`codigo_origem` em 8 cadastros, campos novos
+  em atividade/restrição/material, `produto_grafico_id` no item, `tipo_plano_id` no plano).
+  Migração em `migrarOrcamentoGraficoCadastrosRelacoes()` (`migrate-prod.ts`, em `try/catch`).
+  Aplicada em produção no deploy (12/12 tabelas confirmadas).
+- Rotas em `/api/orcamento-grafico/cadastros/*` (`src/modules/orcamento-grafico/cadastros-graficos/`):
+  produtos, tipos-plano, defaults, relações (PUT substitui o conjunto; `/relacoes/verificar`),
+  itens-diversos, campos-livres, ajustes-produtividade (+ restrições automáticas), quebras,
+  limites-montagem, parâmetros `orc.*`, catálogo (`/catalogo/produto/:id`, `/catalogo/plano/:id`)
+  e seleção de material (`/selecao-material`).
+- Seleção de material: item puxado do acervo grava `aplicaNoPreco=false` (custo ancorado intacto);
+  item novo soma ao Material Direto. As linhas da seleção ficam no Json `materiaisAcabamento` com
+  `origem: 'SELECAO'`. O front precisa devolver a lista completa ao salvar o item.
+- Ajustes, Quebras e Limites de Montagem: SÓ cadastro/visualização. Nem o motor nem o PCP os leem.
+
+**Importação em produção (Carton Wega)**
+- `scripts/exportar-cadastros-orcamento.mjs` (somente leitura) → `cartoon/export/CadastrosOrcamento.json`.
+- `scripts/importar-cadastros-orcamento.ts --empresa <id> [--dry-run] [--fase <nome>]`
+  (idempotente por `codigoOrigem`; só preenche campo vazio; relatório em
+  `cartoon/export/relatorio-importacao-cadastros.json`).
+- Gravado: 11 produtos, 14 planos, 16 defaults, 1.575 relações (290 com ordem do roteiro),
+  22 itens diversos, 8 campos livres + 13 opções, 49 ajustes, 9 quebras + 7 limites, 1 limite de
+  montagem, 9 parâmetros; `codigo_origem` em 67 atividades, 36 materiais, 32 centros, 61 suportes.
+- **249 não casados (pendência):** 20 centros sem equivalente por nome (ex.: "Bobst S (Corte e Vi",
+  "CVMR (Corte e vinco", colocação de ilhós/alça/velcro, sacolas, verniz localizado), 17 suportes
+  (14 inexistentes, 3 duplicados no Vizor: WTL Bobina, Couchê, Billerud Board), 21 relações com
+  tinta/matriz (sem `codigoOrigem` no Vizor), campo livre "Pedido Cliente" (proprietário ACP).
+  Acertar nomes/duplicatas e rodar o importador de novo (não duplica).
+
+**Front** (`src/app/(interna)/orcamento-grafico/cadastros/`): Produtos (abas Dados, Tributação,
+Defaults por plano, Relações), Tipos de Plano, Relações (matriz), Itens Diversos, Campos Livres,
+Ajustes de Produtividade, Quebras, Limites de Montagem, Parâmetros do Orçamento; abas Restrições e
+Materiais em Acabamentos; campos novos em Materiais de Acabamento. Base comum em `_shared/`.
+
+**Pontos a verificar (não bloqueiam)**
+- Aviso "a verificar" em Materiais usa tipo FITA/OUTRO como critério (palpite; o material não tem TipoParam).
+- Tintas e matrizes nas Relações vêm de `/orcamento-grafico/precos-mp` (suposição).
+- Seletores com limite de 100–200 itens em Ajustes e na aba Relações do Produto.
+- Fórmulas dos TipoParam 2 e 3 e parâmetro 2 do TipoParam 3: informativos (custo 0, `A_VERIFICAR`).
+- Migração não testada 2x no banco local (Postgres local desligado); em produção rodou sem erro.
+
+**Fase 2 (não iniciada):** usar o catálogo no wizard do orçamento (filtrar planos/atividades por
+produto) e a influência de Ajustes/Quebras/Limites no cálculo e no PCP.
+
+**Armadilha do ambiente descoberta:** o PSReadLine do PowerShell quebra com comandos longos
+(`ArgumentOutOfRangeException ... SetCursorPosition`) e corta os comandos seguintes com `^C`.
+Foi isso que "cancelou" subagentes. Usar comandos curtos, arquivos `.cmd` e saída em arquivo.

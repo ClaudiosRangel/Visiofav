@@ -11,6 +11,16 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## 🟢 CADASTROS E RELAÇÕES DO ORÇAMENTO — FASE 1 NO AR (15/11/2026)
+
+Spec `orcamento-grafico-cadastros-relacoes` (back `a28fa0b33`, front `41dd0c2`). Produtos, Tipos de
+Plano, Relações (tabela genérica `relacao_cadastro_grafico`, equivalente à `RelTabelas`), Itens
+Diversos, Campos Livres, Ajustes de Produtividade, Quebras, Limites de Montagem, Parâmetros `orc.*`,
+catálogo e seleção de material. Importação da Wega GRAVADA em produção (1.796 criados, 496
+preenchidos); 249 não casados pendentes (centros/suportes com nome diferente, tintas/matrizes).
+Ajustes/Quebras/Limites ainda NÃO influenciam motor nem PCP. Item puxado mantém custo ancorado.
+Detalhe completo: `docs/orcamento-planos-calcgraf-HANDOFF.md` §18.
+
 ## 🟢🟢 DIFERENÇA ZERO AO PUXAR CÁLCULO — RESOLVIDO DEFINITIVO (23/10/2026)
 
 **O orçamento de repetição ("Puxar Cálculo") agora bate 100% com o Calcgraf, para
