@@ -1185,3 +1185,19 @@ Implementação feita; **commit/deploy do front e conferência manual pendentes*
 
 **Ajustes, Quebras e Limites de Montagem continuam SEM influenciar o motor de cálculo nem o PCP** (só cadastro e visualização).
 Nenhum texto da tela deve sugerir o contrário.
+
+## 20. Backlog da Fase 3 (definido em 15/11/2026)
+
+Itens que ficaram fora da Fase 2 e entram na Fase 3 (ainda sem spec):
+
+1. **Vínculo Produto Gráfico × Tipo de Embalagem.** Hoje os dois seletores são independentes: ao escolher o Produto Gráfico,
+   o Tipo de Embalagem, a gramatura e o preço/kg continuam obrigatórios e em branco (o salvamento responde 400 com
+   `tipoEmbalagemId`, `gramatura` e `precoKg`). Objetivo: o produto sugerir o Tipo de Embalagem (e, quando houver, suporte e
+   gramatura padrão do plano). Precisa de decisão sobre onde guardar o vínculo (campo no produto ou relação genérica).
+2. **Campos livres (ARTE, PADRÃO)** como sugestão de rótulos e opções no item (tarefa 4.14 da Fase 2, adiada).
+3. **Acondicionamento:** conferir por que Caixa Padrão e Embalar aparecem no grupo "Atividades" e não em "Acondicionamento"
+   no produto Cartucho Composto (provável relação de acondicionamento não importada).
+4. **`reaproveitar` e `de-calculo`** copiarem `produtoGraficoId` e `tipoPlanoId`.
+5. **Seletor de material em produtos sem plano fixo** (vários tipos de plano): mostrar também no modal de plano.
+6. Pendências da Fase 2 que seguem abertas: `tipoParam` (importação em produção), campos técnicos não repassados ao reabrir o item,
+   falha de seleção no primeiro salvamento fecha o editor, limite de 100 acabamentos.
