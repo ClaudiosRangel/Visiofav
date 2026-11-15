@@ -107,6 +107,18 @@ equivalente são listados no relatório, nunca inventados. Execução em produç
    - nos itens novos, o custo do plano é a soma das suas atividades e materiais, e o total do item é a soma dos planos.
    - dividir o custo dos itens puxados por plano fica para fase posterior, usando as linhas por plano da base de cálculo.
 
+## 6.1 Respostas do usuário (14/11/2026) que valem para a spec da fase 1
+1. Tabela genérica de relações: **aprovada**.
+2. Material influencia o preço: **implementar já na fase 1/2**, tudo alinhado (cadastro, relação, parâmetro e cálculo
+   coerentes). Itens puxados do acervo continuam ancorados.
+3. Campos livres (ARTE, PADRÃO, Motivos de Recusa): **implementar já** (cadastro configurável por proprietário),
+   mesmo que não seja prioridade.
+4. Ajuste de Produtividade, Restrições Automáticas, Quebras e Limites de Montagem: **só cadastro e visualização
+   agora**. A influência no PCP e no motor fica para depois.
+5. `ParamAcab` tipos 2 e 3: deixar registrado como **ponto a verificar o funcionamento exato**.
+6. **Telas de cadastro e de visualização incluídas no escopo** (não só backend).
+7. Autorizado commitar e publicar a documentação e a spec. Importação em produção continua exigindo dry-run antes.
+
 ## 7. Pendências (resolvidas e abertas; detalhe na seção 16 do handoff)
 - `ParamAcab1/2` e `TipoParamAcab`: **resolvido em grande parte.** O tipo define o significado (0 sem parâmetro,
   1 % de cobertura frente/verso, 2 dimensões em mm, 3 medida linear em mm, 4 quantidade). Guardar os dois
