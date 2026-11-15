@@ -3088,6 +3088,10 @@ model CentroProducao {
   excecoesTurno   ExcecaoTurno[]
   paradasCentro   ParadaCentro[]
 
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui: o
+  /// índice único parcial vai no migrate-prod. Spec orcamento-grafico-cadastros-relacoes (§4.2).
+  codigoOrigem Int? @map("codigo_origem")
+
   @@unique([empresaId, codigo])
   @@map("centro_producao")
 }
@@ -3227,6 +3231,18 @@ model AcabamentoGrafico {
   // cálculo/preço. Ver spec orcamento-grafico-restricoes-materiais.
   materiais Json? @map("materiais")
 
+  // Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 6.1/16.4) — aditivo.
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
+  codigoOrigem    Int?    @map("codigo_origem")
+  /// Atividade de acondicionamento (Caixa Padrão / Embalar).
+  acondicionamento Boolean @default(false)
+  /// Características livres da atividade (Json).
+  caracteristicas Json?
+  /// Texto exibido na proposta comercial.
+  textoProposta   String? @map("texto_proposta") @db.Text
+  /// Exibe o nome do plano junto da atividade.
+  exibirNomePlano Boolean @default(false) @map("exibir_nome_plano")
+
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
@@ -3251,6 +3267,14 @@ model RestricaoAcabamento {
   tempoOperacaoMin    Decimal @map("tempo_operacao_min") @db.Decimal(10, 2)
   criadoEm            DateTime @default(now()) @map("criado_em")
 
+  // Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 6.2/16.4) — aditivo.
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
+  codigoOrigem     Int?    @map("codigo_origem")
+  /// Exibe a restrição na proposta comercial.
+  exibirNaProposta Boolean @default(false) @map("exibir_na_proposta")
+  /// Centro de produção da restrição (só id string, sem @relation).
+  centroProducaoId String? @map("centro_producao_id")
+
   acabamento AcabamentoGrafico @relation(fields: [acabamentoGraficoId], references: [id], onDelete: Cascade)
 
   @@index([acabamentoGraficoId])
@@ -3269,6 +3293,8 @@ model LinhaProduto {
   codigo       String   @db.VarChar(60)
   nome         String   @db.VarChar(120)
   ativo        Boolean  @default(true)
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
+  codigoOrigem Int?     @map("codigo_origem")
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
@@ -3285,6 +3311,8 @@ model CoberturaTinta {
   codigo       String   @db.VarChar(60)
   nome         String   @db.VarChar(120)
   ativo        Boolean  @default(true)
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
+  codigoOrigem Int?     @map("codigo_origem")
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
@@ -3301,6 +3329,8 @@ model ProcessoImpressao {
   codigo       String   @db.VarChar(60)
   nome         String   @db.VarChar(120)
   ativo        Boolean  @default(true)
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
+  codigoOrigem Int?     @map("codigo_origem")
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
@@ -3320,6 +3350,20 @@ model MaterialAcabamento {
   nome            String   @db.VarChar(200)
   valorReferencia Decimal  @default(0) @map("valor_referencia") @db.Decimal(12, 4)
   ativo           Boolean  @default(true)
+
+  // Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 6.3/16.4) — aditivo.
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
+  codigoOrigem      Int?     @map("codigo_origem")
+  /// ACONDICIONAMENTO | COLA | FITA | PROPORCIONAL_TIRAGEM | REVESTIMENTO_KG | OUTRO
+  tipoMaterial      String?  @map("tipo_material") @db.VarChar(30)
+  /// KG | M2 | UN | M
+  unidadeCusto      String?  @map("unidade_custo") @db.VarChar(10)
+  usoObrigatorio    Boolean  @default(false) @map("uso_obrigatorio")
+  medidaLinear      Boolean  @default(false) @map("medida_linear")
+  conteudoRoloMetros Decimal? @map("conteudo_rolo_metros") @db.Decimal(12, 2)
+  consumoMinimo     Decimal? @map("consumo_minimo") @db.Decimal(14, 4)
+  textoProposta     String?  @map("texto_proposta") @db.Text
+
   criadoEm        DateTime @default(now()) @map("criado_em")
   atualizadoEm    DateTime @updatedAt @map("atualizado_em")
 
@@ -4275,6 +4319,9 @@ model SuporteGrafico {
   tipoSuporte  String   @db.VarChar(30) // CARTAO, KRAFT, OFFSET, COUCHE, MICRO, JORNAL...
   coefTinta    Decimal  @default(1.5) @map("coef_tinta") @db.Decimal(6, 3) // fator Stock SPANKS
   gramaturas   String?  @db.Text // lista livre de gramaturas disponíveis (ex.: "191,230,280")
+  /// Código no sistema legado (só para casar importação). Sem @@unique aqui: o
+  /// índice único parcial vai no migrate-prod. Spec orcamento-grafico-cadastros-relacoes (§4.2).
+  codigoOrigem Int?     @map("codigo_origem")
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
@@ -4905,6 +4952,10 @@ model ItemOrcamentoGrafico {
   encaixeArquivoNome String?   @map("encaixe_arquivo_nome") @db.VarChar(200)
   encaixeArquivoEm   DateTime? @map("encaixe_arquivo_em")
 
+  /// Produto do cadastro (ProdutoGrafico), só id string, sem @relation e sem
+  /// backfill. Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 16.2).
+  produtoGraficoId String? @map("produto_grafico_id")
+
   orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
   planos     PlanoCalculoGrafico[]
@@ -5128,6 +5179,10 @@ model PlanoCalculoGrafico {
   custoSuporte     Decimal? @map("custo_suporte") @db.Decimal(14, 2)
   custoImpressao   Decimal? @map("custo_impressao") @db.Decimal(14, 2)
   custoAcabamento  Decimal? @map("custo_acabamento") @db.Decimal(14, 2)
+
+  /// Tipo de plano do cadastro (TipoPlanoGrafico), só id string, sem @relation e
+  /// sem backfill. Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 16.2).
+  tipoPlanoId String? @map("tipo_plano_id")
 
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
@@ -7455,4 +7510,385 @@ model ResultadoCentro {
   @@index([empresaId])
   @@index([mapaCustoId])
   @@map("resultado_centro")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ORÇAMENTO GRÁFICO — CADASTROS E RELAÇÕES (Fase 1)
+// Spec: .kiro/specs/orcamento-grafico-cadastros-relacoes (design §4).
+// Todos multi-tenant (filtrar SEMPRE por empresaId). Enums gravados como
+// VARCHAR (sem CREATE TYPE). `codigoOrigem` = código do registro no sistema
+// legado, usado só para casar a importação; @@unique([empresaId, codigoOrigem])
+// admite várias linhas com codigoOrigem NULL (semântica padrão do Postgres),
+// logo equivale ao índice parcial `WHERE codigo_origem IS NOT NULL`.
+// Referências a modelos já existentes (LinhaProduto, CentroProducao, etc.) são
+// guardadas só como id string, sem @relation, para não alterar tabelas atuais.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Produto Gráfico — tipo de produto de uma linha (Cartuchos, Caixa, Envelope,
+/// Display, Sacola…). Define os tipos de plano e as atividades de produto
+/// permitidos (via RelacaoCadastroGrafico). Spec orcamento-grafico-cadastros-relacoes
+/// (Req 1.1, 1.2, 1.4).
+model ProdutoGrafico {
+  id             String  @id @default(uuid())
+  empresaId      String  @map("empresa_id")
+  codigo         String  @db.VarChar(60)
+  nome           String  @db.VarChar(200)
+  /// Id de LinhaProduto (sem @relation — tabela existente).
+  linhaProdutoId String? @map("linha_produto_id")
+  /// Código do registro no sistema legado (só para casar importação).
+  codigoOrigem   Int?    @map("codigo_origem")
+  /// Ativo/inativo (inativar remove das listas novas, mantém nos itens já criados).
+  status         Boolean @default(true)
+
+  tributacao2026      String? @map("tributacao_2026") @db.VarChar(60)
+  tributacao2027      String? @map("tributacao_2027") @db.VarChar(60)
+  classificacaoFiscal String? @map("classificacao_fiscal") @db.VarChar(60)
+  fechamentoId        String? @map("fechamento_id")
+  /// UNITARIO | MILHEIRO …
+  baseUnidadePreco    String  @default("UNITARIO") @map("base_unidade_preco") @db.VarChar(20)
+  unidadeId           String? @map("unidade_id")
+  prazoProducaoDias   Int     @default(0) @map("prazo_producao_dias")
+
+  faturamentoMinimo      Boolean  @default(false) @map("faturamento_minimo")
+  valorFaturamentoMinimo Decimal? @map("valor_faturamento_minimo") @db.Decimal(14, 2)
+  tipoCartucho           String?  @map("tipo_cartucho") @db.VarChar(60)
+  /// TRES_DIMENSOES | DUAS_DIMENSOES | ABERTO_FECHADO | SANFONA_ABAS | PAGINA
+  modoFormato            String   @default("TRES_DIMENSOES") @map("modo_formato") @db.VarChar(20)
+  formatoPadraoLargura   Decimal? @map("formato_padrao_largura") @db.Decimal(10, 2)
+  formatoPadraoAltura    Decimal? @map("formato_padrao_altura") @db.Decimal(10, 2)
+
+  exibeRestricoes                Boolean @default(true) @map("exibe_restricoes")
+  exibeInformacoesComplementares Boolean @default(true) @map("exibe_informacoes_complementares")
+  semImpressao                   Boolean @default(false) @map("sem_impressao")
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  defaults DefaultProdutoPlano[]
+
+  @@unique([empresaId, codigo])
+  @@unique([empresaId, codigoOrigem])
+  @@index([empresaId])
+  @@map("produto_grafico")
+}
+
+/// Tipo de Plano Gráfico — modelo de plano (Cartão, Microondulado, Berço,
+/// Invólucros, Envelope, Base, Impressos e os planos fixos das linhas) com os
+/// parâmetros que o plano herda ao nascer. Spec orcamento-grafico-cadastros-relacoes
+/// (Req 2.1, 2.2, 2.4).
+model TipoPlanoGrafico {
+  id                       String   @id @default(uuid())
+  empresaId                String   @map("empresa_id")
+  codigo                   String   @db.VarChar(60)
+  nome                     String   @db.VarChar(200)
+  /// Id de LinhaProduto (sem @relation — tabela existente).
+  linhaProdutoId           String?  @map("linha_produto_id")
+  codigoOrigem             Int?     @map("codigo_origem")
+  /// Plano fixo (Cartucho, Lâmina Simples, Sacola): não pode ser excluído.
+  fixo                     Boolean  @default(false)
+  status                   Boolean  @default(true)
+  miolo                    Boolean  @default(false)
+  /// SIM | NAO | OPCIONAL
+  calculoAutomaticoFormato String   @default("NAO") @map("calculo_automatico_formato") @db.VarChar(10)
+  /// LF | LFX2 | LOMBADA
+  primeiraMedida           String   @default("LF") @map("primeira_medida") @db.VarChar(10)
+  somarOrelhas             Boolean  @default(false) @map("somar_orelhas")
+  somarLombada             Boolean  @default(false) @map("somar_lombada")
+  /// UMA | DUAS | LIVRE
+  ocorrencias              String   @default("UMA") @db.VarChar(10)
+  quebraPadrao             Decimal? @map("quebra_padrao") @db.Decimal(10, 2)
+  corteDuploMin            Decimal? @map("corte_duplo_min") @db.Decimal(10, 2)
+  /// Id de SuporteGrafico (sem @relation — tabela existente).
+  suportePadraoId          String?  @map("suporte_padrao_id")
+  gramaturaPadrao          Decimal? @map("gramatura_padrao") @db.Decimal(10, 2)
+  montagemId               String?  @map("montagem_id")
+  usarPinca                Boolean  @default(false) @map("usar_pinca")
+  fibraDefault             String?  @map("fibra_default") @db.VarChar(20)
+  frenteIgualVerso         Boolean  @default(false) @map("frente_igual_verso")
+  caderno                  Boolean  @default(false)
+  margem1Mm                Decimal  @default(0) @map("margem1_mm") @db.Decimal(10, 2)
+  margem2Mm                Decimal  @default(0) @map("margem2_mm") @db.Decimal(10, 2)
+  /// Texto do modo de formato do plano.
+  formato                  String?  @db.VarChar(60)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  defaults DefaultProdutoPlano[]
+
+  @@unique([empresaId, codigo])
+  @@unique([empresaId, codigoOrigem])
+  @@index([empresaId])
+  @@map("tipo_plano_grafico")
+}
+
+/// Defaults do produto por tipo de plano (valores iniciais do orçamento). Um
+/// único registro por par produto × tipo de plano. Quando o produto tem plano
+/// fixo, tipoPlanoId aponta para o plano fixo da linha. Spec
+/// orcamento-grafico-cadastros-relacoes (Req 3.1, 3.2, 3.4).
+model DefaultProdutoPlano {
+  id          String @id @default(uuid())
+  empresaId   String @map("empresa_id")
+  produtoId   String @map("produto_id")
+  tipoPlanoId String @map("tipo_plano_id")
+
+  semImpressao          Boolean @default(false) @map("sem_impressao")
+  /// Ids de ProcessoImpressao / CoberturaTinta (sem @relation — tabelas existentes).
+  processoImpressaoId   String? @map("processo_impressao_id")
+  coberturaTintaId      String? @map("cobertura_tinta_id")
+  coresFrente           Int     @default(0) @map("cores_frente")
+  coresVerso            Int     @default(0) @map("cores_verso")
+  areaTintaPerc         Decimal @default(0) @map("area_tinta_perc") @db.Decimal(6, 2)
+  fabricanteSuporte     String? @map("fabricante_suporte") @db.VarChar(120)
+  /// Ids de AcabamentoGrafico pré-marcados.
+  atividadesPreMarcadas Json    @default("[]") @map("atividades_pre_marcadas")
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  produto   ProdutoGrafico   @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  tipoPlano TipoPlanoGrafico @relation(fields: [tipoPlanoId], references: [id], onDelete: Cascade)
+
+  @@unique([produtoId, tipoPlanoId])
+  @@index([empresaId])
+  @@map("default_produto_plano")
+}
+
+/// Tabela genérica de relações entre itens de cadastro (ex.: Plano → Atividade).
+/// NÃO tem FK: a integridade (mesma empresa, id existente, par permitido) vem
+/// do serviço (relacoes-permitidas.ts). PUT substitui o conjunto de uma origem
+/// numa transação. Spec orcamento-grafico-cadastros-relacoes (Req 4.1–4.7).
+model RelacaoCadastroGrafico {
+  id          String  @id @default(uuid())
+  empresaId   String  @map("empresa_id")
+  /// PRODUTO | PLANO | ATIVIDADE | MATRIZ | SUPORTE | ITEM_DIVERSO …
+  tipoOrigem  String  @map("tipo_origem") @db.VarChar(30)
+  idOrigem    String  @map("id_origem")
+  tipoDestino String  @map("tipo_destino") @db.VarChar(30)
+  idDestino   String  @map("id_destino")
+  ordem       Int?
+  /// Marcação inicial (pré-marcado na tela do orçamento).
+  padrao      Boolean @default(false)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, tipoOrigem, idOrigem, tipoDestino, idDestino])
+  @@index([empresaId, tipoOrigem, idOrigem])
+  @@index([empresaId, tipoDestino, idDestino])
+  @@index([empresaId])
+  @@map("relacao_cadastro_grafico")
+}
+
+/// Item Diverso — serviços externos e itens que entram sozinhos no orçamento
+/// (exceto origem MAT.ACABAMENTO, que vive em MaterialAcabamento). Spec
+/// orcamento-grafico-cadastros-relacoes (Req 9.1, 9.4).
+model ItemDiversoGrafico {
+  id                     String   @id @default(uuid())
+  empresaId              String   @map("empresa_id")
+  codigoOrigem           Int?     @map("codigo_origem")
+  nome                   String   @db.VarChar(200)
+  /// CENTRO_DE_CUSTO | SERVICO_EXTERNO | PRE_IMPRESSAO | TINTA | MATRIZ_IMPRESSAO
+  origem                 String   @db.VarChar(30)
+  automatico             Boolean  @default(false)
+  /// TIRAGEM …
+  tipoCalculo            String?  @map("tipo_calculo") @db.VarChar(30)
+  /// ACABADO …
+  aplicadoSobre          String?  @map("aplicado_sobre") @db.VarChar(30)
+  quantidadeAceite       Decimal? @map("quantidade_aceite") @db.Decimal(14, 4)
+  quantidadePorUnidade   Decimal? @map("quantidade_por_unidade") @db.Decimal(14, 4)
+  quantidadeMinima       Decimal? @map("quantidade_minima") @db.Decimal(14, 4)
+  porCaderno             Boolean  @default(false) @map("por_caderno")
+  custoInformado         Decimal? @map("custo_informado") @db.Decimal(14, 4)
+  calculoPorQtdCores     Boolean  @default(false) @map("calculo_por_qtd_cores")
+  acompanhaMontImpressao Boolean  @default(false) @map("acompanha_mont_impressao")
+  itemRevenda            Boolean  @default(false) @map("item_revenda")
+  quebraPerc             Decimal? @map("quebra_perc") @db.Decimal(8, 4)
+  textoProposta          String?  @map("texto_proposta") @db.Text
+  sigla                  String?  @db.VarChar(30)
+  pendenciaAutomaticaPcp Boolean  @default(false) @map("pendencia_automatica_pcp")
+  status                 Boolean  @default(true)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@unique([empresaId, codigoOrigem])
+  @@index([empresaId])
+  @@map("item_diverso_grafico")
+}
+
+/// Campo Livre configurável por proprietário (Solicitação, Pedido, Recusa,
+/// Insumo). Só definições; sem tabela de valores nesta fase; não altera preço.
+/// Spec orcamento-grafico-cadastros-relacoes (Req 10.1, 10.3).
+model CampoLivre {
+  id                     String  @id @default(uuid())
+  empresaId              String  @map("empresa_id")
+  /// SOLICITACAO | PEDIDO | RECUSA | INSUMO
+  proprietario           String  @db.VarChar(20)
+  codigoOrigem           Int?    @map("codigo_origem")
+  nome                   String  @db.VarChar(120)
+  /// TEXTO | LISTA
+  tipo                   String  @default("TEXTO") @db.VarChar(10)
+  obrigatorio            Boolean @default(false)
+  ordem                  Int     @default(0)
+  status                 Boolean @default(true)
+  /// Campo do pedido para o qual o valor da solicitação é copiado.
+  copiaParaPedidoCampoId String? @map("copia_para_pedido_campo_id")
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  opcoes CampoLivreOpcao[]
+
+  @@unique([empresaId, codigoOrigem])
+  @@index([empresaId])
+  @@index([empresaId, proprietario])
+  @@map("campo_livre")
+}
+
+/// Opção de um Campo Livre do tipo LISTA (com opção padrão e ordem). Filho de
+/// CampoLivre (cascade). Spec orcamento-grafico-cadastros-relacoes (Req 10.2).
+model CampoLivreOpcao {
+  id           String  @id @default(uuid())
+  empresaId    String  @map("empresa_id")
+  campoLivreId String  @map("campo_livre_id")
+  valor        String  @db.VarChar(200)
+  padrao       Boolean @default(false)
+  ordem        Int     @default(0)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  campoLivre CampoLivre @relation(fields: [campoLivreId], references: [id], onDelete: Cascade)
+
+  @@index([campoLivreId])
+  @@index([empresaId])
+  @@map("campo_livre_opcao")
+}
+
+/// Ajuste de Produtividade — SOMENTE cadastro e visualização nesta fase (não
+/// é aplicado no motor nem no PCP). Os ajustes com dadoAjustar = INCONDICIONAL
+/// formam a visão "Restrições Automáticas". Spec orcamento-grafico-cadastros-relacoes
+/// (Req 11.1–11.4).
+model AjusteProdutividade {
+  id                     String  @id @default(uuid())
+  empresaId              String  @map("empresa_id")
+  /// Id de AcabamentoGrafico (sem @relation — tabela existente).
+  acabamentoId           String  @map("acabamento_id")
+  /// Id de CentroProducao (sem @relation — tabela existente).
+  centroProducaoId       String? @map("centro_producao_id")
+  /// ACERTO | PRODUCAO_HORA | CONSUMO_MATERIAL | INCONDICIONAL
+  dadoAjustar            String  @map("dado_ajustar") @db.VarChar(20)
+  /// RESTRICAO_MANUAL | ATIVIDADE | FORMATO_PROCESSO
+  funcao                 String  @db.VarChar(30)
+  operador               String? @db.VarChar(20)
+  valor                  String? @db.VarChar(120)
+  fator                  Decimal @default(0) @db.Decimal(14, 4)
+  fatorPositivo          Boolean @default(true) @map("fator_positivo")
+  impedeMontagemCadernos Boolean @default(false) @map("impede_montagem_cadernos")
+  /// Id de RestricaoAcabamento (sem @relation — tabela existente).
+  restricaoId            String? @map("restricao_id")
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId])
+  @@index([empresaId, acabamentoId])
+  @@map("ajuste_produtividade")
+}
+
+/// Quebra Gráfica — SOMENTE cadastro e visualização (não altera o parâmetro de
+/// perda nem o motor). Spec orcamento-grafico-cadastros-relacoes (Req 12.1).
+model QuebraGrafica {
+  id                  String   @id @default(uuid())
+  empresaId           String   @map("empresa_id")
+  codigoOrigem        Int?     @map("codigo_origem")
+  nome                String   @db.VarChar(200)
+  /// IMPRESSAO | ACABAMENTO
+  tipoAtividade       String   @default("IMPRESSAO") @map("tipo_atividade") @db.VarChar(20)
+  pedacosPorAcerto    Decimal? @map("pedacos_por_acerto") @db.Decimal(14, 4)
+  pedacosPorPlano     Decimal? @map("pedacos_por_plano") @db.Decimal(14, 4)
+  pedacosPorTipoPlano Decimal? @map("pedacos_por_tipo_plano") @db.Decimal(14, 4)
+  pedacosOcorrencias  Decimal? @map("pedacos_ocorrencias") @db.Decimal(14, 4)
+  pedacosMinimoPerc   Decimal? @map("pedacos_minimo_perc") @db.Decimal(8, 4)
+  interpolar          Boolean  @default(false)
+  status              Boolean  @default(true)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  limites QuebraGraficaLimite[]
+
+  @@unique([empresaId, codigoOrigem])
+  @@index([empresaId])
+  @@map("quebra_grafica")
+}
+
+/// Linha da tabela de limites de uma Quebra (tiragem até → quebra %). Filho de
+/// QuebraGrafica (cascade). Spec orcamento-grafico-cadastros-relacoes (Req 12.2).
+model QuebraGraficaLimite {
+  id         String  @id @default(uuid())
+  empresaId  String  @map("empresa_id")
+  quebraId   String  @map("quebra_id")
+  tiragemAte Int     @map("tiragem_ate")
+  quebraPerc Decimal @map("quebra_perc") @db.Decimal(8, 4)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  quebra QuebraGrafica @relation(fields: [quebraId], references: [id], onDelete: Cascade)
+
+  @@index([quebraId])
+  @@index([empresaId])
+  @@map("quebra_grafica_limite")
+}
+
+/// Limite de Montagem por formato final (mínimo e máximo) — SOMENTE cadastro e
+/// visualização. Spec orcamento-grafico-cadastros-relacoes (Req 12.3).
+model LimiteMontagem {
+  id                  String  @id @default(uuid())
+  empresaId           String  @map("empresa_id")
+  formatoFinalLargura Decimal @map("formato_final_largura") @db.Decimal(10, 2)
+  formatoFinalAltura  Decimal @map("formato_final_altura") @db.Decimal(10, 2)
+  minimo              Int     @default(0)
+  maximo              Int     @default(0)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId])
+  @@map("limite_montagem")
+}
+
+/// Seleção de material por atividade (fonte estruturada do preço do material).
+/// Ao salvar, o serviço reflete a seleção no Json materiaisAcabamento do item.
+/// SEM @relation (apenas ids string) para não alterar modelos existentes;
+/// integridade validada no serviço. valorUnitario é gravado no momento da
+/// seleção. Spec orcamento-grafico-cadastros-relacoes (Req 7.1, 7.10).
+model SelecaoMaterialAcabamento {
+  id                String   @id @default(uuid())
+  empresaId         String   @map("empresa_id")
+  itemId            String   @map("item_id")
+  planoId           String?  @map("plano_id")
+  acabamentoId      String   @map("acabamento_id")
+  materialId        String   @map("material_id")
+  restricaoId       String?  @map("restricao_id")
+  /// 0 sem parâmetro | 1 % cobertura | 2 dimensões mm | 3 medida linear mm | 4 quantidade
+  tipoParam         Int      @default(0) @map("tipo_param")
+  param1            Decimal? @db.Decimal(14, 4)
+  param2            Decimal? @db.Decimal(14, 4)
+  consumo           Decimal? @db.Decimal(14, 4)
+  unidadeConsumo    String?  @map("unidade_consumo") @db.VarChar(10)
+  valorUnitario     Decimal? @map("valor_unitario") @db.Decimal(14, 4)
+  custo             Decimal? @db.Decimal(14, 4)
+  aplicaNoPreco     Boolean  @default(false) @map("aplica_no_preco")
+  /// VALIDADO | A_VERIFICAR
+  situacaoParametro String   @default("VALIDADO") @map("situacao_parametro") @db.VarChar(20)
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@index([empresaId, itemId])
+  @@index([empresaId])
+  @@map("selecao_material_acabamento")
 }

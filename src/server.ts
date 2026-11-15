@@ -195,6 +195,7 @@ import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { excecaoTurnoRoutes } from './modules/pcp/excecao-turno.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { calculoGraficoRoutes } from './modules/orcamento-grafico/calculo-grafico/calculo-grafico.routes'
+import { cadastrosGraficosRoutes } from './modules/orcamento-grafico/cadastros-graficos'
 import { linhaProdutoRoutes } from './modules/orcamento-grafico/cadastros/linha-produto.routes'
 import { materialMicroonduladoRoutes } from './modules/orcamento-grafico/cadastros/material-microondulado.routes'
 import { coberturaTintaRoutes } from './modules/orcamento-grafico/cadastros/cobertura-tinta.routes'
@@ -546,6 +547,8 @@ async function bootstrap() {
   await app.register(coberturaTintaRoutes, { prefix: '/api/orcamento-grafico/coberturas-tinta' })
   await app.register(processoImpressaoRoutes, { prefix: '/api/orcamento-grafico/processos-impressao' })
   await app.register(materialAcabamentoRoutes, { prefix: '/api/orcamento-grafico/materiais-acabamento' })
+  // Cadastros e relações do orçamento gráfico (produtos, planos, relações, catálogo…)
+  await app.register(cadastrosGraficosRoutes, { prefix: '/api/orcamento-grafico/cadastros' })
   await app.register(templatePropostaRoutes, { prefix: '/api/orcamento-grafico/templates-proposta' })
   await app.register(templateVisualRoutes, { prefix: '/api/orcamento-grafico/templates-visuais' })
   await app.register(permissoesComercialRoutes, { prefix: '/api/orcamento-grafico/comercial' })

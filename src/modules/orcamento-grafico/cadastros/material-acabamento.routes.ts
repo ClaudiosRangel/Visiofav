@@ -15,7 +15,24 @@ const listaQuerySchema = z.object({
   busca: z.string().trim().optional(),
 })
 
+// Spec orcamento-grafico-cadastros-relacoes (Req 6.3) — campos novos, todos opcionais e sem default
+// (ausente = não altera o valor gravado; comportamento anterior preservado).
+const camposNovos = {
+  codigoOrigem: z.number().int().optional().nullable(),
+  tipoMaterial: z
+    .enum(['ACONDICIONAMENTO', 'COLA', 'FITA', 'PROPORCIONAL_TIRAGEM', 'REVESTIMENTO_KG', 'OUTRO'])
+    .optional()
+    .nullable(),
+  unidadeCusto: z.enum(['KG', 'M2', 'UN', 'M']).optional().nullable(),
+  usoObrigatorio: z.boolean().optional(),
+  medidaLinear: z.boolean().optional(),
+  conteudoRoloMetros: z.number().min(0).optional().nullable(),
+  consumoMinimo: z.number().min(0).optional().nullable(),
+  textoProposta: z.string().max(5000).optional().nullable(),
+}
+
 const criarSchema = z.object({
+  ...camposNovos,
   codigo: z.string().trim().min(1, 'Código é obrigatório').max(60, 'Código deve ter no máximo 60 caracteres'),
   nome: z.string().trim().min(1, 'Nome é obrigatório').max(200, 'Nome deve ter no máximo 200 caracteres'),
   valorReferencia: z.number().min(0, 'Valor de referência não pode ser negativo').optional(),
@@ -23,6 +40,7 @@ const criarSchema = z.object({
 })
 
 const atualizarSchema = z.object({
+  ...camposNovos,
   codigo: z.string().trim().min(1, 'Código é obrigatório').max(60, 'Código deve ter no máximo 60 caracteres').optional(),
   nome: z.string().trim().min(1, 'Nome é obrigatório').max(200, 'Nome deve ter no máximo 200 caracteres').optional(),
   valorReferencia: z.number().min(0, 'Valor de referência não pode ser negativo').optional(),
@@ -63,7 +81,7 @@ export async function materialAcabamentoRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.errors[0]?.message ?? 'Dados inválidos' })
     }
-    const { codigo, nome, valorReferencia, ativo } = parsed.data
+    const { codigo, nome, valorReferencia, ativo, ...novos } = parsed.data
 
     const existente = await prisma.materialAcabamento.findFirst({
       where: { empresaId: user.empresaId, codigo },
@@ -80,6 +98,7 @@ export async function materialAcabamentoRoutes(app: FastifyInstance) {
         nome,
         valorReferencia: valorReferencia ?? 0,
         ativo: ativo ?? true,
+        ...novos,
       },
     })
     return reply.status(201).send(criado)
@@ -119,6 +138,14 @@ export async function materialAcabamentoRoutes(app: FastifyInstance) {
         ...(dados.nome !== undefined ? { nome: dados.nome } : {}),
         ...(dados.valorReferencia !== undefined ? { valorReferencia: dados.valorReferencia } : {}),
         ...(dados.ativo !== undefined ? { ativo: dados.ativo } : {}),
+        ...(dados.codigoOrigem !== undefined ? { codigoOrigem: dados.codigoOrigem } : {}),
+        ...(dados.tipoMaterial !== undefined ? { tipoMaterial: dados.tipoMaterial } : {}),
+        ...(dados.unidadeCusto !== undefined ? { unidadeCusto: dados.unidadeCusto } : {}),
+        ...(dados.usoObrigatorio !== undefined ? { usoObrigatorio: dados.usoObrigatorio } : {}),
+        ...(dados.medidaLinear !== undefined ? { medidaLinear: dados.medidaLinear } : {}),
+        ...(dados.conteudoRoloMetros !== undefined ? { conteudoRoloMetros: dados.conteudoRoloMetros } : {}),
+        ...(dados.consumoMinimo !== undefined ? { consumoMinimo: dados.consumoMinimo } : {}),
+        ...(dados.textoProposta !== undefined ? { textoProposta: dados.textoProposta } : {}),
       },
     })
   })

@@ -6043,7 +6043,336 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "produto_empresa_situacao_cadastro_idx" ON "produto"("empresa_id","situacao_cadastro")`)
   console.log('✅ produto: situacao_cadastro + rastreio de provisório')
 
+  try {
+    await migrarOrcamentoGraficoCadastrosRelacoes()
+    console.log('✅ Orçamento Gráfico — cadastros e relações: tabelas/colunas garantidas')
+  } catch (e: any) {
+    // Não bloqueia as migrações seguintes (bloco aditivo e idempotente).
+    console.log('⚠️ Cadastros e relações do orçamento gráfico: falha', e.message?.substring(0, 200))
+  }
+
   await migrarPedidosParaStatusFiel()
+}
+
+/**
+ * Orçamento Gráfico — Cadastros e Relações (Fase 1). Spec
+ * orcamento-grafico-cadastros-relacoes (tarefa 1.3). 100% idempotente e aditivo:
+ * CREATE TABLE/INDEX IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, FKs em try/catch.
+ */
+async function migrarOrcamentoGraficoCadastrosRelacoes() {
+  const exec = (sql: string) => prisma.$executeRawUnsafe(sql)
+
+  // ── 12 tabelas novas ──────────────────────────────────────────────────────
+  await exec(`CREATE TABLE IF NOT EXISTS "produto_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo" VARCHAR(60) NOT NULL,
+    "nome" VARCHAR(200) NOT NULL,
+    "linha_produto_id" TEXT,
+    "codigo_origem" INTEGER,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "tributacao_2026" VARCHAR(60),
+    "tributacao_2027" VARCHAR(60),
+    "classificacao_fiscal" VARCHAR(60),
+    "fechamento_id" TEXT,
+    "base_unidade_preco" VARCHAR(20) NOT NULL DEFAULT 'UNITARIO',
+    "unidade_id" TEXT,
+    "prazo_producao_dias" INTEGER NOT NULL DEFAULT 0,
+    "faturamento_minimo" BOOLEAN NOT NULL DEFAULT false,
+    "valor_faturamento_minimo" DECIMAL(14,2),
+    "tipo_cartucho" VARCHAR(60),
+    "modo_formato" VARCHAR(20) NOT NULL DEFAULT 'TRES_DIMENSOES',
+    "formato_padrao_largura" DECIMAL(10,2),
+    "formato_padrao_altura" DECIMAL(10,2),
+    "exibe_restricoes" BOOLEAN NOT NULL DEFAULT true,
+    "exibe_informacoes_complementares" BOOLEAN NOT NULL DEFAULT true,
+    "sem_impressao" BOOLEAN NOT NULL DEFAULT false,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "produto_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "tipo_plano_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo" VARCHAR(60) NOT NULL,
+    "nome" VARCHAR(200) NOT NULL,
+    "linha_produto_id" TEXT,
+    "codigo_origem" INTEGER,
+    "fixo" BOOLEAN NOT NULL DEFAULT false,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "miolo" BOOLEAN NOT NULL DEFAULT false,
+    "calculo_automatico_formato" VARCHAR(10) NOT NULL DEFAULT 'NAO',
+    "primeira_medida" VARCHAR(10) NOT NULL DEFAULT 'LF',
+    "somar_orelhas" BOOLEAN NOT NULL DEFAULT false,
+    "somar_lombada" BOOLEAN NOT NULL DEFAULT false,
+    "ocorrencias" VARCHAR(10) NOT NULL DEFAULT 'UMA',
+    "quebra_padrao" DECIMAL(10,2),
+    "corte_duplo_min" DECIMAL(10,2),
+    "suporte_padrao_id" TEXT,
+    "gramatura_padrao" DECIMAL(10,2),
+    "montagem_id" TEXT,
+    "usar_pinca" BOOLEAN NOT NULL DEFAULT false,
+    "fibra_default" VARCHAR(20),
+    "frente_igual_verso" BOOLEAN NOT NULL DEFAULT false,
+    "caderno" BOOLEAN NOT NULL DEFAULT false,
+    "margem1_mm" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "margem2_mm" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "formato" VARCHAR(60),
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tipo_plano_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "default_produto_plano" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "produto_id" TEXT NOT NULL,
+    "tipo_plano_id" TEXT NOT NULL,
+    "sem_impressao" BOOLEAN NOT NULL DEFAULT false,
+    "processo_impressao_id" TEXT,
+    "cobertura_tinta_id" TEXT,
+    "cores_frente" INTEGER NOT NULL DEFAULT 0,
+    "cores_verso" INTEGER NOT NULL DEFAULT 0,
+    "area_tinta_perc" DECIMAL(6,2) NOT NULL DEFAULT 0,
+    "fabricante_suporte" VARCHAR(120),
+    "atividades_pre_marcadas" JSONB NOT NULL DEFAULT '[]',
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "default_produto_plano_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "relacao_cadastro_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "tipo_origem" VARCHAR(30) NOT NULL,
+    "id_origem" TEXT NOT NULL,
+    "tipo_destino" VARCHAR(30) NOT NULL,
+    "id_destino" TEXT NOT NULL,
+    "ordem" INTEGER,
+    "padrao" BOOLEAN NOT NULL DEFAULT false,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "relacao_cadastro_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "item_diverso_grafico" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo_origem" INTEGER,
+    "nome" VARCHAR(200) NOT NULL,
+    "origem" VARCHAR(30) NOT NULL,
+    "automatico" BOOLEAN NOT NULL DEFAULT false,
+    "tipo_calculo" VARCHAR(30),
+    "aplicado_sobre" VARCHAR(30),
+    "quantidade_aceite" DECIMAL(14,4),
+    "quantidade_por_unidade" DECIMAL(14,4),
+    "quantidade_minima" DECIMAL(14,4),
+    "por_caderno" BOOLEAN NOT NULL DEFAULT false,
+    "custo_informado" DECIMAL(14,4),
+    "calculo_por_qtd_cores" BOOLEAN NOT NULL DEFAULT false,
+    "acompanha_mont_impressao" BOOLEAN NOT NULL DEFAULT false,
+    "item_revenda" BOOLEAN NOT NULL DEFAULT false,
+    "quebra_perc" DECIMAL(8,4),
+    "texto_proposta" TEXT,
+    "sigla" VARCHAR(30),
+    "pendencia_automatica_pcp" BOOLEAN NOT NULL DEFAULT false,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "item_diverso_grafico_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "campo_livre" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "proprietario" VARCHAR(20) NOT NULL,
+    "codigo_origem" INTEGER,
+    "nome" VARCHAR(120) NOT NULL,
+    "tipo" VARCHAR(10) NOT NULL DEFAULT 'TEXTO',
+    "obrigatorio" BOOLEAN NOT NULL DEFAULT false,
+    "ordem" INTEGER NOT NULL DEFAULT 0,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "copia_para_pedido_campo_id" TEXT,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "campo_livre_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "campo_livre_opcao" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "campo_livre_id" TEXT NOT NULL,
+    "valor" VARCHAR(200) NOT NULL,
+    "padrao" BOOLEAN NOT NULL DEFAULT false,
+    "ordem" INTEGER NOT NULL DEFAULT 0,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "campo_livre_opcao_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "ajuste_produtividade" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "acabamento_id" TEXT NOT NULL,
+    "centro_producao_id" TEXT,
+    "dado_ajustar" VARCHAR(20) NOT NULL,
+    "funcao" VARCHAR(30) NOT NULL,
+    "operador" VARCHAR(20),
+    "valor" VARCHAR(120),
+    "fator" DECIMAL(14,4) NOT NULL DEFAULT 0,
+    "fator_positivo" BOOLEAN NOT NULL DEFAULT true,
+    "impede_montagem_cadernos" BOOLEAN NOT NULL DEFAULT false,
+    "restricao_id" TEXT,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ajuste_produtividade_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "quebra_grafica" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "codigo_origem" INTEGER,
+    "nome" VARCHAR(200) NOT NULL,
+    "tipo_atividade" VARCHAR(20) NOT NULL DEFAULT 'IMPRESSAO',
+    "pedacos_por_acerto" DECIMAL(14,4),
+    "pedacos_por_plano" DECIMAL(14,4),
+    "pedacos_por_tipo_plano" DECIMAL(14,4),
+    "pedacos_ocorrencias" DECIMAL(14,4),
+    "pedacos_minimo_perc" DECIMAL(8,4),
+    "interpolar" BOOLEAN NOT NULL DEFAULT false,
+    "status" BOOLEAN NOT NULL DEFAULT true,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "quebra_grafica_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "quebra_grafica_limite" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "quebra_id" TEXT NOT NULL,
+    "tiragem_ate" INTEGER NOT NULL,
+    "quebra_perc" DECIMAL(8,4) NOT NULL,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "quebra_grafica_limite_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "limite_montagem" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "formato_final_largura" DECIMAL(10,2) NOT NULL,
+    "formato_final_altura" DECIMAL(10,2) NOT NULL,
+    "minimo" INTEGER NOT NULL DEFAULT 0,
+    "maximo" INTEGER NOT NULL DEFAULT 0,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "limite_montagem_pkey" PRIMARY KEY ("id")
+  )`)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "selecao_material_acabamento" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "item_id" TEXT NOT NULL,
+    "plano_id" TEXT,
+    "acabamento_id" TEXT NOT NULL,
+    "material_id" TEXT NOT NULL,
+    "restricao_id" TEXT,
+    "tipo_param" INTEGER NOT NULL DEFAULT 0,
+    "param1" DECIMAL(14,4),
+    "param2" DECIMAL(14,4),
+    "consumo" DECIMAL(14,4),
+    "unidade_consumo" VARCHAR(10),
+    "valor_unitario" DECIMAL(14,4),
+    "custo" DECIMAL(14,4),
+    "aplica_no_preco" BOOLEAN NOT NULL DEFAULT false,
+    "situacao_parametro" VARCHAR(20) NOT NULL DEFAULT 'VALIDADO',
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "selecao_material_acabamento_pkey" PRIMARY KEY ("id")
+  )`)
+
+  // ── Colunas aditivas em tabelas existentes ────────────────────────────────
+  await exec(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "codigo_origem" INTEGER`)
+  await exec(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "acondicionamento" BOOLEAN NOT NULL DEFAULT false`)
+  await exec(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "caracteristicas" JSONB`)
+  await exec(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "texto_proposta" TEXT`)
+  await exec(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "exibir_nome_plano" BOOLEAN NOT NULL DEFAULT false`)
+
+  await exec(`ALTER TABLE "restricao_acabamento" ADD COLUMN IF NOT EXISTS "codigo_origem" INTEGER`)
+  await exec(`ALTER TABLE "restricao_acabamento" ADD COLUMN IF NOT EXISTS "exibir_na_proposta" BOOLEAN NOT NULL DEFAULT false`)
+  await exec(`ALTER TABLE "restricao_acabamento" ADD COLUMN IF NOT EXISTS "centro_producao_id" TEXT`)
+
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "codigo_origem" INTEGER`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "tipo_material" VARCHAR(30)`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "unidade_custo" VARCHAR(10)`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "uso_obrigatorio" BOOLEAN NOT NULL DEFAULT false`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "medida_linear" BOOLEAN NOT NULL DEFAULT false`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "conteudo_rolo_metros" DECIMAL(12,2)`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "consumo_minimo" DECIMAL(14,4)`)
+  await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "texto_proposta" TEXT`)
+
+  await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_grafico_id" TEXT`)
+  await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)
+
+  for (const t of ['linha_produto', 'cobertura_tinta', 'processo_impressao', 'centro_producao', 'suporte_grafico']) {
+    await exec(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "codigo_origem" INTEGER`)
+  }
+
+  // ── Índices ───────────────────────────────────────────────────────────────
+  // Únicos comuns nas 5 tabelas novas com @@unique([empresaId, codigoOrigem])
+  for (const t of ['produto_grafico', 'tipo_plano_grafico', 'item_diverso_grafico', 'campo_livre', 'quebra_grafica']) {
+    await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "${t}_empresa_id_codigo_origem_key" ON "${t}"("empresa_id","codigo_origem")`)
+  }
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "produto_grafico_empresa_id_codigo_key" ON "produto_grafico"("empresa_id","codigo")`)
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "tipo_plano_grafico_empresa_id_codigo_key" ON "tipo_plano_grafico"("empresa_id","codigo")`)
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "default_produto_plano_produto_id_tipo_plano_id_key" ON "default_produto_plano"("produto_id","tipo_plano_id")`)
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "relacao_cadastro_grafico_unica_key" ON "relacao_cadastro_grafico"("empresa_id","tipo_origem","id_origem","tipo_destino","id_destino")`)
+
+  // Únicos PARCIAIS nas tabelas existentes que ganharam codigo_origem (todas têm empresa_id)
+  for (const t of [
+    'acabamento_grafico', 'restricao_acabamento', 'material_acabamento',
+    'linha_produto', 'cobertura_tinta', 'processo_impressao', 'centro_producao', 'suporte_grafico',
+  ]) {
+    await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "${t}_empresa_id_codigo_origem_key" ON "${t}"("empresa_id","codigo_origem") WHERE "codigo_origem" IS NOT NULL`)
+  }
+
+  // Demais índices
+  const indices: string[] = [
+    `CREATE INDEX IF NOT EXISTS "produto_grafico_empresa_id_idx" ON "produto_grafico"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "tipo_plano_grafico_empresa_id_idx" ON "tipo_plano_grafico"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "default_produto_plano_empresa_id_idx" ON "default_produto_plano"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "relacao_cadastro_grafico_empresa_origem_idx" ON "relacao_cadastro_grafico"("empresa_id","tipo_origem","id_origem")`,
+    `CREATE INDEX IF NOT EXISTS "relacao_cadastro_grafico_empresa_destino_idx" ON "relacao_cadastro_grafico"("empresa_id","tipo_destino","id_destino")`,
+    `CREATE INDEX IF NOT EXISTS "relacao_cadastro_grafico_empresa_id_idx" ON "relacao_cadastro_grafico"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "item_diverso_grafico_empresa_id_idx" ON "item_diverso_grafico"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "campo_livre_empresa_id_idx" ON "campo_livre"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "campo_livre_empresa_id_proprietario_idx" ON "campo_livre"("empresa_id","proprietario")`,
+    `CREATE INDEX IF NOT EXISTS "campo_livre_opcao_campo_livre_id_idx" ON "campo_livre_opcao"("campo_livre_id")`,
+    `CREATE INDEX IF NOT EXISTS "campo_livre_opcao_empresa_id_idx" ON "campo_livre_opcao"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "ajuste_produtividade_empresa_id_idx" ON "ajuste_produtividade"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "ajuste_produtividade_empresa_acabamento_idx" ON "ajuste_produtividade"("empresa_id","acabamento_id")`,
+    `CREATE INDEX IF NOT EXISTS "quebra_grafica_empresa_id_idx" ON "quebra_grafica"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "quebra_grafica_limite_quebra_id_idx" ON "quebra_grafica_limite"("quebra_id")`,
+    `CREATE INDEX IF NOT EXISTS "quebra_grafica_limite_empresa_id_idx" ON "quebra_grafica_limite"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "limite_montagem_empresa_id_idx" ON "limite_montagem"("empresa_id")`,
+    `CREATE INDEX IF NOT EXISTS "selecao_material_acabamento_empresa_item_idx" ON "selecao_material_acabamento"("empresa_id","item_id")`,
+    `CREATE INDEX IF NOT EXISTS "selecao_material_acabamento_empresa_id_idx" ON "selecao_material_acabamento"("empresa_id")`,
+  ]
+  for (const sql of indices) await exec(sql)
+
+  // ── FKs com ON DELETE CASCADE (try/catch individual) ──────────────────────
+  const fks: string[] = [
+    `ALTER TABLE "default_produto_plano" ADD CONSTRAINT "default_produto_plano_produto_id_fkey" FOREIGN KEY ("produto_id") REFERENCES "produto_grafico"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "default_produto_plano" ADD CONSTRAINT "default_produto_plano_tipo_plano_id_fkey" FOREIGN KEY ("tipo_plano_id") REFERENCES "tipo_plano_grafico"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "campo_livre_opcao" ADD CONSTRAINT "campo_livre_opcao_campo_livre_id_fkey" FOREIGN KEY ("campo_livre_id") REFERENCES "campo_livre"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    `ALTER TABLE "quebra_grafica_limite" ADD CONSTRAINT "quebra_grafica_limite_quebra_id_fkey" FOREIGN KEY ("quebra_id") REFERENCES "quebra_grafica"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+  ]
+  for (const sql of fks) {
+    try { await exec(sql) } catch { /* constraint já existe */ }
+  }
+
+  console.log('✅ Orçamento Gráfico Cadastros e Relações: 12 tabelas + colunas aditivas + índices + FKs')
 }
 
 /**

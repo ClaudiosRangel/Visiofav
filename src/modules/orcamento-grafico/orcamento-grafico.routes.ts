@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { randomUUID } from 'crypto'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
 import {
@@ -387,6 +388,9 @@ const itemOrcamentoBodySchema = z.object({
           computarCusto: z.boolean().optional().default(false),
           valorUnitario: z.coerce.number().optional().nullable(),
           quantidade: z.coerce.number().min(0).optional().nullable(),
+          // Linhas criadas pela seleção de material (não perdem a marca ao salvar o item).
+          origem: z.string().max(20).optional().nullable(),
+          selecaoId: z.string().max(60).optional().nullable(),
         })
         .superRefine((m, ctx) => {
           if (m.computarCusto === true) {
@@ -1795,6 +1799,12 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     exigeRestricao: true,
     // P16 — materiais informativos por atividade (lista de nomes). Só texto.
     materiais: true,
+    // Spec orcamento-grafico-cadastros-relacoes (Req 6.1) — campos aditivos.
+    codigoOrigem: true,
+    acondicionamento: true,
+    caracteristicas: true,
+    textoProposta: true,
+    exibirNomePlano: true,
     status: true,
     criadoEm: true,
     atualizadoEm: true,
@@ -1820,6 +1830,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     tempoPrimeiroAcertoMin: z.number().min(0).optional().nullable(),
     unidadeBase: z.enum(['FOLHA', 'PRODUTO']).optional().nullable(),
     exigeRestricao: z.boolean().optional(),
+    // Spec orcamento-grafico-cadastros-relacoes (Req 6.1) — todos opcionais, sem default
+    // (ausente = não altera o valor gravado).
+    codigoOrigem: z.number().int().optional().nullable(),
+    acondicionamento: z.boolean().optional(),
+    caracteristicas: z.record(z.unknown()).optional().nullable(),
+    textoProposta: z.string().max(5000).optional().nullable(),
+    exibirNomePlano: z.boolean().optional(),
     // P16 — materiais informativos (lista de nomes). Puramente descritivo,
     // NÃO entra em cálculo. Normaliza: remove vazios e duplicados.
     materiais: z.array(z.string().min(1).max(200)).optional(),
@@ -1952,7 +1969,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     // P16 — `restricoes` não é coluna (vai para restricao_acabamento); `materiais`
     // é coluna Json (lista de nomes). Separa do restante antes de gravar.
-    const { restricoes, materiais, ...dadosAcabamento } = body
+    const { restricoes, materiais, caracteristicas, ...dadosAcabamento } = body
     const materiaisNorm = normalizarMateriais(materiais)
 
     const acabamento = await prisma.acabamentoGrafico.create({
@@ -1960,6 +1977,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         ...dadosAcabamento,
         empresaId: user.empresaId,
         ...(materiaisNorm !== undefined ? { materiais: materiaisNorm } : {}),
+        ...(caracteristicas !== undefined
+          ? { caracteristicas: caracteristicas === null ? Prisma.JsonNull : (caracteristicas as Prisma.InputJsonValue) }
+          : {}),
       },
     })
     await sincronizarRestricoesPorNome(user.empresaId, acabamento.id, restricoes)
@@ -1986,7 +2006,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
 
     // P16 — separa `restricoes` (tabela filha) e `materiais` (Json) do restante.
-    const { restricoes, materiais, ...dadosAcabamento } = body
+    const { restricoes, materiais, caracteristicas, ...dadosAcabamento } = body
     const materiaisNorm = normalizarMateriais(materiais)
 
     await prisma.acabamentoGrafico.update({
@@ -1994,6 +2014,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       data: {
         ...dadosAcabamento,
         ...(materiaisNorm !== undefined ? { materiais: materiaisNorm } : {}),
+        ...(caracteristicas !== undefined
+          ? { caracteristicas: caracteristicas === null ? Prisma.JsonNull : (caracteristicas as Prisma.InputJsonValue) }
+          : {}),
       },
     })
     await sincronizarRestricoesPorNome(user.empresaId, id, restricoes)
@@ -2024,6 +2047,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     nome: z.string().min(1).max(100),
     tempoAcertoMin: z.number().min(0).max(999),
     tempoOperacaoMin: z.number().min(0).max(999),
+    // Spec orcamento-grafico-cadastros-relacoes (Req 6.2) — opcionais, sem default.
+    codigoOrigem: z.number().int().optional().nullable(),
+    exibirNaProposta: z.boolean().optional(),
+    centroProducaoId: z.string().uuid().optional().nullable(),
   })
 
   const restricaoSelect = {
@@ -2033,8 +2060,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     nome: true,
     tempoAcertoMin: true,
     tempoOperacaoMin: true,
+    codigoOrigem: true,
+    exibirNaProposta: true,
+    centroProducaoId: true,
     criadoEm: true,
   } as const
+
+  /** 422 quando o centro informado não pertence à empresa. Retorna true se válido/ausente. */
+  async function centroPertenceEmpresa(empresaId: string, centroId: string | null | undefined): Promise<boolean> {
+    if (!centroId) return true
+    const centro = await prisma.centroProducao.findFirst({ where: { id: centroId, empresaId }, select: { id: true } })
+    return !!centro
+  }
 
   // GET lista as restrições de um acabamento (ordenadas por nome asc — Req 7.3)
   app.get('/acabamentos/:acabamentoId/restricoes', async (request, reply) => {
@@ -2056,6 +2093,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const body = restricaoBodySchema.parse(request.body)
     const acab = await prisma.acabamentoGrafico.findFirst({ where: { id: acabamentoId, empresaId: user.empresaId } })
     if (!acab) return reply.status(404).send({ message: 'Acabamento não encontrado' })
+    if (!(await centroPertenceEmpresa(user.empresaId, body.centroProducaoId))) {
+      return reply.status(422).send({ message: 'Centro de produção não encontrado nesta empresa' })
+    }
     const criada = await prisma.restricaoAcabamento.create({
       data: { ...body, acabamentoGraficoId: acabamentoId, empresaId: user.empresaId },
       select: restricaoSelect,
@@ -2071,6 +2111,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       where: { id, acabamentoGraficoId: acabamentoId, empresaId: user.empresaId },
     })
     if (!existe) return reply.status(404).send({ message: 'Restrição não encontrada' })
+    if (!(await centroPertenceEmpresa(user.empresaId, body.centroProducaoId))) {
+      return reply.status(422).send({ message: 'Centro de produção não encontrado nesta empresa' })
+    }
     const atualizada = await prisma.restricaoAcabamento.update({
       where: { id },
       data: body,
