@@ -968,3 +968,101 @@ Códigos agora fechados: 0 Suportes, 1 Itens Diversos, 2 Planos, 3 Coberturas de
 4. **Campos livres:** o Calcgraf guarda valores livres por OP (`CampoDicxOpHeader`, ex.: FORMPAG,
    FORMEMB). Não entram em preço. ARTE e PADRÃO seguem sem fonte localizada.
 5. **Defaults e tudo por produto:** o produto define o que vem pré-preenchido, e o usuário altera.
+
+
+---
+
+## 16. Pendências 1 e 2 esclarecidas (14/11/2026)
+
+### 16.1 `ParamAcab1`, `ParamAcab2`, `TipoParamAcab` (em `CalculoMatAcabamento`)
+**Não são valores fixos.** São informados por cálculo (digitados ao marcar o material) e o significado
+muda conforme `TipoParamAcab`. Evidência: 37.047 linhas reais, faixa de valores por material.
+
+| TipoParamAcab | Significado (alta confiança) | Materiais | Faixa real |
+|---|---|---|---|
+| 0 | sem parâmetro | Caixa Padrão, Kraft, Embalar | 0 |
+| 1 | **% de cobertura da folha**: Param1 = % frente, Param2 = % verso | Verniz, BOPP, Plástico, Polyéster, Cola Vegetal de acoplagem | 0 a 100 |
+| 2 | **dimensões em mm** (largura × comprimento da área aplicada) | Hot Stamping, Acetato | Hot Stamping 12-620 × 5-600; Acetato 82-340 × 70-290 |
+| 3 | **medida linear em mm por peça** (comprimento de cola, fita ou alça) | Cola Branca, Cola Quente, Fita Dupla Face, Alça Gorgurão e Nylon | 3 a 820 mm |
+| 4 | **quantidade de peças por unidade** | Botão de Pressão, Ilhós, Velcro | 1 a 4 |
+
+- Confere com o cadastro de Materiais de Acabamento: campos "Medida linear informada (S/N)", "Conteúdo
+  do rolo em metros" e tipos "Mat. proporcional à tiragem", "Revestimento por kg".
+- Exemplo 12992: BOPP Brilho, Laminação maior, `Param1 = 100`, `Param2 = 0` (100% frente, 0% verso),
+  custo R$ 581,82. O consumo foi 1.057,86 m², próximo da área total da folha (1.334 folhas × 0,65 × 1,225 =
+  1.062 m²) menos pequena diferença de margem.
+- Uso mais comum: Cola Branca em AFT70 (7.131 cálculos, tipo 3, 3 a 612 mm), Caixa Padrão (6.700, tipo 0),
+  Verniz Base D'Água Brilho (5.726, tipo 1), Cola Vegetal na Mazola (4.223, tipo 1).
+- **Ainda não provado:** o significado do `ParamAcab2` quando o tipo é 3 (Fita Dupla Face: 0 a 6; Colagem
+  Manual: 0 a 100) e a fórmula exata de consumo. Para o Vizor: guardar os dois parâmetros e o tipo, e só
+  aplicar a fórmula nos tipos já provados (0, 1, 4). Os demais ficam informativos até a validação contra
+  um cálculo real.
+
+### 16.2 Tabela 9 da `RelTabelas`
+- **O que é:** 56 relações entre os códigos 1 a 59 e Centros de Produção. Os códigos 1 a 59 ocupam a mesma
+  faixa dos códigos de Atividades.
+- **Por que não serve:** comparando com os nomes reais, o vínculo não faz sentido. Offset Plana,
+  Offset Rotativa e Formulário Contínuo aparecem ligados ao Bobst E; Rotogravura, Serigrafia e Tipografia ao
+  Bobst S; Cortadeira (Grande) ao Bobst E; Laminação maior à AFT70. A ligação correta de Atividade com Centro
+  está na tabela 4 × 8 (25 linhas, ex.: AFT70 → centros 11, 12 e 47).
+- **Conclusão:** a tabela 9 é resíduo antigo ou desalinhado. **Não importar.**
+
+### 16.3 ARTE e PADRÃO (campos livres do produto)
+São opções fixas (rótulos de checkbox), iguais para Cartucho e Cartucho Composto. Aceito o cadastro
+simples por produto. A fonte no banco continua não localizada.
+
+
+---
+
+## 17. Novos cadastros do Calcgraf e o que dá para importar (14/11/2026)
+
+O usuário enviou telas de: Itens Diversos, Roteiros, Centros de Custo, Restrições Manuais, Restrições
+Automáticas, Quebras, Ajustes de Produtividade, Limites de Montagem, Campos Livres, Defaults por Origem de
+Custo e os Parâmetros de Solicitação, Fechamento e Cálculo. Todos têm tabela na base restaurada.
+
+### 17.1 Resolvido: ARTE e PADRÃO (campos livres)
+São **Campos Livres da Solicitação** (tela "Campos Livres", Proprietário = Solicitação ou Recusa). Tabelas:
+`ParamCl` (definição, 9 linhas), `ParamClLista` (opções, 13), `ParamClRelacionamentos` (copia SOL para PED) e
+`ConteudoCl` (valores digitados: 606 em solicitações, 413 em pedidos).
+
+| Campo | Proprietário | Tipo | Opções | Obrigatório |
+|---|---|---|---|---|
+| ARTE (cód. 5) | Solicitação | lista | ALTERAÇÃO, NOVO, REPETIÇÃO | sim |
+| PADRÃO (cód. 6) | Solicitação | lista | AMOSTRA, CONTRATUAL, PASTA PADRÃO | sim |
+| ARTE / PADRÃO | Pedido (7 e 8) | lista | as mesmas | não (copiados da solicitação) |
+| Motivos de Recusa | Recusa | lista | "Aprovado com Concorrente" | |
+| Gramatura | Insumo; Pedido Cliente em Pedido, ACP e N Item pedido | texto | | |
+
+Ou seja, ARTE diz se a arte é nova, repetição ou alteração, e PADRÃO diz o padrão de referência. A
+substituição que usei antes ("cadastro simples por produto") deixa de valer: são **campos de lista por
+proprietário (solicitação, pedido)**, definidos em `ParamCl`.
+
+### 17.2 Tabela de importação
+
+| Cadastro | Tabela(s) na base | Linhas | Equivalente no Vizor | Importar? |
+|---|---|---|---|---|
+| Itens Diversos + vínculo com atividades | `ItensDiversos` (Origem: Mat.Acabamento 40, Tinta 9, Matriz 6, Centro de Custo 3, Serviço Externo 3, Pré-impressão 1), `RelTabelas` tab. 1 | 62 | `MaterialAcabamento`, nova relação | **Sim.** Os 6 itens automáticos (Colagem Manual, Sacola+alça+ilhós, Sacola 2+alça+ilhós, Chapa/Fotolito/Verniz Local) entram sozinhos no orçamento. Campos: qtd por unidade, mínima, custo informado, item de revenda, quebra %, tipo de cálculo (Tiragem), aplicado sobre (Acabado) |
+| Roteiros (Linha → Planos → Atividades de plano; Atividades de produto → "Atividades que juntam planos") | `Roteiros` | 422 | relação Plano×Atividade | **Sim**, para **ordem** e escopo por linha (`Ordem`, 999 = sem ordem). A permissão vem da `RelTabelas`; comparar as duas na importação e listar divergências. `AtividadesJuntaPlanos` está vazia |
+| Centros de Custo | `CentrosCusto` (Nome, `AgrupamentoCusto` GERAL, `FlagTabelaCusto`) | 52 | `CentroProducao` e Mapa de Custos | **Só mapa de equivalência** (centro de custo × centro de produção) e o flag "utiliza tabela de custo". O custo-hora já está coberto |
+| Restrições Manuais | `RestricoesManuais` + relação com Centros | 59 | `RestricaoAcabamento` | **Sim**, incluindo o centro ao qual cada restrição pertence e "exibir na proposta" |
+| Restrições Automáticas | **`AjustesProdutividade`** (linhas com `DadoAjustar` = Incondicional) | 2 | novo | **Sim.** Ex.: Offset Plana incompatível com Heidelberg CD 5 e 7 cores quando formato do processo < 390 × 500; impede montagem de cadernos |
+| Ajustes de Produtividade | `AjustesProdutividade` (Acerto 30, Produção/Hora 21, Consumo do Material 4, Produção/Hora por atividade 2) | 59 | novo (fator por atividade, centro, restrição) | **Sim.** Fator multiplica acerto, produção por hora ou consumo. Ex.: Bobst S, acerto "Normal Repetição" × 0,2; "Onda B/E Acoplado" × 0,6; Relevo produção × 1,1; Bobst E\CV\Relevo × 0,84. **Afeta o custo de transformação**, usar na fase do motor |
+| Quebras | `Quebras` + `QuebrasxLimites` | 10 (9 ativas) | parâmetro de perda | **Sim.** Impressão: 70 pedaços por acerto (Heidelberg SM: 50); acabamento: quebra fixa 50 ou 10 e variável 0,5%. Cada quebra tem o nome da máquina |
+| Limites de Montagem | `LimiteMontagem` | 1 | novo | **Sim** (trivial): formato final 40 × 40, mínimo 10, máximo 36 |
+| Campos Livres | `ParamCl`, `ParamClLista`, `ParamClRelacionamentos`, `ConteudoCl` | 9, 13, 2 | novo (campo configurável por proprietário) | **Sim**, só a definição. Os valores históricos (606 e 413) pertencem a solicitações e pedidos antigos e não entram |
+| Defaults por Origem de Custo | `PscParametrosConformeOrigem` (origem → tabela de custo, 7) e parâmetros em `Parametros` | 7 | defaults do cadastro | **Parcial.** Natureza por origem (crédito ICMS e IPI, prazo, tabela e coluna de custo, integração com estoque, agrupamento: Suporte = Materiais Diretos, crédito IPI 3) |
+| Parâmetros de Solicitação, Fechamento e Cálculo | `Parametros` (chave e valor, 867 linhas, 63 tipos) | ~40 relevantes | parâmetros da empresa | **Sim, os relevantes ao cálculo.** Refile folha inteira 2, contra-pinça 8, refile final 1, corte duplo 0, partida de consumo de tinta 200 g, juros 2,00 (aplicação e bancários), juros simples, prazo médio de produção 2 dias, tratar recusados após 210 dias |
+
+### 17.3 O que NÃO importar
+- Valores históricos de campos livres (`ConteudoCl`).
+- `RelTabelas` tabela 9 (resíduo desalinhado, ver seção 16.2).
+- `Parametros` de contas a pagar, fluxo de caixa, SPED, crédito do cliente e demais módulos fora do orçamento.
+
+### 17.4 Impacto na proposta
+1. Ficam **dois cadastros novos de comportamento**: `AjusteProdutividade` (fator por atividade/centro/condição) e
+   `QuebraGrafica`. O Vizor hoje não aplica fatores; entram na fase do motor, depois de validar contra cálculos.
+2. **Campos livres** passam a ser um cadastro configurável (`CampoLivre` + `CampoLivreOpcao`, com proprietário
+   solicitação/pedido) em vez de rótulo por produto. Substitui a decisão 3 da proposta.
+3. Os **parâmetros gerais** (refile, contra-pinça, partida de tinta, juros, prazo médio) devem ser lidos de
+   configuração da empresa, não fixos no código. Conferir o que o motor atual já usa (tinta: partida de 0,2 kg
+   já bate).

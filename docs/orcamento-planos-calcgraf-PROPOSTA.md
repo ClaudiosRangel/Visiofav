@@ -98,15 +98,20 @@ equivalente são listados no relatório, nunca inventados. Execução em produç
 2. **Material escolhido** (Cola Branca ou Quente, BOPP etc.) **influencia o preço**, como no Calcgraf.
    Vale só para itens novos ou recalculados. **Itens puxados do acervo mantêm o custo ancorado** (não mudam).
    O significado de `ParamAcab1/2` ainda não está confirmado; até confirmar, o consumo usa a regra atual do Vizor.
-3. **Campos livres (ARTE, PADRÃO):** cadastro simples por produto, informativo, sem efeito no preço.
+3. **Campos livres (ARTE, PADRÃO):** **corrigido em 14/11/2026 (handoff seção 17.1).** São campos de lista da
+   Solicitação (ARTE: Alteração, Novo, Repetição; PADRÃO: Amostra, Contratual, Pasta Padrão), obrigatórios na
+   solicitação e copiados ao pedido. Cadastro configurável por proprietário, sem efeito no preço.
 4. **Ordem das fases:** fase 1 (cadastros e relações), depois Cartucho na fase 2, como na seção 5.
 5. **Custo por plano:** o Calcgraf calcula por plano (atividades e materiais gravam o plano). No Vizor:
    - nos itens puxados, o custo dos planos continua em 0 (detalhamento), para não mexer no total ancorado;
    - nos itens novos, o custo do plano é a soma das suas atividades e materiais, e o total do item é a soma dos planos.
    - dividir o custo dos itens puxados por plano fica para fase posterior, usando as linhas por plano da base de cálculo.
 
-## 7. Riscos que continuam abertos
-- Significado de `ParamAcab1/2` e `TipoParamAcab` (consumo do material).
-- Fonte de ARTE e PADRÃO.
-- Tabela 9 da `RelTabelas`.
-- Telas de Editorial e Rótulo, se vierem a ser usadas.
+## 7. Pendências (resolvidas e abertas; detalhe na seção 16 do handoff)
+- `ParamAcab1/2` e `TipoParamAcab`: **resolvido em grande parte.** O tipo define o significado (0 sem parâmetro,
+  1 % de cobertura frente/verso, 2 dimensões em mm, 3 medida linear em mm, 4 quantidade). Guardar os dois
+  parâmetros e o tipo; aplicar fórmula de preço só nos tipos 0, 1 e 4; tipos 2 e 3 ficam informativos até
+  validar contra um cálculo real.
+- Tabela 9 da `RelTabelas`: **descartada** (resíduo desalinhado, não importar).
+- ARTE e PADRÃO: opções fixas, cadastro simples por produto.
+- Aberto: `ParamAcab2` com tipo 3, e telas de Editorial e Rótulo, se vierem a ser usadas.
