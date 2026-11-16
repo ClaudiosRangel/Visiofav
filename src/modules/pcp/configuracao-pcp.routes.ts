@@ -156,7 +156,7 @@ export async function configuracaoPcpRoutes(app: FastifyInstance) {
     if (['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
       return { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: salvas.isPreImpressao || false, isAdmin: true }
     }
-    const defaults = { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
+    const defaults = { tiposProcessoVisiveis: [], podeIniciar: true, podeFinalizar: true, podePausar: true, podeApontar: true, podeMover: true, podeDesmembrar: true, podeReextrair: true, podeAlterarPrioridade: true, podePostergarEntrega: true, podeEditarObservacao: true, podeRetornarEtapa: false, podeReordenarFila: true, podeReordenarGrupos: true, podeCriarGrupo: true, isPreImpressao: false }
     if (!param || !param.valor) return { ...defaults, isAdmin: false }
     try { return { ...defaults, ...salvas, isAdmin: false } } catch { return { ...defaults, isAdmin: false } }
   })

@@ -1545,12 +1545,24 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   // GET /api/pcp/programacao/concluidas — Lista etapas CONCLUÍDAS por processo
   // (para visualização no painel de programação, com opção de retornar)
   // =========================================================================
-  app.get('/programacao/concluidas', async (request) => {
-    const user = request.user as { id: string; empresaId: string }
+  app.get('/programacao/concluidas', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
     const query = z.object({
       tipoProcessoId: z.string().uuid().optional(),
       limite: z.coerce.number().min(1).max(200).default(50),
     }).parse(request.query)
+
+    // Só admin ou quem tem `podeRetornarEtapa` (global ou em algum tipo de
+    // processo) enxerga as concluídas. Nos demais casos, 403.
+    const ehAdmin = user.perfil === 'SUPER_ADMIN' || user.perfil === 'ADMIN'
+    const permissoesConcl = ehAdmin ? null : await getPermissoes(user.empresaId, user.id)
+    if (permissoesConcl) {
+      const algumProcesso = Object.values(permissoesConcl.permissoesPorProcesso ?? {})
+        .some((p) => p?.podeRetornarEtapa === true)
+      if (permissoesConcl.podeRetornarEtapa !== true && !algumProcesso) {
+        return reply.status(403).send({ message: 'Sem permissão para visualizar etapas concluídas' })
+      }
+    }
 
     const where: any = {
       status: 'CONCLUIDA',
@@ -1597,7 +1609,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return m ? m[1].trim() : null
     }
 
-    return etapas.map(e => ({
+    // Não-admin: só lista etapas de processos onde pode retornar.
+    const etapasVisiveis = permissoesConcl
+      ? etapas.filter((e) =>
+          verificarPermissaoAcao(permissoesConcl, 'podeRetornarEtapa', e.centroProducao?.tipoProcessoId ?? null))
+      : etapas
+
+    return etapasVisiveis.map(e => ({
       id: e.id,
       opId: e.ordemProducao.id,
       opNumero: e.ordemProducao.referenciaExterna || String(e.ordemProducao.numero),
