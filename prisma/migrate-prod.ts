@@ -5423,6 +5423,13 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "agenda_travada" BOOLEAN NOT NULL DEFAULT false`)
   console.log('✅ PCP Gantt: etapa.inicio_agendado_manual + agenda_travada (âncora de agenda)')
 
+  // Gantt: trava de SEQUÊNCIA (spec gantt-travar-sequencia). Aditivo e
+  // idempotente; etapas existentes ficam com sequencia_travada = false.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "sequencia_travada" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "sequencia_travada_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_ordem_producao" ADD COLUMN IF NOT EXISTS "sequencia_travada_por_id" TEXT`)
+  console.log('✅ PCP Gantt: etapa.sequencia_travada (+ em/por) — trava de sequência')
+
   // ─────────────────────────────────────────────────────────────────────────
   // Importador de OP do Calcgraf (agente desktop → Vizor) — Task 1.
   // Credencial de máquina do agente (agente_api_key), fila de revisão de OPs

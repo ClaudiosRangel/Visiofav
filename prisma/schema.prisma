@@ -3730,6 +3730,12 @@ model EtapaOrdemProducao {
   // false = etapa 100% calculada (comportamento legado, não-regressão).
   inicioAgendadoManual   DateTime?        @map("inicio_agendado_manual")
   agendaTravada          Boolean          @default(false) @map("agenda_travada")
+  // Trava de SEQUÊNCIA (spec gantt-travar-sequencia): fixa a posição do split
+  // na fila da máquina. Independente da trava de data. Só ADMIN ou quem tem
+  // `podeTravarSequencia` altera. false = comportamento legado.
+  sequenciaTravada       Boolean          @default(false) @map("sequencia_travada")
+  sequenciaTravadaEm     DateTime?        @map("sequencia_travada_em")
+  sequenciaTravadaPorId  String?          @map("sequencia_travada_por_id")
   // Status de pré-impressão: FINALIZADO, METADE, PROBLEMA ou null (sem marcação)
   preImpressaoStatus     String?          @map("pre_impressao_status") @db.VarChar(20)
   // Tipo de colagem extraído do PDF (texto exato após a "/" na linha da

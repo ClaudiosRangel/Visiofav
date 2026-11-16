@@ -75,6 +75,56 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     return verificarPermissaoAcao(permissoes, acao, tipoProcessoId)
   }
 
+  // -------------------------------------------------------------------------
+  // Trava de SEQUÊNCIA (spec gantt-travar-sequencia) — helpers
+  // -------------------------------------------------------------------------
+
+  const STATUS_ATIVOS_FILA = ['PENDENTE', 'EM_ANDAMENTO', 'PAUSADA']
+
+  /** Pode alterar a trava de sequência de etapas deste centro? (admin ou permissão). */
+  async function podeAlterarSequenciaNoCentro(
+    user: { id: string; empresaId: string; perfil?: string },
+    centroProducaoId: string | null,
+  ): Promise<boolean> {
+    if (user.perfil === 'SUPER_ADMIN' || user.perfil === 'ADMIN') return true
+    const permissoes = await getPermissoes(user.empresaId, user.id)
+    let tipoProcessoId: string | null = null
+    if (centroProducaoId) {
+      const centro = await prisma.centroProducao.findFirst({
+        where: { id: centroProducaoId, empresaId: user.empresaId },
+        select: { tipoProcessoId: true },
+      })
+      tipoProcessoId = centro?.tipoProcessoId ?? null
+    }
+    return verificarPermissaoAcao(permissoes, 'podeTravarSequencia', tipoProcessoId)
+  }
+
+  async function logTravaOp(opId: string, usuarioId: string, observacao: string) {
+    await prisma.logOrdemProducao.create({
+      data: { ordemProducaoId: opId, statusAnterior: '', statusNovo: '', usuarioId, observacao },
+    })
+  }
+
+  /**
+   * Se a etapa está travada por sequência e o usuário NÃO é autorizado, responde
+   * 403 (e registra a recusa no log). Retorna true quando a operação deve parar.
+   */
+  async function recusarSeTravadaSemPermissao(
+    user: { id: string; empresaId: string; perfil?: string },
+    etapa: { id: string; ordemProducaoId: string; descricao: string; centroProducaoId: string | null; sequenciaTravada: boolean },
+    reply: { status: (c: number) => { send: (b: unknown) => unknown } },
+    operacao: string,
+  ): Promise<boolean> {
+    if (!etapa.sequenciaTravada) return false
+    if (await podeAlterarSequenciaNoCentro(user, etapa.centroProducaoId)) return false
+    await logTravaOp(etapa.ordemProducaoId, user.id, `Operação recusada (${operacao}): etapa "${etapa.descricao}" está com a sequência travada`)
+    reply.status(403).send({
+      message: `A sequência desta etapa está travada. Só quem tem a permissão "Travar sequência" pode ${operacao}.`,
+      etapasTravadas: [{ id: etapa.id, descricao: etapa.descricao }],
+    })
+    return true
+  }
+
   // =========================================================================
   // PATCH /api/pcp/etapas/reordenar — Reordena etapas na fila de uma máquina
   // =========================================================================
@@ -114,6 +164,24 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: 'Uma ou mais etapas não pertencem ao centro informado' })
     }
 
+    // Trava de SEQUÊNCIA: se alguma etapa travada mudaria de posição, só quem
+    // tem a permissão "Travar sequência" (ou admin) pode reordenar.
+    const travadasAfetadas = etapas.filter(
+      (e) => e.sequenciaTravada && e.posicaoFila !== body.etapaIds.indexOf(e.id) + 1,
+    )
+    const autorizadoSequencia = travadasAfetadas.length === 0
+      ? true
+      : await podeAlterarSequenciaNoCentro(user, body.centroProducaoId)
+    if (!autorizadoSequencia) {
+      for (const e of travadasAfetadas) {
+        await logTravaOp(e.ordemProducaoId, user.id, `Reordenação recusada: etapa "${e.descricao}" tem a sequência travada (posição ${e.posicaoFila})`)
+      }
+      return reply.status(403).send({
+        message: 'Reordenação bloqueada: há etapas com a sequência travada. Só quem tem a permissão "Travar sequência" pode alterá-las.',
+        etapasTravadas: travadasAfetadas.map((e) => ({ id: e.id, descricao: e.descricao, posicaoFila: e.posicaoFila })),
+      })
+    }
+
     // Update posicaoFila for each etapa based on array order.
     // TODAS as etapas da fila são marcadas como ordemManual=true — o usuário
     // definiu a ordem inteira ao arrastar, não apenas a etapa individual.
@@ -130,6 +198,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       })
     )
     await prisma.$transaction(updates)
+
+    // Auditoria: autorizado alterou a posição de etapa(s) travada(s) por sequência.
+    for (const e of travadasAfetadas) {
+      await logTravaOp(
+        e.ordemProducaoId,
+        user.id,
+        `Etapa "${e.descricao}" (sequência travada) mudou da posição ${e.posicaoFila} para ${body.etapaIds.indexOf(e.id) + 1} por usuário autorizado`,
+      )
+    }
 
     // Log de auditoria — reordenação de fila
     // Loga apenas na OP da etapa efetivamente arrastada (se informada),
@@ -198,7 +275,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // Validar propriedade: etapas no centro informado + empresa; RCs da empresa.
     const etapas = etapaIds.length > 0 ? await prisma.etapaOrdemProducao.findMany({
       where: { id: { in: etapaIds }, centroProducaoId: body.centroProducaoId, ordemProducao: { empresaId: user.empresaId } },
-      select: { id: true },
+      select: { id: true, ordemProducaoId: true, descricao: true, posicaoFila: true, sequenciaTravada: true },
     }) : []
     const rcs = rcIds.length > 0 ? await prisma.requisicaoCorte.findMany({
       where: { id: { in: rcIds }, empresaId: user.empresaId },
@@ -206,6 +283,29 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }) : []
     const etapasValidas = new Set(etapas.map(e => e.id))
     const rcsValidas = new Set(rcs.map(r => r.id))
+
+    // Trava de SEQUÊNCIA: mesma regra do /etapas/reordenar, considerando a
+    // posição combinada (etapas + RCs) que será gravada.
+    const posNova = new Map<string, number>()
+    {
+      let p = 1
+      for (const item of body.itens) {
+        if (item.tipo === 'etapa' ? etapasValidas.has(item.id) : rcsValidas.has(item.id)) {
+          if (item.tipo === 'etapa') posNova.set(item.id, p)
+          p++
+        }
+      }
+    }
+    const travadasAfetadas = etapas.filter((e) => e.sequenciaTravada && e.posicaoFila !== posNova.get(e.id))
+    if (travadasAfetadas.length > 0 && !(await podeAlterarSequenciaNoCentro(user, body.centroProducaoId))) {
+      for (const e of travadasAfetadas) {
+        await logTravaOp(e.ordemProducaoId, user.id, `Reordenação recusada: etapa "${e.descricao}" tem a sequência travada (posição ${e.posicaoFila})`)
+      }
+      return reply.status(403).send({
+        message: 'Reordenação bloqueada: há etapas com a sequência travada. Só quem tem a permissão "Travar sequência" pode alterá-las.',
+        etapasTravadas: travadasAfetadas.map((e) => ({ id: e.id, descricao: e.descricao, posicaoFila: e.posicaoFila })),
+      })
+    }
 
     // Grava posicaoFila sequencial (1..N) seguindo a ordem combinada recebida.
     const updates: any[] = []
@@ -352,8 +452,15 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Sem permissão para finalizar etapas neste tipo de processo' })
     }
 
+    // Corpo opcional (Gantt → "Encerrar split"): permite encerrar etapa PENDENTE
+    // informando a quantidade produzida (aceita zero).
+    const opcoes = z.object({
+      encerrarSemInicio: z.boolean().optional(),
+      quantidadeProduzida: z.coerce.number().min(0).optional(),
+    }).parse(request.body ?? {})
+
     try {
-      return await concluirEtapa(id, user.empresaId, user.id)
+      return await concluirEtapa(id, user.empresaId, user.id, opcoes)
     } catch (err) {
       if (err instanceof EtapaOperacionalError) {
         return reply.status(err.statusCode).send({ message: err.message })
@@ -406,6 +513,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (etapa.status !== 'PENDENTE') {
       return reply.status(400).send({ message: 'Só é possível desmembrar etapas com status PENDENTE' })
     }
+    if (await recusarSeTravadaSemPermissao(user, etapa, reply, 'desmembrar a etapa')) return
 
     // Totais de referência. qtd = quantidade da OP; tiragem = tiragem resolvida
     // da etapa (plano → [Tiragem] → Qtd/Montagem → quantidade), mesma fonte da
@@ -535,6 +643,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
     if (etapa.status !== 'PENDENTE') return reply.status(400).send({ message: 'Só é possível reverter etapas PENDENTES' })
     if (Number(etapa.quantidadePrevista) <= 0) return reply.status(400).send({ message: 'Esta etapa não é resultado de desmembramento' })
+    if (await recusarSeTravadaSemPermissao(user as { id: string; empresaId: string; perfil?: string }, etapa, reply, 'reverter o desmembramento')) return
 
     // Buscar etapa "irmã" (mesma OP, quantidadePrevista > 0, diferente desta)
     const irma = await prisma.etapaOrdemProducao.findFirst({
@@ -733,6 +842,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     })
     if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
     if (etapa.status !== 'PENDENTE') return reply.status(400).send({ message: 'Só é possível excluir etapas PENDENTES' })
+    if (await recusarSeTravadaSemPermissao(user as { id: string; empresaId: string; perfil?: string }, etapa, reply, 'excluir a etapa')) return
 
     // Só permite excluir manuais ou desmembradas
     const isManual = etapa.descricao.includes('[MANUAL]') || etapa.descricao.startsWith('Lançamento manual')
@@ -762,6 +872,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (etapa.status !== 'PENDENTE') {
       return reply.status(400).send({ message: 'Só é possível reverter etapas PENDENTES' })
     }
+    if (await recusarSeTravadaSemPermissao(user as { id: string; empresaId: string; perfil?: string }, etapa, reply, 'reverter o desmembramento')) return
 
     const quantidadeDevolvida = Number(etapa.quantidadePrevista)
 
@@ -1071,6 +1182,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const centroOrigemId = etapa.centroProducaoId
 
+    // Trava de SEQUÊNCIA: mover etapa travada exige permissão; ao mover, a
+    // trava é removida (a posição na fila de origem deixa de valer).
+    if (await recusarSeTravadaSemPermissao(user, etapa, reply, 'mover a etapa')) return
+    const destravarSequencia = etapa.sequenciaTravada
+
     // Etapa entra no final da fila do centro destino (não interfere na ordem
     // existente). Sem posicionamento manual prévio.
     const maxPos = await prisma.etapaOrdemProducao.aggregate({
@@ -1080,7 +1196,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     const atualizada = await prisma.etapaOrdemProducao.update({
       where: { id },
-      data: { centroProducaoId: body.centroProducaoId, ordemManual: false, posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
+      data: {
+        centroProducaoId: body.centroProducaoId,
+        ordemManual: false,
+        posicaoFila: (maxPos._max.posicaoFila || 0) + 1,
+        ...(destravarSequencia ? { sequenciaTravada: false, sequenciaTravadaEm: null, sequenciaTravadaPorId: null } : {}),
+      },
     })
 
     // Log de auditoria — mover etapa entre centros
@@ -1090,7 +1211,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         statusAnterior: etapa.status,
         statusNovo: etapa.status,
         usuarioId: user.id,
-        observacao: `Etapa "${etapa.descricao}" movida para centro ${centro.codigo || centro.descricao}`,
+        observacao: `Etapa "${etapa.descricao}" movida para centro ${centro.codigo || centro.descricao}${destravarSequencia ? ' (trava de sequência removida ao mudar de máquina)' : ''}`,
       },
     })
 
@@ -1132,6 +1253,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       return reply.status(409).send({ message: 'OP finalizada não pode ter a agenda alterada' })
     }
 
+    // Trava de SEQUÊNCIA: trocar de centro (mover) uma etapa travada exige
+    // permissão e remove a trava. Só reagendar a data NÃO mexe na sequência.
+    const trocaDeCentro = !!body.centroProducaoId && body.centroProducaoId !== etapa.centroProducaoId
+    if (trocaDeCentro && (await recusarSeTravadaSemPermissao(user, etapa, reply, 'mover a etapa'))) return
+
     const inicio = new Date(body.inicio)
     if (Number.isNaN(inicio.getTime())) {
       return reply.status(400).send({ message: 'Data de início inválida' })
@@ -1157,6 +1283,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       dados.centroProducaoId = body.centroProducaoId
       dados.ordemManual = false
       dados.posicaoFila = (maxPos._max.posicaoFila || 0) + 1
+      if (etapa.sequenciaTravada) {
+        dados.sequenciaTravada = false
+        dados.sequenciaTravadaEm = null
+        dados.sequenciaTravadaPorId = null
+      }
       centroInfo = ` e movida para ${centro.codigo || centro.descricao}`
     }
 
@@ -1178,6 +1309,91 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       inicioAgendadoManual: atualizada.inicioAgendadoManual,
       agendaTravada: atualizada.agendaTravada,
     }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/travar-sequencia — fixa a posição da etapa na
+  // fila da máquina (spec gantt-travar-sequencia). Idempotente. Só ADMIN ou
+  // quem tem `podeTravarSequencia`. Independente da trava de data.
+  // =========================================================================
+  app.patch('/etapas/:id/travar-sequencia', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idSchema.parse(request.params)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+      include: { ordemProducao: { select: { status: true } } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    if (!(await podeAlterarSequenciaNoCentro(user, etapa.centroProducaoId))) {
+      return reply.status(403).send({ message: 'Sem permissão para travar a sequência (permissão "Travar sequência")' })
+    }
+    if (etapa.status === 'CONCLUIDA' || ['CONCLUIDA', 'CANCELADA'].includes(etapa.ordemProducao.status)) {
+      return reply.status(409).send({ message: 'Etapa/OP finalizada não pode ter a sequência travada' })
+    }
+    if (!etapa.centroProducaoId) {
+      return reply.status(409).send({ message: 'Etapa sem máquina definida não pode ter a sequência travada' })
+    }
+    if (etapa.sequenciaTravada) {
+      return { id: etapa.id, sequenciaTravada: true, posicaoFila: etapa.posicaoFila }
+    }
+
+    // Garante uma posição definida: se a etapa ainda não tem posição, vai para
+    // o fim da fila do centro (a trava fixa o que está visível).
+    let posicaoFila = etapa.posicaoFila
+    if (posicaoFila == null) {
+      const max = await prisma.etapaOrdemProducao.aggregate({
+        where: { centroProducaoId: etapa.centroProducaoId, status: { in: STATUS_ATIVOS_FILA } },
+        _max: { posicaoFila: true },
+      })
+      posicaoFila = (max._max.posicaoFila ?? 0) + 1
+    }
+
+    const agora = new Date()
+    const atualizada = await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: {
+        sequenciaTravada: true,
+        sequenciaTravadaEm: agora,
+        sequenciaTravadaPorId: user.id,
+        posicaoFila,
+        ordemManual: true,
+      },
+    })
+    await logTravaOp(
+      etapa.ordemProducaoId,
+      user.id,
+      `Sequência da etapa "${etapa.descricao}" TRAVADA na posição ${posicaoFila} da fila`,
+    )
+    return { id: atualizada.id, sequenciaTravada: true, posicaoFila: atualizada.posicaoFila }
+  })
+
+  // =========================================================================
+  // PATCH /api/pcp/etapas/:id/destravar-sequencia — remove a trava de sequência.
+  // =========================================================================
+  app.patch('/etapas/:id/destravar-sequencia', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = idSchema.parse(request.params)
+
+    const etapa = await prisma.etapaOrdemProducao.findFirst({
+      where: { id, ordemProducao: { empresaId: user.empresaId } },
+    })
+    if (!etapa) return reply.status(404).send({ message: 'Etapa não encontrada' })
+
+    if (!(await podeAlterarSequenciaNoCentro(user, etapa.centroProducaoId))) {
+      return reply.status(403).send({ message: 'Sem permissão para destravar a sequência (permissão "Travar sequência")' })
+    }
+    if (!etapa.sequenciaTravada) {
+      return { id: etapa.id, sequenciaTravada: false }
+    }
+
+    await prisma.etapaOrdemProducao.update({
+      where: { id },
+      data: { sequenciaTravada: false, sequenciaTravadaEm: null, sequenciaTravadaPorId: null },
+    })
+    await logTravaOp(etapa.ordemProducaoId, user.id, `Sequência da etapa "${etapa.descricao}" DESTRAVADA`)
+    return { id: etapa.id, sequenciaTravada: false }
   })
 
   // =========================================================================

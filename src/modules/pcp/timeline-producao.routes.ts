@@ -56,6 +56,11 @@ interface EtapaTimeline {
   // é a âncora manual; o front mostra cadeado e permite destravar.
   agendaTravada: boolean
   inicioAgendadoManual: string | null
+  // Trava de SEQUÊNCIA (spec gantt-travar-sequencia) — posição fixa na fila.
+  sequenciaTravada: boolean
+  sequenciaTravadaEm: string | null
+  sequenciaTravadaPorNome: string | null
+  posicaoFila: number | null
   // Real
   inicioRealAt: string | null
   fimRealAt: string | null
@@ -253,6 +258,9 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
             // motor usa inicioAgendadoManual como ponto fixo.
             agendaTravada: true,
             inicioAgendadoManual: true,
+            sequenciaTravada: true,
+            sequenciaTravadaEm: true,
+            sequenciaTravadaPorId: true,
             centroProducaoId: true,
             centroProducao: {
               select: {
@@ -295,6 +303,17 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
     ])
     const clienteMap = new Map(clientes.map(c => [c.id, c.razaoSocial]))
     const produtoMap = new Map(produtos.map(p => [p.id, p.descricao]))
+
+    // Nomes de quem travou a sequência (para o tooltip do Gantt).
+    const idsTrava = [
+      ...new Set(
+        ops.flatMap((op) => op.etapas.map((e) => e.sequenciaTravadaPorId)).filter(Boolean),
+      ),
+    ] as string[]
+    const usuariosTrava = idsTrava.length > 0
+      ? await prisma.usuario.findMany({ where: { id: { in: idsTrava } }, select: { id: true, nome: true } })
+      : []
+    const nomesUsuarioTrava = new Map(usuariosTrava.map((u) => [u.id, u.nome]))
 
     // Exceções de calendário por centro (spec pcp-excecoes-calendario-gantt).
     // Sobrepõem o turno-base do centro em datas específicas (hora extra / dia
@@ -445,6 +464,10 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           tempoTotalPrevisto: totalPrevisto,
           agendaTravada: Boolean(etapa.agendaTravada),
           inicioAgendadoManual: etapa.inicioAgendadoManual ? new Date(etapa.inicioAgendadoManual).toISOString() : null,
+          sequenciaTravada: Boolean(etapa.sequenciaTravada),
+          sequenciaTravadaEm: etapa.sequenciaTravadaEm ? new Date(etapa.sequenciaTravadaEm).toISOString() : null,
+          sequenciaTravadaPorNome: etapa.sequenciaTravadaPorId ? (nomesUsuarioTrava.get(etapa.sequenciaTravadaPorId) ?? null) : null,
+          posicaoFila: etapa.posicaoFila ?? null,
           inicioPrevistoAt: inicioPrevisto.toISOString(),
           fimPrevistoAt: fimPrevisto.toISOString(),
           inicioRealAt: etapa.dataInicioReal ? new Date(etapa.dataInicioReal).toISOString() : null,

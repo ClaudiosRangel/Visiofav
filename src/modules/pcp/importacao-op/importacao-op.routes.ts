@@ -7,6 +7,7 @@ import { extrairTextoPdf } from './pdf-extractor.service'
 import { isGprintPdf, parseGprintPdf, DadosOpGprint } from './parsers/gprint-parser'
 import { getOpPdfPath, getOpsPdfDir, salvarOpPdf } from '../../../lib/storage'
 import { reordenarFilaAutomaticamente } from '../fila-ordenacao.service'
+import { capturarTravasDaOp, restaurarTravasDaOp, type TravaCapturada } from '../restaurar-travas.service'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -211,6 +212,9 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     // Verificar se já existe OP com mesmo número — se sim, ATUALIZAR em vez de criar nova
     let op: any
     let modoAtualizacao = false
+    // Travas do Gantt (data/sequência) das etapas existentes — capturadas antes
+    // da substituição total e restauradas depois (spec gantt-travar-sequencia).
+    let travasAnteriores: TravaCapturada[] = []
     // Número original do PDF — pode ser alfanumérico (ex: "4-101", "2.870")
     const numeroOpOriginal = dados.cabecalho.numeroOp || null
     // Tentar converter para inteiro puro (só se for 100% numérico após remover pontos de milhar)
@@ -333,6 +337,7 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
         // e planos antigos. Os laços abaixo recriam tudo a partir do novo PDF.
         // Etapa→plano é SetNull; apagamos etapas antes dos planos para evitar
         // órfãos, e os planos em seguida (serão recriados).
+        travasAnteriores = await capturarTravasDaOp(prisma, op.id)
         await prisma.apontamentoEtapa.deleteMany({ where: { etapaOrdemProducao: { ordemProducaoId: op.id } } })
         await prisma.apontamentoProducao.deleteMany({ where: { ordemProducaoId: op.id } })
         await prisma.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId: op.id } })
@@ -643,6 +648,17 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
           where: { id: etapaCriada.id },
           data: { posicaoFila: (maxPos._max.posicaoFila || 0) + 1 },
         })
+      }
+    }
+
+    // Reimportação: restaura as travas de data/sequência que existiam nas
+    // etapas substituídas (mesmo centro + descrição). Best-effort: falha aqui
+    // não derruba a importação.
+    if (modoAtualizacao && travasAnteriores.length > 0) {
+      try {
+        await restaurarTravasDaOp(prisma, { ordemProducaoId: op.id, travas: travasAnteriores, usuarioId: user.id })
+      } catch (err) {
+        console.error('[importacao-op] falha ao restaurar travas do Gantt:', err)
       }
     }
 

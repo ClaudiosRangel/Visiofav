@@ -33,6 +33,7 @@
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma'
+import { capturarTravasDaOp, restaurarTravasDaOp } from '../restaurar-travas.service'
 import {
   OpOrigemDTO,
   OpDestinoResumo,
@@ -612,6 +613,8 @@ async function atualizarOp(
 
   // Substituição total de itens/etapas/planos/entregas a partir do novo conteúdo
   // (a OP não tem produção; essa é a condição que permite a sobrescrita).
+  // Captura as travas do Gantt (data/sequência) antes de recriar as etapas.
+  const travasAnteriores = await capturarTravasDaOp(tx, ordemProducaoId)
   await tx.itemOrdemProducao.deleteMany({ where: { ordemProducaoId } })
   await tx.etapaOrdemProducao.deleteMany({ where: { ordemProducaoId } })
   await tx.variacaoOrdemProducao.deleteMany({ where: { ordemProducaoId } })
@@ -641,6 +644,10 @@ async function atualizarOp(
   await criarEtapas(tx, ordemProducaoId, empresaId, dto)
   await criarPlanos(tx, ordemProducaoId, empresaId, dto)
   await criarProgramacaoEntrega(tx, ordemProducaoId, dto)
+
+  // Restaura as travas de data/sequência nas etapas recriadas (mesmo centro +
+  // descrição) e registra o resultado no log da OP.
+  await restaurarTravasDaOp(tx, { ordemProducaoId, travas: travasAnteriores, usuarioId: USUARIO_AGENTE })
 
   await tx.logOrdemProducao.create({
     data: {

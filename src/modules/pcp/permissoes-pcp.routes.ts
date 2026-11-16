@@ -28,6 +28,8 @@ export interface PermissoesPorProcesso {
   // Voltar (retornar) uma etapa CONCLUÍDA para a fila. Quando o usuário tem
   // esta permissão, a ação dispensa a credencial de admin/supervisor.
   podeRetornarEtapa?: boolean
+  // Travar/destravar a SEQUÊNCIA (posição na fila) de um split. Default false.
+  podeTravarSequencia?: boolean
 }
 
 export interface PermissoesPcpUsuario {
@@ -48,6 +50,8 @@ export interface PermissoesPcpUsuario {
   podeEditarObservacao: boolean
   // Voltar (retornar) etapa CONCLUÍDA para a fila sem credencial de admin.
   podeRetornarEtapa: boolean
+  // Travar/destravar a sequência de splits na fila (default false; admin sempre pode).
+  podeTravarSequencia: boolean
   // Permissão para drag-and-drop (reordenar fila)
   podeReordenarFila: boolean
   podeReordenarGrupos: boolean
@@ -75,6 +79,7 @@ const DEFAULT_PERMISSOES: PermissoesPcpUsuario = {
   // Default FALSE: sem configuração explícita, retornar etapa continua
   // exigindo credencial de admin/supervisor (não-regressão).
   podeRetornarEtapa: false,
+  podeTravarSequencia: false,
   podeReordenarFila: true,
   podeReordenarGrupos: true,
   podeCriarGrupo: true,
@@ -178,6 +183,7 @@ const permissoesSchema = z.object({
   podePostergarEntrega: z.boolean().optional(),
   podeEditarObservacao: z.boolean().optional(),
   podeRetornarEtapa: z.boolean().optional(),
+  podeTravarSequencia: z.boolean().optional(),
   podeReordenarFila: z.boolean().optional(),
   podeReordenarGrupos: z.boolean().optional(),
   podeCriarGrupo: z.boolean().optional(),
@@ -194,6 +200,7 @@ const permissoesSchema = z.object({
     podePostergarEntrega: z.boolean().optional(),
     podeEditarObservacao: z.boolean().optional(),
     podeRetornarEtapa: z.boolean().optional(),
+    podeTravarSequencia: z.boolean().optional(),
   })).optional(),
   // Controle de acesso granular por menu (Ordens de Produção, Importar OP, etc.)
   acessoMenus: z.record(z.string(), z.object({

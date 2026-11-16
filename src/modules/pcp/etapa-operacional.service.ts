@@ -155,6 +155,7 @@ async function reordenarFilaIniciada(empresaId: string, centroProducaoId: string
       id: true,
       posicaoFila: true,
       ordemManual: true,
+      sequenciaTravada: true,
       ordemProducao: { select: { numero: true, dataEntregaPrevista: true } },
     },
   })
@@ -164,6 +165,7 @@ async function reordenarFilaIniciada(empresaId: string, centroProducaoId: string
     id: e.id,
     posicaoFila: e.posicaoFila,
     ordemManual: e.ordemManual ?? false,
+    sequenciaTravada: e.sequenciaTravada ?? false,
     opNumero: e.ordemProducao?.numero ?? 0,
     dataEntregaPrevista: e.ordemProducao?.dataEntregaPrevista ?? null,
   }))
@@ -302,7 +304,21 @@ export async function apontarProducao(
  * interrompe a resposta de sucesso da conclusão da etapa (tudo dentro de
  * try/catch, exatamente como no handler original).
  */
-export async function concluirEtapa(etapaId: string, empresaId: string, usuarioId: string) {
+export async function concluirEtapa(
+  etapaId: string,
+  empresaId: string,
+  usuarioId: string,
+  opcoes?: {
+    /**
+     * Permite encerrar uma etapa PENDENTE (nunca iniciada), p.ex. produção
+     * feita fora do sistema. Usado pelo "Encerrar split" do Gantt. Padrão de
+     * mercado: o encerramento é uma confirmação de quantidade (aceita zero).
+     */
+    encerrarSemInicio?: boolean
+    /** Quantidade produzida a registrar no encerramento (aceita 0). */
+    quantidadeProduzida?: number
+  },
+) {
   // Segurança: filtro explícito por empresaId — sem isso, um usuário de
   // OUTRA empresa que soubesse o UUID da etapa conseguia concluí-la, e a
   // NotaEntrada de produção (abaixo) era criada com empresaId do usuário
@@ -319,17 +335,49 @@ export async function concluirEtapa(etapaId: string, empresaId: string, usuarioI
   })
   if (!etapa) throw new EtapaOperacionalError(404, 'Etapa não encontrada')
 
-  if (!['EM_ANDAMENTO', 'PAUSADA'].includes(etapa.status)) {
+  const encerrandoSemInicio = etapa.status === 'PENDENTE' && opcoes?.encerrarSemInicio === true
+  if (!['EM_ANDAMENTO', 'PAUSADA'].includes(etapa.status) && !encerrandoSemInicio) {
     throw new EtapaOperacionalError(400, 'Etapa precisa estar em andamento para concluir')
   }
+  const qtdEncerramento = encerrandoSemInicio ? Math.max(0, Number(opcoes?.quantidadeProduzida ?? 0)) : 0
 
   const agora = new Date()
   const tempoRealMs = etapa.dataInicioReal ? agora.getTime() - new Date(etapa.dataInicioReal).getTime() : 0
   const tempoRealMin = Math.round(tempoRealMs / 60000)
 
+  // Encerramento de etapa nunca iniciada: registra a quantidade informada como
+  // apontamento (se > 0) para a produção ficar rastreável.
+  if (encerrandoSemInicio && qtdEncerramento > 0) {
+    await prisma.apontamentoEtapa.create({
+      data: {
+        etapaOrdemProducaoId: etapaId,
+        empresaId,
+        funcionarioId: etapa.funcionarioId,
+        tipo: 'PRODUCAO',
+        quantidadeProduzida: qtdEncerramento,
+        quantidadePerda: 0,
+        observacao: 'Encerramento sem início prévio (Gantt)',
+        fonteApontamento: 'MANUAL_OPERADOR',
+      },
+    })
+  }
+
   const atualizada = await prisma.etapaOrdemProducao.update({
     where: { id: etapaId },
-    data: { status: 'CONCLUIDA', dataFimReal: agora },
+    data: {
+      status: 'CONCLUIDA',
+      dataFimReal: agora,
+      ...(encerrandoSemInicio
+        ? {
+            dataInicioReal: etapa.dataInicioReal ?? agora,
+            ...(qtdEncerramento > 0 ? { quantidadeProduzida: { increment: qtdEncerramento } } : {}),
+          }
+        : {}),
+      // Etapa concluída sai da fila: a trava de sequência deixa de valer.
+      sequenciaTravada: false,
+      sequenciaTravadaEm: null,
+      sequenciaTravadaPorId: null,
+    },
   })
 
   // Log de auditoria — conclusão da etapa individual. Antes só havia log
@@ -347,7 +395,7 @@ export async function concluirEtapa(etapaId: string, empresaId: string, usuarioI
         statusNovo: etapa.status,
         usuarioId,
         observacao:
-          `Etapa "${etapa.descricao}" (${centroLabel}) concluída. ` +
+          `Etapa "${etapa.descricao}" (${centroLabel}) concluída${encerrandoSemInicio ? ' (ENCERRADA sem início prévio)' : ''}. ` +
           `Produzido: ${Number(atualizada.quantidadeProduzida)}, ` +
           `perda: ${Number(atualizada.quantidadePerda)}, ` +
           `tempo real: ${tempoRealMin} min.`,
