@@ -6313,6 +6313,9 @@ async function migrarOrcamentoGraficoCadastrosRelacoes() {
   await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "texto_proposta" TEXT`)
   await exec(`ALTER TABLE "material_acabamento" ADD COLUMN IF NOT EXISTS "tipo_param" INTEGER`)
 
+  // Fase 3: tipo de embalagem padrão do produto gráfico (sem FK)
+  await exec(`ALTER TABLE "produto_grafico" ADD COLUMN IF NOT EXISTS "tipo_embalagem_id" VARCHAR(36)`)
+
   await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_grafico_id" TEXT`)
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)
 

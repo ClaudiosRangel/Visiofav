@@ -52,6 +52,22 @@ export function ordenarPorRelacao<T extends { id: string }>(
   })
 }
 
+export type GrupoAtividade = 'ACONDICIONAMENTO' | 'ATIVIDADES'
+
+/**
+ * Regra única de grupo da atividade no catálogo (usada pelas duas rotas):
+ * ACONDICIONAMENTO quando a flag do cadastro da atividade é verdadeira OU existe
+ * a relação PRODUTO → ACONDICIONAMENTO; caso contrário, ATIVIDADES.
+ */
+export function classificarGrupoAtividade(entrada: {
+  flagAcondicionamento: boolean
+  temRelacaoAcondicionamento: boolean
+}): GrupoAtividade {
+  return entrada.flagAcondicionamento || entrada.temRelacaoAcondicionamento
+    ? 'ACONDICIONAMENTO'
+    : 'ATIVIDADES'
+}
+
 export interface AtividadeSeparavel {
   id: string
   acondicionamento: boolean
@@ -73,7 +89,11 @@ export function separarAcondicionamento<T extends AtividadeSeparavel>(
   for (const a of atividades) {
     if (vistos.has(a.id)) continue
     vistos.add(a.id)
-    if (a.acondicionamento || idsAcondicionamento.has(a.id)) acondicionamento.push(a)
+    const grupo = classificarGrupoAtividade({
+      flagAcondicionamento: a.acondicionamento,
+      temRelacaoAcondicionamento: idsAcondicionamento.has(a.id),
+    })
+    if (grupo === 'ACONDICIONAMENTO') acondicionamento.push(a)
     else demais.push(a)
   }
   return { atividades: demais, acondicionamento }
@@ -190,6 +210,7 @@ export async function obterCatalogoPlano(
   if (!plano) throw new CatalogoError(404, 'Tipo de plano não encontrado')
 
   let preMarcadas = new Set<string>()
+  let idsAcondicionamentoProduto = new Set<string>()
   let defaultProduto: Awaited<ReturnType<Db['defaultProdutoPlano']['findFirst']>> = null
   if (produtoId) {
     const produto = await db.produtoGrafico.findFirst({
@@ -197,6 +218,9 @@ export async function obterCatalogoPlano(
       select: { id: true },
     })
     if (!produto) throw new CatalogoError(404, 'Produto não encontrado')
+    idsAcondicionamentoProduto = new Set(
+      ids(await relacoesDe(db, empresaId, 'PRODUTO', produtoId, 'ACONDICIONAMENTO')),
+    )
     defaultProduto = await db.defaultProdutoPlano.findFirst({
       where: { empresaId, produtoId, tipoPlanoId: planoId },
     })
@@ -257,6 +281,10 @@ export async function obterCatalogoPlano(
     const relsDaAtividade = relMateriais.filter((r) => r.idOrigem === a.id)
     return {
       ...a,
+      grupo: classificarGrupoAtividade({
+        flagAcondicionamento: a.acondicionamento,
+        temRelacaoAcondicionamento: idsAcondicionamentoProduto.has(a.id),
+      }),
       preMarcada: preMarcadas.has(a.id) || a.padrao,
       restricoes: restricoes.filter((r) => r.acabamentoGraficoId === a.id),
       materiais: ordenarPorRelacao(materiais, relsDaAtividade, (m) => m.nome),
@@ -266,7 +294,10 @@ export async function obterCatalogoPlano(
   return {
     plano,
     defaultProduto,
+    // `atividades` continua com TODAS (formato atual); `grupo` por item e a lista
+    // `acondicionamento` (subconjunto) são acréscimos.
     atividades,
+    acondicionamento: atividades.filter((a) => a.grupo === 'ACONDICIONAMENTO'),
     coberturas: ordenarPorRelacao(coberturas, relCob, (c) => c.nome),
     suportes: ordenarPorRelacao(suportes, relSup, (s) => s.descricao),
     itensDiversosAutomaticos: ordenarPorRelacao(itens, relItens, (i) => i.nome),

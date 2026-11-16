@@ -665,18 +665,52 @@ async function ancorarCustoCalcgraf(
   return resultado
 }
 
+/**
+ * Cliente de banco aceito pelos helpers: o `prisma` global (padrão) ou o `tx` de
+ * uma `prisma.$transaction(async tx => …)`. Parâmetro sempre OPCIONAL no fim da
+ * assinatura, para não mudar nenhuma chamada existente.
+ */
+type DbClient = typeof prisma | Prisma.TransactionClient
+
 /** Valida (422 legível) que o produto gráfico existe na empresa. Retorna a mensagem de erro ou null. */
-async function validarProdutoGraficoDaEmpresa(empresaId: string, id: string | null | undefined): Promise<string | null> {
+async function validarProdutoGraficoDaEmpresa(
+  empresaId: string,
+  id: string | null | undefined,
+  db: DbClient = prisma,
+): Promise<string | null> {
   if (!id) return null
-  const achou = await prisma.produtoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
+  const achou = await db.produtoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
   return achou ? null : 'Produto gráfico não encontrado nesta empresa.'
 }
 
 /** Valida (422 legível) que o tipo de plano existe na empresa. Retorna a mensagem de erro ou null. */
-async function validarTipoPlanoDaEmpresa(empresaId: string, id: string | null | undefined): Promise<string | null> {
+async function validarTipoPlanoDaEmpresa(
+  empresaId: string,
+  id: string | null | undefined,
+  db: DbClient = prisma,
+): Promise<string | null> {
   if (!id) return null
-  const achou = await prisma.tipoPlanoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
+  const achou = await db.tipoPlanoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
   return achou ? null : 'Tipo de plano não encontrado nesta empresa.'
+}
+
+/**
+ * Resolve um id de catálogo copiado de outro registro (reaproveitar / puxar
+ * cálculo): devolve o próprio id se existir na empresa (`{ id, empresaId }`),
+ * senão `null` (id vazio, inexistente ou de outra empresa) — sem lançar erro.
+ */
+async function resolverIdDaEmpresa(
+  db: DbClient,
+  modelo: 'produtoGrafico' | 'tipoPlanoGrafico',
+  id: string | null | undefined,
+  empresaId: string,
+): Promise<string | null> {
+  if (!id) return null
+  const achou =
+    modelo === 'produtoGrafico'
+      ? await db.produtoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
+      : await db.tipoPlanoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
+  return achou ? achou.id : null
 }
 
 function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrcamento) {
@@ -746,8 +780,12 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
  * Recalcula e persiste os totais consolidados do cabeçalho a partir dos itens
  * atuais do orçamento. Sem itens → zera (0,00). Multi-tenant por empresaId.
  */
-async function reconsolidarOrcamento(orcamentoId: string, empresaId: string): Promise<void> {
-  const itens = await prisma.itemOrcamentoGrafico.findMany({
+async function reconsolidarOrcamento(
+  orcamentoId: string,
+  empresaId: string,
+  db: DbClient = prisma,
+): Promise<void> {
+  const itens = await db.itemOrcamentoGrafico.findMany({
     where: { orcamentoId, empresaId },
     select: { custoProducao: true, valorTotal: true, margemSelecionada: true },
   })
@@ -760,8 +798,8 @@ async function reconsolidarOrcamento(orcamentoId: string, empresaId: string): Pr
     }
   })
   const consolidado = consolidarOrcamento(fechamentos)
-  await prisma.orcamentoGrafico.update({
-    where: { id: orcamentoId },
+  await db.orcamentoGrafico.update({
+    where: { id: orcamentoId, empresaId },
     data: {
       custoProducaoConsolidado: consolidado.custoProducaoConsolidado,
       valorTotalConsolidado: consolidado.valorTotalConsolidado,
@@ -929,6 +967,9 @@ function reconstruirBodyDoItem(item: any, novaQuantidade?: number): ItemOrcament
     papelId: item.papelId ?? null,
     papelDescricao: item.papelDescricao ?? null,
     suporteId: item.suporteId ?? null,
+    // Catálogo (Fase 3): o produto gráfico acompanha a cópia. O id é revalidado
+    // por empresa na rota (`resolverIdDaEmpresa`) antes de gravar.
+    produtoGraficoId: item.produtoGraficoId ?? null,
     gramatura: Number(item.gramatura ?? 0),
     numCores: item.numCores,
     cores: (item.cores ?? null) as ItemOrcamentoBody['cores'],
@@ -1353,12 +1394,17 @@ async function materializarPlanosDoCalculo(
   dadosItem: Record<string, unknown>,
   empresaId: string,
   itemId: string,
+  /** Tipo de plano já validado por empresa (Fase 3); aplicado só ao 1º plano. Omitido/null = não grava. */
+  tipoPlanoIdPrimeiroPlano?: string | null,
 ): Promise<void> {
   const planos = planosParaMaterializar(calc, dadosItem)
   let seq = 1
   for (const p of planos) {
     await db.planoCalculoGrafico.create({
-      data: dadosPlanoEspelhoDaFoto(p, empresaId, itemId, seq),
+      data: {
+        ...dadosPlanoEspelhoDaFoto(p, empresaId, itemId, seq),
+        ...(seq === 1 && tipoPlanoIdPrimeiroPlano ? { tipoPlanoId: tipoPlanoIdPrimeiroPlano } : {}),
+      },
     })
     seq += 1
   }
@@ -1368,6 +1414,8 @@ async function materializarPlanosDoCalculo(
 function reconstruirBodyDoPlano(plano: any): PlanoBody {
   return {
     nome: plano.nome,
+    // Catálogo (Fase 3): o tipo de plano acompanha a cópia (revalidado na rota).
+    tipoPlanoId: plano.tipoPlanoId ?? null,
     suporteId: plano.suporteId ?? null,
     suporteProducaoId: plano.suporteProducaoId ?? null,
     gramatura: plano.gramatura != null ? Number(plano.gramatura) : undefined,
@@ -1941,6 +1989,24 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
     }
   }
+
+  // Fase 3 (Req 11.3): busca de acabamentos por id, em lote. Registrada ANTES das
+  // rotas paramétricas de /acabamentos. Sem filtro de status (inativo citado pelo
+  // catálogo deve poder ser exibido); ids de outra empresa/inexistentes não voltam.
+  app.get('/acabamentos/por-ids', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { ids } = z.object({
+      ids: z.string().min(1).transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
+        .pipe(z.array(z.string().uuid()).min(1).max(50)),
+    }).parse(request.query)
+
+    const data = await prisma.acabamentoGrafico.findMany({
+      where: { id: { in: ids }, empresaId: user.empresaId },
+      select: acabamentoGraficoSelect,
+      orderBy: { nome: 'asc' },
+    })
+    return { data, total: data.length }
+  })
 
   app.get('/acabamentos', async (request) => {
     const user = request.user as { id: string; empresaId: string }
@@ -4897,47 +4963,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (!origem) return reply.status(404).send({ message: 'Orçamento não encontrado' })
 
-    // 2) Número sequencial novo por empresa (igual ao POST principal).
-    const ultimo = await prisma.orcamentoGrafico.findFirst({
-      where: { empresaId: user.empresaId },
-      orderBy: { numero: 'desc' },
-      select: { numero: true },
-    })
-    const numero = (ultimo?.numero ?? 0) + 1
-
-    // 3) Cria o novo cabeçalho (RASCUNHO), aplicando overrides do body.
-    const novo = await prisma.orcamentoGrafico.create({
-      data: {
-        empresaId: user.empresaId,
-        numero,
-        versao: 1,
-        clienteId: overrides.clienteId !== undefined ? overrides.clienteId : origem.clienteId,
-        clienteNome: overrides.clienteNome !== undefined ? overrides.clienteNome : origem.clienteNome,
-        vendedorId: overrides.vendedorId !== undefined ? overrides.vendedorId : origem.vendedorId,
-        serie: origem.serie,
-        tipoEmbalagemId: origem.tipoEmbalagemId,
-        medidas: origem.medidas as any,
-        papelId: origem.papelId,
-        papelDescricao: origem.papelDescricao,
-        gramatura: origem.gramatura,
-        numCores: origem.numCores,
-        cores: origem.cores as any ?? undefined,
-        acabamentos: origem.acabamentos as any ?? undefined,
-        quantidade: overrides.quantidade ?? origem.quantidade,
-        status: 'RASCUNHO',
-        observacoes: overrides.observacoes !== undefined ? overrides.observacoes : origem.observacoes,
-        produtoId: origem.produtoId,
-        criadoPorId: user.id,
-      },
-      select: { id: true, numero: true, versao: true },
-    })
-
-    // 4) Clona + recalcula cada item (e seus planos). Erros de pré-condição de
-    //    cálculo (ItemOrcamentoError) são tolerados por item: o item é copiado
-    //    com o resultadoCalculo ORIGINAL quando o recálculo não é possível
-    //    (ex.: cadastro de preço ausente), para não perder a receita — a tela
-    //    permite recalcular manualmente depois. Avisos são acumulados.
+    // 2) FASE DE CÁLCULO (somente leitura, FORA da transação): recalcula cada item
+    //    e cada plano. Erros de pré-condição de cálculo (ItemOrcamentoError) são
+    //    tolerados por item: o item é copiado com o resultadoCalculo ORIGINAL
+    //    quando o recálculo não é possível (ex.: cadastro de preço ausente), para
+    //    não perder a receita — a tela permite recalcular manualmente depois.
+    //    Avisos são acumulados. Fazer isso antes mantém a transação curta e evita
+    //    que consultas via `prisma` global concorram com a conexão da transação.
+    //    Qualquer falha aqui acontece ANTES de qualquer gravação (nada fica órfão).
     const avisos: string[] = []
+    const calculados = []
     for (const item of origem.itens) {
       const body = reconstruirBodyDoItem(item, overrides.quantidade)
 
@@ -4956,16 +4991,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         ? dadosPersistenciaItem(body, resultado)
         : dadosPersistenciaItemSemRecalculo(body, item)
 
-      const novoItem = await prisma.itemOrcamentoGrafico.create({
-        data: {
-          orcamentoId: novo.id,
-          empresaId: user.empresaId,
-          sequencia: item.sequencia,
-          ...dados,
-        },
-      })
-
-      // Clona os planos do item (recalcula quando possível; senão copia espelho).
+      // Planos do item (recalcula quando possível; senão copia espelho).
+      const planosCalculados = []
       for (const plano of item.planos) {
         const planoBody = reconstruirBodyDoPlano(plano)
         let resPlano: ResultadoOrcamento | null = null
@@ -4976,45 +5003,138 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         } catch {
           resPlano = null
         }
-
-        if (resPlano) {
-          await prisma.planoCalculoGrafico.create({
-            data: dadosPersistenciaPlano(planoBody, user.empresaId, novoItem.id, plano.sequencia, resPlano),
-          })
-        } else {
-          // Copia espelho (custos salvos) quando o recálculo não foi possível.
-          await prisma.planoCalculoGrafico.create({
-            data: {
-              empresaId: user.empresaId,
-              itemId: novoItem.id,
-              sequencia: plano.sequencia,
-              nome: plano.nome,
-              suporteId: plano.suporteId ?? null,
-              suporteProducaoId: plano.suporteProducaoId ?? plano.suporteId ?? null,
-              gramatura: plano.gramatura ?? null,
-              formatoLarguraMm: plano.formatoLarguraMm,
-              formatoAlturaMm: plano.formatoAlturaMm,
-              numCores: plano.numCores,
-              cores: (plano.cores ?? undefined) as any,
-              maquinaId: plano.maquinaId ?? null,
-              acabamentosRicos: (plano.acabamentosRicos ?? undefined) as any,
-              resultadoCalculo: (plano.resultadoCalculo ?? undefined) as any,
-              custoSuporte: plano.custoSuporte,
-              custoImpressao: plano.custoImpressao,
-              custoAcabamento: plano.custoAcabamento,
-            },
-          })
-        }
+        planosCalculados.push({ plano, planoBody, resPlano })
       }
 
-      // Reconsolida o item a partir dos planos (se houver) — mantém a mesma
-      // relação preço/custo do item recalculado.
-      if (item.planos.length > 0) {
-        await reconsolidarItemComPlanos(novo.id, novoItem.id, user.empresaId)
-      }
+      calculados.push({ item, dados, planosCalculados })
     }
 
-    await reconsolidarOrcamento(novo.id, user.empresaId)
+    // 3) FASE DE GRAVAÇÃO ATÔMICA: cabeçalho, itens, planos e reconsolidações na
+    //    MESMA transação (Req 7.1/7.10) — qualquer falha reverte tudo, sem
+    //    orçamento órfão. empresaId EXPLÍCITO em toda consulta/gravação.
+    let novo: { id: string; numero: number; versao: number }
+    try {
+      novo = await prisma.$transaction(
+        async (tx) => {
+          // Número sequencial novo por empresa (igual ao POST principal).
+          const ultimo = await tx.orcamentoGrafico.findFirst({
+            where: { empresaId: user.empresaId },
+            orderBy: { numero: 'desc' },
+            select: { numero: true },
+          })
+          const numero = (ultimo?.numero ?? 0) + 1
+
+          // Cabeçalho novo (RASCUNHO), aplicando overrides do body.
+          const criado = await tx.orcamentoGrafico.create({
+            data: {
+              empresaId: user.empresaId,
+              numero,
+              versao: 1,
+              clienteId: overrides.clienteId !== undefined ? overrides.clienteId : origem.clienteId,
+              clienteNome: overrides.clienteNome !== undefined ? overrides.clienteNome : origem.clienteNome,
+              vendedorId: overrides.vendedorId !== undefined ? overrides.vendedorId : origem.vendedorId,
+              serie: origem.serie,
+              tipoEmbalagemId: origem.tipoEmbalagemId,
+              medidas: origem.medidas as any,
+              papelId: origem.papelId,
+              papelDescricao: origem.papelDescricao,
+              gramatura: origem.gramatura,
+              numCores: origem.numCores,
+              cores: origem.cores as any ?? undefined,
+              acabamentos: origem.acabamentos as any ?? undefined,
+              quantidade: overrides.quantidade ?? origem.quantidade,
+              status: 'RASCUNHO',
+              observacoes: overrides.observacoes !== undefined ? overrides.observacoes : origem.observacoes,
+              produtoId: origem.produtoId,
+              criadoPorId: user.id,
+            },
+            select: { id: true, numero: true, versao: true },
+          })
+
+          for (const { item, dados, planosCalculados } of calculados) {
+            // Produto gráfico copiado SÓ se existir na empresa; senão null, sem erro.
+            // Sem defaults do produto e sem SelecaoMaterialAcabamento (Req 7.9).
+            const produtoGraficoId = await resolverIdDaEmpresa(
+              tx,
+              'produtoGrafico',
+              (item as { produtoGraficoId?: string | null }).produtoGraficoId,
+              user.empresaId,
+            )
+
+            const novoItem = await tx.itemOrcamentoGrafico.create({
+              data: {
+                orcamentoId: criado.id,
+                empresaId: user.empresaId,
+                sequencia: item.sequencia,
+                ...dados,
+                produtoGraficoId,
+              },
+            })
+
+            for (const { plano, planoBody, resPlano } of planosCalculados) {
+              const tipoPlanoId = await resolverIdDaEmpresa(
+                tx,
+                'tipoPlanoGrafico',
+                (plano as { tipoPlanoId?: string | null }).tipoPlanoId,
+                user.empresaId,
+              )
+
+              if (resPlano) {
+                await tx.planoCalculoGrafico.create({
+                  data: {
+                    ...dadosPersistenciaPlano(planoBody, user.empresaId, novoItem.id, plano.sequencia, resPlano),
+                    tipoPlanoId,
+                  },
+                })
+              } else {
+                // Copia espelho (custos salvos) quando o recálculo não foi possível.
+                await tx.planoCalculoGrafico.create({
+                  data: {
+                    empresaId: user.empresaId,
+                    itemId: novoItem.id,
+                    sequencia: plano.sequencia,
+                    nome: plano.nome,
+                    tipoPlanoId,
+                    suporteId: plano.suporteId ?? null,
+                    suporteProducaoId: plano.suporteProducaoId ?? plano.suporteId ?? null,
+                    gramatura: plano.gramatura ?? null,
+                    formatoLarguraMm: plano.formatoLarguraMm,
+                    formatoAlturaMm: plano.formatoAlturaMm,
+                    numCores: plano.numCores,
+                    cores: (plano.cores ?? undefined) as any,
+                    maquinaId: plano.maquinaId ?? null,
+                    acabamentosRicos: (plano.acabamentosRicos ?? undefined) as any,
+                    resultadoCalculo: (plano.resultadoCalculo ?? undefined) as any,
+                    custoSuporte: plano.custoSuporte,
+                    custoImpressao: plano.custoImpressao,
+                    custoAcabamento: plano.custoAcabamento,
+                  },
+                })
+              }
+            }
+
+            // Reconsolida o item a partir dos planos (se houver) — mantém a mesma
+            // relação preço/custo do item recalculado.
+            if (item.planos.length > 0) {
+              await reconsolidarItemComPlanos(criado.id, novoItem.id, user.empresaId, tx)
+            }
+          }
+
+          await reconsolidarOrcamento(criado.id, user.empresaId, tx)
+
+          return criado
+        },
+        // Timeout elevado: muitos itens/planos numa só transação.
+        { timeout: 20000, maxWait: 10000 },
+      )
+    } catch (err: any) {
+      // P2002 = colisão de (empresaId, numero, versao) por corrida; a transação
+      // reverte tudo (mesmo contrato do `/de-calculo`).
+      if (err?.code === 'P2002') {
+        return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
+      }
+      throw err
+    }
 
     return reply.status(201).send({ id: novo.id, numero: novo.numero, versao: novo.versao, avisos })
   })
@@ -5947,12 +6067,30 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           select: orcamentoGraficoSelect,
         })
 
+        // Fase 3 (Req 7.3): copia produto gráfico e tipo de plano SÓ se o cálculo
+        // os tiver (hoje o model não tem as colunas → nada é copiado). Leitura
+        // com tipo seguro, sem depender do schema; ids revalidados por empresa.
+        const catalogoOrigem = calc as unknown as { produtoGraficoId?: string | null; tipoPlanoId?: string | null }
+        const produtoGraficoCopiado = await resolverIdDaEmpresa(
+          tx,
+          'produtoGrafico',
+          catalogoOrigem.produtoGraficoId,
+          user.empresaId,
+        )
+        const tipoPlanoCopiado = await resolverIdDaEmpresa(
+          tx,
+          'tipoPlanoGrafico',
+          catalogoOrigem.tipoPlanoId,
+          user.empresaId,
+        )
+
         const itemCriado = await tx.itemOrcamentoGrafico.create({
           data: {
             orcamentoId: criado.id,
             empresaId: user.empresaId,
             sequencia: 1,
             ...dadosItem,
+            ...(produtoGraficoCopiado ? { produtoGraficoId: produtoGraficoCopiado } : {}),
             // Rastreabilidade: de qual cálculo da biblioteca este item foi copiado.
             calculoGraficoOrigemId: calc.id,
           },
@@ -5973,7 +6111,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
         // Materializa os PLANOS do cálculo (spec planos-fiéis-calcgraf) na mesma
         // transação. NÃO altera o custo do item (ancoragem) — detalhamento.
-        await materializarPlanosDoCalculo(tx as never, calc, dadosItem, user.empresaId, itemCriado.id)
+        await materializarPlanosDoCalculo(
+          tx as never,
+          calc,
+          dadosItem,
+          user.empresaId,
+          itemCriado.id,
+          tipoPlanoCopiado,
+        )
 
         return criado
       })
@@ -6406,8 +6551,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     orcamentoId: string,
     itemId: string,
     empresaId: string,
+    db: DbClient = prisma,
   ): Promise<void> {
-    const planos = await prisma.planoCalculoGrafico.findMany({
+    const planos = await db.planoCalculoGrafico.findMany({
       where: { itemId, empresaId },
       orderBy: { sequencia: 'asc' },
       select: { sequencia: true, resultadoCalculo: true, custoSuporte: true, custoImpressao: true, custoAcabamento: true },
@@ -6436,7 +6582,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
       // Deriva o valorTotal do item mantendo a relação preço/custo do fechamento
       // item-único (preserva markup/CEV): valorTotal = custoProducao × (preço/custo).
-      const resItem = (await prisma.itemOrcamentoGrafico.findFirst({
+      const resItem = (await db.itemOrcamentoGrafico.findFirst({
         where: { id: itemId, empresaId },
         select: { resultadoCalculo: true, valorTotal: true, custoProducao: true, margemSelecionada: true },
       }))
@@ -6447,8 +6593,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         valorTotal = Math.round(custoProducao * (valorAnterior / custoAnterior) * 100) / 100
       }
 
-      await prisma.itemOrcamentoGrafico.update({
-        where: { id: itemId },
+      await db.itemOrcamentoGrafico.update({
+        where: { id: itemId, empresaId },
         data: {
           custoProducao,
           valorTotal,
@@ -6457,7 +6603,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
     // length === 0 → NÃO altera o caminho legado item-único (Req 5.5).
 
-    await reconsolidarOrcamento(orcamentoId, empresaId)
+    await reconsolidarOrcamento(orcamentoId, empresaId, db)
   }
 
   /** Serializa os custos espelho + resultado de um plano a partir do resultado do motor. */

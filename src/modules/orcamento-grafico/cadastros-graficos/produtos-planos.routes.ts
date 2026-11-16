@@ -50,7 +50,20 @@ const produtoBase = z.object({
   exibeRestricoes: z.boolean().optional(),
   exibeInformacoesComplementares: z.boolean().optional(),
   semImpressao: z.boolean().optional(),
+  /** Fase 3: ausente não altera; null limpa. Validado por { id, empresaId } nas rotas. */
+  tipoEmbalagemId: z.string().uuid().nullable().optional(),
 })
+
+/** Serialização do produto: `tipoEmbalagemId` sempre presente (nulo quando vazio). */
+function serializarProduto<T extends { tipoEmbalagemId?: string | null }>(p: T) {
+  return { ...p, tipoEmbalagemId: p.tipoEmbalagemId ?? null }
+}
+
+/** true quando o tipo de embalagem existe NA empresa da sessão. */
+async function tipoEmbalagemValido(id: string, empresaId: string): Promise<boolean> {
+  const tipo = await prisma.tipoEmbalagem.findFirst({ where: { id, empresaId }, select: { id: true } })
+  return !!tipo
+}
 const produtoCriarSchema = produtoBase
 const produtoAtualizarSchema = produtoBase.partial()
 
@@ -189,7 +202,8 @@ export async function produtosPlanosRoutes(app: FastifyInstance) {
         { nome: { contains: busca, mode: 'insensitive' } },
       ]
     }
-    return prisma.produtoGrafico.findMany({ where, orderBy: { nome: 'asc' } })
+    const lista = await prisma.produtoGrafico.findMany({ where, orderBy: { nome: 'asc' } })
+    return lista.map(serializarProduto)
   })
 
   app.get('/produtos/:id', async (request, reply) => {
@@ -197,7 +211,7 @@ export async function produtosPlanosRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const produto = await prisma.produtoGrafico.findFirst({ where: { id, empresaId: user.empresaId } })
     if (!produto) return reply.status(404).send({ message: 'Produto não encontrado' })
-    return produto
+    return serializarProduto(produto)
   })
 
   app.post('/produtos', async (request, reply) => {
@@ -212,8 +226,12 @@ export async function produtosPlanosRoutes(app: FastifyInstance) {
     })
     if (existente) return reply.status(409).send({ message: `Já existe um produto com o código "${dados.codigo}"` })
 
+    if (dados.tipoEmbalagemId && !(await tipoEmbalagemValido(dados.tipoEmbalagemId, user.empresaId))) {
+      return reply.status(422).send({ message: 'Tipo de Embalagem inválido' })
+    }
+
     const criado = await prisma.produtoGrafico.create({ data: { ...dados, empresaId: user.empresaId } })
-    return reply.status(201).send(criado)
+    return reply.status(201).send(serializarProduto(criado))
   })
 
   app.patch('/produtos/:id', async (request, reply) => {
@@ -234,7 +252,12 @@ export async function produtosPlanosRoutes(app: FastifyInstance) {
       if (conflito) return reply.status(409).send({ message: `Já existe um produto com o código "${dados.codigo}"` })
     }
 
-    return prisma.produtoGrafico.update({ where: { id: registro.id }, data: dados })
+    if (dados.tipoEmbalagemId && !(await tipoEmbalagemValido(dados.tipoEmbalagemId, user.empresaId))) {
+      return reply.status(422).send({ message: 'Tipo de Embalagem inválido' })
+    }
+
+    const atualizado = await prisma.produtoGrafico.update({ where: { id: registro.id }, data: dados })
+    return serializarProduto(atualizado)
   })
 
   // Exclusão lógica (inativa): mantém os itens já criados.

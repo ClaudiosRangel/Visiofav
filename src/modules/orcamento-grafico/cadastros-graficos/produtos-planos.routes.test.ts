@@ -7,6 +7,7 @@ const { prismaMock } = vi.hoisted(() => {
     )
   const prismaMock: Record<string, any> = {
     produtoGrafico: model(),
+    tipoEmbalagem: model(),
     tipoPlanoGrafico: model(),
     defaultProdutoPlano: model(),
     relacaoCadastroGrafico: model(),
@@ -27,6 +28,7 @@ vi.mock('../../../middleware/authenticate', () => ({
 }))
 
 import Fastify from 'fastify'
+import fc from 'fast-check'
 import { produtosPlanosRoutes } from './produtos-planos.routes'
 
 async function buildApp() {
@@ -481,5 +483,180 @@ describe('relações', () => {
     expect(corpoRes.orfas[0].id).toBe('r2')
     expect(prismaMock.relacaoCadastroGrafico.findMany.mock.calls[0][0].where).toEqual({ empresaId: 'emp-A' })
     expect(prismaMock.tipoPlanoGrafico.findMany.mock.calls[0][0].where.empresaId).toBe('emp-A')
+  })
+})
+
+// ───────────── Fase 3: vínculo Produto × Tipo de Embalagem (tarefa 3.4) ─────────────
+
+const TIPO_OK = '66666666-6666-4666-8666-666666666666'
+const TIPO_OUTRA = '77777777-7777-4777-8777-777777777777'
+
+describe('produtos — tipoEmbalagemId (exemplos)', () => {
+  it('POST grava o vínculo e a resposta devolve tipoEmbalagemId', async () => {
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue(null)
+    prismaMock.tipoEmbalagem.findFirst.mockResolvedValue({ id: TIPO_OK })
+    prismaMock.produtoGrafico.create.mockImplementation(async ({ data }: any) => ({ id: 'novo', ...data }))
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'POST', url: `${P}/produtos`, headers: hA,
+      payload: { codigo: 'CX', nome: 'Caixa', tipoEmbalagemId: TIPO_OK },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().tipoEmbalagemId).toBe(TIPO_OK)
+    expect(prismaMock.tipoEmbalagem.findFirst.mock.calls[0][0].where).toEqual({ id: TIPO_OK, empresaId: 'emp-A' })
+    expect(prismaMock.produtoGrafico.create.mock.calls[0][0].data).toMatchObject({ empresaId: 'emp-A', tipoEmbalagemId: TIPO_OK })
+  })
+
+  it('POST sem o campo devolve tipoEmbalagemId nulo e não consulta o tipo', async () => {
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue(null)
+    prismaMock.produtoGrafico.create.mockImplementation(async ({ data }: any) => ({ id: 'novo', ...data }))
+    const app = await buildApp()
+    const res = await app.inject({ method: 'POST', url: `${P}/produtos`, headers: hA, payload: { codigo: 'CX', nome: 'Caixa' } })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().tipoEmbalagemId).toBeNull()
+    expect(prismaMock.tipoEmbalagem.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('PATCH com null limpa o vínculo sem consultar o tipo', async () => {
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue({ id: 'p1', codigo: 'A', tipoEmbalagemId: TIPO_OK })
+    prismaMock.produtoGrafico.update.mockImplementation(async ({ data }: any) => ({ id: 'p1', codigo: 'A', tipoEmbalagemId: TIPO_OK, ...data }))
+    const app = await buildApp()
+    const res = await app.inject({ method: 'PATCH', url: `${P}/produtos/p1`, headers: hA, payload: { tipoEmbalagemId: null } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().tipoEmbalagemId).toBeNull()
+    expect(prismaMock.produtoGrafico.update.mock.calls[0][0].data).toEqual({ tipoEmbalagemId: null })
+    expect(prismaMock.tipoEmbalagem.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('PATCH sem o campo não altera o vínculo (data sem tipoEmbalagemId)', async () => {
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue({ id: 'p1', codigo: 'A', tipoEmbalagemId: TIPO_OK })
+    prismaMock.produtoGrafico.update.mockImplementation(async ({ data }: any) => ({ id: 'p1', codigo: 'A', tipoEmbalagemId: TIPO_OK, ...data }))
+    const app = await buildApp()
+    const res = await app.inject({ method: 'PATCH', url: `${P}/produtos/p1`, headers: hA, payload: { nome: 'Novo' } })
+    expect(res.statusCode).toBe(200)
+    expect(prismaMock.produtoGrafico.update.mock.calls[0][0].data).not.toHaveProperty('tipoEmbalagemId')
+    expect(res.json().tipoEmbalagemId).toBe(TIPO_OK)
+  })
+
+  it('POST com tipo inexistente ou de outra empresa responde 422 sem gravar', async () => {
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue(null)
+    prismaMock.tipoEmbalagem.findFirst.mockResolvedValue(null)
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'POST', url: `${P}/produtos`, headers: hB,
+      payload: { codigo: 'CX', nome: 'Caixa', tipoEmbalagemId: TIPO_OUTRA },
+    })
+    expect(res.statusCode).toBe(422)
+    expect(res.json().message).toBe('Tipo de Embalagem inválido')
+    expect(prismaMock.tipoEmbalagem.findFirst.mock.calls[0][0].where).toEqual({ id: TIPO_OUTRA, empresaId: 'emp-B' })
+    expect(prismaMock.produtoGrafico.create).not.toHaveBeenCalled()
+  })
+
+  it('PATCH com tipo inexistente ou de outra empresa responde 422 sem gravar', async () => {
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue({ id: 'p1', codigo: 'A' })
+    prismaMock.tipoEmbalagem.findFirst.mockResolvedValue(null)
+    const app = await buildApp()
+    const res = await app.inject({ method: 'PATCH', url: `${P}/produtos/p1`, headers: hB, payload: { tipoEmbalagemId: TIPO_OUTRA } })
+    expect(res.statusCode).toBe(422)
+    expect(prismaMock.tipoEmbalagem.findFirst.mock.calls[0][0].where).toEqual({ id: TIPO_OUTRA, empresaId: 'emp-B' })
+    expect(prismaMock.produtoGrafico.update).not.toHaveBeenCalled()
+  })
+
+  it('400 quando tipoEmbalagemId não é uuid', async () => {
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'POST', url: `${P}/produtos`, headers: hA,
+      payload: { codigo: 'CX', nome: 'Caixa', tipoEmbalagemId: 'abc' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(prismaMock.produtoGrafico.create).not.toHaveBeenCalled()
+  })
+
+  it('GET lista e detalhe devolvem tipoEmbalagemId (nulo quando vazio)', async () => {
+    prismaMock.produtoGrafico.findMany.mockResolvedValue([{ id: 'a', tipoEmbalagemId: TIPO_OK }, { id: 'b' }])
+    prismaMock.produtoGrafico.findFirst.mockResolvedValue({ id: 'b', tipoEmbalagemId: undefined })
+    const app = await buildApp()
+    const lista = await app.inject({ method: 'GET', url: `${P}/produtos`, headers: hA })
+    expect(lista.json().map((p: any) => p.tipoEmbalagemId)).toEqual([TIPO_OK, null])
+    const det = await app.inject({ method: 'GET', url: `${P}/produtos/b`, headers: hA })
+    expect(det.json().tipoEmbalagemId).toBeNull()
+  })
+})
+
+describe('produtos — propriedades do vínculo de embalagem', () => {
+  // Feature: orcamento-grafico-fase3-produto-embalagem, Property 1: Vínculo de embalagem faz ida e volta
+  it('Property 1: gravar (POST/PATCH) e ler de volta (lista e detalhe) devolve o mesmo vínculo', async () => {
+    const app = await buildApp()
+    await fc.assert(
+      fc.asyncProperty(fc.uuid(), fc.option(fc.uuid(), { nil: null }), async (tipoId, novoVinculo) => {
+        // Armazenamento simulado do produto.
+        let linha: any = { id: 'p1', codigo: 'A', nome: 'N', empresaId: 'emp-A', tipoEmbalagemId: null }
+        for (const m of [prismaMock.produtoGrafico.findFirst, prismaMock.produtoGrafico.findMany,
+          prismaMock.produtoGrafico.create, prismaMock.produtoGrafico.update, prismaMock.tipoEmbalagem.findFirst]) m.mockReset()
+        prismaMock.tipoEmbalagem.findFirst.mockImplementation(async ({ where }: any) => ({ id: where.id }))
+        prismaMock.produtoGrafico.create.mockImplementation(async ({ data }: any) => {
+          linha = { id: 'p1', ...data }
+          return linha
+        })
+        prismaMock.produtoGrafico.update.mockImplementation(async ({ data }: any) => {
+          linha = { ...linha, ...data }
+          return linha
+        })
+        // findFirst serve a verificação de código duplicado (null) e a leitura do registro.
+        prismaMock.produtoGrafico.findFirst.mockImplementation(async ({ where }: any) =>
+          where.codigo !== undefined && where.id === undefined ? null : linha,
+        )
+        prismaMock.produtoGrafico.findMany.mockImplementation(async () => [linha])
+
+        const criado = await app.inject({
+          method: 'POST', url: `${P}/produtos`, headers: hA,
+          payload: { codigo: 'A', nome: 'N', tipoEmbalagemId: tipoId },
+        })
+        expect(criado.statusCode).toBe(201)
+        expect(criado.json().tipoEmbalagemId).toBe(tipoId)
+        expect((await app.inject({ method: 'GET', url: `${P}/produtos/p1`, headers: hA })).json().tipoEmbalagemId).toBe(tipoId)
+        expect((await app.inject({ method: 'GET', url: `${P}/produtos`, headers: hA })).json()[0].tipoEmbalagemId).toBe(tipoId)
+
+        const atualizado = await app.inject({
+          method: 'PATCH', url: `${P}/produtos/p1`, headers: hA, payload: { tipoEmbalagemId: novoVinculo },
+        })
+        expect(atualizado.statusCode).toBe(200)
+        expect(atualizado.json().tipoEmbalagemId).toBe(novoVinculo)
+        expect((await app.inject({ method: 'GET', url: `${P}/produtos/p1`, headers: hA })).json().tipoEmbalagemId).toBe(novoVinculo)
+        expect((await app.inject({ method: 'GET', url: `${P}/produtos`, headers: hA })).json()[0].tipoEmbalagemId).toBe(novoVinculo)
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  // Feature: orcamento-grafico-fase3-produto-embalagem, Property 2: Tipo de embalagem inválido é rejeitado sem gravar e com empresa explícita
+  it('Property 2: tipo inexistente/de outra empresa responde 422 sem gravar; consulta usa a empresa da sessão', async () => {
+    const app = await buildApp()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uuid(),
+        fc.constantFrom('emp-A', 'emp-B', 'emp-C'),
+        fc.constantFrom('POST', 'PATCH'),
+        async (tipoId, empresa, metodo) => {
+          for (const m of [prismaMock.produtoGrafico.findFirst, prismaMock.produtoGrafico.create,
+            prismaMock.produtoGrafico.update, prismaMock.tipoEmbalagem.findFirst]) m.mockReset()
+          prismaMock.tipoEmbalagem.findFirst.mockResolvedValue(null)
+          prismaMock.produtoGrafico.findFirst.mockImplementation(async ({ where }: any) =>
+            where.id ? { id: 'p1', codigo: 'A' } : null,
+          )
+          const res = metodo === 'POST'
+            ? await app.inject({ method: 'POST', url: `${P}/produtos`, headers: { 'x-empresa': empresa },
+                payload: { codigo: 'CX', nome: 'Caixa', tipoEmbalagemId: tipoId } })
+            : await app.inject({ method: 'PATCH', url: `${P}/produtos/p1`, headers: { 'x-empresa': empresa },
+                payload: { tipoEmbalagemId: tipoId } })
+          expect(res.statusCode).toBe(422)
+          expect(res.json().message).toBe('Tipo de Embalagem inválido')
+          expect(prismaMock.tipoEmbalagem.findFirst.mock.calls[0][0].where).toEqual({ id: tipoId, empresaId: empresa })
+          expect(prismaMock.produtoGrafico.create).not.toHaveBeenCalled()
+          expect(prismaMock.produtoGrafico.update).not.toHaveBeenCalled()
+        },
+      ),
+      { numRuns: 100 },
+    )
   })
 })

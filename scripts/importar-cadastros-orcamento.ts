@@ -91,6 +91,10 @@ import {
 } from '../src/modules/orcamento-grafico/cadastros-graficos/importacao/roteiro'
 import { modaTipoParamPorMaterial } from '../src/modules/orcamento-grafico/cadastros-graficos/importacao/tipo-param'
 import {
+  decidirVinculo,
+  type TipoEmbalagemCandidato,
+} from '../src/modules/orcamento-grafico/cadastros-graficos/importacao/vinculo-embalagem'
+import {
   formatarRelatorio,
   relatorioVazio,
   totalizar,
@@ -452,15 +456,142 @@ async function faseProdutos(c: Ctx): Promise<RelatorioFase[]> {
     if (cod !== null) tributacoes.set(cod, textoDe(t.Nome))
   }
   const itens = mapearProdutos(tabela(c, 'Produtos'), { idsLinha: c.ids.linha, tributacoes })
-  const r = await rodarPorOrigem(c, {
-    fase: 'produtos',
-    model: prisma.produtoGrafico,
-    itens,
-    campoChave: 'codigo',
-    campoStatus: 'status',
-  })
-  mesclar(c.ids.produto, r.idsPorCodigo)
-  return [r.relatorio]
+
+  // Existentes (empresaId explícito) e tipos de embalagem para o vínculo (spec fase3, tarefa 3.3).
+  const linhas = await comRetry(() => delegate(prisma.produtoGrafico).findMany({ where: { empresaId: c.empresaId } }))
+  const existentes: ExistenteCadastro[] = linhas.map((r) => ({
+    id: String(r.id),
+    codigoOrigem: typeof r.codigoOrigem === 'number' ? r.codigoOrigem : null,
+    nome: textoDe(r.nome),
+    chave: (r.codigo as string | null) ?? null,
+    campos: r as Campos,
+  }))
+  const tipos: TipoEmbalagemCandidato[] = (
+    await comRetry(() => prisma.tipoEmbalagem.findMany({ where: { empresaId: c.empresaId }, select: { id: true, codigo: true } }))
+  ).map((t) => ({ id: t.id, codigo: t.codigo }))
+  const vinculoAtual = new Map<string, string | null>()
+  for (const r of linhas) vinculoAtual.set(String(r.id), (r.tipoEmbalagemId as string | null | undefined) ?? null)
+
+  const plano = planejarPorOrigem('produtos', itens, existentes, { criaQuandoSemEquivalente: true })
+
+  const rel = relatorioVazio('produtos')
+  const relVinculo = relatorioVazio('produtos:vinculo-embalagem')
+  const ids: Map<number, string> = new Map()
+  let vinculosPreenchidos = 0
+
+  /** Decide o vínculo; registra não casado (uma vez por produto) e devolve o id a gravar, se houver. */
+  const decidir = (item: ItemLegado, atual: string | null): string | null => {
+    const d = decidirVinculo({ codigoOrigemProduto: item.codigoOrigem, tipoEmbalagemIdAtual: atual, tipos })
+    if (d.acao === 'NAO_CASADO') {
+      relVinculo.naoCasados.push({ codigoOrigem: item.codigoOrigem, nome: item.nome, motivo: d.motivo, detalhe: d.detalhe })
+      return null
+    }
+    return d.acao === 'PREENCHER' ? d.tipoEmbalagemId : null
+  }
+
+  for (const op of plano.operacoes) {
+    const cod = op.item.codigoOrigem
+    try {
+      switch (op.tipo) {
+        case 'NAO_CASADO':
+          rel.naoCasados.push({ codigoOrigem: cod, nome: op.item.nome, motivo: op.motivo, detalhe: op.detalhe })
+          break
+        case 'IGNORAR': {
+          if (!op.id) {
+            rel.ignorados++
+            rel.ignoradosPorMotivo[op.motivo] = (rel.ignoradosPorMotivo[op.motivo] ?? 0) + 1
+            break
+          }
+          if (cod !== null) ids.set(cod, op.id)
+          const tipoId = decidir(op.item, vinculoAtual.get(op.id) ?? null)
+          if (!tipoId) {
+            rel.ignorados++
+            rel.ignoradosPorMotivo[op.motivo] = (rel.ignoradosPorMotivo[op.motivo] ?? 0) + 1
+            break
+          }
+          const id = op.id
+          if (!c.dryRun) {
+            // Transação por produto; `tipoEmbalagemId: null` no where nunca sobrescreve vínculo existente.
+            await comRetry(() =>
+              prisma.$transaction(async (tx) => {
+                await delegate(tx.produtoGrafico).updateMany({
+                  where: { id, empresaId: c.empresaId, tipoEmbalagemId: null },
+                  data: { tipoEmbalagemId: tipoId },
+                })
+              }),
+            )
+          }
+          rel.atualizados++
+          relVinculo.atualizados++
+          vinculosPreenchidos++
+          break
+        }
+        case 'PREENCHER': {
+          if (cod !== null) ids.set(cod, op.id)
+          const tipoId = decidir(op.item, vinculoAtual.get(op.id) ?? null)
+          const patch: Campos = { ...op.patch, ...(tipoId ? { tipoEmbalagemId: tipoId } : {}) }
+          const id = op.id
+          if (!c.dryRun) {
+            await comRetry(() =>
+              prisma.$transaction(async (tx) => {
+                await delegate(tx.produtoGrafico).updateMany({ where: { id, empresaId: c.empresaId }, data: patch })
+              }),
+            )
+          }
+          rel.atualizados++
+          if (tipoId) {
+            relVinculo.atualizados++
+            vinculosPreenchidos++
+          }
+          break
+        }
+        case 'CRIAR': {
+          const tipoId = decidir(op.item, null)
+          let novoId = `dry:produtos:${cod ?? op.item.nome}`
+          if (!c.dryRun) {
+            const item = op.item
+            novoId = await comRetry(() =>
+              prisma.$transaction(async (tx) => {
+                const r = await delegate(tx.produtoGrafico).create({
+                  data: {
+                    empresaId: c.empresaId,
+                    nome: item.nome,
+                    ...(item.codigoOrigem !== null ? { codigoOrigem: item.codigoOrigem } : {}),
+                    ...(item.chave ? { codigo: item.chave } : {}),
+                    status: true,
+                    ...item.dados,
+                    ...(tipoId ? { tipoEmbalagemId: tipoId } : {}),
+                  },
+                  select: { id: true },
+                })
+                return r.id
+              }),
+            )
+          }
+          if (cod !== null) ids.set(cod, novoId)
+          rel.criados++
+          if (tipoId) {
+            relVinculo.atualizados++
+            vinculosPreenchidos++
+          }
+          break
+        }
+      }
+    } catch (err) {
+      // A transação do produto já foi desfeita; segue para o próximo e termina com código ≠ 0.
+      const msg = err instanceof Error ? err.message.split('\n').pop() ?? err.message : String(err)
+      console.error(`  ✖ produto ${cod ?? '-'} "${op.item.nome}" falhou: ${msg}`)
+      rel.naoCasados.push({ codigoOrigem: cod, nome: op.item.nome, motivo: 'FALHA_AO_GRAVAR', detalhe: msg })
+      process.exitCode = 1
+    }
+  }
+
+  mesclar(c.ids.produto, ids)
+  console.log(
+    `  produtos: criados=${rel.criados} atualizados=${rel.atualizados} vínculos de embalagem preenchidos=${vinculosPreenchidos} ` +
+      `não casados (produto)=${rel.naoCasados.length} não casados (vínculo)=${relVinculo.naoCasados.length}`,
+  )
+  return [rel, relVinculo]
 }
 
 // ============================================================================

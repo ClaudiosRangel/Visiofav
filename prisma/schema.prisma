@@ -7563,6 +7563,9 @@ model ProdutoGrafico {
   exibeInformacoesComplementares Boolean @default(true) @map("exibe_informacoes_complementares")
   semImpressao                   Boolean @default(false) @map("sem_impressao")
 
+  /// Tipo de embalagem padrão do produto (sem @relation — id de TipoEmbalagem, sem FK).
+  tipoEmbalagemId String? @map("tipo_embalagem_id")
+
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
