@@ -1041,6 +1041,36 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (dados.observacoes.coresPlano) novasTags.push(`[Cores] ${dados.observacoes.coresPlano}`)
     if (dados.observacoes.formatoMicro) novasTags.push(`[FormatoMicro] ${dados.observacoes.formatoMicro}`)
 
+    // ── Material ENCOMENDADO ("Aguardando Cartão") ────────────────────────────
+    // OPs como a 3221 são alteradas no Calcgraf DEPOIS da 1ª importação (a
+    // bobina passa a constar como "encomendado"). Na reimportação por cima, a
+    // heurística de "material já recebido" apagava essa linha, e a OP nunca ia
+    // para "Aguardando Cartão". Aqui o Re-extrair relê o PDF salvo e reaplica
+    // as linhas [Bobina] ... encomendado, SALVO quando há evidência de que o
+    // cartão já chegou:
+    //   - marca [CartaoRecebido] (gravada pelo botão "Cartão Recebido"), ou
+    //   - alguma etapa da OP já saiu de PENDENTE (produção já começou).
+    const bobinasEncomendadas = (dados.observacoes.bobinas || []).filter((b) => /encomendad/i.test(b))
+    const obsJaTemEncomendado = /encomendad/i.test(obsAtual)
+    let aguardandoCartaoAplicado = false
+    const avisosEncomenda: string[] = []
+    if (bobinasEncomendadas.length > 0 && !obsJaTemEncomendado) {
+      const recebidoMarcado = /\[CartaoRecebido\]/i.test(obsAtual)
+      const etapasEmAndamento = await prisma.etapaOrdemProducao.count({
+        where: { ordemProducaoId: op.id, status: { not: 'PENDENTE' } },
+      })
+      if (recebidoMarcado) {
+        avisosEncomenda.push('O PDF cita material encomendado, mas o cartão desta OP já foi marcado como recebido. Nada foi alterado.')
+      } else if (etapasEmAndamento > 0) {
+        avisosEncomenda.push('O PDF cita material encomendado, mas a produção desta OP já começou. Nada foi alterado.')
+      } else {
+        obsAtual = (obsAtual + '\n' + bobinasEncomendadas.map((b) => `[Bobina] ${b}`).join('\n')).trim()
+        aguardandoCartaoAplicado = true
+      }
+    } else if (bobinasEncomendadas.length === 0 && /encomendad/i.test(extracao.texto) && !obsJaTemEncomendado) {
+      avisosEncomenda.push('O PDF cita material encomendado, mas não foi possível identificar a bobina (kg). Confira a observação da OS.')
+    }
+
     const obsAtualizada = novasTags.length > 0
       ? obsAtual + '\n' + novasTags.join('\n')
       : obsAtual
@@ -1129,14 +1159,14 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     }
 
     // Log de auditoria — re-extração de PDF
-    if (novasTags.length > 0 || materiaisAtualizados || tipoColagemAtualizado > 0) {
+    if (novasTags.length > 0 || materiaisAtualizados || tipoColagemAtualizado > 0 || aguardandoCartaoAplicado) {
       await prisma.logOrdemProducao.create({
         data: {
           ordemProducaoId: op.id,
           statusAnterior: '',
           statusNovo: '',
           usuarioId: user.id,
-          observacao: `Re-extração de PDF: ${novasTags.length} tags atualizadas${materiaisAtualizados ? `, ${dados.materiais.length} materiais reprocessados` : ''}${tipoColagemAtualizado > 0 ? `, ${tipoColagemAtualizado} etapa(s) de colagem com tipo preenchido` : ''}`,
+          observacao: `Re-extração de PDF: ${novasTags.length} tags atualizadas${materiaisAtualizados ? `, ${dados.materiais.length} materiais reprocessados` : ''}${tipoColagemAtualizado > 0 ? `, ${tipoColagemAtualizado} etapa(s) de colagem com tipo preenchido` : ''}${aguardandoCartaoAplicado ? ', material ENCOMENDADO detectado (OS enviada para Aguardando Cartão)' : ''}`,
         },
       })
     }
@@ -1147,11 +1177,12 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       matriz: dados.observacoes.matriz || null,
       formato: dados.observacoes.formatoPlano || null,
       cores: dados.observacoes.coresPlano || null,
-      atualizado: novasTags.length > 0 || materiaisAtualizados || tipoColagemAtualizado > 0,
+      atualizado: novasTags.length > 0 || materiaisAtualizados || tipoColagemAtualizado > 0 || aguardandoCartaoAplicado,
       materiaisAtualizados,
       totalMateriais: dados.materiais.length,
       tipoColagemAtualizado,
-      avisos: materiaisAvisos,
+      aguardandoCartao: aguardandoCartaoAplicado,
+      avisos: [...materiaisAvisos, ...avisosEncomenda],
     }
   })
 
