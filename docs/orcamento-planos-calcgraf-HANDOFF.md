@@ -1201,3 +1201,26 @@ Itens que ficaram fora da Fase 2 e entram na Fase 3 (ainda sem spec):
 5. **Seletor de material em produtos sem plano fixo** (vários tipos de plano): mostrar também no modal de plano.
 6. Pendências da Fase 2 que seguem abertas: `tipoParam` (importação em produção), campos técnicos não repassados ao reabrir o item,
    falha de seleção no primeiro salvamento fecha o editor, limite de 100 acabamentos.
+
+## 21. Fase 3 — Produto × Embalagem e pendências do editor (16/11/2026)
+
+Spec `.kiro/specs/orcamento-grafico-fase3-produto-embalagem/`. Back no ar (commit `53e663bf0`); front implementado e **não commitado**.
+
+**Decisões:** vínculo por coluna `produto_grafico.tipo_embalagem_id` (sem FK); `de-calculo` sem cópia nova de produto; `reaproveitar` em transação interativa; acondicionamento por `classificarGrupoAtividade`; campos livres SOLICITACAO e PEDIDO; contrato do `PUT` do item inalterado.
+
+**Produção (Carton Wega), gravado com autorização:**
+- Atividades 39 (Caixa Padrão) e 53 (Embalar) com `acondicionamento = true`. Move 8 produtos para o grupo "Acondicionamento".
+- `tipo_embalagem_id` preenchido nos 11 produtos pela convenção `CG-EMB-<n>` (11 de 11).
+- Consultas: 67 acabamentos ativos (nenhum passa de 100); 366 grupos de papel com preço duplicado por suporte+gramatura (o preço só é sugerido com 1 candidato).
+
+**Back:** `GET /orcamento-grafico/acabamentos/por-ids`; `tipoEmbalagemId` em `POST`/`PATCH /produtos`; `POST /:id/reaproveitar` atômico; scripts `corrigir-acondicionamento-orcamento.ts` (`--dry-run`) e fase `produtos` do importador com vínculo.
+
+**Front (`orcamento-grafico/`):** seletor "Tipo de Embalagem" no `ProdutoModal`; `useSugestoesProduto` (tipo, suporte, gramatura e preço por kg em item novo); validação prévia ao salvar; `itemIdCriado` e painel de seleções não gravadas; `useTodosAcabamentos` (paginação + `por-ids`); seletor de material e sugestões no modal de plano; campos livres sugeridos. Wizard `/novo` e `ItemWizardModal` sem alteração.
+
+**Pontos de atenção:** `PlanosDoItem` é renderizado em `[id]/page.tsx` e cria o próprio catálogo (o cache compartilhado só chega ao `SecaoPlanos`); busca de preços limitada a 100 papéis por suporte; `suporteProducaoId` não é repassado ao reabrir o item; a atividade marcada no modal de plano só vem do tipo ou do plano gravado.
+
+**Conferência manual pendente (usuário):** Cartucho Composto com 39 e 53 em "Acondicionamento"; escolher produto em item novo sugere tipo/suporte/gramatura; salvar sem tipo mostra "Faltam: …"; falha de seleção mantém o editor aberto; item com mais de 100 acabamentos lista todos; modal de plano com seletor de material; campos livres com sugestão.
+
+### 21.1 Fechamento das lacunas da Fase 3 (16/11/2026)
+
+Lacunas do §21 resolvidas: (1) `suporteProducaoId` agora é aceito/gravado só quando enviado (zod opcional, sem schema novo) e repassado ao reabrir o item; (2) `materialMicroonduladoId` é preservado mesmo com `microondulado = false` (nenhum cálculo lê o campo); (3) `GET /precos-mp` aceita `gramatura` opcional e o front pagina até o fim (`buscarPapeisComPreco`), sem truncar em 100; (4) modal de plano permite marcar/desmarcar atividades do catálogo do tipo e usa o catálogo compartilhado (`PlanosDoItemComCatalogo`); (5) testes de componente (ProdutoModal, campos livres) e teste que impede texto visível com a marca do sistema legado (3 telas antigas reescritas: "Nº de origem", "Migrado", "Foto original"). Efeito no wizard `/novo`: desmarcar microondulado depois de escolher o material mantém o id do material no payload.

@@ -283,6 +283,49 @@ describe('PUT /:id/itens/:itemId — produtoGraficoId', () => {
   })
 })
 
+describe('PUT /:id/itens/:itemId — suporteProducaoId e materialMicroonduladoId', () => {
+  const SUP_PROD = '33333333-3333-4333-8333-333333333333'
+  const MAT_MICRO = '44444444-4444-4444-8444-444444444444'
+
+  beforeEach(() => {
+    prismaMock.itemOrcamentoGrafico.findFirst.mockResolvedValue({ id: ITEM })
+  })
+
+  it('grava suporteProducaoId quando enviado', async () => {
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'PUT',
+      url: `${P}/${ORC}/itens/${ITEM}`,
+      headers: hA,
+      payload: itemBody({ suporteProducaoId: SUP_PROD }),
+    })
+    expect(res.statusCode).toBe(200)
+    expect(prismaMock.itemOrcamentoGrafico.update.mock.calls[0][0].data.suporteProducaoId).toBe(SUP_PROD)
+  })
+
+  it('ausente não altera: o update não leva a chave suporteProducaoId', async () => {
+    const app = await buildApp()
+    const res = await app.inject({ method: 'PUT', url: `${P}/${ORC}/itens/${ITEM}`, headers: hA, payload: itemBody() })
+    expect(res.statusCode).toBe(200)
+    const data = prismaMock.itemOrcamentoGrafico.update.mock.calls[0][0].data
+    expect('suporteProducaoId' in data).toBe(false)
+  })
+
+  it('material microondulado é gravado mesmo com microondulado=false', async () => {
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'PUT',
+      url: `${P}/${ORC}/itens/${ITEM}`,
+      headers: hA,
+      payload: itemBody({ microondulado: false, materialMicroonduladoId: MAT_MICRO }),
+    })
+    expect(res.statusCode).toBe(200)
+    const data = prismaMock.itemOrcamentoGrafico.update.mock.calls[0][0].data
+    expect(data.microondulado).toBe(false)
+    expect(data.materialMicroonduladoId).toBe(MAT_MICRO)
+  })
+})
+
 describe('POST /:id/itens/:itemId/planos — tipoPlanoId', () => {
   beforeEach(() => {
     prismaMock.itemOrcamentoGrafico.findFirst.mockResolvedValue(itemPersistido())

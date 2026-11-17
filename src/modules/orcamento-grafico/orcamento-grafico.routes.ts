@@ -340,6 +340,8 @@ const itemOrcamentoBodySchema = z.object({
   papelId: z.string().uuid().optional().nullable(),
   papelDescricao: z.string().max(200).optional().nullable(),
   suporteId: z.string().uuid().optional().nullable(),
+  // Suporte de produção do item (sem planos). Ausente não altera; null limpa.
+  suporteProducaoId: z.string().uuid().optional().nullable(),
   gramatura: z.number().positive(),
   // Preço do papel por kg (aceita o alias precoKg, como o wizard envia).
   precoKgPapel: z.number().positive().optional(),
@@ -724,6 +726,8 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     papelId: body.papelId ?? null,
     papelDescricao: body.papelDescricao ?? null,
     suporteId: body.suporteId ?? null,
+    // Gravação condicional: ausente não altera (preserva troca de suporte); null limpa.
+    ...(body.suporteProducaoId !== undefined ? { suporteProducaoId: body.suporteProducaoId } : {}),
     gramatura: body.gramatura,
     numCores: body.numCores,
     cores: (body.cores ?? undefined) as any,
@@ -1632,6 +1636,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       tipo: z.string().optional(),
       busca: z.string().optional(),
       suporteId: z.string().uuid().optional(),
+      // Filtro opcional por gramatura exata (g/m²). Só entra no where quando enviado.
+      gramatura: z.coerce.number().positive().optional(),
       status: z.enum(['true', 'false']).optional(),
       // comPreco=true → só retorna itens com preço > 0 (usado na seleção de
       // papel do orçamento; papéis com preço 0 não servem para orçar).
@@ -1643,6 +1649,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const where: any = { empresaId: user.empresaId }
     if (query.tipo) where.tipo = query.tipo
     if (query.suporteId) where.suporteId = query.suporteId
+    if (query.gramatura !== undefined) where.gramatura = query.gramatura
     if (query.comPreco === 'true') where.precoUnitario = { gt: 0 }
     if (query.status !== undefined) {
       where.status = query.status === 'true'

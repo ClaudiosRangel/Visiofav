@@ -771,3 +771,13 @@ Executadas com autorização do usuário. Colunas corrigidas em relação ao ras
 5. **Acabamentos ativos:** 67. Nenhum fica depois da posição 100. O limite de 100 não afeta a Carton Wega hoje.
 6. **Papéis duplicados:** 366 grupos suporte+gramatura com mais de 1 preço (incluindo 26 sem suporte nem gramatura).
    A ambiguidade é comum. `sugerirPrecoKg` só preenche com exatamente 1 candidato e, nos demais casos, mostra aviso.
+
+## Gravações em produção (Carton Wega) — autorizadas pelo usuário
+
+Depois do deploy do back (`53e663bf0`) e dos dry-runs:
+- **Flag de acondicionamento:** `acondicionamento = true` nas atividades 39 e 53 (2 registros). A segunda execução alterou 0 registros.
+  Nenhuma relação foi criada nem removida.
+- **Vínculo Produto × Tipo de Embalagem:** `produto_grafico.tipo_embalagem_id` preenchido nos 11 produtos pela convenção
+  `CG-EMB-<n>` (11 de 11, 0 não casados). Uma nova rodada decide `MANTER` em todos. O vínculo foi gravado por um script
+  temporário com a mesma `decidirVinculo`, sem rodar a fase `produtos` completa do importador, para não tocar em outros dados.
+- Conferir no catálogo o Cartucho Composto: 39 e 53 devem aparecer em "Acondicionamento".

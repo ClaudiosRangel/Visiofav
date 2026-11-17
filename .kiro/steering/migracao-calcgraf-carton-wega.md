@@ -1382,3 +1382,7 @@ O Mapa de Custos RKW (Bloco 3) NÃO tem essa dificuldade — aritmética aberta.
 - Reconciliar totais de Custo Fixo entre versões do mapa (usar 1 "foto" oficial).
 - "+0,08" nos pesos da chave "Quant. funcionários" (fração dos rateados).
 - Como o "Estado" do bem (Ótimo/Bom/Regular) modula a depreciação.
+
+## 🟢 FASE 3 — PRODUTO × EMBALAGEM (16/11/2026)
+
+Spec `orcamento-grafico-fase3-produto-embalagem`. Back no ar (`53e663bf0`): `ProdutoGrafico.tipoEmbalagemId`, `GET /acabamentos/por-ids`, `reaproveitar` em transação, `classificarGrupoAtividade`. Produção: 11 produtos vinculados por `CG-EMB-<n>`; atividades 39/53 com `acondicionamento = true`. Front implementado (sugestões, validação prévia, painel de seleções não gravadas, acabamentos paginados, seletor de material no plano, campos livres), **ainda não commitado**. Detalhe e conferência manual: `docs/orcamento-planos-calcgraf-HANDOFF.md` §21.

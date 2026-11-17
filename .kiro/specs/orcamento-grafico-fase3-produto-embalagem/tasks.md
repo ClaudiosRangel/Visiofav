@@ -32,7 +32,7 @@ O usuário aprovou o design conforme as recomendações:
 
 ## Tasks
 
-- [ ] 1. Back: classificação de acondicionamento (`classificarGrupoAtividade`)
+- [x] 1. Back: classificação de acondicionamento (`classificarGrupoAtividade`)
   - [x] 1.1 Criar `classificarGrupoAtividade` e usá-la nas duas rotas do catálogo
     - Função pura em `catalogo.service.ts`: `{ flagAcondicionamento, temRelacaoAcondicionamento }` devolve "ACONDICIONAMENTO" ou "ATIVIDADES" (flag do cadastro OU relação `PRODUTO → ACONDICIONAMENTO`)
     - `obterCatalogoProduto` passa a usá-la; `obterCatalogoPlano` passa a separar o grupo com a mesma função
@@ -54,7 +54,7 @@ O usuário aprovou o design conforme as recomendações:
     - **Property 13: Correção de acondicionamento é idempotente e só cria**
     - **Validates: Requirements 6.2, 6.3, 6.5**
 
-- [ ] 2. Back: `GET /orcamento-grafico/acabamentos/por-ids`
+- [x] 2. Back: `GET /orcamento-grafico/acabamentos/por-ids`
   - [x] 2.1 Implementar a rota
     - `ids` separados por vírgula (uuid), máximo 50; `where: { id: { in }, empresaId }`; mesma forma de item da listagem
     - Sem filtro de `status` (atividade inativa citada pelo catálogo deve poder ser exibida); ids de outra empresa ou inexistentes não voltam
@@ -66,7 +66,7 @@ O usuário aprovou o design conforme as recomendações:
     - Arquivo: `acabamentos-por-ids.routes.test.ts`
     - _Requisitos: 11.3, 12.3, 14.4_
 
-- [ ] 3. Back: `tipoEmbalagemId` em `ProdutoGrafico` (Opção A)
+- [x] 3. Back: `tipoEmbalagemId` em `ProdutoGrafico` (Opção A)
   - [x] 3.1 Schema e migração idempotente no mesmo commit
     - `schema.prisma`: `tipoEmbalagemId String? @map("tipo_embalagem_id")` em `ProdutoGrafico`, sem `@relation`
     - `prisma/migrate-prod.ts`: `ALTER TABLE produto_grafico ADD COLUMN IF NOT EXISTS tipo_embalagem_id VARCHAR(36)`, sem FK
@@ -95,7 +95,7 @@ O usuário aprovou o design conforme as recomendações:
     - **Property 3: Importação do vínculo é idempotente e nunca sobrescreve**
     - **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.7**
 
-- [ ] 4. Back: `reaproveitar` em transação e cópia de produto e tipo de plano
+- [x] 4. Back: `reaproveitar` em transação e cópia de produto e tipo de plano
   - [x] 4.1 Helpers com parâmetro opcional `db = prisma` e `resolverIdDaEmpresa`
     - `reconsolidar*`, `dadosPersistencia*` e as validações passam a aceitar `db` opcional (padrão `prisma`), sem mudar chamadas existentes
     - `resolverIdDaEmpresa(db, modelo, id, empresaId)` devolve o id ou `null` (consulta `{ id, empresaId }`)
@@ -119,7 +119,7 @@ O usuário aprovou o design conforme as recomendações:
     - **Property 15: Reaproveitar é atômico**
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.6, 7.7, 7.8, 7.9, 7.10, 14.4**
 
-- [ ] 5. Back: regressão da suíte do módulo e da decomposição
+- [x] 5. Back: regressão da suíte do módulo e da decomposição
   - [x] 5.1 Rodar a suíte do módulo `orcamento-grafico`
     - `npx vitest run src/modules/orcamento-grafico --reporter=dot` com saída em arquivo; 0 falhas e sem reduzir o número de testes de antes da fase
     - `get_diagnostics` em cada arquivo tocado do back, 0 erros
@@ -128,24 +128,24 @@ O usuário aprovou o design conforme as recomendações:
     - `decomposicao-stc.service.test.ts` com 14 de 14 (reconfirmar a contagem); diff vazio em `ancorarCustoCalcgraf` e nos arquivos do motor
     - _Requisitos: 12.1, 12.9, 14.5_
 
-- [ ] 6. PONTO DE PARADA — consultas SELECT e dry-runs em produção (só com autorização explícita em cada passo)
+- [x] 6. PONTO DE PARADA — consultas SELECT e dry-runs em produção (só com autorização explícita em cada passo)
   - [x] 6.1 Consultas `SELECT` 1 a 6 do `design.md` (somente leitura)
     - Pedir autorização antes de rodar, uma consulta ou grupo por vez; conexão por variável de ambiente; empresa Carton Wega `75848e24-742e-461d-b913-1642c5b83ae9`
     - Registrar os resultados no `design.md` (flag das atividades 39 e 53, casamento `CG-EMB-<n>`, relações do Cartucho Composto, produtos afetados, nº de acabamentos ativos e os que passam da posição 100, papéis duplicados)
     - Decidir com o usuário o caso do Req 6.1 (a, b ou c), a Alternativa 1 de `de-calculo` e a inclusão dos demais produtos afetados (nova aprovação)
     - _Requisitos: 6.1, 6.10, 11.2, 12.11_
-  - [ ] 6.2 Dry-runs em produção
+  - [x] 6.2 Dry-runs em produção
     - Rodar `--dry-run` do script de acondicionamento (1.3) e do importador de vínculo (3.3) e apresentar o resultado ao usuário; gravar 0 registros
     - _Requisitos: 2.5, 2.6, 6.6, 12.11_
-  - [ ] 6.3 Gravação autorizada
+  - [x] 6.3 Gravação autorizada
     - Somente após dry-run revisado e autorização explícita: ajuste da flag das atividades 39 e 53 e preenchimento do vínculo `CG-EMB-<n>` (se a consulta 2 mostrar 1 candidato por produto); executar `migrate-prod.ts` no deploy antes de gravar o vínculo
     - Registrar no `design.md` o que foi gravado e conferir o Cartucho Composto no catálogo
     - _Requisitos: 2.6, 6.6, 6.9, 12.11_
 
-- [ ] 7. Checkpoint — commit e deploy do back
+- [x] 7. Checkpoint — commit e deploy do back
   - Back: tarefas 1 a 5 verdes e `get_diagnostics` limpo. Perguntar ao usuário se quer commit e deploy do back (schema e `migrate-prod.ts` no mesmo commit) e aguardar o Render antes de o front usar `tipoEmbalagemId`, `acabamentos/por-ids` e o catálogo corrigido. Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Front: funções puras e testes (sem React, rede ou banco)
+- [x] 8. Front: funções puras e testes (sem React, rede ou banco)
   - [x] 8.1 `editor/sugestoes.ts`: sugestões de tipo, suporte, gramatura e preço
     - `sugerirTipoEmbalagem` (`APLICAR`, `AVISO_INATIVO` ou `NENHUM`), `sugerirSuporteGramatura`, `sugerirPrecoKg` (só com exatamente 1 candidato com preço maior que 0; `SEM_PAPEL` e `MAIS_DE_UM` viram aviso)
     - `aplicarTipoEmbalagem(form, tipo)`, o mesmo reinício de medidas da escolha manual do `StepTipo`, e `aplicarSugestoes(form, …)` idempotente
@@ -189,8 +189,8 @@ O usuário aprovou o design conforme as recomendações:
     - **Property 11: Campos livres preservam pares e respeitam limites**
     - **Validates: Requirements 5.4, 5.5, 5.7, 5.11, 5.12, 5.13**
 
-- [ ] 9. Front: ProdutoModal com seletor "Tipo de Embalagem"
-  - [ ] 9.1 Seletor no formulário de produto
+- [x] 9. Front: ProdutoModal com seletor "Tipo de Embalagem"
+  - [x] 9.1 Seletor no formulário de produto
     - `cadastros/produtos/ProdutoModal.tsx`: `FormState` ganha `tipoEmbalagemId`; `Select` "Tipo de Embalagem" com `label`, `clearable` e `searchable`, alimentado por `GET /orcamento-grafico/tipos-embalagem` (ativos, por nome), pré-selecionado quando o produto tem vínculo
     - Tipo inativo já vinculado aparece com "(inativo)" e é preservado ao salvar sem alteração; não é oferecido a outros produtos
     - Limpar e salvar envia `null`; 422 mostra a `message` e mantém o formulário preenchido; indicador de carregamento, estado vazio e erro com nova tentativa
@@ -200,99 +200,99 @@ O usuário aprovou o design conforme as recomendações:
     - Vínculo ativo pré-selecionado, inativo marcado "(inativo)" e preservado, limpar envia `null`, 422 mantém o formulário
     - _Requisitos: 1.1, 1.4, 1.5, 1.6_
 
-- [ ] 10. Front: sugestões no EditorItem e validação prévia
-  - [ ] 10.1 Sugestões ao escolher o Produto Gráfico
+- [x] 10. Front: sugestões no EditorItem e validação prévia
+  - [x] 10.1 Sugestões ao escolher o Produto Gráfico
     - `EditorItem` e `SecaoProduto`: busca o produto (`tipoEmbalagemId`), o catálogo (`planoFixo`, defaults) e `precos-mp` do tipo PAPEL; aplica `sugerirTipoEmbalagem`, `sugerirSuporteGramatura` e `sugerirPrecoKg` somente em item novo e campos vazios, chamando o mesmo manipulador da escolha manual do tipo
     - Marca `origemTipoEmbalagem = 'PRODUTO'` em estado local (fora do payload) para exibir "sugerido pelo produto"; troca ou limpeza do campo remove o texto; trocar o produto não altera o tipo já preenchido
     - Avisos discretos (`xs` ou `sm`, ícone e tooltip, sem modal): "tipo de embalagem do produto está inativo", "preço não encontrado", "mais de um papel encontrado"; falha de catálogo ou de preços exibe aviso e mantém vazios os campos dependentes
     - Item puxado e item salvo reaberto nunca recebem sugestão
     - _Requisitos: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.1, 4.2, 4.4, 4.5, 4.7, 4.10, 13.5_
-  - [ ] 10.2 Validação prévia ao salvar e erro 400 da API
+  - [x] 10.2 Validação prévia ao salvar e erro 400 da API
     - O botão Salvar chama `validarObrigatoriosParaSalvar` antes de `salvarItem`; lista não vazia não envia, exibe "Faltam: …" e mantém o formulário
     - Resposta 400 por `tipoEmbalagemId`, `gramatura` ou `precoKg` mostra a `message` da API e mantém o editor aberto; sem `message`, mensagem genérica em português
     - _Requisitos: 4.8, 4.9, 13.6, 13.7_
 
-- [ ] 11. Front: `abrirEditorPagina` repassa todos os Campos_Tecnicos
+- [x] 11. Front: `abrirEditorPagina` repassa todos os Campos_Tecnicos
   - [x] 11.1 Repassar e regravar os Campos_Tecnicos
     - `[id]/page.tsx` (`abrirEditorPagina`) e `itemFormShared.ts` (`itemParaForm`, `montarPayloadDadosTecnicos`): repassar `modeloFacaId`, `tintaModo`, `tintaConsumoKg`, `siglaAcabado`, `tributacao`, `processoImpressao`, `coberturaTintaTexto`, `fabricante`, `microondulado` e `materialMicroonduladoId`, `fornecido`, `arte`, `observacao` e `observacaoAreasOp`, medidas técnicas, `montagemLinhas`, `montagemColunas`, `formatoSup*`, `ajusteCorteMicroMm`, `acondicionamento` e `suporteProducaoId`
     - O payload envia o valor gravado, e `null` permanece `null`; o contrato do `PUT` do back NÃO muda; wizard `/novo` com o mesmo fluxo e payload
     - _Requisitos: 9.2, 9.3, 9.4, 9.5, 9.7_
-  - [ ] 11.2 Teste de propriedade de ida e volta do item
+  - [x] 11.2 Teste de propriedade de ida e volta do item
     - Item → formulário → payload com cada Campo_Tecnico estritamente igual ao do item, incluindo `null` (fast-check, mínimo 100 execuções)
     - **Property 18: Campos técnicos fazem ida e volta**
     - **Validates: Requirements 9.2, 9.4, 9.6, 14.2**
-  - [ ] 11.3 Teste de payload de referência
+  - [x] 11.3 Teste de payload de referência
     - Formulário sem `produtoGraficoId` gera payload de salvar e de cálculo iguais aos de antes da fase
     - _Requisitos: 12.8, 9.7_
 
-- [ ] 12. Front: falha de seleção de material no primeiro salvamento
-  - [ ] 12.1 `useSelecaoMaterial`: resultado por atividade e timeout de 30 s
+- [x] 12. Front: falha de seleção de material no primeiro salvamento
+  - [x] 12.1 `useSelecaoMaterial`: resultado por atividade e timeout de 30 s
     - `aplicarPendentes(itemId, { timeoutMs: 30_000 })` com `AbortController` devolve `ResultadoPasse` (`gravadas` e `falhas` com chave `acabamentoId|planoId`, nome da atividade e mensagem da API ou "tempo esgotado")
     - Cada seleção ganha estado `PENDENTE`, `GRAVADA` ou `NAO_GRAVADA`; nova tentativa reenvia só as `NAO_GRAVADA`
     - Arquivo: `editor/catalogo/useSelecaoMaterial.ts`
     - _Requisitos: 10.1, 10.2, 10.5_
-  - [ ] 12.2 Componente `PainelSelecoesNaoGravadas`
+  - [x] 12.2 Componente `PainelSelecoesNaoGravadas`
     - Lista cada atividade afetada com a mensagem e o indicador "não gravada", botão "Tentar novamente" e permissão para trocar ou remover a escolha; só tokens adaptativos
     - Arquivo novo: `editor/catalogo/PainelSelecoesNaoGravadas.tsx`
     - _Requisitos: 10.2, 10.4, 13.1, 13.6_
-  - [ ] 12.3 `EditorItem`: `itemIdCriado`, retentativa e confirmação ao fechar
+  - [x] 12.3 `EditorItem`: `itemIdCriado`, retentativa e confirmação ao fechar
     - `itemIdCriado` definido logo após o `POST` do item e antes do passe; `isEditing = !!(item?.id ?? itemIdCriado)`, de modo que todo "Salvar" ou "Tentar novamente" seguinte faz `PUT` e nunca cria segundo item
     - Com alguma `NAO_GRAVADA`: editor aberto, formulário intacto e sem passe de recálculo; com todas gravadas: recálculo e fechamento como hoje
     - Fechar com `NAO_GRAVADA` pede confirmação ("o item foi salvo e N escolhas não foram gravadas"); Cancelar mantém aberto, Confirmar fecha sem excluir o item
     - Item sem seleções: fluxo, payload e fechamento idênticos aos atuais
     - _Requisitos: 10.1, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8_
-  - [ ] 12.4 Teste de propriedade: passe com falha parcial e retentativa
+  - [x] 12.4 Teste de propriedade: passe com falha parcial e retentativa
     - **Property 19: Passe de seleções com falha parcial e retentativa**
     - **Validates: Requirements 10.1, 10.2, 10.4, 10.5, 10.6, 10.8**
-  - [ ] 12.5 Teste de propriedade: retentativas nunca criam item duplicado
+  - [x] 12.5 Teste de propriedade: retentativas nunca criam item duplicado
     - **Property 20: Retentativas nunca criam item duplicado**
     - **Validates: Requirements 10.3**
 
-- [ ] 13. Front: `useTodosAcabamentos` e `acabamentosExternos` no StepAcabamentos
-  - [ ] 13.1 Hook `editor/useTodosAcabamentos.ts` e acúmulo puro de páginas
+- [x] 13. Front: `useTodosAcabamentos` e `acabamentosExternos` no StepAcabamentos
+  - [x] 13.1 Hook `editor/useTodosAcabamentos.ts` e acúmulo puro de páginas
     - Pagina `GET /acabamentos` com `limit=100` em sequência até receber menos de 100 ou atingir `total`; com até 100 acabamentos faz exatamente 1 requisição e 0 buscas por id
     - Com produto escolhido, busca em lote por `GET /acabamentos/por-ids` (até 50 ids por requisição) as atividades do catálogo ausentes; deduplica por `id`
     - Falha de página ou de busca: aviso "a lista de acabamentos pode estar incompleta" com a `message` da API, "Tentar novamente", mantendo o carregado
     - _Requisitos: 11.1, 11.3, 11.4, 11.5, 11.6_
-  - [ ] 13.2 `StepAcabamentos` com prop opcional `acabamentosExternos` e uso no EditorItem
+  - [x] 13.2 `StepAcabamentos` com prop opcional `acabamentosExternos` e uso no EditorItem
     - Quando a prop vem, o `useEffect` de carga própria é ignorado; o wizard `/novo` e o `ItemWizardModal` não recebem a prop (diff vazio nesses arquivos)
     - `EditorItem` usa o hook e repassa a lista
     - _Requisitos: 11.1, 11.7, 12.7_
-  - [ ] 13.3 Teste de propriedade: carga paginada traz todos os acabamentos uma vez
+  - [x] 13.3 Teste de propriedade: carga paginada traz todos os acabamentos uma vez
     - **Property 21: Carga paginada traz todos os acabamentos uma vez**
     - **Validates: Requirements 11.1, 11.5, 11.6**
 
-- [ ] 14. Front: seletor de material no modal de plano (cache compartilhado e pendentes por plano)
-  - [ ] 14.1 Funções puras de seleção por plano
+- [x] 14. Front: seletor de material no modal de plano (cache compartilhado e pendentes por plano)
+  - [x] 14.1 Funções puras de seleção por plano
     - `editor/catalogo/selecoes-por-plano-puro.ts`: `deveExibirSeletorNoPlano` (só atividade marcada com ao menos um material; nada sem produto) e `mesclarSelecoesPorPlano` (escolher, remover, desmarcar e salvar plano, chave `acabamentoId|planoId`, preservando `origem` e `selecaoId`)
     - _Requisitos: 8.1, 8.2, 8.4, 8.6, 8.11, 8.13_
-  - [ ] 14.2 Teste de propriedade: seletor do plano só onde cabe
+  - [x] 14.2 Teste de propriedade: seletor do plano só onde cabe
     - **Property 16: Seletor de material do plano aparece só onde cabe**
     - **Validates: Requirements 8.1, 8.2, 8.12, 8.13**
-  - [ ] 14.3 Teste de propriedade: seleções de material por plano são preservadas
+  - [x] 14.3 Teste de propriedade: seleções de material por plano são preservadas
     - **Property 17: Seleções de material por plano são preservadas**
     - **Validates: Requirements 8.3, 8.4, 8.6, 8.11**
-  - [ ] 14.4 `PlanosDoItem`: seletor de material com cache compartilhado
+  - [x] 14.4 `PlanosDoItem`: seletor de material com cache compartilhado
     - Prop opcional `catalogoCompartilhado` (sem ela o componente cria o seu como hoje); cada atividade marcada com material no catálogo exibe `SeletorMaterialAtividade` com as mesmas regras de `tipoParam`, A_VERIFICAR e custo do Plano_Fixo
     - Plano sem `id` guarda a seleção como `PENDENTE` e grava com o `planoId` novo após o `POST`; no `PUT` grava após o sucesso; falha mantém o modal aberto com a atividade "não gravada" e sem plano duplicado; desmarcar ou remover chama `DELETE /selecao-material`
     - Erro 422 mostra os materiais permitidos e mantém a seleção anterior; item puxado grava com `aplicaNoPreco = false` e selo "informativo, não altera o preço"; falha do catálogo mostra aviso e oculta os seletores; sem produto, modal idêntico ao atual
     - _Requisitos: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 8.12, 8.13, 8.14, 13.2, 13.4_
-  - [ ] 14.5 Sugestões do Tipo_Plano no modal de plano
+  - [x] 14.5 Sugestões do Tipo_Plano no modal de plano
     - `aplicarDefaultsEmPlano` usa `sugerirSuporteGramatura` e `sugerirPrecoKg`: preenche só suporte, gramatura e `precoKg` vazios do plano; aviso discreto quando o preço não é encontrado ou é ambíguo
     - _Requisitos: 4.3, 4.4, 4.5, 4.6_
-  - [ ] 14.6 `EditorItem` entrega `catalogoCompartilhado` ao `PlanosDoItem`
+  - [x] 14.6 `EditorItem` entrega `catalogoCompartilhado` ao `PlanosDoItem`
     - Uma única instância de `useCatalogoItem` por sessão do editor, com chave `produtoGraficoId + tipoPlanoId`
     - _Requisitos: 8.7_
 
-- [ ] 15. Front: campos livres com sugestão no StepItensDiversos
-  - [ ] 15.1 Hook `useCamposLivresSugestao`
+- [x] 15. Front: campos livres com sugestão no StepItensDiversos
+  - [x] 15.1 Hook `useCamposLivresSugestao`
     - Duas chamadas a `GET /cadastros/campos-livres` (`proprietario=SOLICITACAO` e `PEDIDO`, ativos, com `opcoes`), uma vez por sessão do Editor; falha devolve aviso legível com a `message` da API e não bloqueia o salvamento
     - _Requisitos: 5.1, 5.9, 5.10, 13.2, 13.4_
-  - [ ] 15.2 `StepItensDiversos` com props opcionais
+  - [x] 15.2 `StepItensDiversos` com props opcionais
     - Props `sugestoesRotulos`, `opcoesPorRotulo` e `obrigatorios`; rótulo e conteúdo viram `Autocomplete` com digitação livre; opção padrão só com o indicador "padrão", sem selecionar; ícone com tooltip "obrigatório" sem bloquear o salvamento; limite de 20 pares, 50 e 500 caracteres com mensagem legível
     - Sem as props (wizard) o componente se comporta como hoje
     - _Requisitos: 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.11, 5.13, 5.14, 12.7_
-  - [ ] 15.3 `EditorItem` liga o hook ao bloco de campos livres
+  - [x] 15.3 `EditorItem` liga o hook ao bloco de campos livres
     - Passa as props ao `StepItensDiversos`; `camposLivres` não entra no payload de cálculo e não muda `resultadoCalculo` nem o consolidado
     - _Requisitos: 5.1, 5.4, 5.12_
   - [ ]* 15.4 Testes de componente do bloco de campos livres
@@ -300,7 +300,7 @@ O usuário aprovou o design conforme as recomendações:
     - _Requisitos: 5.2, 5.3, 5.10, 5.13_
 
 - [ ] 16. Front: revisão transversal
-  - [ ] 16.1 Revisão dos arquivos tocados
+  - [x] 16.1 Revisão dos arquivos tocados
     - Tokens adaptativos do Mantine (sem hexadecimal, `white`, `black` nem nível `-0`); textos em português sem "Calcgraf", "G-Print" nem "GPrint"; nenhum texto sugere que Ajustes, Quebras ou Limites alteram preço, cálculo ou PCP
     - Estados de carregamento, vazio e erro nos seletores novos; `label` visível e uso só pelo teclado; nenhuma chamada nova envia `empresaId`
     - Wizard `/novo` e `ItemWizardModal` intactos; `get_diagnostics` em cada arquivo tocado do front, 0 erros
@@ -310,10 +310,10 @@ O usuário aprovou o design conforme as recomendações:
     - _Requisitos: 12.5_
 
 - [ ] 17. Documentação e checkpoint final
-  - [ ] 17.1 Seção 21 do `docs/orcamento-planos-calcgraf-HANDOFF.md`
+  - [x] 17.1 Seção 21 do `docs/orcamento-planos-calcgraf-HANDOFF.md`
     - Registrar decisões aprovadas, resultado das consultas da tarefa 6, o que foi gravado em produção, a tabela do Req 9.1 e pendências
     - _Requisitos: 6.1, 6.10, 9.1, 11.2_
-  - [ ] 17.2 Resumo no steering
+  - [x] 17.2 Resumo no steering
     - Resumo curto da Fase 3 em `.kiro/steering/migracao-calcgraf-carton-wega.md`
     - _Requisitos: 12.1_
   - [ ] 17.3 Checkpoint final e conferência manual dos oito cenários
