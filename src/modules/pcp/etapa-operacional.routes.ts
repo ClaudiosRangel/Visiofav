@@ -1040,6 +1040,13 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (dados.observacoes.formatoPlano) novasTags.push(`[Formato] ${dados.observacoes.formatoPlano}`)
     if (dados.observacoes.coresPlano) novasTags.push(`[Cores] ${dados.observacoes.coresPlano}`)
     if (dados.observacoes.formatoMicro) novasTags.push(`[FormatoMicro] ${dados.observacoes.formatoMicro}`)
+    // Tiragem: regravada quando o PDF a traz (ex.: "20.000 x 2" da OP 3239,
+    // que versões antigas do parser não liam e caía em Qtd/Montagem). Se o
+    // parser não achar, mantém a tag antiga (não piora o que já existe).
+    if (dados.tiragem) {
+      obsAtual = obsAtual.replace(/\[Tiragem\].*\n?/g, '').trim()
+      novasTags.push(`[Tiragem] ${dados.tiragem}`)
+    }
 
     // ── Material ENCOMENDADO ("Aguardando Cartão") ────────────────────────────
     // OPs como a 3221 são alteradas no Calcgraf DEPOIS da 1ª importação (a
