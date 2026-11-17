@@ -455,6 +455,25 @@ describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {
   })
 })
 
+describe('parseGprintPdf — tiragem "N x 2" em plano único (OP 3239)', () => {
+  it('extrai 20.000 de "20.000 x 2" (retiração) sem confundir com dimensão', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.239',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   FURP   Cód. Cliente:   40',
+      'Produto:   Cartuchos',
+      'Descrição:   CARTUCHO BROMIDRATO DE GALANTAMINA 24MG',
+      'Quantidade:   120.000',
+      'Plano   Formato   Mont.   Tiragem   Cores   Máq.Impr.   Chapa   Acabamento',
+      'CARTUCHO   430 x 620   3x2   20.000 x 2   8x0 +V   KBA Rapida 75 6cores   8   Cortadeira (Grande), Guilhotina maior, Verniz',
+      'Impressão   Fixo   Variável',
+      'Offset Plana KBA Rapida 75 6cores   03:05   04:27',
+    ].join('\n')
+    const dados = parseGprintPdf(texto)
+    expect(dados.tiragem).toBe(20000)
+  })
+})
+
 describe('parseGprintPdf — frente/costa (Fase C)', () => {
   it('detecta retiração quando Cores é NxM com N>0 e M>0 (7x5)', () => {
     // Precisa de 2+ planos para extrairPlanos retornar algo; o 2º é só para

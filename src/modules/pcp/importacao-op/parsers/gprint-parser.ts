@@ -1347,7 +1347,12 @@ function extrairTiragem(texto: string): number | null {
       const contextoDepois = conteudo.substring(posInicio + raw.length, posInicio + raw.length + 5)
       
       // Pular se parece dimensão (precedido/seguido por "x" com espaço)
-      if (/x\s*$/.test(contextoAntes) || /^\s*x/.test(contextoDepois)) continue
+      // "20.000 x 2" é tiragem com 2 passagens (retiração), NÃO dimensão: o
+      // multiplicador de passagem tem 1-2 dígitos, dimensão tem 3+ (ex.: 430 x 620).
+      const contextoDepoisLongo = conteudo.substring(posInicio + raw.length, posInicio + raw.length + 8)
+      const ehDimensaoAFrente = /^\s*x\s*\d{3,}/.test(contextoDepoisLongo)
+      const ehPassagem = /^\s*x\s*\d{1,2}(?![\d.,])/.test(contextoDepoisLongo)
+      if (/x\s*$/.test(contextoAntes) || ehDimensaoAFrente || (/^\s*x/.test(contextoDepois) && !ehPassagem)) continue
       
       // Pular se é formato NxN (como 2x2, 5x0)
       if (/^\d+x\d+$/.test(raw)) continue
