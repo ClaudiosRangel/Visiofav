@@ -1578,3 +1578,51 @@ Dois ajustes pedidos pelo Caio (prints):
 2. **Título da aba** do app Checkout era "Create Next App" (metadata padrão do
    Next). Corrigido em `VisioFab.Checkout/src/app/layout.tsx` para "Checkout de
    Apontamentos".
+
+---
+
+## 19. Gantt — zoom semântico, Mapa de carga e cor por Linha de Produto (18/11/2026)
+
+Pedido do Caio/Amanda: ao diminuir o zoom o Gantt "embolava" (grade de hora +
+barras com texto mínimo de 20px), e todas as OPs tinham a mesma cor.
+
+### 19.1 Zoom semântico (front, `pcp/gantt`)
+- `gantt-layout.ts`: `escolherPassoEscalaMin(ppm)` escolhe o passo do eixo
+  (1h, 2h, 3h, 6h, 12h, dia, 2 dias, semana) para rótulos nunca ficarem a menos
+  de 58px; `gerarMarcadoresEscala` gera os marcadores (dia = meia-noite local,
+  semana = segunda). `nivelDetalheBarra(ppm)` → `completo` (≥0,35 px/min, texto
+  2 linhas) / `compacto` (≥0,12, só nº da OP) / `minimo` (só cor + filete RAG no
+  topo; sem setup, cadeado, âncora, vãos de turno). Largura mínima da barra por
+  nível (20/8/3px). Faixas alternadas por dia na grade. Testes em
+  `gantt-zoom.test.ts` (vitest + fast-check).
+- **Mapa de carga**: toggle "Gantt | Mapa de carga". Tabela máquina × dia com
+  ocupação % (reusa `ocupacaoPorDia`, mesma regra de turno/exceção), nº de OPs,
+  cor verde <70% / âmbar 70–100% / vermelho >100%, filete com a linha de produto
+  predominante. Clicar na célula volta ao Gantt em 24h no dia. É a "visão total
+  sem embolar".
+
+### 19.2 Cor por Linha de Produto
+- **Fonte HOJE = PDF**: o campo "Produto:" do cabeçalho do GPrint (Cartuchos,
+  Cartucho Composto, Impressos…) É o "Produto" do Calcgraf, que agrupa nas
+  Linhas de Produto do orçamento (CARTUCHO, CARTUCHO COMPOSTO, LÂMINA SIMPLES,
+  LÂMINAS, SACOLA). Confirmado nos 7 PDFs versionados.
+- Gravado como tag `[Linha]` em `observacoes` (sem schema) na importação e no
+  "Reextrair PDF". `linha-produto.service.ts` (puro, testado) classifica o texto
+  (Impressos/Venda de Cartão → Lâmina Simples; desconhecido vira linha própria).
+  `GET /pcp/timeline` expõe `linhaProduto: { codigo, rotulo } | null`.
+- Front (`gantt-linha.ts`): cor fixa por linha (Cartucho verde, Cartucho
+  Composto azul, Lâmina Simples âmbar, Lâminas laranja, Sacola roxo; outras por
+  hash estável). Prioridade: cor personalizada da OP > cor da linha > padrão.
+  Legenda por linha clicável (filtra).
+- **OPs antigas**: rodar `scripts/preencher-linha-produto-ops.ts` (dry-run por
+  padrão, `--apply` grava; só acrescenta a tag, idempotente, relê o `pdf_data`).
+
+### 19.3 ROADMAP — Linha de Produto sem depender do PDF
+Quando as OPs nascerem direto do sistema, gravar a linha REAL em campo próprio
+(`OrdemProducao.linhaProdutoId` ou similar, schema + migrate-prod juntos):
+- OP gerada pelo orçamento do Vizor: herdar a linha do item do orçamento
+  (Produto Gráfico → linha) — já conhecida no momento da criação.
+- Agente Calcgraf (quando reativado): ler `_LinhasProduto.Nome` via
+  `CalculoHeader`/`CalculoAcabados` (mesmo de-para do exportador do acervo).
+- Depois disso, a tag `[Linha]` vira só fallback de OPs legadas e a cor pode
+  ser configurável por linha num cadastro (hoje é fixa no front).

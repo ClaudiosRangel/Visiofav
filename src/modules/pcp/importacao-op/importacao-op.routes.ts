@@ -197,6 +197,9 @@ export async function importacaoOpRoutes(app: FastifyInstance) {
     const obsConsolidadas = [
       ...(dados.cabecalho.cliente ? [`[Cliente] ${dados.cabecalho.cliente}`] : []),
       ...(dados.cabecalho.descricao ? [`[Produto] ${dados.cabecalho.descricao}`] : []),
+      // Linha de Produto = campo "Produto:" do PDF (ex.: Cartuchos). Usada para
+      // colorir o Gantt. Ver linha-produto.service.ts.
+      ...(dados.cabecalho.produto ? [`[Linha] ${dados.cabecalho.produto}`] : []),
       ...(dados.montagem ? [`[Montagem] ${dados.montagem.aproveitamento}`] : []),
       ...(dados.tiragem ? [`[Tiragem] ${dados.tiragem}`] : []),
       ...(dados.observacoes.tipoOp ? [`[TipoOp] ${dados.observacoes.tipoOp}`] : []),

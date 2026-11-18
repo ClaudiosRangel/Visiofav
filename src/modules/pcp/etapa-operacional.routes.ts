@@ -1032,9 +1032,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
 
     // Atualizar observações: remover tags antigas e adicionar novas
     let obsAtual = op.observacoes || ''
-    obsAtual = obsAtual.replace(/\[Matriz\].*\n?/g, '').replace(/\[FormatoMicro\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').replace(/\[Cores\].*\n?/g, '').trim()
+    obsAtual = obsAtual.replace(/\[Linha\].*\n?/g, '').replace(/\[Matriz\].*\n?/g, '').replace(/\[FormatoMicro\].*\n?/g, '').replace(/\[Formato\].*\n?/g, '').replace(/\[TipoOp\].*\n?/g, '').replace(/\[Cores\].*\n?/g, '').trim()
 
     const novasTags: string[] = []
+    if (dados.cabecalho.produto) novasTags.push(`[Linha] ${dados.cabecalho.produto}`)
     if (dados.observacoes.tipoOp) novasTags.push(`[TipoOp] ${dados.observacoes.tipoOp}`)
     if (dados.observacoes.matriz) novasTags.push(`[Matriz] ${dados.observacoes.matriz}`)
     if (dados.observacoes.formatoPlano) novasTags.push(`[Formato] ${dados.observacoes.formatoPlano}`)
@@ -1823,9 +1824,29 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       ordemProducao: { empresaId: user.empresaId },
     }
 
+    // Não-admin: restringe JÁ NA CONSULTA aos tipos de processo em que pode
+    // retornar etapa. Antes o filtro era aplicado depois do `take`, então
+    // quando as N últimas concluídas eram de processos sem permissão, a lista
+    // vinha vazia mesmo havendo concluídas dos processos permitidos.
+    let tiposPermitidos: string[] | null = null
+    if (permissoesConcl) {
+      const tiposEmpresa = await prisma.tipoProcesso.findMany({
+        where: { empresaId: user.empresaId },
+        select: { id: true },
+      })
+      tiposPermitidos = tiposEmpresa
+        .filter((t) => verificarPermissaoAcao(permissoesConcl, 'podeRetornarEtapa', t.id))
+        .map((t) => t.id)
+    }
+
     // Filtrar por tipo de processo (via centro de produção)
     if (query.tipoProcessoId) {
+      if (tiposPermitidos && !tiposPermitidos.includes(query.tipoProcessoId)) {
+        return []
+      }
       where.centroProducao = { tipoProcessoId: query.tipoProcessoId }
+    } else if (tiposPermitidos) {
+      where.centroProducao = { tipoProcessoId: { in: tiposPermitidos } }
     }
 
     const etapas = await prisma.etapaOrdemProducao.findMany({

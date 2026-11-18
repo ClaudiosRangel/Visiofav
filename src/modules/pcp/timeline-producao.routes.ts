@@ -5,6 +5,7 @@ import { authenticate } from '../../middleware/authenticate'
 import { moduloGuard } from '../../middleware/modulo-guard'
 import { calcularAgenda, type EtapaAgenda } from './timeline-agenda.service'
 import { getPermissoes, verificarPermissaoAcao } from './permissoes-pcp.routes'
+import { extrairLinhaObs, type LinhaProduto } from './linha-produto.service'
 
 const idSchema = z.object({ id: z.string().uuid() })
 
@@ -99,6 +100,9 @@ interface OpTimeline {
   // Aditivos: null quando não definidos (aplica a cor padrão no front).
   corGantt: string | null
   statusObs: string | null
+  // Linha de Produto (tag [Linha] do PDF) — o front usa para colorir as barras
+  // quando a OP não tem cor personalizada. null = OP sem a informação.
+  linhaProduto: LinhaProduto | null
   // Etapas
   etapas: EtapaTimeline[]
 }
@@ -545,6 +549,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
         percentualConcluido,
         corGantt: op.corGantt ?? null,
         statusObs: op.statusGanttObs ?? null,
+        linhaProduto: extrairLinhaObs(op.observacoes),
         etapas: etapasTimeline,
       }
     })
