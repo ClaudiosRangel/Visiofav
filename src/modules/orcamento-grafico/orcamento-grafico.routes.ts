@@ -37,6 +37,7 @@ import {
   garantirEngenhariaCompleta,
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
+import { ITEM_SELECT_HIDRATACAO, anexarAproveitamentoManual } from './hierarquia/item-select'
 import { mapearFotoPlanos, type PlanoMapeado } from './calculo-grafico/foto-planos.service'
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
 import {
@@ -331,6 +332,9 @@ const corItemSchema = z.object({
  * ItemOrcamentoGrafico, mas NÃO alteram o cálculo (Fases 2/3/4). Ao motor passa-se
  * apenas o que ele já entende hoje (via `calcularItem`/`ItemOrcamentoInput`).
  */
+/** Medida informativa em mm (0..99999,99), opcional e anulável. Não entra no motor. */
+const zMmInformativo = z.number().min(0).max(99999.99).optional().nullable()
+
 const itemOrcamentoBodySchema = z.object({
   tipoEmbalagemId: z.string().uuid(),
   // Catálogo (Fase 2): ausente não altera; null limpa.
@@ -482,6 +486,16 @@ const itemOrcamentoBodySchema = z.object({
   formatoCorteLarguraMm: z.number().positive().optional().nullable(),
   formatoCorteAlturaMm: z.number().positive().optional().nullable(),
   ajusteCorteMicroMm: z.number().min(0).optional().nullable(),
+  // ── Hierarquia Item/Plano (D3) — informativos, NÃO entram no motor ──
+  formatoFechadoLarguraMm: zMmInformativo,
+  formatoFechadoAlturaMm: zMmInformativo,
+  formatoAbertoLarguraMm: zMmInformativo,
+  formatoAbertoAlturaMm: zMmInformativo,
+  formatoFinalLarguraMm: zMmInformativo,
+  formatoFinalAlturaMm: zMmInformativo,
+  alturaTampaMm: zMmInformativo,
+  numeroSanfonas: z.number().int().min(0).max(999).optional().nullable(),
+  numeroPaginas: z.number().int().min(0).max(999).optional().nullable(),
 })
 
 type ItemOrcamentoBody = z.infer<typeof itemOrcamentoBodySchema>
@@ -777,6 +791,17 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     formatoCorteLarguraMm: body.formatoCorteLarguraMm ?? null,
     formatoCorteAlturaMm: body.formatoCorteAlturaMm ?? null,
     ajusteCorteMicroMm: body.ajusteCorteMicroMm ?? 0,
+    // ── Hierarquia Item/Plano (D3) — gravação condicional: ausente não altera
+    // (preserva item puxado/copiado); null limpa. Nunca entram no cálculo. ──
+    ...(body.formatoFechadoLarguraMm !== undefined ? { formatoFechadoLarguraMm: body.formatoFechadoLarguraMm } : {}),
+    ...(body.formatoFechadoAlturaMm !== undefined ? { formatoFechadoAlturaMm: body.formatoFechadoAlturaMm } : {}),
+    ...(body.formatoAbertoLarguraMm !== undefined ? { formatoAbertoLarguraMm: body.formatoAbertoLarguraMm } : {}),
+    ...(body.formatoAbertoAlturaMm !== undefined ? { formatoAbertoAlturaMm: body.formatoAbertoAlturaMm } : {}),
+    ...(body.formatoFinalLarguraMm !== undefined ? { formatoFinalLarguraMm: body.formatoFinalLarguraMm } : {}),
+    ...(body.formatoFinalAlturaMm !== undefined ? { formatoFinalAlturaMm: body.formatoFinalAlturaMm } : {}),
+    ...(body.alturaTampaMm !== undefined ? { alturaTampaMm: body.alturaTampaMm } : {}),
+    ...(body.numeroSanfonas !== undefined ? { numeroSanfonas: body.numeroSanfonas } : {}),
+    ...(body.numeroPaginas !== undefined ? { numeroPaginas: body.numeroPaginas } : {}),
   }
 }
 
@@ -3429,95 +3454,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         // necessários à tela; o pesado é só o resultadoCalculo por item).
         itens: {
           orderBy: { sequencia: 'asc' },
-          select: {
-            id: true,
-            orcamentoId: true,
-            empresaId: true,
-            sequencia: true,
-            tipoEmbalagemId: true,
-            descricao: true,
-            medidas: true,
-            papelId: true,
-            papelDescricao: true,
-            suporteId: true,
-            gramatura: true,
-            numCores: true,
-            cores: true,
-            maquinaId: true,
-            matrizQuantidade: true,
-            matrizPrecoUnitario: true,
-            tintaModo: true,
-            tintaConsumoKg: true,
-            acabamentosRicos: true,
-            modeloFacaId: true,
-            itensDiversos: true,
-            itensFornecidos: true,
-            camposLivres: true,
-            quantidade: true,
-            resultadoCalculo: true,
-            margemSelecionada: true,
-            custoProducao: true,
-            valorTotal: true,
-            pendente: true,
-            criadoEm: true,
-            atualizadoEm: true,
-            // ── Frente A (Task 3) — paridade/geometria/acondicionamento ──
-            siglaAcabado: true,
-            tributacao: true,
-            processoImpressao: true,
-            coberturaTintaTexto: true,
-            fabricante: true,
-            microondulado: true,
-            materialMicroonduladoId: true,
-            fornecido: true,
-            qtdModelos: true,
-            arte: true,
-            observacao: true,
-            observacaoAreasOp: true,
-            conteudoVolume: true,
-            acondicionamento: true,
-            comprimentoMm: true,
-            larguraMm: true,
-            alturaMm: true,
-            abaColaMm: true,
-            abaFechamentoMm: true,
-            fibra: true,
-            montagemLinhas: true,
-            montagemColunas: true,
-            formatoSupLarguraMm: true,
-            formatoSupAlturaMm: true,
-            formatoCorteLarguraMm: true,
-            formatoCorteAlturaMm: true,
-            ajusteCorteMicroMm: true,
-            suporteProducaoId: true,
-            // Origem do item (repetição): cálculo da biblioteca de onde foi
-            // copiado — habilita a Conferência foto×recálculo (spec repetição).
-            calculoGraficoOrigemId: true,
-            produtoGraficoId: true,
-            materiaisAcabamento: true,
-            // ── Fase 2 (Task 9/11) — planos do cálculo para hidratar a tela ──
-            planos: {
-              orderBy: { sequencia: 'asc' },
-              select: {
-                id: true,
-                sequencia: true,
-                nome: true,
-                tipoPlanoId: true,
-                suporteId: true,
-                suporteProducaoId: true,
-                gramatura: true,
-                formatoLarguraMm: true,
-                formatoAlturaMm: true,
-                numCores: true,
-                cores: true,
-                maquinaId: true,
-                acabamentosRicos: true,
-                custoSuporte: true,
-                custoImpressao: true,
-                custoAcabamento: true,
-              },
-            },
-          },
+          select: ITEM_SELECT_HIDRATACAO,
         },
       },
     })
@@ -3572,24 +3509,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }
     }
 
-    // aproveitamento_manual (peças/folha) via SQL raw — o campo existe no banco
-    // mas o Prisma Client pode não tê-lo (não regenerado); injetamos aqui para o
-    // recálculo usar a imposição real do Calcgraf em vez do encaixe geométrico.
-    try {
-      const itens = (orcamento as { itens?: Array<{ id: string }> }).itens ?? []
-      if (itens.length > 0) {
-        const ids = itens.map((i) => i.id)
-        const rows = await prisma.$queryRawUnsafe<Array<{ id: string; aproveitamento_manual: unknown }>>(
-          `SELECT id, aproveitamento_manual FROM item_orcamento_grafico WHERE id = ANY($1::text[])`,
-          ids,
-        )
-        const mapa = new Map(rows.map((r) => [r.id, r.aproveitamento_manual]))
-        for (const it of itens as Array<{ id: string; aproveitamentoManual?: unknown }>) {
-          const v = mapa.get(it.id)
-          it.aproveitamentoManual = v != null ? Number(v) : null
-        }
-      }
-    } catch { /* se falhar, segue sem o campo (não quebra o GET) */ }
+    // aproveitamento_manual (peças/folha) via SQL raw (coluna fora do client Prisma).
+    await anexarAproveitamentoManual((orcamento as { itens?: Array<{ id: string }> }).itens ?? [])
 
     // Resolve o NÚMERO do cálculo da biblioteca que originou cada item (repetição),
     // para a tela informar "Cálculo utilizado: nº ...". Isolado por empresa.

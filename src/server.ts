@@ -194,6 +194,7 @@ import { relatorioProducaoRoutes } from './modules/pcp/gerencial/relatorio-produ
 import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { excecaoTurnoRoutes } from './modules/pcp/excecao-turno.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
+import { hierarquiaRoutes } from './modules/orcamento-grafico/hierarquia/hierarquia.routes'
 import { calculoGraficoRoutes } from './modules/orcamento-grafico/calculo-grafico/calculo-grafico.routes'
 import { cadastrosGraficosRoutes } from './modules/orcamento-grafico/cadastros-graficos'
 import { linhaProdutoRoutes } from './modules/orcamento-grafico/cadastros/linha-produto.routes'
@@ -540,6 +541,10 @@ async function bootstrap() {
   await app.register(timelineProducaoRoutes, { prefix: '/api/pcp' })
   await app.register(excecaoTurnoRoutes, { prefix: '/api/pcp' })
   await app.register(orcamentoGraficoRoutes, { prefix: '/api/orcamento-grafico' })
+  // Hierarquia Orçamento → Item → Plano (leituras, totalizador, cópia). Rotas novas, sem conflito
+  // com orcamento-grafico.routes.ts (paths distintos: itens-resumo, comissoes, fechamento-totalizador,
+  // GET /:id/itens/:itemId, .../dados-item, POST .../copiar).
+  await app.register(hierarquiaRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(calculoGraficoRoutes, { prefix: '/api/calculo-grafico' })
   // Cadastros novos do orçamento gráfico (paridade Calcgraf — Req 6/10/11/12)
   await app.register(linhaProdutoRoutes, { prefix: '/api/orcamento-grafico/linhas-produto' })

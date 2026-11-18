@@ -5553,7 +5553,9 @@ async function seedMateriaisFromOPs() {
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "excecao_turno" ADD CONSTRAINT "excecao_turno_centro_producao_id_fkey" FOREIGN KEY ("centro_producao_id") REFERENCES "centro_producao"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
   } catch (e: any) {
-    if (!String(e?.message).includes('already exists')) throw e
+    // 42710 = duplicate_object; o Postgres local pode responder em português ("já existe").
+    const msg = String(e?.message)
+    if (!msg.includes('already exists') && !msg.includes('42710') && !msg.includes('já existe')) throw e
   }
   console.log('✅ Exceções de calendário: excecao_turno criada')
 
@@ -6322,6 +6324,22 @@ async function migrarOrcamentoGraficoCadastrosRelacoes() {
 
   // Fase 3: tipo de embalagem padrão do produto gráfico (sem FK)
   await exec(`ALTER TABLE "produto_grafico" ADD COLUMN IF NOT EXISTS "tipo_embalagem_id" VARCHAR(36)`)
+
+  // Hierarquia Item/Plano (D3 + G2) — ADITIVO, nulas, sem efeito no custo.
+  for (const col of [
+    'formato_fechado_largura_mm', 'formato_fechado_altura_mm',
+    'formato_aberto_largura_mm', 'formato_aberto_altura_mm',
+    'formato_final_largura_mm', 'formato_final_altura_mm',
+    'altura_tampa_mm',
+  ]) {
+    await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "${col}" DECIMAL(10,2)`)
+  }
+  await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "numero_sanfonas" INTEGER`)
+  await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "numero_paginas" INTEGER`)
+  await exec(`ALTER TABLE "produto_grafico" ADD COLUMN IF NOT EXISTS "possui_altura_tampa" BOOLEAN`)
+  for (const col of ['prev_capa_externa', 'prev_microondulado', 'prev_capa_interna', 'prev_fibra']) {
+    await exec(`ALTER TABLE "tipo_plano_grafico" ADD COLUMN IF NOT EXISTS "${col}" BOOLEAN`)
+  }
 
   await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_grafico_id" TEXT`)
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)

@@ -50,13 +50,15 @@ const produtoBase = z.object({
   exibeRestricoes: z.boolean().optional(),
   exibeInformacoesComplementares: z.boolean().optional(),
   semImpressao: z.boolean().optional(),
+  /** G2: tri-estado. Ausente não altera; null limpa (= mostrar). */
+  possuiAlturaTampa: z.boolean().nullable().optional(),
   /** Fase 3: ausente não altera; null limpa. Validado por { id, empresaId } nas rotas. */
   tipoEmbalagemId: z.string().uuid().nullable().optional(),
 })
 
-/** Serialização do produto: `tipoEmbalagemId` sempre presente (nulo quando vazio). */
-function serializarProduto<T extends { tipoEmbalagemId?: string | null }>(p: T) {
-  return { ...p, tipoEmbalagemId: p.tipoEmbalagemId ?? null }
+/** Serialização do produto: `tipoEmbalagemId` e `possuiAlturaTampa` sempre presentes (nulos quando vazios). */
+function serializarProduto<T extends { tipoEmbalagemId?: string | null; possuiAlturaTampa?: boolean | null }>(p: T) {
+  return { ...p, tipoEmbalagemId: p.tipoEmbalagemId ?? null, possuiAlturaTampa: p.possuiAlturaTampa ?? null }
 }
 
 /** true quando o tipo de embalagem existe NA empresa da sessão. */
@@ -94,6 +96,11 @@ const planoBase = z.object({
   margem1Mm: z.number().min(0).optional(),
   margem2Mm: z.number().min(0).optional(),
   formato: textoOpc(60),
+  /** G2: tri-estado (null = mostrar). Ausente não altera; null limpa. */
+  prevCapaExterna: z.boolean().nullable().optional(),
+  prevMicroondulado: z.boolean().nullable().optional(),
+  prevCapaInterna: z.boolean().nullable().optional(),
+  prevFibra: z.boolean().nullable().optional(),
 })
 const planoCriarSchema = planoBase
 const planoAtualizarSchema = planoBase.partial()

@@ -193,6 +193,58 @@ export async function obterCatalogoProduto(empresaId: string, produtoId: string,
   }
 }
 
+/** Mensagem fixa: igual para atividade inexistente e de outra empresa (sem vazar existência). */
+export const MSG_REGISTRO_NAO_ENCONTRADO = 'Registro não encontrado.'
+
+/**
+ * Atividade (acabamento) avulsa com suas restrições e materiais permitidos, para
+ * atividades fora do catálogo do plano. empresaId explícito em TODA query.
+ * Materiais vêm da relação ATIVIDADE → MATERIAL (ordenados pela relação) e só os ativos.
+ */
+export async function obterCatalogoAtividade(empresaId: string, atividadeId: string, db: Db = prisma) {
+  const atividade = await db.acabamentoGrafico.findFirst({
+    where: { id: atividadeId, empresaId },
+    select: {
+      id: true,
+      codigo: true,
+      nome: true,
+      status: true,
+      tipoAtividade: true,
+      planoProduto: true,
+      naturezaCusto: true,
+      exigeRestricao: true,
+      acondicionamento: true,
+      textoProposta: true,
+      exibirNomePlano: true,
+    },
+  })
+  if (!atividade) throw new CatalogoError(404, MSG_REGISTRO_NAO_ENCONTRADO)
+
+  const [restricoes, relMateriais] = await Promise.all([
+    db.restricaoAcabamento.findMany({
+      where: { empresaId, acabamentoGraficoId: atividade.id },
+      orderBy: { nome: 'asc' },
+    }),
+    db.relacaoCadastroGrafico.findMany({
+      where: { empresaId, tipoOrigem: 'ATIVIDADE', idOrigem: atividade.id, tipoDestino: 'MATERIAL' },
+      orderBy: { ordem: 'asc' },
+      select: { idDestino: true, ordem: true, padrao: true },
+    }),
+  ])
+
+  const idsMateriais = [...new Set(relMateriais.map((r) => r.idDestino))]
+  const materiais = idsMateriais.length
+    ? await db.materialAcabamento.findMany({ where: { empresaId, ativo: true, id: { in: idsMateriais } } })
+    : []
+
+  return {
+    atividade,
+    restricoes,
+    // MaterialAcabamento completo (inclui `tipoParam`), com `ordem` e `padrao` da relação.
+    materiais: ordenarPorRelacao(materiais, relMateriais, (m) => m.nome),
+  }
+}
+
 /**
  * Catálogo por tipo de plano (e produto opcional): atividades do plano com
  * restrições e materiais permitidos, coberturas, suportes e itens diversos automáticos.

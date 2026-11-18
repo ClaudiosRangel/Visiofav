@@ -1,0 +1,5877 @@
+{
+  "versao": 1,
+  "descricao": "Vetores compartilhados Back/Front da função pura resolverLayoutItem (design.md, Components and Interfaces). Os dois repositórios devem ter este arquivo byte a byte igual (teste de integridade por hash).",
+  "vetores": [
+    {
+      "id": "matriz-TRES_DIMENSOES-si0-er0-eic0",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si0-er0-eic1",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si0-er1-eic0",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si0-er1-eic1",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si1-er0-eic0",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si1-er0-eic1",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si1-er1-eic0",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-TRES_DIMENSOES-si1-er1-eic1",
+      "descricao": "Plano único, modo TRES_DIMENSOES, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si0-er0-eic0",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si0-er0-eic1",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si0-er1-eic0",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si0-er1-eic1",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si1-er0-eic0",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si1-er0-eic1",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si1-er1-eic0",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-DUAS_DIMENSOES-si1-er1-eic1",
+      "descricao": "Plano único, modo DUAS_DIMENSOES, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si0-er0-eic0",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si0-er0-eic1",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si0-er1-eic0",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si0-er1-eic1",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si1-er0-eic0",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si1-er0-eic1",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si1-er1-eic0",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-ABERTO_FECHADO-si1-er1-eic1",
+      "descricao": "Plano único, modo ABERTO_FECHADO, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si0-er0-eic0",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si0-er0-eic1",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si0-er1-eic0",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si0-er1-eic1",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si1-er0-eic0",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si1-er0-eic1",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si1-er1-eic0",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-SANFONA_ABAS-si1-er1-eic1",
+      "descricao": "Plano único, modo SANFONA_ABAS, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si0-er0-eic0",
+      "descricao": "Plano único, modo PAGINA, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si0-er0-eic1",
+      "descricao": "Plano único, modo PAGINA, semImpressao=false, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si0-er1-eic0",
+      "descricao": "Plano único, modo PAGINA, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si0-er1-eic1",
+      "descricao": "Plano único, modo PAGINA, semImpressao=false, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si1-er0-eic0",
+      "descricao": "Plano único, modo PAGINA, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si1-er0-eic1",
+      "descricao": "Plano único, modo PAGINA, semImpressao=true, exibeRestricoes=false, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si1-er1-eic0",
+      "descricao": "Plano único, modo PAGINA, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "matriz-PAGINA-si1-er1-eic1",
+      "descricao": "Plano único, modo PAGINA, semImpressao=true, exibeRestricoes=true, exibeInformacoesComplementares=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-TRES_DIMENSOES-si0",
+      "descricao": "Multi-plano, modo TRES_DIMENSOES, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-TRES_DIMENSOES-si1",
+      "descricao": "Multi-plano, modo TRES_DIMENSOES, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-DUAS_DIMENSOES-si0",
+      "descricao": "Multi-plano, modo DUAS_DIMENSOES, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-DUAS_DIMENSOES-si1",
+      "descricao": "Multi-plano, modo DUAS_DIMENSOES, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-ABERTO_FECHADO-si0",
+      "descricao": "Multi-plano, modo ABERTO_FECHADO, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-ABERTO_FECHADO-si1",
+      "descricao": "Multi-plano, modo ABERTO_FECHADO, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "ABERTO_FECHADO",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "formatoAberto"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-SANFONA_ABAS-si0",
+      "descricao": "Multi-plano, modo SANFONA_ABAS, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-SANFONA_ABAS-si1",
+      "descricao": "Multi-plano, modo SANFONA_ABAS, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "SANFONA_ABAS",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "numeroSanfonas",
+            "aba"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-PAGINA-si0",
+      "descricao": "Multi-plano, modo PAGINA, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "multi-PAGINA-si1",
+      "descricao": "Multi-plano, modo PAGINA, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "PAGINA",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": true,
+          "exibeInformacoesComplementares": true,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-livre-2",
+            "fixo": false
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "formatoFechado",
+            "numeroPaginas"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": true,
+        "restricoes": "EXPANDIDA"
+      }
+    },
+    {
+      "id": "modo-null",
+      "descricao": "modoFormato null",
+      "entrada": {
+        "produto": {
+          "modoFormato": null,
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": false,
+        "motivoIncompleto": "MODO_FORMATO_AUSENTE",
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "modo-omitido",
+      "descricao": "modoFormato omitido",
+      "entrada": {
+        "produto": {
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": false,
+        "motivoIncompleto": "MODO_FORMATO_AUSENTE",
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "modo-vazio",
+      "descricao": "modoFormato string vazia",
+      "entrada": {
+        "produto": {
+          "modoFormato": "",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": false,
+        "motivoIncompleto": "MODO_FORMATO_AUSENTE",
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "modo-desconhecido-hexagonal",
+      "descricao": "modoFormato desconhecido",
+      "entrada": {
+        "produto": {
+          "modoFormato": "HEXAGONAL",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": false,
+        "motivoIncompleto": "MODO_FORMATO_DESCONHECIDO",
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "modo-desconhecido-minusculo",
+      "descricao": "modoFormato em minúsculas é desconhecido (comparação exata)",
+      "entrada": {
+        "produto": {
+          "modoFormato": "tres_dimensoes",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": false,
+        "motivoIncompleto": "MODO_FORMATO_DESCONHECIDO",
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "modo-desconhecido-multi",
+      "descricao": "modoFormato desconhecido em multi-plano",
+      "entrada": {
+        "produto": {
+          "modoFormato": "XYZ",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": false,
+        "motivoIncompleto": "MODO_FORMATO_DESCONHECIDO",
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-660x960",
+      "descricao": "formatoPadrao 660 x 960",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": 660,
+          "formatoPadraoAltura": 960,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": {
+            "largura": 660,
+            "altura": 960
+          },
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-0x960",
+      "descricao": "formatoPadrao 0 x 960",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": 0,
+          "formatoPadraoAltura": 960,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-660x0",
+      "descricao": "formatoPadrao 660 x 0",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": 660,
+          "formatoPadraoAltura": 0,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-0x0",
+      "descricao": "formatoPadrao 0 x 0",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": 0,
+          "formatoPadraoAltura": 0,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-nullxnull",
+      "descricao": "formatoPadrao null x null",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-660xnull",
+      "descricao": "formatoPadrao 660 x null",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": 660,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-nullx960",
+      "descricao": "formatoPadrao null x 960",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": 960,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao--1x500",
+      "descricao": "formatoPadrao -1 x 500",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": -1,
+          "formatoPadraoAltura": 500,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "padrao-0.5x0.5",
+      "descricao": "formatoPadrao 0.5 x 0.5",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": 0.5,
+          "formatoPadraoAltura": 0.5,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": {
+            "largura": 0.5,
+            "altura": 0.5
+          },
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "estrutura-sem-tipos",
+      "descricao": "Sem tipos de plano permitidos",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": []
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "estrutura-unico-tipo-nao-fixo",
+      "descricao": "Um único tipo não fixo é multi-plano (R8.4)",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "estrutura-fixo-segundo",
+      "descricao": "Fixo na segunda posição",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre",
+            "fixo": false,
+            "fibraDefault": null
+          },
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "estrutura-dois-fixos",
+      "descricao": "Dois fixos: vale o primeiro na ordem do catálogo",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "fx-1",
+            "fixo": true
+          },
+          {
+            "id": "fx-2",
+            "fixo": true
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "fx-1",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "estrutura-fibra-default-nao-regra",
+      "descricao": "fibraDefault preenchido não altera visibilidade",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "fx-fib",
+            "fixo": true,
+            "fibraDefault": "LONGA"
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "fx-fib",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-altura-tampa-true",
+      "descricao": "TRES_DIMENSOES com possuiAlturaTampa=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": true
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento",
+            "alturaTampa"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-altura-tampa-false",
+      "descricao": "TRES_DIMENSOES com possuiAlturaTampa=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": false
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-altura-tampa-null",
+      "descricao": "TRES_DIMENSOES com possuiAlturaTampa=null",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-altura-tampa-omitido",
+      "descricao": "possuiAlturaTampa omitido",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-altura-tampa-ignorado-duas-dim",
+      "descricao": "possuiAlturaTampa=true não afeta DUAS_DIMENSOES",
+      "entrada": {
+        "produto": {
+          "modoFormato": "DUAS_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": true
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "formatoFinal"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mtrue-ftrue-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=true, previsao.fibra=true, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": true,
+              "capaInterna": null,
+              "fibra": true
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mtrue-ftrue-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=true, previsao.fibra=true, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": true,
+              "capaInterna": null,
+              "fibra": true
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mtrue-ffalse-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=true, previsao.fibra=false, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": true,
+              "capaInterna": null,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mtrue-ffalse-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=true, previsao.fibra=false, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": true,
+              "capaInterna": null,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mtrue-fnull-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=true, previsao.fibra=null, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": true,
+              "capaInterna": null,
+              "fibra": null
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mtrue-fnull-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=true, previsao.fibra=null, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": true,
+              "capaInterna": null,
+              "fibra": null
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mfalse-ftrue-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=false, previsao.fibra=true, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": false,
+              "capaInterna": null,
+              "fibra": true
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "fibra",
+            "montagem",
+            "formatoCorte"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mfalse-ftrue-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=false, previsao.fibra=true, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": false,
+              "capaInterna": null,
+              "fibra": true
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "fibra",
+            "montagem",
+            "formatoCorte"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mfalse-ffalse-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=false, previsao.fibra=false, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": false,
+              "capaInterna": null,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "montagem",
+            "formatoCorte"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mfalse-ffalse-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=false, previsao.fibra=false, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": false,
+              "capaInterna": null,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "montagem",
+            "formatoCorte"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mfalse-fnull-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=false, previsao.fibra=null, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": false,
+              "capaInterna": null,
+              "fibra": null
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "fibra",
+            "montagem",
+            "formatoCorte"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mfalse-fnull-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=false, previsao.fibra=null, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": false,
+              "capaInterna": null,
+              "fibra": null
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "fibra",
+            "montagem",
+            "formatoCorte"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mnull-ftrue-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=null, previsao.fibra=true, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": null,
+              "capaInterna": null,
+              "fibra": true
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mnull-ftrue-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=null, previsao.fibra=true, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": null,
+              "capaInterna": null,
+              "fibra": true
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mnull-ffalse-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=null, previsao.fibra=false, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": null,
+              "capaInterna": null,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mnull-ffalse-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=null, previsao.fibra=false, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": null,
+              "capaInterna": null,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mnull-fnull-si0",
+      "descricao": "Tipo fixo com previsao.microondulado=null, previsao.fibra=null, semImpressao=false",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": null,
+              "capaInterna": null,
+              "fibra": null
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-mnull-fnull-si1",
+      "descricao": "Tipo fixo com previsao.microondulado=null, previsao.fibra=null, semImpressao=true",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": true,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": null,
+              "microondulado": null,
+              "capaInterna": null,
+              "fibra": null
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": false,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-omitida",
+      "descricao": "Tipo fixo sem o objeto previsao",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-vazia",
+      "descricao": "previsao = {} (nenhuma flag informada)",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {}
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-null",
+      "descricao": "previsao = null",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-outro-tipo-nao-vale",
+      "descricao": "previsao false em tipo NÃO fixo não afeta o plano único",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre-g2",
+            "fixo": false,
+            "previsao": {
+              "microondulado": false,
+              "fibra": false
+            }
+          },
+          {
+            "id": "tp-fixo",
+            "fixo": true,
+            "fibraDefault": null
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-previsao-multi-ignorada",
+      "descricao": "previsao false em multi-plano não gera campos de plano único",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-livre-g2",
+            "fixo": false,
+            "previsao": {
+              "microondulado": false,
+              "fibra": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "MULTI_PLANO",
+        "tipoPlanoFixoId": null,
+        "gridPlanos": true,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [],
+          "somenteLeitura": []
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    },
+    {
+      "id": "g2-capas-nao-afetam-item",
+      "descricao": "capaExterna/capaInterna false não afetam o layout do item",
+      "entrada": {
+        "produto": {
+          "modoFormato": "TRES_DIMENSOES",
+          "formatoPadraoLargura": null,
+          "formatoPadraoAltura": null,
+          "exibeRestricoes": false,
+          "exibeInformacoesComplementares": false,
+          "semImpressao": false,
+          "possuiAlturaTampa": null
+        },
+        "tiposPlano": [
+          {
+            "id": "tp-fixo-g2",
+            "fixo": true,
+            "previsao": {
+              "capaExterna": false,
+              "capaInterna": false
+            }
+          }
+        ]
+      },
+      "saidaEsperada": {
+        "versao": 1,
+        "cadastroCompleto": true,
+        "motivoIncompleto": null,
+        "estrutura": "PLANO_UNICO",
+        "tipoPlanoFixoId": "tp-fixo-g2",
+        "gridPlanos": false,
+        "formato": {
+          "campos": [
+            "comprimento",
+            "largura",
+            "altura",
+            "abaCola",
+            "abaFechamento"
+          ],
+          "padrao": null,
+          "formatoPendenteDeWireframe": false
+        },
+        "planoUnico": {
+          "campos": [
+            "cores",
+            "processoImpressao",
+            "coberturaTinta",
+            "fabricante",
+            "suporte",
+            "fornecido",
+            "microondulado",
+            "fibra",
+            "montagem",
+            "formatoCorte",
+            "ajusteCorteMicro"
+          ],
+          "somenteLeitura": [
+            "montagem",
+            "formatoCorte"
+          ]
+        },
+        "impressaoVisivel": true,
+        "informacoesComplementaresVisiveis": false,
+        "restricoes": "RECOLHIDA"
+      }
+    }
+  ]
+}

@@ -4964,6 +4964,17 @@ model ItemOrcamentoGrafico {
   /// backfill. Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 16.2).
   produtoGraficoId String? @map("produto_grafico_id")
 
+  // ── Hierarquia Item/Plano (D3) — informativos, nulos, NÃO entram no cálculo ──
+  formatoFechadoLarguraMm Decimal? @map("formato_fechado_largura_mm") @db.Decimal(10, 2)
+  formatoFechadoAlturaMm  Decimal? @map("formato_fechado_altura_mm") @db.Decimal(10, 2)
+  formatoAbertoLarguraMm  Decimal? @map("formato_aberto_largura_mm") @db.Decimal(10, 2)
+  formatoAbertoAlturaMm   Decimal? @map("formato_aberto_altura_mm") @db.Decimal(10, 2)
+  formatoFinalLarguraMm   Decimal? @map("formato_final_largura_mm") @db.Decimal(10, 2)
+  formatoFinalAlturaMm    Decimal? @map("formato_final_altura_mm") @db.Decimal(10, 2)
+  alturaTampaMm           Decimal? @map("altura_tampa_mm") @db.Decimal(10, 2)
+  numeroSanfonas          Int?     @map("numero_sanfonas")
+  numeroPaginas           Int?     @map("numero_paginas")
+
   orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
   planos     PlanoCalculoGrafico[]
@@ -7568,6 +7579,8 @@ model ProdutoGrafico {
   exibeRestricoes                Boolean @default(true) @map("exibe_restricoes")
   exibeInformacoesComplementares Boolean @default(true) @map("exibe_informacoes_complementares")
   semImpressao                   Boolean @default(false) @map("sem_impressao")
+  /// G2: produto possui Altura da Tampa. Nulo = mostrar (não regride).
+  possuiAlturaTampa              Boolean? @map("possui_altura_tampa")
 
   /// Tipo de embalagem padrão do produto (sem @relation — id de TipoEmbalagem, sem FK).
   tipoEmbalagemId String? @map("tipo_embalagem_id")
@@ -7621,6 +7634,12 @@ model TipoPlanoGrafico {
   margem2Mm                Decimal  @default(0) @map("margem2_mm") @db.Decimal(10, 2)
   /// Texto do modo de formato do plano.
   formato                  String?  @db.VarChar(60)
+
+  /// G2: blocos exibidos no plano. Nulo = mostrar (não regride).
+  prevCapaExterna          Boolean? @map("prev_capa_externa")
+  prevMicroondulado        Boolean? @map("prev_microondulado")
+  prevCapaInterna          Boolean? @map("prev_capa_interna")
+  prevFibra                Boolean? @map("prev_fibra")
 
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
