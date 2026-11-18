@@ -4330,6 +4330,17 @@ model SuporteGrafico {
   /// Código no sistema legado (só para casar importação). Sem @@unique aqui: o
   /// índice único parcial vai no migrate-prod. Spec orcamento-grafico-cadastros-relacoes (§4.2).
   codigoOrigem Int?     @map("codigo_origem")
+  // Suporte Não Cadastrado (NC) — spec orcamento-grafico-hierarquia-item-plano, G3-A (R12).
+  // Todos opcionais e fora do motor (o motor lê só coefTinta, como em qualquer suporte).
+  espessuraGm      Decimal? @map("espessura_gm") @db.Decimal(10, 4)
+  espessuraMicras  Decimal? @map("espessura_micras") @db.Decimal(10, 2)
+  formatoLarguraMm Decimal? @map("formato_largura_mm") @db.Decimal(10, 2)
+  formatoAlturaMm  Decimal? @map("formato_altura_mm") @db.Decimal(10, 2)
+  fibra            String?  @db.VarChar(40)
+  tiraRetira       Boolean? @map("tira_retira")
+  unidadeCustoKg   Boolean? @map("unidade_custo_kg")
+  unidadeCalculoFl Boolean? @map("unidade_calculo_fl")
+  pacotesCom       Int?     @map("pacotes_com")
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
@@ -4394,6 +4405,13 @@ model PrecoMateriaPrima {
   // Spec configurador-grafico-calcgraf. Parametrizável por papel (o % real que
   // reproduz o custo do Calcgraf nem sempre é 9,25% — ex.: 12992 ≈ 9,08%).
   creditoPisCofinsPercent Decimal? @map("credito_pis_cofins_percent") @db.Decimal(5, 2)
+  // Suporte Não Cadastrado (NC) — G3-A (R12). Preço provisório até o comprador
+  // regularizar (provisorio=false). Frete e créditos só cadastrais: o motor NÃO os lê.
+  // O índice parcial (empresa_id, provisorio) WHERE provisorio vive só no migrate-prod.
+  provisorio       Boolean  @default(false)
+  freteKg          Decimal? @map("frete_kg") @db.Decimal(14, 4)
+  creditoIcmsPerc  Decimal? @map("credito_icms_perc") @db.Decimal(7, 4)
+  creditoIpiPerc   Decimal? @map("credito_ipi_perc") @db.Decimal(7, 4)
   criadoEm      DateTime @default(now()) @map("criado_em")
   atualizadoEm  DateTime @updatedAt @map("atualizado_em")
 

@@ -1665,6 +1665,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     suporteId: true,
     gramatura: true,
     densidadeTinta: true,
+    // Suporte Não Cadastrado (G3-A, R12): preço provisório + campos só cadastrais (fora do motor).
+    provisorio: true,
+    freteKg: true,
+    creditoIcmsPerc: true,
+    creditoIpiPerc: true,
     criadoEm: true,
     atualizadoEm: true,
   } as const
@@ -1685,12 +1690,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       // comPreco=true → só retorna itens com preço > 0 (usado na seleção de
       // papel do orçamento; papéis com preço 0 não servem para orçar).
       comPreco: z.enum(['true', 'false']).optional(),
+      // provisorio=true → só preços provisórios (Suporte NC) para o comprador regularizar;
+      // provisorio=false → só os regularizados; ausente → não filtra (comportamento atual).
+      provisorio: z.enum(['true', 'false']).optional(),
       page: z.coerce.number().int().positive().optional().default(1),
       limit: z.coerce.number().int().positive().max(100).optional().default(50),
     }).parse(request.query)
 
     const where: any = { empresaId: user.empresaId }
     if (query.tipo) where.tipo = query.tipo
+    if (query.provisorio !== undefined) where.provisorio = query.provisorio === 'true'
     if (query.suporteId) where.suporteId = query.suporteId
     if (query.gramatura !== undefined) where.gramatura = query.gramatura
     if (query.comPreco === 'true') where.precoUnitario = { gt: 0 }
@@ -1733,6 +1742,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       suporteId: z.string().uuid().optional().nullable(),
       gramatura: z.number().min(0).optional().nullable(),
       densidadeTinta: z.number().min(0).optional().nullable(),
+      // G3-A (opcionais; o motor não lê). Ausentes preservam o contrato anterior.
+      provisorio: z.boolean().optional(),
+      freteKg: z.number().min(0).max(999999.99).optional().nullable(),
+      creditoIcmsPerc: z.number().min(0).max(100).optional().nullable(),
+      creditoIpiPerc: z.number().min(0).max(100).optional().nullable(),
     }).parse(request.body)
 
     const preco = await prisma.precoMateriaPrima.create({
@@ -1761,6 +1775,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       suporteId: z.string().uuid().optional().nullable(),
       gramatura: z.number().min(0).optional().nullable(),
       densidadeTinta: z.number().min(0).optional().nullable(),
+      // G3-A: `provisorio: false` regulariza o preço do Suporte NC. Demais campos opcionais; o motor não lê.
+      provisorio: z.boolean().optional(),
+      freteKg: z.number().min(0).max(999999.99).optional().nullable(),
+      creditoIcmsPerc: z.number().min(0).max(100).optional().nullable(),
+      creditoIpiPerc: z.number().min(0).max(100).optional().nullable(),
     }).parse(request.body)
 
     const existe = await prisma.precoMateriaPrima.findFirst({ where: { id, empresaId: user.empresaId } })

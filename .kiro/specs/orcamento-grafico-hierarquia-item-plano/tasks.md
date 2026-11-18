@@ -344,16 +344,16 @@ Regras que valem para **todas** as tarefas:
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Fase 4 — Suporte Não Cadastrado (somente após G3)
-  - [~] 9.1 [Back + Front] Confirmar o wireframe do formulário NC com o usuário antes de codar
+  - [x] 9.1 [Back + Front] Confirmar o wireframe do formulário NC com o usuário antes de codar
     - _Requirements: 19.4, 19.7, 19.9_
-  - [~] 9.2 [Back + Front] Registrar por escrito a decisão G3 antes de mexer em schema
+  - [x] 9.2 [Back + Front] Registrar por escrito a decisão G3 antes de mexer em schema
     - Opção A (colunas novas em `SuporteGrafico` e `PrecoMateriaPrima`) ou B (Json descritivo + `provisorio`); confirmar que o motor não lê nenhum campo novo
     - Sem G3 registrada, não executar 9.3 e seguintes
     - _Requirements: 12.10, 19.4_
-  - [~] 9.3 [Back] Aplicar schema G3 conforme a decisão registrada (só após 9.2)
+  - [x] 9.3 [Back] Aplicar schema G3 conforme a decisão registrada (só após 9.2)
     - `schema.prisma` + `prisma/migrate-prod.ts` NO MESMO COMMIT, idempotente (`BOOLEAN NOT NULL DEFAULT FALSE` para `provisorio`; `CREATE INDEX IF NOT EXISTS`), rodar 2× sem erro; não commitar
     - _Requirements: 12.3, 12.4, 12.10_
-  - [~] 9.4 [Back] Implementar `suporte-nc.service.ts` e `POST /suportes-nao-cadastrados`
+  - [x] 9.4 [Back] Implementar `suporte-nc.service.ts` e `POST /suportes-nao-cadastrados`
     - `$transaction` criando `SuporteGrafico` + `PrecoMateriaPrima` com `provisorio = true` e `empresaId` do registro pai; validar faixas (nome ≤120, gramatura 1 a 2.000, custo/kg 0,01 a 999.999,99, frete, créditos 0 a 100, espessura 0 a 10.000)
     - Duplicata (mesma empresa, mesmo nome sem caixa, mesma gramatura) devolve `DUPLICADO` sem criar; `confirmarExistente` usa o existente; rollback total em falha
     - Teste unitário `suporte-nc.service.test.ts`
@@ -361,20 +361,20 @@ Regras que valem para **todas** as tarefas:
   - [ ]* 9.5 [Back] Escrever property test do Suporte NC
     - **Property 15: Suporte NC sem duplicata e com empresa do pai**
     - **Validates: Requirements 12.3, 12.4, 12.7, 12.8, 12.9, 16.5**
-  - [~] 9.6 [Back] Ajustar `GET /precos-mp?provisorio=true` e `PUT /precos-mp/:id` (aceitar `provisorio: false` ao regularizar)
+  - [x] 9.6 [Back] Ajustar `GET /precos-mp?provisorio=true` e `PUT /precos-mp/:id` (aceitar `provisorio: false` ao regularizar)
     - `empresaId` explícito; sem alterar o motor
     - _Requirements: 12.4, 16.1_
-  - [~] 9.7 [Front] Criar o formulário Suporte Não Cadastrado (`_item/SuporteNcModal`)
+  - [x] 9.7 [Front] Criar o formulário Suporte Não Cadastrado (`_item/SuporteNcModal`)
     - Campos: Nome, Gramatura, Espessura G/, Espessura (micras), Formato, Fibra, Tira/Retira, Consumo de Tinta, Unidades, Custo por Kg, Frete por Kg, Pacotes com, Crédito ICMS % e IPI %; validação com os presets NC, destaque do campo e motivo, dados preservados; opção "usar existente" ou cancelar em `DUPLICADO`; orçamento intacto até confirmar
     - _Requirements: 12.2, 12.5, 12.6, 12.7, 12.8_
-  - [~] 9.8 [Front] Integrar o botão NC ao lado de cada Suporte (plano único e blocos capa externa, microondulado e capa interna)
+  - [x] 9.8 [Front] Integrar o botão NC ao lado de cada Suporte (plano único e blocos capa externa, microondulado e capa interna)
     - Ao confirmar, selecionar o novo suporte no campo de origem
     - _Requirements: 12.1, 12.3_
-  - [ ]* 9.9 [Front] Escrever testes de componente do NC
+  - [x]* 9.9 [Front] Escrever testes de componente do NC
     - Validação por campo, duplicata, erro de criação, seleção do suporte novo
     - _Requirements: 12.5, 12.6, 12.7, 12.8_
 
-- [~] 10. Checkpoint — Fase 4
+- [x] 10. Checkpoint — Fase 4
   - Rodar os testes da fase (Property 15), marca legada, cores fixas, igualdade de custo e isolamento; rodar `get_diagnostics` nos arquivos tocados
   - Conferir o fluxo existente (criar/puxar/editar/calcular/salvar/enviar/aprovar), que o suporte NC é consumido pelo motor como qualquer suporte e que `migrate-prod.ts` rodou 2× sem erro
   - Ensure all tests pass, ask the user if questions arise.

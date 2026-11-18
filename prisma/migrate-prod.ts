@@ -6347,6 +6347,23 @@ async function migrarOrcamentoGraficoCadastrosRelacoes() {
   // ADITIVO, nulo, fora do cálculo: o motor não lê esta coluna.
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "especificacao" JSONB`)
 
+  // Hierarquia Item/Plano (G3-A, R12) — Suporte Não Cadastrado (NC) e preço provisório.
+  // ADITIVO: tudo nulo/default; o motor NÃO lê nenhuma destas colunas.
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "espessura_gm" DECIMAL(10,4)`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "espessura_micras" DECIMAL(10,2)`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "formato_largura_mm" DECIMAL(10,2)`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "formato_altura_mm" DECIMAL(10,2)`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "fibra" VARCHAR(40)`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "tira_retira" BOOLEAN`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "unidade_custo_kg" BOOLEAN`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "unidade_calculo_fl" BOOLEAN`)
+  await exec(`ALTER TABLE "suporte_grafico" ADD COLUMN IF NOT EXISTS "pacotes_com" INTEGER`)
+  await exec(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "provisorio" BOOLEAN NOT NULL DEFAULT FALSE`)
+  await exec(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "frete_kg" DECIMAL(14,4)`)
+  await exec(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "credito_icms_perc" DECIMAL(7,4)`)
+  await exec(`ALTER TABLE "preco_materia_prima" ADD COLUMN IF NOT EXISTS "credito_ipi_perc" DECIMAL(7,4)`)
+  await exec(`CREATE INDEX IF NOT EXISTS "idx_preco_materia_prima_provisorio" ON "preco_materia_prima"("empresa_id","provisorio") WHERE "provisorio" = TRUE`)
+
   for (const t of ['linha_produto', 'cobertura_tinta', 'processo_impressao', 'centro_producao', 'suporte_grafico']) {
     await exec(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "codigo_origem" INTEGER`)
   }

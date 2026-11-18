@@ -183,3 +183,10 @@ Campos novos não mudam o custo nem a âncora. O `EditorItem` atual só é remov
 - R-ANC: `reconsolidarItemComPlanos` NÃO é alterado. Em item puxado de cálculo, aviso antes da 1ª alteração de plano; reordenar usa rota sem reconsolidação.
 - Ajuste Corte Micro: mantido o requisito (item 0 a 100,00; plano −99,99 a 99,99) até o usuário dizer outro valor.
 - Desenho do encaixe na Tela 2: fora desta fase (continua no assistente de novo orçamento).
+
+## Fase 4 (Suporte Não Cadastrado — botão NC): liberada pelo usuário (18/11/2026)
+O usuário pediu para seguir com as opções recomendadas.
+- Wireframe do formulário: o da resposta 4 da seção "Respostas do usuário (17/11/2026)" (Nome, Gramatura, Espessura G/, Espessura em micras, Formato, Fibra, Tira/Retira, Consumo de Tinta, Unidades, Custo por Kg, Frete por Kg, Pacotes com, Crédito ICMS % e IPI %). Abre em Modal a partir do botão NC ao lado de cada Suporte. Duplicata (mesmo nome sem caixa + mesma gramatura): oferece "Usar o existente" ou "Cancelar".
+- G3 = opção A: colunas novas em `SuporteGrafico` (espessuraGm, espessuraMicras, formatoLarguraMm, formatoAlturaMm, fibra, tiraRetira, unidadeCustoKg, unidadeCalculoFl, pacotesCom) e em `PrecoMateriaPrima` (provisorio, freteKg, creditoIcmsPerc, creditoIpiPerc). Todas nulas/default, fora do motor (o motor continua lendo só `precoUnitario`, gramatura e coefTinta como qualquer suporte).
+- O suporte NC nasce com preço marcado como provisório; o comprador filtra `?provisorio=true` e regulariza com `provisorio:false`.
+- Plano decidido nos 4 pontos abertos da Fase 3: (1) Formato Aberto obrigatório no plano novo: mantido; (2) bloco "Suporte" simples quando o tipo não prevê blocos: mantido; (3) cópia de plano sem preço de papel próprio: mantido e documentado; (4) troca de suporte de produção e histórico: funções guardadas em `_plano/troca-suporte-producao.ts`, sem tela por enquanto.

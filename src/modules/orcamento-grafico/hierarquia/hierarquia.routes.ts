@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { HierarquiaError, paramsItemSchema, paramsOrcamentoSchema, paramsPlanoSchema } from './hierarquia-common'
 import { copiarItem, obterItemHidratado } from './item-copia.service'
 import { listarItensResumo } from './item-resumo.service'
+import { criarSuporteNc } from './suporte-nc.service'
 import { LIMITE_PLANOS_POR_ITEM, listarPlanosDoItem, obterPlanoDoItem, reordenarPlanos } from './planos-ordem.service'
 
 /** Corpo do PATCH .../planos/reordenar. */
@@ -90,6 +91,15 @@ export async function hierarquiaRoutes(app: FastifyInstance) {
     const { id, itemId } = paramsItemSchema.parse(request.params)
     const { ordem } = reordenarBodySchema.parse(request.body)
     return tratar(reply, () => reordenarPlanos(id, itemId, empresaDe(request), ordem))
+  })
+
+  // Suporte Não Cadastrado (Fase 4, R12): SuporteGrafico + PrecoMateriaPrima provisório numa transação.
+  // 201 = criado; 200 = DUPLICADO ou CRIADO reaproveitando o existente (`confirmarExistente`).
+  app.post('/suportes-nao-cadastrados', async (request, reply) => {
+    return tratar(reply, async () => {
+      const { status, corpo } = await criarSuporteNc(empresaDe(request), request.body)
+      return reply.status(status).send(corpo)
+    })
   })
 
   // Copiar item (sem recálculo).
