@@ -405,7 +405,10 @@ function extrairCabecalho(texto: string, avisos: string[]): CabecalhoOp {
   // Produto
   const matchProduto = texto.match(/Produto:\s*(.+?)(?:\s{2,}|Descrição|$)/i)
   if (matchProduto) {
-    cabecalho.produto = matchProduto[1].trim()
+    const prod = matchProduto[1].trim()
+    // Campo "Produto:" vazio no PDF: a regex captura o rótulo seguinte da linha
+    // (ex.: "RM:"). Rótulo terminado em ":" não é valor — fica null.
+    cabecalho.produto = /:$/.test(prod) ? null : prod
   }
 
   // Descrição — pode quebrar em VÁRIAS linhas visuais no PDF.

@@ -455,6 +455,20 @@ describe('parseGprintPdf — plano único (NÃO-REGRESSÃO)', () => {
   })
 })
 
+describe('parseGprintPdf — campo Produto vazio', () => {
+  it('não captura o rótulo seguinte ("RM:") como produto', () => {
+    const texto = [
+      'CARTON WEGA INDUSTRIA DE EMBALAGENS SA   O.P.: 3.300',
+      'GPrint - Sistema Calcgraf',
+      'Cliente:   TESTE   Cód. Cliente:   1',
+      'Produto:   RM:   Emp/7.000',
+      'Descrição:   ALGUM ITEM',
+      'Quantidade:   1.000',
+    ].join('\n')
+    expect(parseGprintPdf(texto).cabecalho.produto).toBeNull()
+  })
+})
+
 describe('parseGprintPdf — tiragem "N x 2" em plano único (OP 3239)', () => {
   it('extrai 20.000 de "20.000 x 2" (retiração) sem confundir com dimensão', () => {
     const texto = [
