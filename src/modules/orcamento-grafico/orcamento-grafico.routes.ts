@@ -38,6 +38,9 @@ import {
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 import { ITEM_SELECT_HIDRATACAO, anexarAproveitamentoManual } from './hierarquia/item-select'
+import { especificacaoPlanoSchema } from './hierarquia/especificacao-plano'
+import { HierarquiaError } from './hierarquia/hierarquia-common'
+import { exigirAbaixoDoLimite, inserirPlanoComPosicao } from './hierarquia/planos-ordem.service'
 import { mapearFotoPlanos, type PlanoMapeado } from './calculo-grafico/foto-planos.service'
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
 import {
@@ -866,9 +869,24 @@ const planoBodySchema = z.object({
     .optional(),
   montagemLinhas: z.number().int().min(1).optional().nullable(),
   montagemColunas: z.number().int().min(1).optional().nullable(),
+  // Hierarquia Item/Plano (D1): Json versionado, fora do cálculo. Ausente não altera; null limpa.
+  especificacao: especificacaoPlanoSchema.optional().nullable(),
 })
 
 type PlanoBody = z.infer<typeof planoBodySchema>
+
+/** POST de plano: aceita `posicaoApos` (inserção logo abaixo de um plano do mesmo item). */
+const planoCriarBodySchema = planoBodySchema.extend({
+  posicaoApos: z.string().uuid().optional().nullable(),
+})
+
+/** `especificacao` do corpo → dado Prisma (ausente: não altera; null: limpa). */
+function especificacaoParaPersistir(body: PlanoBody) {
+  if (body.especificacao === undefined) return {}
+  return {
+    especificacao: body.especificacao === null ? Prisma.DbNull : (body.especificacao as Prisma.InputJsonValue),
+  }
+}
 
 /** Linha persistida do item relevante para reconstruir o `ItemOrcamentoInput`. */
 type ItemPersistidoBase = {
@@ -6424,6 +6442,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       where: { id: itemId, orcamentoId, empresaId },
       select: {
         id: true,
+        empresaId: true,
         tipoEmbalagemId: true,
         medidas: true,
         papelId: true,
@@ -6558,6 +6577,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       custoSuporte: fech.custoSuporte,
       custoImpressao: fech.custoImpressao,
       custoAcabamento: fech.custoAcabamento,
+      ...especificacaoParaPersistir(body),
     }
   }
 
@@ -6572,39 +6592,53 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const { id, itemId } = z
       .object({ id: z.string().uuid(), itemId: z.string().uuid() })
       .parse(request.params)
-    const body = planoBodySchema.parse(request.body)
+    const body = planoCriarBodySchema.parse(request.body)
 
     const item = await carregarItemDaEmpresa(id, itemId, user.empresaId)
     if (!item) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
+    // empresaId do item PAI (entidade de negócio real), não só o do usuário.
+    const empresaId = item.empresaId
 
-    const erroTipoPlano = await validarTipoPlanoDaEmpresa(user.empresaId, body.tipoPlanoId)
+    // Limite de planos conferido antes do cálculo (e de novo dentro da transação).
+    try {
+      await exigirAbaixoDoLimite(prisma, itemId, empresaId)
+    } catch (err) {
+      if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
+
+    const erroTipoPlano = await validarTipoPlanoDaEmpresa(empresaId, body.tipoPlanoId)
     if (erroTipoPlano) return reply.status(422).send({ message: erroTipoPlano })
 
-    const precoItem = await precoKgPapelDoItem(item.papelId, user.empresaId)
+    const precoItem = await precoKgPapelDoItem(item.papelId, empresaId)
     const inputBase = reconstruirInputBaseDoItem(item, precoItem)
 
     let resultado: ResultadoOrcamento
     try {
-      const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
+      const params = await montarParamsDoPlano(empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
     }
 
-    // sequencia = max(sequencia)+1 dos planos do item (Req 4.3).
-    const ultimo = await prisma.planoCalculoGrafico.findFirst({
-      where: { itemId, empresaId: user.empresaId },
-      orderBy: { sequencia: 'desc' },
-      select: { sequencia: true },
-    })
-    const sequencia = (ultimo?.sequencia ?? 0) + 1
+    // Sem posicaoApos: sequencia = max+1 (Req 4.3). Com posicaoApos: logo abaixo do
+    // plano de referência; os de baixo descem em duas fases (unique [itemId, sequencia]).
+    let plano
+    try {
+      plano = await prisma.$transaction((tx) =>
+        inserirPlanoComPosicao(tx, itemId, empresaId, body.posicaoApos, (sequencia) =>
+          tx.planoCalculoGrafico.create({
+            data: dadosPersistenciaPlano(body, empresaId, itemId, sequencia, resultado),
+          }),
+        ),
+      )
+    } catch (err) {
+      if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
 
-    const plano = await prisma.planoCalculoGrafico.create({
-      data: dadosPersistenciaPlano(body, user.empresaId, itemId, sequencia, resultado),
-    })
-
-    await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+    await reconsolidarItemComPlanos(id, itemId, empresaId)
 
     return reply.status(201).send(plano)
   })
@@ -6666,6 +6700,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         custoSuporte: dados.custoSuporte,
         custoImpressao: dados.custoImpressao,
         custoAcabamento: dados.custoAcabamento,
+        ...especificacaoParaPersistir(body),
       },
     })
 

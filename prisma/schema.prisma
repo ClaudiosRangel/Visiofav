@@ -5203,6 +5203,11 @@ model PlanoCalculoGrafico {
   /// sem backfill. Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 16.2).
   tipoPlanoId String? @map("tipo_plano_id")
 
+  /// Especificação do plano (D1, spec orcamento-grafico-hierarquia-item-plano):
+  /// Json versionado `{ versao: 1, ... }` com campos sem coluna (ocorrências,
+  /// montagem, formatos, processo, capas, micro...). Fora do cálculo: o motor não lê.
+  especificacao Json? @map("especificacao")
+
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 

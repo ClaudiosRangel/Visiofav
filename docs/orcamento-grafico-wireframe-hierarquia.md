@@ -175,3 +175,11 @@ clique/duplo clique na linha → Tela 3 (Plano). Item puxado de cálculo: aviso 
 
 Regras: tudo é montado pelo cadastro (`modoFormato`, flags, `DefaultProdutoPlano`, `TipoPlanoGrafico.fixo`); nenhum nome de produto fixo no código.
 Campos novos não mudam o custo nem a âncora. O `EditorItem` atual só é removido no fim da Fase 2, depois da conferência.
+
+## Fase 3 (Tela 3 — PLANO): liberada pelo usuário ("pode seguir", 18/11/2026)
+- Wireframe: o da seção "Tela 3 — PLANO" acima (grid Tipos de Plano + tela "Inclusão/Alteração de Tipo de Plano").
+- D1: Json `especificacao` versionado (`versao: 1`) em `PlanoCalculoGrafico`, fora do cálculo.
+- G2: blocos do plano pelas flags `prevCapaExterna/prevMicroondulado/prevCapaInterna/prevFibra` (nulo = mostrar).
+- R-ANC: `reconsolidarItemComPlanos` NÃO é alterado. Em item puxado de cálculo, aviso antes da 1ª alteração de plano; reordenar usa rota sem reconsolidação.
+- Ajuste Corte Micro: mantido o requisito (item 0 a 100,00; plano −99,99 a 99,99) até o usuário dizer outro valor.
+- Desenho do encaixe na Tela 2: fora desta fase (continua no assistente de novo orçamento).

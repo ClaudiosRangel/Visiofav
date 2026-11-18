@@ -273,71 +273,72 @@ Regras que valem para **todas** as tarefas:
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Fase 3 — Grid_Planos, pilha de desfazer, copiar/reordenar plano e Tela_Plano (somente após D1)
-  - [~] 7.1 [Back + Front] Confirmar o wireframe da Fase 3 (Tela 3) com o usuário antes de codar
+  - [x] 7.1 [Back + Front] Confirmar o wireframe da Fase 3 (Tela 3) com o usuário antes de codar
     - Apresentar em texto Grid_Planos e Tela_Plano; aguardar confirmação explícita
     - _Requirements: 19.3, 19.7, 19.9_
-  - [~] 7.2 [Back + Front] Registrar por escrito a decisão D1 (e a previsão de blocos G2 e a mitigação R-ANC) antes de mexer em schema
+  - [x] 7.2 [Back + Front] Registrar por escrito a decisão D1 (e a previsão de blocos G2 e a mitigação R-ANC) antes de mexer em schema
     - D1: Json `especificacao` versionado (`versao: 1`, recomendado) ou colunas novas em `PlanoCalculoGrafico`; confirmar flags G2 de previsão de blocos; aprovar ou recusar a opção de fazer `reconsolidarItemComPlanos` preservar o custo ancorado (não será feita sem aprovação)
     - Sem D1 registrada, não executar 7.3 e seguintes de plano
     - _Requirements: 14.1, 19.3_
-  - [~] 7.3 [Back] Aplicar schema D1 conforme a decisão registrada (só após 7.2)
+  - [x] 7.3 [Back] Aplicar schema D1 conforme a decisão registrada (só após 7.2)
     - `schema.prisma` + `prisma/migrate-prod.ts` NO MESMO COMMIT, idempotente (`ADD COLUMN IF NOT EXISTS`), rodar 2× sem erro; motor não lê o campo; não commitar
     - _Requirements: 14.1, 14.3, 14.4, 14.5, 14.6_
-  - [~] 7.4 [Back] Criar `GET /:id/itens/:itemId/planos` e `.../planos/:planoId` e aceitar `especificacao` nos schemas Zod de plano
+  - [x] 7.4 [Back] Criar `GET /:id/itens/:itemId/planos` e `.../planos/:planoId` e aceitar `especificacao` nos schemas Zod de plano
     - Mesmo select de plano do `GET /:id` + `especificacao`; `where` aninhado por `item: { orcamentoId, empresaId }`; campos sem valor voltam `null`; 404 idêntico
     - _Requirements: 10.14, 14.5, 16.2, 16.3, 20.2, 20.5_
-  - [~] 7.5 [Back] Estender `POST .../planos` com `posicaoApos?: uuid` e limite de 20 planos
+  - [x] 7.5 [Back] Estender `POST .../planos` com `posicaoApos?: uuid` e limite de 20 planos
     - Deslocar `sequencia` em duas fases dentro de `$transaction` (restrição única `[itemId, sequencia]`); `409 "Limite de 20 planos por item."`; `empresaId` do item pai na criação
     - Não alterar `reconsolidarItemComPlanos` sem aprovação registrada em 7.2
     - _Requirements: 9.3, 9.5, 9.12, 16.5_
-  - [~] 7.6 [Back] Implementar `planos-ordem.service.ts` e `PATCH .../planos/reordenar`
+  - [x] 7.6 [Back] Implementar `planos-ordem.service.ts` e `PATCH .../planos/reordenar`
     - Corpo `{ ordem: uuid[] }` deve ser permutação exata dos planos do item (senão 400 e nada gravado); sem reconsolidar custo; resposta `{ planos: [{ id, sequencia }] }`
     - Teste unitário `planos-ordem.service.test.ts`: permutação válida, id faltando, repetido, de outro item; `posicaoApos` sem violar a unicidade
     - _Requirements: 9.8, 16.2_
   - [ ]* 7.7 [Back] Escrever property test de reordenação
     - **Property 10: Reordenar é permutação e persiste**
     - **Validates: Requirements 9.8**
-  - [~] 7.8 [Front] Implementar `_plano/pilha-desfazer.ts` (reducer puro)
+  - [x] 7.8 [Front] Implementar `_plano/pilha-desfazer.ts` (reducer puro)
     - Operações inversas `EXCLUIR_PLANO`, `RECRIAR_PLANO`, `RESTAURAR_ORDEM`; `LIMITE_DESFAZER = 20`; `empilhar`, `desempilhar`, `remapearId`
     - Teste unitário: 21 ações (a mais antiga sai), ordem inversa, `remapearId` após `RECRIAR_PLANO`
     - _Requirements: 9.7_
   - [ ]* 7.9 [Front] Escrever property test da pilha de desfazer
     - **Property 9: Desfazer é a inversa da operação e limitado a 20**
     - **Validates: Requirements 9.7**
-  - [~] 7.10 [Front] Implementar `gerarNomeCopia`
+  - [x] 7.10 [Front] Implementar `gerarNomeCopia`
     - "(Cópia)", "(Cópia 2)", …; comparação sem caixa nem acento; truncar o nome base, nunca o sufixo, em 60 caracteres
     - Teste unitário: nome de 60 caracteres, nome já terminado em "(Cópia)", maiúsculas e acento
     - _Requirements: 9.5_
   - [ ]* 7.11 [Front] Escrever property test do nome de cópia
     - **Property 8: Nome de cópia único e limitado a 60**
     - **Validates: Requirements 9.5**
-  - [~] 7.12 [Front] Criar o hook `usePlanosDoItem`
+  - [x] 7.12 [Front] Criar o hook `usePlanosDoItem`
     - `GET .../planos` + ações; aplica a ação otimista só depois da resposta de sucesso; em falha mantém o estado anterior e a ação disponível; integra a pilha de desfazer
     - _Requirements: 9.7, 9.11_
-  - [~] 7.13 [Front] Criar `_item/GridPlanos`
+  - [x] 7.13 [Front] Criar `_item/GridPlanos`
     - Colunas Nome, Suporte, Cores, Formato, Acabamento (nomes por vírgula); ações Incluir (sempre), Copiar e Excluir (exatamente 1 selecionado), Trocar/Reordenar (2 ou mais), Desfazer (há ação a desfazer); confirmação na exclusão; estado vazio com Incluir; mensagem de limite de 20 planos; mensagem "operação não foi salva" em falha
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.8, 9.9, 9.10, 9.11, 9.12_
-  - [~] 7.14 [Front] Criar `planos/[planoId]/page.tsx` (Tela_Plano)
-    - Título "Plano — {nome}"; Tipo de Plano, Nome (1 a 100), Ocorrências (1 a 99), Tiragem (padrão = item); Montagem, Corte, Formato Aberto, Formato Final (0,00 a 99.999,99); Cores `NxM` (0 a 12), Processo (+ Pré e cadeado), Cobertura (0 a 100); OK e Cancelar
+  - [x] 7.14 [Front] Criar `planos/[planoId]/page.tsx` (Tela_Plano)
+    - Título "Plano — {nome}"; Tipo de Plano, Nome (1 a 60, limite do `planoBodySchema` do back), Ocorrências (1 a 99), Tiragem (padrão = item); Montagem, Corte, Formato Aberto, Formato Final (0,00 a 99.999,99); Cores `NxM` (0 a 12), Processo (+ Pré e cadeado), Cobertura (0 a 100); OK e Cancelar
     - OK valida obrigatórios (Tipo, Nome, Tiragem e, por bloco exibido, Cores, Processo e Suporte), grava só os blocos exibidos, volta ao item em até 3 s; Cancelar descarta sem chamada à API; plano novo aplica `DefaultProdutoPlano` e plano existente nunca reaplica; erros por campo e erro de gravação mantêm o formulário; `planoId = 'novo'` cria; nenhum campo de Item
     - _Requirements: 1.4, 1.8, 10.1, 10.2, 10.3, 10.7, 10.9, 10.10, 10.11, 10.12, 10.13, 10.14_
-  - [~] 7.15 [Front] Criar `_plano/BlocosPorTipoPlano`
+  - [x] 7.15 [Front] Criar `_plano/BlocosPorTipoPlano`
     - Blocos capa externa, microondulado (Sentido da onda e Ajuste Corte Micro −99,99 a 99,99) e capa interna conforme `resolverBlocosPlano`; sem comparar nome de tipo; `null` na previsão ⇒ mostrar
     - _Requirements: 10.4, 10.5, 10.6, 10.8_
-  - [~] 7.16 [Front] Exibir o aviso de custo ancorado antes da primeira alteração de plano em item com `calculoGraficoOrigemId`
+  - [x] 7.16 [Front] Exibir o aviso de custo ancorado antes da primeira alteração de plano em item com `calculoGraficoOrigemId`
     - Texto "O custo deste item vem de um cálculo anterior e pode mudar"; abrir e salvar sem mudança não chama a API de plano; reordenar usa a rota nova (sem reconsolidação)
     - _Requirements: 15.7, 15.2_
-  - [~] 7.17 [Front] Trocar `PlanosDoItem.tsx` e `PlanosDoItemComCatalogo.tsx` (modal) por Grid_Planos + Tela_Plano na Tela_Item
+  - [x] 7.17 [Front] Trocar `PlanosDoItem.tsx` e `PlanosDoItemComCatalogo.tsx` (modal) por Grid_Planos + Tela_Plano na Tela_Item
     - Mover (não reescrever) defaults de catálogo, validação e troca de suporte; conferir por busca que não restam usos do modal
     - _Requirements: 1.3, 1.4, 1.5, 1.8, 9.10_
-  - [~] 7.18 [Front] Adicionar o botão Propriedades/Preview (painel de aviso) à Tela_Plano ao lado de Ajuste Corte Micro
-    - Reusar `BotaoPropriedades` da tarefa 5.19
+  - [x] 7.18 [Front] Adicionar o botão Propriedades/Preview à Tela_Plano ao lado de Ajuste Corte Micro
+    - Reusar `BotaoPropriedades` da tarefa 5.19, que pela decisão D2 (aprovada em 17/11/2026, wireframe "Fase 2") abre o mesmo `PreviewFichaMaster` da Tela 1 (somente leitura, sem gravar nem recalcular); não é mais o painel de aviso
+    - Fica no bloco Microondulado, no mesmo grupo do campo Ajuste Corte Micro (só aparece quando o tipo de plano prevê microondulado)
     - _Requirements: 13.1, 13.2, 13.3, 13.4_
-  - [ ]* 7.19 [Front] Escrever testes de componente da Fase 3
+  - [x]* 7.19 [Front] Escrever testes de componente da Fase 3
     - Habilitação dos botões, estado vazio, blocos por tipo, OK/Cancelar, erro de gravação, limite de 20
     - _Requirements: 9.2, 9.9, 9.12, 10.9, 10.10, 10.13_
 
-- [~] 8. Checkpoint — Fase 3
+- [x] 8. Checkpoint — Fase 3
   - Rodar os testes da fase (Properties 8, 9, 10), marca legada, cores fixas, igualdade de custo (T5 sem diferença; item ancorado coberto por medição) e isolamento; rodar `get_diagnostics` nos arquivos tocados
   - Conferir o fluxo existente (criar/puxar/editar/calcular/salvar/enviar/aprovar), que R1.3, R1.4, R1.5, R1.7 e R1.8 estão completos e que `migrate-prod.ts` rodou 2× sem erro
   - Ensure all tests pass, ask the user if questions arise.

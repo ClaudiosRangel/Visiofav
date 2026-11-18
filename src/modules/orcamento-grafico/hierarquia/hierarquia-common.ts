@@ -20,6 +20,8 @@ export class HierarquiaError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
+    /** Campos extras do corpo de erro (ex.: ids faltando/sobrando no 400 de reordenar). */
+    public readonly detalhes?: Record<string, unknown>,
   ) {
     super(message)
     this.name = 'HierarquiaError'
@@ -33,6 +35,7 @@ export function naoEncontrado(): HierarquiaError {
 
 export const paramsOrcamentoSchema = z.object({ id: z.string().uuid() })
 export const paramsItemSchema = z.object({ id: z.string().uuid(), itemId: z.string().uuid() })
+export const paramsPlanoSchema = paramsItemSchema.extend({ planoId: z.string().uuid() })
 
 /** Número (Decimal do Prisma, string ou number) → number; null/undefined → null. */
 export function paraNumero(v: unknown): number | null {

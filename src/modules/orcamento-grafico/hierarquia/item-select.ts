@@ -1,5 +1,25 @@
 import { prisma } from '../../../lib/prisma'
 
+/** Select dos planos usado na hidratação do GET /:id (fonte única, sem alterar campos). */
+export const PLANO_SELECT_HIDRATACAO = {
+  id: true,
+  sequencia: true,
+  nome: true,
+  tipoPlanoId: true,
+  suporteId: true,
+  suporteProducaoId: true,
+  gramatura: true,
+  formatoLarguraMm: true,
+  formatoAlturaMm: true,
+  numCores: true,
+  cores: true,
+  maquinaId: true,
+  acabamentosRicos: true,
+  custoSuporte: true,
+  custoImpressao: true,
+  custoAcabamento: true,
+} as const
+
 /**
  * Select de hidratação dos itens do orçamento gráfico (GET /:id).
  * Fonte única: extraído de orcamento-grafico.routes.ts sem alterar nenhum campo.
@@ -86,25 +106,14 @@ export const ITEM_SELECT_HIDRATACAO = {
   // Planos do cálculo para hidratar a tela
   planos: {
     orderBy: { sequencia: 'asc' },
-    select: {
-      id: true,
-      sequencia: true,
-      nome: true,
-      tipoPlanoId: true,
-      suporteId: true,
-      suporteProducaoId: true,
-      gramatura: true,
-      formatoLarguraMm: true,
-      formatoAlturaMm: true,
-      numCores: true,
-      cores: true,
-      maquinaId: true,
-      acabamentosRicos: true,
-      custoSuporte: true,
-      custoImpressao: true,
-      custoAcabamento: true,
-    },
+    select: PLANO_SELECT_HIDRATACAO,
   },
+} as const
+
+/** Leitura de plano (GET .../planos e .../planos/:planoId): select do GET /:id + `especificacao` (D1). */
+export const PLANO_SELECT_LEITURA = {
+  ...PLANO_SELECT_HIDRATACAO,
+  especificacao: true,
 } as const
 
 /** Campos de engenharia que o recálculo do item consome e que a tela precisa hidratar. */

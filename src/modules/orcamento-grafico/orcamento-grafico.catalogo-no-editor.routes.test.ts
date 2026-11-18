@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const { prismaMock, calcularItemMock, montarParamsDoPlanoMock } = vi.hoisted(() => {
   const model = (...extra: string[]) =>
     Object.fromEntries(
-      ['findFirst', 'findMany', 'create', 'update', 'updateMany', 'delete', ...extra].map((m) => [m, vi.fn()]),
+      ['findFirst', 'findMany', 'create', 'update', 'updateMany', 'delete', 'count', ...extra].map((m) => [m, vi.fn()]),
     )
   const prismaMock: Record<string, any> = {
     orcamentoGrafico: model(),
@@ -328,8 +328,13 @@ describe('PUT /:id/itens/:itemId — suporteProducaoId e materialMicroonduladoId
 
 describe('POST /:id/itens/:itemId/planos — tipoPlanoId', () => {
   beforeEach(() => {
-    prismaMock.itemOrcamentoGrafico.findFirst.mockResolvedValue(itemPersistido())
+    // O banco só devolve o item da empresa do where (empresaId do item pai = da sessão).
+    prismaMock.itemOrcamentoGrafico.findFirst.mockImplementation(async ({ where }: any) => ({
+      ...itemPersistido(),
+      empresaId: where.empresaId,
+    }))
     prismaMock.planoCalculoGrafico.findFirst.mockResolvedValue(null) // sem plano anterior
+    prismaMock.planoCalculoGrafico.count.mockResolvedValue(0)
   })
 
   it('aceita, grava e devolve tipoPlanoId da própria empresa', async () => {
@@ -432,5 +437,142 @@ describe('PUT /:id/itens/:itemId/planos/:planoId — tipoPlanoId', () => {
     const res = await app.inject({ method: 'PUT', url, headers: hB, payload: planoBody({ tipoPlanoId: TIPO_PLANO }) })
     expect(res.statusCode).toBe(422)
     expect(prismaMock.planoCalculoGrafico.update).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Hierarquia Item/Plano (tarefas 7.4 e 7.5): especificacao, posicaoApos, limite ───
+
+const P1 = '77777777-7777-4777-8777-777777777771'
+const P2 = '77777777-7777-4777-8777-777777777772'
+const P3 = '77777777-7777-4777-8777-777777777773'
+
+describe('POST/PUT de plano — especificacao (D1)', () => {
+  beforeEach(() => {
+    prismaMock.itemOrcamentoGrafico.findFirst.mockImplementation(async ({ where }: any) => ({
+      ...itemPersistido(),
+      empresaId: where.empresaId,
+    }))
+    prismaMock.planoCalculoGrafico.findFirst.mockResolvedValue({ id: PLANO, sequencia: 2 })
+    prismaMock.planoCalculoGrafico.count.mockResolvedValue(0)
+  })
+
+  it('POST grava especificacao { versao: 1, ... }', async () => {
+    const app = await buildApp()
+    const esp = { versao: 1, ocorrencias: 2, capaExterna: { fibra: 'Longa' } }
+    const res = await app.inject({ method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody({ especificacao: esp }) })
+    expect(res.statusCode).toBe(201)
+    expect(prismaMock.planoCalculoGrafico.create.mock.calls[0][0].data.especificacao).toEqual(esp)
+  })
+
+  it('POST sem especificacao não leva a chave', async () => {
+    const app = await buildApp()
+    const res = await app.inject({ method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody() })
+    expect(res.statusCode).toBe(201)
+    expect('especificacao' in prismaMock.planoCalculoGrafico.create.mock.calls[0][0].data).toBe(false)
+  })
+
+  it.each([
+    ['sem versao', { ocorrencias: 1 }],
+    ['versao 2', { versao: 2 }],
+    ['não é objeto', 'texto'],
+    ['grande demais', { versao: 1, obs: 'x'.repeat(17000) }],
+  ])('especificacao inválida (%s) → 400 e nada gravado', async (_n, esp) => {
+    const app = await buildApp()
+    const res = await app.inject({ method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody({ especificacao: esp }) })
+    expect(res.statusCode).toBe(400)
+    expect(prismaMock.planoCalculoGrafico.create).not.toHaveBeenCalled()
+  })
+
+  it('PUT grava especificacao; null limpa (DbNull); ausente não altera', async () => {
+    const app = await buildApp()
+    const url = `${P}/${ORC}/itens/${ITEM}/planos/${PLANO}`
+    await app.inject({ method: 'PUT', url, headers: hA, payload: planoBody({ especificacao: { versao: 1, montagem: '2x2' } }) })
+    expect(prismaMock.planoCalculoGrafico.update.mock.calls[0][0].data.especificacao).toEqual({ versao: 1, montagem: '2x2' })
+    await app.inject({ method: 'PUT', url, headers: hA, payload: planoBody({ especificacao: null }) })
+    const { Prisma } = await import('@prisma/client')
+    expect(prismaMock.planoCalculoGrafico.update.mock.calls[1][0].data.especificacao).toBe(Prisma.DbNull)
+    await app.inject({ method: 'PUT', url, headers: hA, payload: planoBody() })
+    expect('especificacao' in prismaMock.planoCalculoGrafico.update.mock.calls[2][0].data).toBe(false)
+  })
+})
+
+describe('POST de plano — posicaoApos e limite de 20', () => {
+  beforeEach(() => {
+    prismaMock.itemOrcamentoGrafico.findFirst.mockImplementation(async ({ where }: any) => ({
+      ...itemPersistido(),
+      empresaId: where.empresaId,
+    }))
+    prismaMock.planoCalculoGrafico.count.mockResolvedValue(3)
+    prismaMock.planoCalculoGrafico.updateMany.mockResolvedValue({ count: 1 })
+  })
+
+  it('posicaoApos: novo fica logo abaixo; os de baixo descem em duas fases (negativo → final)', async () => {
+    prismaMock.planoCalculoGrafico.findMany.mockImplementation(async ({ where }: any) =>
+      where.itemId === ITEM && where.empresaId === 'emp-A'
+        ? [{ id: P1, sequencia: 1 }, { id: P2, sequencia: 2 }, { id: P3, sequencia: 3 }]
+        : [],
+    )
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody({ posicaoApos: P1 }),
+    })
+    expect(res.statusCode).toBe(201)
+    expect(prismaMock.planoCalculoGrafico.create.mock.calls[0][0].data.sequencia).toBe(2)
+    expect('posicaoApos' in prismaMock.planoCalculoGrafico.create.mock.calls[0][0].data).toBe(false)
+    const ups = prismaMock.planoCalculoGrafico.updateMany.mock.calls.map((c: any) => [c[0].where.id, c[0].data.sequencia])
+    expect(ups).toEqual([[P2, -2], [P3, -3], [P2, 3], [P3, 4]])
+    for (const c of prismaMock.planoCalculoGrafico.updateMany.mock.calls) {
+      expect(c[0].where).toMatchObject({ itemId: ITEM, empresaId: 'emp-A' })
+    }
+    expect(prismaMock.$transaction).toHaveBeenCalled()
+  })
+
+  it('posicaoApos de outro item → 400 e não cria', async () => {
+    prismaMock.planoCalculoGrafico.findMany.mockResolvedValue([{ id: P1, sequencia: 1 }])
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody({ posicaoApos: P3 }),
+    })
+    expect(res.statusCode).toBe(400)
+    expect(prismaMock.planoCalculoGrafico.create).not.toHaveBeenCalled()
+  })
+
+  it('posicaoApos que não é uuid → 400', async () => {
+    const app = await buildApp()
+    const res = await app.inject({
+      method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody({ posicaoApos: 'x' }),
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('20 planos → 409 "Limite de 20 planos por item." antes de calcular e sem criar', async () => {
+    prismaMock.planoCalculoGrafico.count.mockResolvedValue(20)
+    const app = await buildApp()
+    const res = await app.inject({ method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody() })
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({ message: 'Limite de 20 planos por item.' })
+    expect(prismaMock.planoCalculoGrafico.count.mock.calls[0][0].where).toEqual({ itemId: ITEM, empresaId: 'emp-A' })
+    expect(montarParamsDoPlanoMock).not.toHaveBeenCalled()
+    expect(prismaMock.planoCalculoGrafico.create).not.toHaveBeenCalled()
+  })
+
+  it('limite conferido também dentro da transação (corrida) → 409', async () => {
+    prismaMock.planoCalculoGrafico.count.mockResolvedValue(19)
+    prismaMock.planoCalculoGrafico.findMany.mockImplementation(async ({ where }: any) =>
+      where.itemId === ITEM ? Array.from({ length: 20 }, (_, i) => ({ id: `p${i}`, sequencia: i + 1 })) : [],
+    )
+    const app = await buildApp()
+    const res = await app.inject({ method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hA, payload: planoBody() })
+    expect(res.statusCode).toBe(409)
+    expect(prismaMock.planoCalculoGrafico.create).not.toHaveBeenCalled()
+  })
+
+  it('item de outra empresa → 404 e nada consultado de plano', async () => {
+    prismaMock.itemOrcamentoGrafico.findFirst.mockResolvedValue(null)
+    const app = await buildApp()
+    const res = await app.inject({ method: 'POST', url: `${P}/${ORC}/itens/${ITEM}/planos`, headers: hB, payload: planoBody() })
+    expect(res.statusCode).toBe(404)
+    expect(prismaMock.planoCalculoGrafico.count).not.toHaveBeenCalled()
+    expect(prismaMock.planoCalculoGrafico.create).not.toHaveBeenCalled()
   })
 })

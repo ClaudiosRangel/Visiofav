@@ -3,9 +3,16 @@ import { authenticate } from '../../../middleware/authenticate'
 import { obterComissoes } from './comissoes.service'
 import { obterDadosItem } from './dados-item.service'
 import { obterFechamentoTotalizador } from './fechamento-totalizador.service'
-import { HierarquiaError, paramsItemSchema, paramsOrcamentoSchema } from './hierarquia-common'
+import { z } from 'zod'
+import { HierarquiaError, paramsItemSchema, paramsOrcamentoSchema, paramsPlanoSchema } from './hierarquia-common'
 import { copiarItem, obterItemHidratado } from './item-copia.service'
 import { listarItensResumo } from './item-resumo.service'
+import { LIMITE_PLANOS_POR_ITEM, listarPlanosDoItem, obterPlanoDoItem, reordenarPlanos } from './planos-ordem.service'
+
+/** Corpo do PATCH .../planos/reordenar. */
+const reordenarBodySchema = z.object({
+  ordem: z.array(z.string().uuid()).min(1).max(LIMITE_PLANOS_POR_ITEM * 5),
+})
 
 /**
  * Rotas da hierarquia Orçamento → Item → Plano (spec orcamento-grafico-hierarquia-item-plano).
@@ -23,7 +30,9 @@ async function tratar<T>(reply: FastifyReply, fn: () => Promise<T>) {
   try {
     return await fn()
   } catch (err) {
-    if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+    if (err instanceof HierarquiaError) {
+      return reply.status(err.statusCode).send({ message: err.message, ...(err.detalhes ?? {}) })
+    }
     throw err
   }
 }
@@ -63,6 +72,24 @@ export async function hierarquiaRoutes(app: FastifyInstance) {
   app.get('/:id/itens/:itemId', async (request, reply) => {
     const { id, itemId } = paramsItemSchema.parse(request.params)
     return tratar(reply, () => obterItemHidratado(id, itemId, empresaDe(request)))
+  })
+
+  // Planos do item (select do GET /:id + especificacao).
+  app.get('/:id/itens/:itemId/planos', async (request, reply) => {
+    const { id, itemId } = paramsItemSchema.parse(request.params)
+    return tratar(reply, () => listarPlanosDoItem(id, itemId, empresaDe(request)))
+  })
+
+  app.get('/:id/itens/:itemId/planos/:planoId', async (request, reply) => {
+    const { id, itemId, planoId } = paramsPlanoSchema.parse(request.params)
+    return tratar(reply, () => obterPlanoDoItem(id, itemId, planoId, empresaDe(request)))
+  })
+
+  // Reordenar planos (permutação exata; duas fases; sem reconsolidar custo).
+  app.patch('/:id/itens/:itemId/planos/reordenar', async (request, reply) => {
+    const { id, itemId } = paramsItemSchema.parse(request.params)
+    const { ordem } = reordenarBodySchema.parse(request.body)
+    return tratar(reply, () => reordenarPlanos(id, itemId, empresaDe(request), ordem))
   })
 
   // Copiar item (sem recálculo).

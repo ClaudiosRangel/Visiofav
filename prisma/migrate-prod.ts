@@ -6343,6 +6343,9 @@ async function migrarOrcamentoGraficoCadastrosRelacoes() {
 
   await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_grafico_id" TEXT`)
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)
+  // Hierarquia Item/Plano (D1) — especificação do plano (Json versionado, versao: 1).
+  // ADITIVO, nulo, fora do cálculo: o motor não lê esta coluna.
+  await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "especificacao" JSONB`)
 
   for (const t of ['linha_produto', 'cobertura_tinta', 'processo_impressao', 'centro_producao', 'suporte_grafico']) {
     await exec(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "codigo_origem" INTEGER`)
