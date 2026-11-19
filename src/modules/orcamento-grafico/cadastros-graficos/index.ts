@@ -3,6 +3,7 @@ import { produtosPlanosRoutes } from './produtos-planos.routes'
 import { outrosCadastrosRoutes } from './outros-cadastros.routes'
 import { catalogoRoutes } from './catalogo.routes'
 import { selecaoMaterialRoutes } from './selecao-material.routes'
+import { serieDocumentoRoutes } from '../cadastros/serie-documento.routes'
 
 /**
  * Agrega as rotas dos cadastros gráficos (spec orcamento-grafico-cadastros-relacoes).
@@ -14,4 +15,5 @@ export async function cadastrosGraficosRoutes(app: FastifyInstance) {
   await app.register(outrosCadastrosRoutes)
   await app.register(catalogoRoutes)
   await app.register(selecaoMaterialRoutes)
+  await app.register(serieDocumentoRoutes) // /series
 }

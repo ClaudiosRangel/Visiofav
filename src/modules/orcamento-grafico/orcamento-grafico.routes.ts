@@ -38,6 +38,11 @@ import {
 } from './calculo-grafico/calculo-grafico.service'
 import { calculoParaItemBody } from './calculo-grafico/calculo-grafico-mapeamento'
 import { ITEM_SELECT_HIDRATACAO, anexarAproveitamentoManual } from './hierarquia/item-select'
+import {
+  proximoNumeroOrcamento,
+  SerieDocumentoError,
+  ORIGEM_ORCAMENTO,
+} from './cadastros/serie-documento.service'
 import { especificacaoPlanoSchema } from './hierarquia/especificacao-plano'
 import { HierarquiaError } from './hierarquia/hierarquia-common'
 import { exigirAbaixoDoLimite, inserirPlanoComPosicao } from './hierarquia/planos-ordem.service'
@@ -2890,6 +2895,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     empresaId: true,
     numero: true,
     versao: true,
+    // Série de numeração (Nº é sequencial por série); `serie` = nome p/ exibição.
+    serieId: true,
+    serie: true,
     clienteId: true,
     clienteNome: true,
     vendedorId: true,
@@ -2956,7 +2964,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       clienteNome: z.string().max(200).optional().nullable(),
       vendedorId: z.string().uuid().optional().nullable(),
       linhaProdutoId: z.string().uuid().optional().nullable(),
-      // Série (1 a 10 caracteres, após trim). Ausente = null (comportamento anterior).
+      // Série de numeração (cadastro Séries). Ausente = série padrão ativa da empresa.
+      serieId: z.string().uuid('deve ser um id válido').optional().nullable(),
+      // Compat.: nome da série em texto (clientes antigos). Resolvido para a série
+      // cadastrada de mesmo nome; ignorado quando `serieId` vem informado.
       serie: z
         .string({ invalid_type_error: 'deve ser texto' })
         .trim()
@@ -2986,7 +2997,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
     }
 
-    const serie = body.serie ?? null
+    // Série: `serieId` explícito; senão (compat.) o nome em texto; senão a padrão.
+    let serieIdInformado: string | null = body.serieId ?? null
+    if (!serieIdInformado && body.serie) {
+      const porNome = await prisma.serieDocumento.findFirst({
+        where: { empresaId: user.empresaId, origem: ORIGEM_ORCAMENTO, nome: body.serie },
+        select: { id: true },
+      })
+      if (!porNome) return reply.status(404).send({ message: `serie: série "${body.serie}" não cadastrada` })
+      serieIdInformado = porNome.id
+    }
     // Data default: dia corrente no fuso America/Sao_Paulo (como meia-noite UTC do dia,
     // igual ao parse de "YYYY-MM-DD" enviado pelo front).
     const dataOrcamento =
@@ -3000,22 +3020,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         }).format(new Date())}T00:00:00.000Z`,
       )
 
-    // Nº = maior Nº da empresa + série + 1 (ou 1), numa transação com advisory lock por
-    // empresa (mesmo padrão do calculo-copia.service). P2002: repete 1 vez; depois 409.
+    // Nº = próximo número da SÉRIE, reservado atomicamente na mesma transação
+    // (nunca repete um Nº já usado na série). P2002: repete 1 vez; depois 409.
     const criarUmaVez = () =>
       prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${user.empresaId}))`
-        const ultimo = await tx.orcamentoGrafico.findFirst({
-          where: { empresaId: user.empresaId, serie },
-          orderBy: { numero: 'desc' },
-          select: { numero: true },
-        })
+        const reserva = await proximoNumeroOrcamento(tx, user.empresaId, serieIdInformado)
         return tx.orcamentoGrafico.create({
           data: {
             empresaId: user.empresaId,
-            numero: (ultimo?.numero ?? 0) + 1,
+            numero: reserva.numero,
             versao: 1,
-            serie,
+            serieId: reserva.serieId,
+            serie: reserva.serie || null,
             dataOrcamento,
             clienteId: body.clienteId ?? null,
             clienteNome: body.clienteNome ?? null,
@@ -3028,7 +3044,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             linhaProdutoId: body.linhaProdutoId ?? null,
             criadoPorId: user.id,
           },
-          select: { id: true, numero: true, serie: true, dataOrcamento: true },
+          select: { id: true, numero: true, serie: true, serieId: true, dataOrcamento: true },
         })
       })
 
@@ -3042,6 +3058,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       }
       return reply.status(201).send(orcamento)
     } catch (err: any) {
+      if (err instanceof SerieDocumentoError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
       if (err?.code === 'P2002') {
         return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
       }
@@ -3231,7 +3250,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       // Modo Repetição: produto cadastrado que o orçamento reproduz (opcional)
       produtoId: z.string().uuid().optional().nullable(),
       // ── Cabeçalho multi-item (spec multi-item-gcad §5.3) — aditivos opcionais ──
+      // Compat.: nome da série em texto; preferir `serieId` (cadastro Séries).
       serie: z.string().min(1).max(10).optional().nullable(),
+      serieId: z.string().uuid('deve ser um id válido').optional().nullable(),
       dataOrcamento: z.coerce.date().optional().nullable(),
       // ── Paridade: cadastros editáveis vinculados ao cabeçalho (aditivos) ──
       linhaProdutoId: z.string().uuid().optional().nullable(),
@@ -3358,27 +3379,33 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       margemReal = resultadoCalculo.margemReal ?? null
     }
 
-    // Gerar número sequencial por empresa
-    const ultimo = await prisma.orcamentoGrafico.findFirst({
-      where: { empresaId: user.empresaId },
-      orderBy: { numero: 'desc' },
-      select: { numero: true },
-    })
-    const numero = (ultimo?.numero ?? 0) + 1
+    // Série: `serieId` explícito; senão (compat.) o nome em texto; senão a padrão.
+    let serieIdInformado: string | null = body.serieId ?? null
+    if (!serieIdInformado && body.serie) {
+      const porNome = await prisma.serieDocumento.findFirst({
+        where: { empresaId: user.empresaId, origem: ORIGEM_ORCAMENTO, nome: body.serie.trim() },
+        select: { id: true },
+      })
+      if (!porNome) return reply.status(404).send({ message: `serie: série "${body.serie}" não cadastrada` })
+      serieIdInformado = porNome.id
+    }
 
-    // Criar o orçamento. O Nº é gerado automaticamente (max+1). Uma colisão de
-    // Nº único por empresa (Req 1.3/1.4) retorna 409 sem persistir duplicado.
+    // Criar o orçamento. O Nº é o próximo da SÉRIE, reservado atomicamente na
+    // mesma transação. Colisão (P2002) retorna 409 sem persistir duplicado.
     let orcamento
     try {
-      orcamento = await prisma.orcamentoGrafico.create({
+      orcamento = await prisma.$transaction(async (tx) => {
+        const reserva = await proximoNumeroOrcamento(tx, user.empresaId, serieIdInformado)
+        return tx.orcamentoGrafico.create({
         data: {
           empresaId: user.empresaId,
-          numero,
+          numero: reserva.numero,
           versao: 1,
           clienteId: body.clienteId ?? null,
           clienteNome: body.clienteNome ?? null,
           vendedorId: body.vendedorId ?? null,
-          serie: body.serie ?? null,
+          serieId: reserva.serieId,
+          serie: reserva.serie || null,
           dataOrcamento: body.dataOrcamento ?? null,
           tipoEmbalagemId: body.tipoEmbalagemId,
           medidas: body.medidas,
@@ -3408,9 +3435,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           criadoPorId: user.id,
         },
         select: orcamentoGraficoSelect,
+        })
       })
     } catch (err: any) {
-      // P2002 = violação de unique (empresaId, numero, versao) — Nº já em uso.
+      if (err instanceof SerieDocumentoError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      // P2002 = violação de unique (empresaId, serieId, numero, versao) — Nº já em uso.
       if (err?.code === 'P2002') {
         return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
       }
@@ -4869,9 +4900,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (!original) return reply.status(404).send({ message: 'Orçamento não encontrado' })
 
-    // Descobrir a maior versão desse número
+    // Descobrir a maior versão desse número NA MESMA SÉRIE (nova versão mantém
+    // série e Nº; só muda a versão — não consome Nº da série).
     const ultimaVersao = await prisma.orcamentoGrafico.findFirst({
-      where: { empresaId: user.empresaId, numero: original.numero },
+      where: { empresaId: user.empresaId, serieId: original.serieId, numero: original.numero },
       orderBy: { versao: 'desc' },
       select: { versao: true },
     })
@@ -4882,6 +4914,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         empresaId: user.empresaId,
         numero: original.numero,
         versao: novaVersao,
+        serieId: original.serieId ?? null,
+        serie: original.serie ?? null,
         clienteId: original.clienteId ?? null,
         clienteNome: original.clienteNome ?? null,
         vendedorId: original.vendedorId ?? null,
@@ -4943,6 +4977,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         // mantém a tiragem de cada item de origem.
         quantidade: z.number().int().positive().optional(),
         observacoes: z.string().max(2000).optional().nullable(),
+        // Série do orçamento novo. Omitir = série da origem (se ativa) ou a padrão.
+        serieId: z.string().uuid('deve ser um id válido').optional().nullable(),
       })
       .parse(request.body ?? {})
 
@@ -4954,6 +4990,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         clienteNome: true,
         vendedorId: true,
         serie: true,
+        serieId: true,
         tipoEmbalagemId: true,
         medidas: true,
         papelId: true,
@@ -5026,24 +5063,31 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       novo = await prisma.$transaction(
         async (tx) => {
-          // Número sequencial novo por empresa (igual ao POST principal).
-          const ultimo = await tx.orcamentoGrafico.findFirst({
-            where: { empresaId: user.empresaId },
-            orderBy: { numero: 'desc' },
-            select: { numero: true },
-          })
-          const numero = (ultimo?.numero ?? 0) + 1
+          // Número novo = próximo da série (informada; senão a da origem, se ainda
+          // ativa; senão a padrão), reservado atomicamente nesta transação.
+          let reserva
+          if (overrides.serieId || !origem.serieId) {
+            reserva = await proximoNumeroOrcamento(tx, user.empresaId, overrides.serieId)
+          } else {
+            try {
+              reserva = await proximoNumeroOrcamento(tx, user.empresaId, origem.serieId)
+            } catch (err) {
+              if (!(err instanceof SerieDocumentoError)) throw err
+              reserva = await proximoNumeroOrcamento(tx, user.empresaId, null)
+            }
+          }
 
           // Cabeçalho novo (RASCUNHO), aplicando overrides do body.
           const criado = await tx.orcamentoGrafico.create({
             data: {
               empresaId: user.empresaId,
-              numero,
+              numero: reserva.numero,
               versao: 1,
               clienteId: overrides.clienteId !== undefined ? overrides.clienteId : origem.clienteId,
               clienteNome: overrides.clienteNome !== undefined ? overrides.clienteNome : origem.clienteNome,
               vendedorId: overrides.vendedorId !== undefined ? overrides.vendedorId : origem.vendedorId,
-              serie: origem.serie,
+              serieId: reserva.serieId,
+              serie: reserva.serie || null,
               tipoEmbalagemId: origem.tipoEmbalagemId,
               medidas: origem.medidas as any,
               papelId: origem.papelId,
@@ -5138,8 +5182,11 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         { timeout: 20000, maxWait: 10000 },
       )
     } catch (err: any) {
-      // P2002 = colisão de (empresaId, numero, versao) por corrida; a transação
-      // reverte tudo (mesmo contrato do `/de-calculo`).
+      if (err instanceof SerieDocumentoError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      // P2002 = colisão de (empresaId, serieId, numero, versao) por corrida; a
+      // transação reverte tudo (mesmo contrato do `/de-calculo`).
       if (err?.code === 'P2002') {
         return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
       }
@@ -6088,6 +6135,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           .optional(),
         // Paridade: Linha de Produto escolhida como etapa inicial (aditivo).
         linhaProdutoId: z.string().uuid().optional().nullable(),
+        // Série do orçamento novo. Omitir = série padrão ativa da empresa.
+        serieId: z.string().uuid('serieId deve ser um id válido').optional().nullable(),
       })
       .parse(request.body)
 
@@ -6141,19 +6190,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     let orcamento
     try {
       orcamento = await prisma.$transaction(async (tx) => {
-        // Número sequencial por empresa (maior + 1) — Req 3.3.
-        const ultimo = await tx.orcamentoGrafico.findFirst({
-          where: { empresaId: user.empresaId },
-          orderBy: { numero: 'desc' },
-          select: { numero: true },
-        })
-        const numero = (ultimo?.numero ?? 0) + 1
+        // Número = próximo da série (reserva atômica nesta transação).
+        const reserva = await proximoNumeroOrcamento(tx, user.empresaId, body.serieId)
 
         const criado = await tx.orcamentoGrafico.create({
           data: {
             empresaId: user.empresaId,
-            numero,
+            numero: reserva.numero,
             versao: 1,
+            serieId: reserva.serieId,
+            serie: reserva.serie || null,
             // Cliente resolvido por CNPJ (de-para); senão o do cálculo; senão null.
             clienteId: clienteIdResolvido ?? calc.clienteId ?? null,
             clienteNome: calc.clienteNome ?? null,
@@ -6230,6 +6276,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     } catch (err: any) {
       // P2002 = violação de unique (empresaId, numero, versao) — Req 7.2.
       // A transação reverte o item junto (sem orçamento órfão / duplicado).
+      if (err instanceof SerieDocumentoError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
       if (err?.code === 'P2002') {
         return reply.status(409).send({ message: 'Número de orçamento já existe para esta empresa' })
       }

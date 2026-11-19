@@ -1,5 +1,6 @@
-// Busca do Cálculo Padrão (Menu/Seletor/Listagem) NÃO lista cálculos próprios de
-// item (vinculados por ItemOrcamentoGrafico.calculoGraficoId).
+// Busca do Cálculo Padrão (Menu/Seletor/Listagem) NÃO exclui cálculos vinculados
+// a item de orçamento (ItemOrcamentoGrafico.calculoGraficoId): os cálculos de
+// orçamentos antigos são reaproveitados em repetições. empresaId segue explícito.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Prisma } from '@prisma/client'
 
@@ -14,23 +15,23 @@ vi.mock('../../../lib/prisma', () => ({
 
 import { buscarCalculosGraficos } from './calculo-grafico.service'
 
-describe('buscarCalculosGraficos — exclui cálculos de item', () => {
+describe('buscarCalculosGraficos — inclui cálculos vinculados a item', () => {
   beforeEach(() => {
     queryRaw.mockReset()
     queryRaw.mockImplementation(async () => [])
   })
 
   for (const modo of ['SELETOR', 'MENU', 'LISTAGEM'] as const) {
-    it(`modo ${modo}: contagem e listagem filtram NOT EXISTS item da mesma empresa`, async () => {
+    it(`modo ${modo}: não filtra por item_orcamento_grafico e mantém empresaId explícito`, async () => {
       await buscarCalculosGraficos({ empresaId: 'emp-1', modo })
       expect(queryRaw).toHaveBeenCalledTimes(2)
       for (const [sql] of queryRaw.mock.calls as [Prisma.Sql][]) {
         const texto = sql.sql.replace(/\s+/g, ' ')
-        expect(texto).toContain('NOT EXISTS (SELECT 1 FROM item_orcamento_grafico i')
-        expect(texto).toContain('i.calculo_grafico_id = calculo_grafico.id')
-        expect(texto).toContain('i.empresa_id =')
-        // empresaId parametrizado (não interpolado), no filtro externo e no da subquery
-        expect(sql.values.filter((v) => v === 'emp-1').length).toBeGreaterThanOrEqual(2)
+        expect(texto).not.toContain('item_orcamento_grafico')
+        expect(texto).not.toContain('NOT EXISTS')
+        expect(texto).toContain('empresa_id =')
+        // empresaId parametrizado (não interpolado)
+        expect(sql.values).toContain('emp-1')
         expect(texto).not.toContain('emp-1')
       }
     })

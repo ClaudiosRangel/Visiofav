@@ -159,6 +159,14 @@ function makeTx(buf: Registro[]) {
     },
     produtoGrafico: { findFirst: busca('produtoGrafico') },
     tipoPlanoGrafico: { findFirst: busca('tipoPlanoGrafico') },
+    // Série padrão ativa da empresa + reserva atômica do Nº (proximo_numero 8).
+    serieDocumento: {
+      findFirst: leitura('serieDocumento.findFirst', ({ where }: any) => ({ id: `serie-${where.empresaId}`, nome: '' })),
+    },
+    $queryRaw: vi.fn(async () => {
+      diario.todas.push({ op: 'raw', args: null })
+      return [{ numero: 8 }]
+    }),
     $executeRawUnsafe: escrita('raw', () => 1),
   }
 }

@@ -4598,7 +4598,11 @@ model OrcamentoGrafico {
 
   // ── NOVO: cabeçalho multi-item (spec orcamento-grafico-multi-item-gcad) ──
   // Campos ADITIVOS — não removem/alteram nada do legado acima. Ver design §3.1/§3.2.
-  serie                    String?   @db.VarChar(10) // Req 1.1
+  serie                    String?   @db.VarChar(10) // Req 1.1 — cópia do nome da série (exibição)
+  // Série de numeração (cadastro SerieDocumento, origem ORCAMENTO). O Nº é
+  // sequencial POR SÉRIE; `serie` acima guarda o nome para exibição.
+  serieId                  String?   @map("serie_id")
+  serieDocumento           SerieDocumento? @relation(fields: [serieId], references: [id])
   dataOrcamento            DateTime? @map("data_orcamento") // Req 1.1 (Data)
   custoProducaoConsolidado Decimal?  @map("custo_producao_consolidado") @db.Decimal(14, 2) // Req 3.2
   valorTotalConsolidado    Decimal?  @map("valor_total_consolidado") @db.Decimal(14, 2) // Req 3.1
@@ -4608,8 +4612,31 @@ model OrcamentoGrafico {
 
   itens ItemOrcamentoGrafico[] // 0..999 (Req 1.2)
 
-  @@unique([empresaId, numero, versao])
+  @@unique([empresaId, serieId, numero, versao])
+  @@index([serieId])
   @@map("orcamento_grafico")
+}
+
+// Série de numeração de documentos (equivale à tabela `Series` do legado).
+// origem: ORCAMENTO (hoje); OP/PEDIDO previstos. nome '' = série padrão sem nome.
+model SerieDocumento {
+  id            String   @id @default(uuid())
+  empresaId     String   @map("empresa_id")
+  origem        String   @default("ORCAMENTO") @db.VarChar(20)
+  nome          String   @db.VarChar(10)
+  descricao     String?  @db.VarChar(100)
+  ativo         Boolean  @default(true)
+  padrao        Boolean  @default(false)
+  proximoNumero Int      @default(1) @map("proximo_numero")
+  codigoLegado  Int?     @map("codigo_legado")
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+
+  orcamentos OrcamentoGrafico[]
+
+  @@unique([empresaId, origem, nome])
+  @@index([empresaId, origem, ativo])
+  @@map("serie_documento")
 }
 
 // ============================================================================

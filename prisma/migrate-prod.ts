@@ -2914,7 +2914,14 @@ async function main() {
       CONSTRAINT "orcamento_grafico_pkey" PRIMARY KEY ("id")
     )
   `)
-  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "orcamento_grafico_empresa_id_numero_versao_key" ON "orcamento_grafico"("empresa_id", "numero", "versao")`)
+  // Unique antiga (empresa, nº, versão): só em banco que ainda NÃO tem a nova
+  // (empresa, série, nº, versão) — ver migrarSerieDocumento. Recriá-la depois da
+  // troca falharia (o Nº passou a ser por série).
+  await prisma.$executeRawUnsafe(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'orcamento_grafico_empresa_id_serie_id_numero_versao_key') THEN
+      CREATE UNIQUE INDEX IF NOT EXISTS "orcamento_grafico_empresa_id_numero_versao_key" ON "orcamento_grafico"("empresa_id", "numero", "versao");
+    END IF;
+  END $$`)
   // FK tipo_embalagem_id -> tipo_embalagem
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD CONSTRAINT "orcamento_grafico_tipo_embalagem_id_fkey" FOREIGN KEY ("tipo_embalagem_id") REFERENCES "tipo_embalagem"("id") ON DELETE RESTRICT ON UPDATE CASCADE`)
@@ -6060,7 +6067,88 @@ async function seedMateriaisFromOPs() {
     console.log('⚠️ Cadastros e relações do orçamento gráfico: falha', e.message?.substring(0, 200))
   }
 
+  await migrarSerieDocumento()
+
   await migrarPedidosParaStatusFiel()
+}
+
+/**
+ * Série de numeração do Orçamento Gráfico (tabela `serie_documento`).
+ * Idempotente: CREATE TABLE/INDEX IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, série
+ * padrão criada só se não existir, backfill só onde serie_id IS NULL. A unique
+ * antiga (empresa, numero, versao) só é trocada pela nova (empresa, serie_id,
+ * numero, versao) DEPOIS de conferir que não há duplicata que impeça a nova.
+ */
+async function migrarSerieDocumento() {
+  const exec = (sql: string) => prisma.$executeRawUnsafe(sql)
+
+  await exec(`CREATE TABLE IF NOT EXISTS "serie_documento" (
+    "id" TEXT NOT NULL,
+    "empresa_id" TEXT NOT NULL,
+    "origem" VARCHAR(20) NOT NULL DEFAULT 'ORCAMENTO',
+    "nome" VARCHAR(10) NOT NULL,
+    "descricao" VARCHAR(100),
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "padrao" BOOLEAN NOT NULL DEFAULT false,
+    "proximo_numero" INTEGER NOT NULL DEFAULT 1,
+    "codigo_legado" INTEGER,
+    "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "serie_documento_pkey" PRIMARY KEY ("id")
+  )`)
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "serie_documento_empresa_id_origem_nome_key" ON "serie_documento"("empresa_id", "origem", "nome")`)
+  await exec(`CREATE INDEX IF NOT EXISTS "serie_documento_empresa_id_origem_ativo_idx" ON "serie_documento"("empresa_id", "origem", "ativo")`)
+
+  await exec(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "serie_id" TEXT`)
+  await exec(`CREATE INDEX IF NOT EXISTS "orcamento_grafico_serie_id_idx" ON "orcamento_grafico"("serie_id")`)
+  try {
+    await exec(`ALTER TABLE "orcamento_grafico" ADD CONSTRAINT "orcamento_grafico_serie_id_fkey" FOREIGN KEY ("serie_id") REFERENCES "serie_documento"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+  } catch { /* já existe */ }
+
+  // Série padrão ORCAMENTO para cada empresa que ainda não tem uma (nome '').
+  // proximo_numero = maior Nº dos orçamentos da empresa + 1 (ou 1).
+  const criadas = await exec(`
+    INSERT INTO "serie_documento" ("id", "empresa_id", "origem", "nome", "descricao", "ativo", "padrao", "proximo_numero", "criado_em", "atualizado_em")
+    SELECT gen_random_uuid()::text, e."id", 'ORCAMENTO', '', 'Série padrão', true, true,
+           COALESCE((SELECT MAX(o."numero") FROM "orcamento_grafico" o WHERE o."empresa_id" = e."id"), 0) + 1,
+           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM "empresa" e
+     WHERE NOT EXISTS (
+       SELECT 1 FROM "serie_documento" s
+        WHERE s."empresa_id" = e."id" AND s."origem" = 'ORCAMENTO' AND (s."padrao" = true OR s."nome" = '')
+     )
+  `)
+
+  // Backfill: orçamentos sem série → série padrão da empresa (padrao=true; se não
+  // houver padrão marcada, a de nome '').
+  const vinculados = await exec(`
+    UPDATE "orcamento_grafico" o
+       SET "serie_id" = s."id"
+      FROM (
+        SELECT DISTINCT ON ("empresa_id") "id", "empresa_id"
+          FROM "serie_documento"
+         WHERE "origem" = 'ORCAMENTO' AND ("padrao" = true OR "nome" = '')
+         ORDER BY "empresa_id", "padrao" DESC, "ativo" DESC, "criado_em" ASC
+      ) s
+     WHERE o."serie_id" IS NULL AND o."empresa_id" = s."empresa_id"
+  `)
+  console.log(`✅ serie_documento: ${criadas} série(s) padrão criada(s); ${vinculados} orçamento(s) vinculado(s)`)
+
+  // Troca da unique: só quando a nova pode ser criada (sem duplicata).
+  const dup = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(`
+    SELECT COUNT(*)::bigint AS n FROM (
+      SELECT 1 FROM "orcamento_grafico"
+       GROUP BY "empresa_id", "serie_id", "numero", "versao" HAVING COUNT(*) > 1
+    ) d
+  `)
+  if (Number(dup[0]?.n ?? 0) > 0) {
+    console.log(`⚠️ orcamento_grafico: ${dup[0].n} duplicata(s) em (empresa, série, nº, versão) — unique antiga mantida`)
+    return
+  }
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS "orcamento_grafico_empresa_id_serie_id_numero_versao_key" ON "orcamento_grafico"("empresa_id", "serie_id", "numero", "versao")`)
+  await exec(`ALTER TABLE "orcamento_grafico" DROP CONSTRAINT IF EXISTS "orcamento_grafico_empresa_id_numero_versao_key"`)
+  await exec(`DROP INDEX IF EXISTS "orcamento_grafico_empresa_id_numero_versao_key"`)
+  console.log('✅ orcamento_grafico: unique (empresa, série, nº, versão) ativa')
 }
 
 /**
