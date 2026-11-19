@@ -165,7 +165,7 @@ describe('GET /:id/itens-resumo', () => {
       id: ITEM, sequencia: 1, calculo: 15652, linhaProduto: 'CARTUCHO COMPOSTO', tipoProduto: 'Cartucho Composto',
       tiragens: [6000], descricao: 'Caixa', status: 'Liberado', op: { id: uuid(20), numero: 99 }, temCalculo: true,
     })
-    expect(itens[1]).toMatchObject({ calculo: null, status: 'Sem cálculo', temCalculo: false, op: null, tiragens: [1000] })
+    expect(itens[1]).toMatchObject({ calculo: null, status: 'Não calculado', temCalculo: false, op: null, tiragens: [1000] })
 
     const q = prismaMock.itemOrcamentoGrafico.findMany.mock.calls[0][0]
     expect(q.where).toEqual({ orcamentoId: ORC, empresaId: 'emp-A' })

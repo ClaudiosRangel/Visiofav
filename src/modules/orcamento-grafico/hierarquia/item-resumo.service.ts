@@ -16,7 +16,7 @@ export interface ItemResumoDTO {
   /** Quantidade persistida (hoje 1 valor por item). */
   tiragens: number[]
   descricao: string | null
-  /** Rótulo já resolvido: "Liberado" (calculado), "Pendente" (marcado pendente), "Sem cálculo". */
+  /** Rótulo já resolvido: "Liberado" (calculado), "Pendente" (marcado pendente), "Não calculado" (sem custo/valor gravado). */
   status: string
   op: { id: string; numero: number } | null
   /** custoProducao != null && valorTotal != null (mesma regra do totalizador). */
@@ -31,7 +31,7 @@ export function itemTemCalculo(item: { custoProducao: unknown; valorTotal: unkno
 
 export function rotuloStatusItem(item: { pendente: boolean }, temCalculo: boolean): string {
   if (item.pendente) return 'Pendente'
-  return temCalculo ? 'Liberado' : 'Sem cálculo'
+  return temCalculo ? 'Liberado' : 'Não calculado'
 }
 
 function unicos(valores: Array<string | null | undefined>): string[] {

@@ -53,6 +53,11 @@ import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.
 import { enriquecerCnpj } from '../prospeccao/provider'
 import { verificarPermissaoComercial } from './permissoes-comercial.routes'
 import { copiarCalculo, CopiaCalculoError } from './calculo-grafico/calculo-copia.service'
+import {
+  criarCalculoProprioTx,
+  sincronizarCalculoProprio,
+  type ItemEspelho,
+} from './calculo-grafico/calculo-proprio.service'
 import { mesclarMargem, reaplicarPreco, FechamentoError, type MargemFechamento } from './handoff-comercial/fechamento-preco.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
@@ -5789,6 +5794,28 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   // ORÇAMENTO MULTI-ITEM E ITENS ANINHADOS (spec multi-item-gcad §5.3)
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Sincroniza o cálculo próprio do item do zero após gravar/calcular. Passo aditivo:
+   * falha aqui só é registrada em log e não desfaz a gravação do item.
+   */
+  async function sincronizarCalculoProprioSemFalhar(
+    request: { log: { warn: (obj: unknown, msg?: string) => void } },
+    user: { id: string; empresaId: string },
+    itemId: string,
+    aproveitamentoManual: number | null | undefined,
+  ) {
+    try {
+      await sincronizarCalculoProprio({
+        empresaId: user.empresaId,
+        usuarioId: user.id,
+        itemId,
+        aproveitamentoManual: aproveitamentoManual ?? null,
+      })
+    } catch (err) {
+      request.log.warn({ err, itemId }, 'Falha ao sincronizar o cálculo próprio do item')
+    }
+  }
+
   /** Garante que o orçamento existe e pertence à empresa. Retorna o id ou null. */
   async function carregarOrcamentoDaEmpresa(id: string, empresaId: string) {
     return prisma.orcamentoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
@@ -5830,22 +5857,38 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       somarMateriaisComputados(body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined),
     )
 
-    // sequencia = max(sequencia)+1 do orçamento (Req 1.5)
-    const ultimo = await prisma.itemOrcamentoGrafico.findFirst({
-      where: { orcamentoId: id, empresaId: user.empresaId },
-      orderBy: { sequencia: 'desc' },
-      select: { sequencia: true },
-    })
-    const sequencia = (ultimo?.sequencia ?? 0) + 1
+    // Item + cálculo próprio na MESMA transação (paridade: item criado do zero já nasce
+    // com número de cálculo). Falha em qualquer passo reverte tudo e não consome número.
+    // Sem `calculoGraficoOrigemId`: item do zero segue o motor normal (sem âncora).
+    const item = await prisma.$transaction(
+      async (tx) => {
+        // sequencia = max(sequencia)+1 do orçamento (Req 1.5)
+        const ultimo = await tx.itemOrcamentoGrafico.findFirst({
+          where: { orcamentoId: id, empresaId: user.empresaId },
+          orderBy: { sequencia: 'desc' },
+          select: { sequencia: true },
+        })
+        const sequencia = (ultimo?.sequencia ?? 0) + 1
 
-    const item = await prisma.itemOrcamentoGrafico.create({
-      data: {
-        orcamentoId: id,
-        empresaId: user.empresaId,
-        sequencia,
-        ...dadosPersistenciaItem(body, resultado),
+        const criado = await tx.itemOrcamentoGrafico.create({
+          data: {
+            orcamentoId: id,
+            empresaId: user.empresaId,
+            sequencia,
+            ...dadosPersistenciaItem(body, resultado),
+          },
+        })
+
+        const calc = await criarCalculoProprioTx(tx, {
+          empresaId: user.empresaId,
+          usuarioId: user.id,
+          item: criado as unknown as ItemEspelho,
+          aproveitamentoManual: body.aproveitamentoManual ?? null,
+        })
+        return { ...criado, calculoGraficoId: calc.id }
       },
-    })
+      { timeout: 30000, maxWait: 10000 },
+    )
 
     await reconsolidarOrcamento(id, user.empresaId)
 
@@ -6290,6 +6333,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     await reconsolidarOrcamento(id, user.empresaId)
 
+    // Passo aditivo: cálculo próprio do item do zero acompanha a gravação.
+    await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
+
     return item
   })
 
@@ -6380,6 +6426,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       )
     }
     await reconsolidarOrcamento(id, user.empresaId)
+
+    // Passo aditivo: cálculo próprio do item do zero acompanha o cálculo.
+    await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
 
     return { resultado, fechamento: { custoProducao: fech.custoProducao, valorTotal: fech.valorTotal } }
   })

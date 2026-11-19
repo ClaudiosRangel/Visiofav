@@ -101,8 +101,11 @@ function json(v: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
   return v == null ? Prisma.DbNull : (v as Prisma.InputJsonValue)
 }
 
-/** Trava por empresa + `max(numero)+1` (filtrado por empresa). Rollback devolve o número. */
-async function proximoNumeroCalculo(tx: Tx, empresaId: string): Promise<number> {
+/**
+ * Trava por empresa + `max(numero)+1` (filtrado por empresa). Rollback devolve o número.
+ * Exportado para o cálculo próprio do item criado do zero (`calculo-proprio.service`).
+ */
+export async function proximoNumeroCalculo(tx: Tx, empresaId: string): Promise<number> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${empresaId}))`
   const maior = await tx.calculoGrafico.findFirst({
     where: { empresaId },

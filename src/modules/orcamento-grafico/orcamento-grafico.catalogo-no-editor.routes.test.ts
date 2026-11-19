@@ -19,8 +19,10 @@ const { prismaMock, calcularItemMock, montarParamsDoPlanoMock } = vi.hoisted(() 
     tipoPlanoGrafico: model(),
     precoMateriaPrima: model(),
     calculoGrafico: model(),
+    linhaProduto: model(),
     $queryRawUnsafe: vi.fn(),
     $executeRawUnsafe: vi.fn(),
+    $executeRaw: vi.fn(),
     $transaction: vi.fn(),
   }
   return { prismaMock, calcularItemMock: vi.fn(), montarParamsDoPlanoMock: vi.fn() }
@@ -140,6 +142,11 @@ beforeEach(() => {
   prismaMock.itemOrcamentoGrafico.update.mockImplementation(async ({ data }: any) => ({ id: ITEM, ...data }))
   prismaMock.planoCalculoGrafico.create.mockImplementation(async ({ data }: any) => ({ id: PLANO, ...data }))
   prismaMock.planoCalculoGrafico.update.mockImplementation(async ({ data }: any) => ({ id: PLANO, ...data }))
+  // cálculo próprio do item criado do zero (POST /:id/itens)
+  prismaMock.$executeRaw.mockResolvedValue(1)
+  prismaMock.calculoGrafico.create.mockImplementation(async ({ data }: any) => ({ id: 'calc-1', numero: data.numero }))
+  prismaMock.itemOrcamentoGrafico.updateMany.mockResolvedValue({ count: 1 })
+  prismaMock.calculoGrafico.updateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('POST /:id/itens — produtoGraficoId', () => {
