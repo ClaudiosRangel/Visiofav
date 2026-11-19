@@ -346,6 +346,16 @@ export async function buscarCalculosGraficos(
   // Cancelado: ausente/false omite cancelados; true lista somente cancelados.
   condicoes.push(Prisma.sql`cancelado = ${cancelado === true}`)
 
+  // Cálculos PRÓPRIOS DE ITEM (criados ao usar um Cálculo Padrão num item ou ao
+  // copiar um item) não são Cálculo Padrão: ficam fora do Menu/Seletor/Listagem.
+  // "Do item" = existe ItemOrcamentoGrafico da MESMA empresa com
+  // calculo_grafico_id = id do cálculo (sem @relation no schema → NOT EXISTS).
+  condicoes.push(
+    Prisma.sql`NOT EXISTS (SELECT 1 FROM item_orcamento_grafico i
+      WHERE i.calculo_grafico_id = calculo_grafico.id
+        AND i.empresa_id = ${empresaId})`,
+  )
+
   // Status: default ATIVO (compatibilidade), exceto ao listar cancelados, em
   // que o status do registro cancelado pode ser outro.
   const statusEfetivo = status ?? (cancelado === true ? undefined : 'ATIVO')
