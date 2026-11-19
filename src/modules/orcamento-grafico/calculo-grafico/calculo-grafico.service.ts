@@ -19,7 +19,9 @@
 // `empresaId` recebido aqui é o da entidade de negócio real (a empresa dona do
 // cálculo), passado explicitamente pela rota.
 
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma'
+import { resolverSigla } from './plano-base.service'
 import type { CamposEngenhariaCalculo } from './calculo-grafico.types'
 import { calculoParaItemBody } from './calculo-grafico-mapeamento'
 import type { ItemBodyMapeado } from './calculo-grafico-mapeamento'
@@ -223,8 +225,14 @@ export interface BuscarCalculosGraficosParams {
   /** Empresa dona dos cálculos (EXPLÍCITO — isolamento multi-tenant). */
   empresaId: string
 
-  // ── Critérios textuais (contém, case-insensitive) ──
+  // ── Critérios textuais (contém, sem diferenciar caixa e acento) ──
+  /** Nome do cliente (campo legado; alias de `clienteNome`). */
   cliente?: string | null
+  clienteNome?: string | null
+  /** Código do cliente (trecho contido). */
+  clienteCodigo?: string | null
+  /** Somente cálculos sem cliente; ignora os filtros de cliente. */
+  semCliente?: boolean
   linhaProduto?: string | null
   produto?: string | null
   descricao?: string | null
@@ -234,13 +242,20 @@ export interface BuscarCalculosGraficosParams {
   numero?: number | null
   numeroCalcgraf?: number | null
 
-  /** Status (default `ATIVO`). */
+  /** Status (default `ATIVO`, exceto quando `cancelado=true`). */
   status?: StatusCalculoGrafico
+
+  /** false/ausente omite cancelados; true lista somente cancelados. */
+  cancelado?: boolean
+
+  /** SELETOR: teto de 500 linhas, sem paginação. MENU: pageSize 50. LISTAGEM: 20. */
+  modo?: 'SELETOR' | 'MENU' | 'LISTAGEM'
 
   /** Página (1-based, default 1). */
   pagina?: number
-  /** Tamanho da página (default 20). */
+  /** Tamanho da página (legado; alias de `pageSize`). */
   tamanho?: number
+  pageSize?: number
 }
 
 /**
@@ -260,6 +275,14 @@ export interface ResumoCalculo {
   siglaAcabado: string | null
   dataCalculo: Date
   origem: string
+  clienteCodigo: number | null
+  quantidade: number
+  /** Tiragem (mesmo valor de `quantidade`). */
+  tiragem: number
+  medidas: Record<string, number> | null
+  /** Formato final (medidas) em texto, ex.: "190 x 1200". */
+  formatoFinal: string | null
+  cancelado: boolean
 }
 
 /** Resultado paginado da busca. */
@@ -268,6 +291,10 @@ export interface BuscaCalculosGraficosResultado {
   total: number
   pagina: number
   tamanho: number
+  /** Quantidade de cálculos exibidos (linhas retornadas). */
+  quantidadeCalculos: number
+  /** true quando o modo Seletor encontrou mais de 500 e devolveu só 500. */
+  limitado: boolean
 }
 
 /**
@@ -286,85 +313,168 @@ export async function buscarCalculosGraficos(
   const {
     empresaId,
     cliente,
+    clienteNome,
+    clienteCodigo,
+    semCliente = false,
     linhaProduto,
     produto,
     descricao,
     siglaAcabado,
     numero,
     numeroCalcgraf,
-    status = 'ATIVO',
+    cancelado = false,
+    status,
+    modo = 'LISTAGEM',
     pagina = 1,
-    tamanho = 20,
   } = params
 
+  const seletor = modo === 'SELETOR'
+  const tamanhoBruto = params.pageSize ?? params.tamanho ?? (modo === 'MENU' ? 50 : 20)
+
   // Normaliza paginação (defensivo contra valores inválidos vindos da rota).
-  const paginaEfetiva = pagina > 0 ? Math.floor(pagina) : 1
-  const tamanhoEfetivo = tamanho > 0 ? Math.floor(tamanho) : 20
+  const paginaEfetiva = seletor ? 1 : pagina > 0 ? Math.floor(pagina) : 1
+  const tamanhoEfetivo = seletor
+    ? TETO_SELETOR
+    : tamanhoBruto > 0
+      ? Math.floor(tamanhoBruto)
+      : 20
 
-  // `where` com conjunção (AND): empresaId e status SEMPRE; demais critérios só
-  // quando informados (não-vazios). `contains` + insensitive para texto.
-  const where: {
-    empresaId: string
-    status: string
-    numero?: number
-    numeroCalcgraf?: number
-    clienteNome?: { contains: string; mode: 'insensitive' }
-    linhaProduto?: { contains: string; mode: 'insensitive' }
-    produto?: { contains: string; mode: 'insensitive' }
-    descricao?: { contains: string; mode: 'insensitive' }
-    siglaAcabado?: { contains: string; mode: 'insensitive' }
-  } = {
-    empresaId,
-    status,
-  }
+  // Condições em conjunção (AND). empresaId SEMPRE explícito (SUPER_ADMIN não
+  // pode depender do prismaScoped).
+  const condicoes: Prisma.Sql[] = [Prisma.sql`empresa_id = ${empresaId}`]
 
-  if (cliente != null && cliente !== '') {
-    where.clienteNome = { contains: cliente, mode: 'insensitive' }
-  }
-  if (linhaProduto != null && linhaProduto !== '') {
-    where.linhaProduto = { contains: linhaProduto, mode: 'insensitive' }
-  }
-  if (produto != null && produto !== '') {
-    where.produto = { contains: produto, mode: 'insensitive' }
-  }
-  if (descricao != null && descricao !== '') {
-    where.descricao = { contains: descricao, mode: 'insensitive' }
-  }
-  if (siglaAcabado != null && siglaAcabado !== '') {
-    where.siglaAcabado = { contains: siglaAcabado, mode: 'insensitive' }
-  }
-  if (numero != null) {
-    where.numero = numero
-  }
-  if (numeroCalcgraf != null) {
-    where.numeroCalcgraf = numeroCalcgraf
+  // Cancelado: ausente/false omite cancelados; true lista somente cancelados.
+  condicoes.push(Prisma.sql`cancelado = ${cancelado === true}`)
+
+  // Status: default ATIVO (compatibilidade), exceto ao listar cancelados, em
+  // que o status do registro cancelado pode ser outro.
+  const statusEfetivo = status ?? (cancelado === true ? undefined : 'ATIVO')
+  if (statusEfetivo) condicoes.push(Prisma.sql`status = ${statusEfetivo}`)
+
+  if (semCliente) {
+    // Ignora os filtros de cliente (código e nome).
+    condicoes.push(
+      Prisma.sql`cliente_id IS NULL AND cliente_codigo IS NULL AND (cliente_nome IS NULL OR btrim(cliente_nome) = '')`,
+    )
+  } else {
+    const nomeCliente = clienteNome ?? cliente
+    if (nomeCliente) condicoes.push(condicaoTexto('cliente_nome', nomeCliente))
+    if (clienteCodigo) condicoes.push(condicaoTexto('cliente_codigo::text', clienteCodigo))
   }
 
-  // Leitura por snapshot consistente (Req 1.7): contagem + página na MESMA
-  // transação. `select` traz só o resumo (sem resultadoCalculo/medidas).
-  const [total, itens] = await prisma.$transaction([
-    prisma.calculoGrafico.count({ where }),
-    prisma.calculoGrafico.findMany({
-      where,
-      orderBy: { numero: 'desc' },
-      skip: (paginaEfetiva - 1) * tamanhoEfetivo,
-      take: tamanhoEfetivo,
-      select: {
-        id: true,
-        numero: true,
-        numeroCalcgraf: true,
-        clienteNome: true,
-        produto: true,
-        descricao: true,
-        linhaProduto: true,
-        siglaAcabado: true,
-        dataCalculo: true,
-        origem: true,
-      },
-    }),
+  if (linhaProduto) condicoes.push(condicaoTexto('linha_produto', linhaProduto))
+  if (produto) condicoes.push(condicaoTexto('produto', produto))
+  if (descricao) condicoes.push(condicaoTexto('descricao', descricao))
+  if (siglaAcabado) condicoes.push(condicaoTexto('sigla_acabado', siglaAcabado))
+  if (numero != null) condicoes.push(Prisma.sql`numero = ${numero}`)
+  if (numeroCalcgraf != null) condicoes.push(Prisma.sql`numero_calcgraf = ${numeroCalcgraf}`)
+
+  const whereSql = Prisma.join(condicoes, ' AND ')
+
+  // Leitura por snapshot consistente (Req 1.7): contagem + ids na MESMA transação.
+  const [contagem, idsLinhas] = await prisma.$transaction([
+    prisma.$queryRaw<{ total: number }[]>(
+      Prisma.sql`SELECT count(*)::int AS total FROM calculo_grafico WHERE ${whereSql}`,
+    ),
+    prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM calculo_grafico WHERE ${whereSql}
+        ORDER BY numero DESC
+        LIMIT ${tamanhoEfetivo} OFFSET ${(paginaEfetiva - 1) * tamanhoEfetivo}`,
+    ),
   ])
+  const total = contagem[0]?.total ?? 0
+  const ids = idsLinhas.map((r) => r.id)
 
-  return { itens, total, pagina: paginaEfetiva, tamanho: tamanhoEfetivo }
+  const registros = ids.length
+    ? await prisma.calculoGrafico.findMany({
+        where: { id: { in: ids }, empresaId },
+        select: {
+          id: true,
+          numero: true,
+          numeroCalcgraf: true,
+          clienteNome: true,
+          clienteCodigo: true,
+          produto: true,
+          descricao: true,
+          linhaProduto: true,
+          siglaAcabado: true,
+          dataCalculo: true,
+          origem: true,
+          quantidade: true,
+          medidas: true,
+          cancelado: true,
+        },
+      })
+    : []
+  const porId = new Map(registros.map((r) => [r.id, r]))
+
+  const itens: ResumoCalculo[] = []
+  for (const id of ids) {
+    const r = porId.get(id)
+    if (!r) continue
+    itens.push({
+      id: r.id,
+      numero: r.numero,
+      numeroCalcgraf: r.numeroCalcgraf,
+      clienteNome: r.clienteNome,
+      clienteCodigo: r.clienteCodigo,
+      produto: r.produto,
+      descricao: r.descricao,
+      linhaProduto: r.linhaProduto,
+      // "(vários)" quando houver mais de uma sigla distinta.
+      siglaAcabado: resolverSigla(
+        (r.siglaAcabado ?? '').split(/[,;]/).map((s) => s.trim()),
+      ),
+      dataCalculo: r.dataCalculo,
+      origem: r.origem,
+      quantidade: r.quantidade,
+      tiragem: r.quantidade,
+      medidas: (r.medidas ?? null) as Record<string, number> | null,
+      formatoFinal: formatarFormatoFinal(r.medidas),
+      cancelado: r.cancelado,
+    })
+  }
+
+  return {
+    itens,
+    total,
+    pagina: paginaEfetiva,
+    tamanho: tamanhoEfetivo,
+    quantidadeCalculos: itens.length,
+    limitado: seletor ? total > TETO_SELETOR : false,
+  }
+}
+
+const TETO_SELETOR = 500
+const COM_ACENTO = 'áàâãäéèêëíìîïóòôõöúùûüçñ'
+const SEM_ACENTO = 'aaaaaeeeeiiiiooooouuuucn'
+
+/** Normaliza no JS: minúsculas e sem acento (espelha o translate do SQL). */
+function normalizarBusca(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+/** Trecho contido, sem diferenciar caixa e acento. `coluna` é identificador fixo (nunca input). */
+function condicaoTexto(coluna: string, termo: string): Prisma.Sql {
+  const padrao = `%${normalizarBusca(termo).replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+  return Prisma.sql`translate(lower(${Prisma.raw(coluna)}), ${COM_ACENTO}, ${SEM_ACENTO}) LIKE ${padrao} ESCAPE '\\'`
+}
+
+/** Formato final (medidas) como "L x A x P", usando só as dimensões existentes. */
+function formatarFormatoFinal(medidas: unknown): string | null {
+  if (!medidas || typeof medidas !== 'object') return null
+  const m = medidas as Record<string, unknown>
+  const num = (...chaves: string[]): number | null => {
+    for (const c of chaves) {
+      const v = Number(m[c])
+      if (m[c] != null && Number.isFinite(v) && v > 0) return v
+    }
+    return null
+  }
+  const dims = [num('largura', 'L'), num('altura', 'A'), num('profundidade', 'P')].filter(
+    (v): v is number => v != null,
+  )
+  return dims.length ? dims.join(' x ') : null
 }
 
 // ============================================================================

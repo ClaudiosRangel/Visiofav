@@ -4982,6 +4982,11 @@ model ItemOrcamentoGrafico {
   /// backfill. Spec orcamento-grafico-cadastros-relacoes (design §4.2, Req 16.2).
   produtoGraficoId String? @map("produto_grafico_id")
 
+  /// Paridade fluxo legado (tarefa 1.1): cálculo vinculado ao item e tipo de plano
+  /// do cadastro (plano único implícito). Só id string, sem @relation, nulos.
+  calculoGraficoId String? @map("calculo_grafico_id")
+  tipoPlanoId      String? @map("tipo_plano_id")
+
   // ── Hierarquia Item/Plano (D3) — informativos, nulos, NÃO entram no cálculo ──
   formatoFechadoLarguraMm Decimal? @map("formato_fechado_largura_mm") @db.Decimal(10, 2)
   formatoFechadoAlturaMm  Decimal? @map("formato_fechado_altura_mm") @db.Decimal(10, 2)
@@ -5164,6 +5169,11 @@ model CalculoGrafico {
   // puxado (bate item a item, não só o total). Aditivo; null em cálculos novos.
   custosCalcgraf    Json?    @map("custos_calcgraf")
 
+  // ── Paridade fluxo legado (tarefa 1.1) — aditivos ──
+  origemCopiaId  String? @map("origem_copia_id")
+  cancelado      Boolean @default(false)
+  statusAnterior String? @map("status_anterior") @db.VarChar(20)
+
   // ── Tiragem e FOTO congelada ──
   quantidade        Int
   resultadoCalculo  Json?    @map("resultado_calculo") // FOTO congelada (Req 4) — não recalcular
@@ -5184,6 +5194,8 @@ model CalculoGrafico {
   @@index([empresaId, status])
   @@index([empresaId, clienteNome])
   @@index([empresaId, numeroCalcgraf])
+  @@index([empresaId, cancelado])
+  @@index([empresaId, origemCopiaId])
   @@map("calculo_grafico")
 }
 

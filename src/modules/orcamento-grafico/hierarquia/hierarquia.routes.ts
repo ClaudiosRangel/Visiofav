@@ -106,7 +106,7 @@ export async function hierarquiaRoutes(app: FastifyInstance) {
   app.post('/:id/itens/:itemId/copiar', async (request, reply) => {
     const { id, itemId } = paramsItemSchema.parse(request.params)
     return tratar(reply, async () => {
-      const copia = await copiarItem(id, itemId, empresaDe(request))
+      const copia = await copiarItem(id, itemId, empresaDe(request), undefined, (request.user as UsuarioToken).id)
       return reply.status(201).send(copia)
     })
   })

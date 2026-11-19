@@ -195,9 +195,10 @@ import { timelineProducaoRoutes } from './modules/pcp/timeline-producao.routes'
 import { excecaoTurnoRoutes } from './modules/pcp/excecao-turno.routes'
 import { orcamentoGraficoRoutes } from './modules/orcamento-grafico/orcamento-grafico.routes'
 import { hierarquiaRoutes } from './modules/orcamento-grafico/hierarquia/hierarquia.routes'
-import { calculoGraficoRoutes } from './modules/orcamento-grafico/calculo-grafico/calculo-grafico.routes'
+import { calculoGraficoRoutes, preCalculoPdfRoutes } from './modules/orcamento-grafico/calculo-grafico/calculo-grafico.routes'
 import { cadastrosGraficosRoutes } from './modules/orcamento-grafico/cadastros-graficos'
 import { linhaProdutoRoutes } from './modules/orcamento-grafico/cadastros/linha-produto.routes'
+import { clienteBuscaRoutes } from './modules/orcamento-grafico/cadastros/cliente-busca.routes'
 import { materialMicroonduladoRoutes } from './modules/orcamento-grafico/cadastros/material-microondulado.routes'
 import { coberturaTintaRoutes } from './modules/orcamento-grafico/cadastros/cobertura-tinta.routes'
 import { processoImpressaoRoutes } from './modules/orcamento-grafico/cadastros/processo-impressao.routes'
@@ -546,8 +547,11 @@ async function bootstrap() {
   // GET /:id/itens/:itemId, .../dados-item, POST .../copiar).
   await app.register(hierarquiaRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(calculoGraficoRoutes, { prefix: '/api/calculo-grafico' })
+  // PDF do Pré-Cálculo: plugin sem hook global (aceita ?token= na query)
+  await app.register(preCalculoPdfRoutes, { prefix: '/api/calculo-grafico' })
   // Cadastros novos do orçamento gráfico (paridade Calcgraf — Req 6/10/11/12)
   await app.register(linhaProdutoRoutes, { prefix: '/api/orcamento-grafico/linhas-produto' })
+  await app.register(clienteBuscaRoutes, { prefix: '/api/orcamento-grafico/clientes' })
   await app.register(materialMicroonduladoRoutes, { prefix: '/api/orcamento-grafico/materiais-microondulado' })
   await app.register(coberturaTintaRoutes, { prefix: '/api/orcamento-grafico/coberturas-tinta' })
   await app.register(processoImpressaoRoutes, { prefix: '/api/orcamento-grafico/processos-impressao' })

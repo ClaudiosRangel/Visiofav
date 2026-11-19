@@ -124,6 +124,7 @@ export async function obterDadosItem(
         select: {
           id: true,
           nome: true,
+          especificacao: true,
           tipoPlanoId: true,
           suporteId: true,
           gramatura: true,
@@ -202,7 +203,8 @@ export async function obterDadosItem(
     const modelos = paraNumero(item.qtdModelos)
     const geral = [
       formatoItem(item) ? `Formato: ${formatoItem(item)}` : null,
-      modelos !== null && modelos > 0 ? `Modelos: ${fmtNumero(modelos)}` : null,
+      // Modelos não informado (nulo ou 0) é exibido como 1.
+      `Modelos: ${fmtNumero(modelos !== null && modelos > 0 ? modelos : 1)}`,
     ].filter((x): x is string => !!x)
 
     const linhasPlanos = item.planos.map((p) => {
@@ -214,7 +216,9 @@ export async function obterDadosItem(
           ? `Acabamentos: ${nomesAcabamentos(lista(p.acabamentosRicos)).join(', ')}`
           : null,
       ].filter((x): x is string => !!x)
-      return partes.length ? `${p.nome} — ${partes.join(' · ')}` : p.nome
+      const esp = p.especificacao as { somenteExibicao?: unknown } | null | undefined
+      const rotulo = esp && esp.somenteExibicao === true ? `${p.nome} (somente leitura)` : p.nome
+      return partes.length ? `${rotulo} — ${partes.join(' · ')}` : rotulo
     })
 
     secoes = [

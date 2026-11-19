@@ -32,6 +32,15 @@ import {
   CalculoGraficoError,
 } from './calculo-grafico.service'
 import { montarMemoriaStc } from './decomposicao-stc.service'
+import { gerarPdfPreCalculo, temMemoriaParaPdf, MSG_SEM_MEMORIA } from './pre-calculo-pdf.service'
+import { CopiaCalculoError } from './calculo-copia.service'
+import {
+  incluirCalculoPadrao,
+  copiarCalculoPadrao,
+  editarCalculoPadrao,
+  cancelarCalculoPadrao,
+  reativarCalculoPadrao,
+} from './calculo-status.service'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas Zod reutilizados (shape de engenharia e campos de biblioteca)
@@ -198,6 +207,12 @@ function montarEngenharia(
   }
 }
 
+/** Flag de query string: "true"/"1" → true; "false"/"0"/ausente → false. */
+const boolFlag = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((v) => v === true || v === 'true' || v === '1')
+
 /**
  * Rotas do Cálculo Gráfico (biblioteca). O prefixo `/api/calculo-grafico` é
  * aplicado no registro em `server.ts`.
@@ -212,16 +227,22 @@ export async function calculoGraficoRoutes(app: FastifyInstance) {
     const user = request.user as { id: string; empresaId: string }
     const query = z
       .object({
-        cliente: z.string().optional(),
-        linhaProduto: z.string().optional(),
-        produto: z.string().optional(),
-        descricao: z.string().optional(),
-        siglaAcabado: z.string().optional(),
-        numero: z.coerce.number().int().optional(),
+        cliente: z.string().max(200).optional(),
+        clienteNome: z.string().max(200).optional(),
+        clienteCodigo: z.string().max(20).optional(),
+        semCliente: boolFlag,
+        linhaProduto: z.string().max(120).optional(),
+        produto: z.string().max(200).optional(),
+        descricao: z.string().max(200).optional(),
+        siglaAcabado: z.string().max(60).optional(),
+        numero: z.coerce.number().int().positive().max(999999999).optional(),
         numeroCalcgraf: z.coerce.number().int().optional(),
+        cancelado: boolFlag,
         status: z.enum(['ATIVO', 'RASCUNHO', 'ARQUIVADO']).optional(),
+        modo: z.enum(['SELETOR', 'MENU', 'LISTAGEM']).optional(),
         pagina: z.coerce.number().int().positive().optional().default(1),
-        tamanho: z.coerce.number().int().positive().max(100).optional().default(20),
+        tamanho: z.coerce.number().int().positive().max(100).optional(),
+        pageSize: z.coerce.number().int().positive().max(100).optional(),
       })
       .parse(request.query)
 
@@ -391,6 +412,81 @@ export async function calculoGraficoRoutes(app: FastifyInstance) {
   })
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 6.1 Ações do Menu Cálculo Padrão (spec paridade-fluxo-legado, tarefa 8.1)
+  //     incluir / copiar / editar / cancelar / reativar. 404 idêntico para
+  //     inexistente e outra empresa; `CopiaCalculoError` traduz o statusCode.
+  // ───────────────────────────────────────────────────────────────────────────
+  const paramsId = z.object({ id: z.string().min(1, 'obrigatório') })
+
+  type Ctx = { id: string; empresaId: string }
+  const executarAcao = async (
+    reply: { status: (c: number) => { send: (b: unknown) => unknown } },
+    fn: () => Promise<unknown>,
+    sucesso = 200,
+  ) => {
+    try {
+      const r = await fn()
+      return reply.status(sucesso).send(r)
+    } catch (e) {
+      if (e instanceof CopiaCalculoError) {
+        return reply.status(e.statusCode).send({ message: e.message })
+      }
+      throw e
+    }
+  }
+
+  // :id = cálculo de referência (só tipo/linha/produto; não copia engenharia).
+  app.post('/:id/incluir', async (request, reply) => {
+    const user = request.user as Ctx
+    const { id } = paramsId.parse(request.params)
+    const body = z
+      .object({
+        tipoEmbalagemId: z.string().min(1).optional(),
+        quantidade: z.number().int().min(1).max(999999999).optional(),
+      })
+      .parse(request.body ?? {})
+    return executarAcao(
+      reply,
+      () =>
+        incluirCalculoPadrao({
+          empresaId: user.empresaId,
+          usuarioId: user.id,
+          referenciaId: id,
+          ...body,
+        }),
+      201,
+    )
+  })
+
+  app.post('/:id/copiar', async (request, reply) => {
+    const user = request.user as Ctx
+    const { id } = paramsId.parse(request.params)
+    return executarAcao(
+      reply,
+      () => copiarCalculoPadrao({ empresaId: user.empresaId, usuarioId: user.id, id }),
+      201,
+    )
+  })
+
+  app.post('/:id/editar', async (request, reply) => {
+    const user = request.user as Ctx
+    const { id } = paramsId.parse(request.params)
+    return executarAcao(reply, () => editarCalculoPadrao({ empresaId: user.empresaId, usuarioId: user.id, id }))
+  })
+
+  app.post('/:id/cancelar', async (request, reply) => {
+    const user = request.user as Ctx
+    const { id } = paramsId.parse(request.params)
+    return executarAcao(reply, () => cancelarCalculoPadrao({ empresaId: user.empresaId, id }))
+  })
+
+  app.post('/:id/reativar', async (request, reply) => {
+    const user = request.user as Ctx
+    const { id } = paramsId.parse(request.params)
+    return executarAcao(reply, () => reativarCalculoPadrao({ empresaId: user.empresaId, id }))
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 7. POST /importar-acervo — restrita a ADMIN (Req 6.1)
   // ───────────────────────────────────────────────────────────────────────────
   app.post('/importar-acervo', async (request, reply) => {
@@ -465,6 +561,87 @@ export async function calculoGraficoRoutes(app: FastifyInstance) {
       completos,
       comPendencia,
       pendenciasPorCampo,
+    }
+  })
+}
+
+/**
+ * GET /calculo-grafico/:id/pre-calculo.pdf — PDF do Pré-Cálculo (spec
+ * paridade-fluxo-legado, Req 15). Plugin SEPARADO (sem o hook global
+ * `authenticate`) para aceitar o token na query (`?token=`), como os demais PDFs
+ * (requisição de corte / OP). A autenticação é feita aqui: token da query, ou
+ * header/cookie como fallback. `empresaId` explícito (404 para outra empresa).
+ * Registrado em `server.ts` com o mesmo prefixo `/api/calculo-grafico`.
+ */
+export async function preCalculoPdfRoutes(app: FastifyInstance) {
+  app.get('/:id/pre-calculo.pdf', async (request, reply) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params)
+    const { token } = z.object({ token: z.string().optional() }).parse(request.query ?? {})
+
+    let user: { id: string; empresaId?: string; scope?: string } | null = null
+    try {
+      if (token) {
+        const d = app.jwt.verify(token) as { sub?: string; id?: string; empresaId?: string; scope?: string }
+        user = { id: (d.sub || d.id) as string, empresaId: d.empresaId, scope: d.scope }
+      } else {
+        const cookieToken = (request.cookies as Record<string, string> | undefined)?.['visiofab-access-token']
+        if (!request.headers.authorization && cookieToken) {
+          request.headers.authorization = `Bearer ${cookieToken}`
+        }
+        if (!request.headers.authorization) {
+          return reply.status(401).send({ message: 'Não autenticado' })
+        }
+        await request.jwtVerify()
+        user = request.user as { id: string; empresaId?: string; scope?: string }
+      }
+    } catch {
+      return reply.status(401).send({ message: 'Token inválido ou expirado' })
+    }
+    if (!user?.empresaId) return reply.status(401).send({ message: 'Não autenticado' })
+    if (user.scope === 'CHECKOUT_OPERADOR') return reply.status(403).send({ message: 'Acesso negado' })
+
+    const naoEncontrado = () => reply.status(404).send({ message: 'Cálculo não encontrado' })
+    try {
+      const calc = (await obterCalculoGrafico(user.empresaId, id)) as
+        | (Record<string, unknown> & { empresaId?: string })
+        | null
+      if (!calc || (calc.empresaId && calc.empresaId !== user.empresaId)) return naoEncontrado()
+
+      const resultadoCalculo = calc.resultadoCalculo
+      const custosCalcgraf = calc.custosCalcgraf
+      if (!temMemoriaParaPdf({ resultadoCalculo, custosCalcgraf })) {
+        return reply.status(422).send({ message: MSG_SEM_MEMORIA })
+      }
+
+      const empresa = await prisma.empresa.findUnique({
+        where: { id: user.empresaId },
+        select: { razaoSocial: true, nomeFantasia: true },
+      })
+
+      const numero = Number(calc.numero)
+      const pdf = await Promise.race([
+        gerarPdfPreCalculo({
+          numero,
+          resultadoCalculo,
+          custosCalcgraf,
+          cliente: (calc.clienteNome as string | null) ?? null,
+          produto: (calc.produto as string | null) ?? null,
+          descricao: (calc.descricao as string | null) ?? null,
+          quantidade: (calc.quantidade as number | null) ?? null,
+          empresaNome: empresa?.nomeFantasia || empresa?.razaoSocial || null,
+        }),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10_000)),
+      ])
+
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `inline; filename="pre-calculo-${numero}.pdf"`)
+        .send(pdf)
+    } catch (e) {
+      request.log.error({ err: e }, 'Falha ao gerar PDF do pré-cálculo')
+      return reply
+        .status(500)
+        .send({ message: 'Não foi possível gerar o PDF do pré-cálculo. Tente novamente.' })
     }
   })
 }

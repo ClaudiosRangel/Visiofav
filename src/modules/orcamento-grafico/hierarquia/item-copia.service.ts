@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma'
+import { criarCalculoCopiaTx } from '../calculo-grafico/calculo-copia.service'
 import { consolidarOrcamento, type FechamentoItem } from '../orcamento-grafico-consolidacao.service'
 import { naoEncontrado, paraNumero, type DbClient } from './hierarquia-common'
 import { ITEM_SELECT_HIDRATACAO, anexarAproveitamentoManual } from './item-select'
@@ -84,6 +85,7 @@ async function copiarUmaVez(
   orcamentoId: string,
   itemId: string,
   empresaId: string,
+  usuarioId: string | null = null,
 ): Promise<CopiarItemRespostaDTO> {
   const orc = await tx.orcamentoGrafico.findFirst({ where: { id: orcamentoId, empresaId }, select: { id: true } })
   if (!orc) throw naoEncontrado()
@@ -118,6 +120,24 @@ async function copiarUmaVez(
 
   // Seleções de material (por item e por plano) serão recriadas depois dos ids novos.
   const selecoes = await tx.selecaoMaterialAcabamento.findMany({ where: { empresaId, itemId } })
+
+  // Cálculo próprio do item (itens antigos podem não ter): copia para um CalculoGrafico novo
+  // (número = max+1 da empresa, mesmo lock do calculo-copia.service) na MESMA transação.
+  // Falha aqui reverte item, planos e o número consumido.
+  const proprio = await tx.itemOrcamentoGrafico.findFirst({
+    where: { id: itemId, orcamentoId, empresaId },
+    select: { calculoGraficoId: true },
+  })
+  let calculoNovoId: string | null = null
+  if (proprio?.calculoGraficoId) {
+    const calcOrigem = await tx.calculoGrafico.findFirst({
+      where: { id: proprio.calculoGraficoId, empresaId },
+    })
+    if (calcOrigem) {
+      const novoCalc = await criarCalculoCopiaTx(tx, calcOrigem, { empresaId, usuarioId, modo: 'PADRAO' })
+      calculoNovoId = novoCalc.id
+    }
+  }
 
   const criado = await tx.itemOrcamentoGrafico.create({
     data: {
@@ -179,6 +199,7 @@ async function copiarUmaVez(
       ajusteCorteMicroMm: o.ajusteCorteMicroMm,
       suporteProducaoId: o.suporteProducaoId,
       calculoGraficoOrigemId: o.calculoGraficoOrigemId, // a âncora acompanha a cópia
+      ...(calculoNovoId ? { calculoGraficoId: calculoNovoId } : {}),
       produtoGraficoId: o.produtoGraficoId,
     },
     select: { id: true },
@@ -273,9 +294,10 @@ export async function copiarItem(
   itemId: string,
   empresaId: string,
   db: typeof prisma = prisma,
+  usuarioId: string | null = null,
 ): Promise<CopiarItemRespostaDTO> {
   const executar = () =>
-    db.$transaction((tx) => copiarUmaVez(tx, orcamentoId, itemId, empresaId), { timeout: 30000 })
+    db.$transaction((tx) => copiarUmaVez(tx, orcamentoId, itemId, empresaId, usuarioId), { timeout: 30000 })
   try {
     return await executar()
   } catch (err) {

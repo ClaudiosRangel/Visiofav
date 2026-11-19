@@ -52,6 +52,7 @@ import { converterOrcamentoEmPedido, ConversaoError } from './handoff-comercial/
 import { obterConfigTemplate, TemplatePropostaError } from './template-proposta.service'
 import { enriquecerCnpj } from '../prospeccao/provider'
 import { verificarPermissaoComercial } from './permissoes-comercial.routes'
+import { copiarCalculo, CopiaCalculoError } from './calculo-grafico/calculo-copia.service'
 import { mesclarMargem, reaplicarPreco, FechamentoError, type MargemFechamento } from './handoff-comercial/fechamento-preco.service'
 import { listarOrcamentosAConverter } from './handoff-comercial/caixa-conversao.service'
 import {
@@ -1151,7 +1152,7 @@ function extrairMatrizDeOrigem(calc: CalculoGraficoRegistroCompleto): MatrizProj
  * com um `CentroProducao` de impressão da empresa (por "contém", normalizado).
  * Multi-tenant (empresaId explícito). Retorna o id ou null se não casar.
  */
-async function resolverMaquinaDeOrigem(
+export async function resolverMaquinaDeOrigem(
   empresaId: string,
   calc: CalculoGraficoRegistroCompleto,
 ): Promise<string | null> {
@@ -1251,7 +1252,7 @@ function removerItemDiversoMatriz<T extends { descricao?: string | null; fixo?: 
  * `novaQuantidade > 0` sobrepõe a tiragem do cálculo; caso contrário usa a
  * quantidade do próprio cálculo (a `quantidade` já vem de `calculoParaItemBody`).
  */
-function copiarCalculoParaItem(
+export function copiarCalculoParaItem(
   calc: CalculoGraficoRegistroCompleto,
   novaQuantidade?: number,
 ) {
@@ -2950,6 +2951,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       clienteNome: z.string().max(200).optional().nullable(),
       vendedorId: z.string().uuid().optional().nullable(),
       linhaProdutoId: z.string().uuid().optional().nullable(),
+      // Série (1 a 10 caracteres, após trim). Ausente = null (comportamento anterior).
+      serie: z
+        .string({ invalid_type_error: 'deve ser texto' })
+        .trim()
+        .min(1, 'deve ter de 1 a 10 caracteres')
+        .max(10, 'deve ter de 1 a 10 caracteres')
+        .optional()
+        .nullable(),
+      // Data do orçamento; ausente = hoje em America/Sao_Paulo.
+      dataOrcamento: z.coerce.date({ invalid_type_error: 'data inválida' }).optional().nullable(),
+      // `empresaId` eventualmente enviado no body é descartado (z.object remove chaves
+      // desconhecidas): a empresa é SEMPRE a da sessão.
     }).parse(request.body)
 
     if (!body.clienteId && !body.clienteNome?.trim()) {
@@ -2968,33 +2981,60 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
     }
 
-    // Numeração sequencial por empresa (mesma regra do POST /).
-    const ultimo = await prisma.orcamentoGrafico.findFirst({
-      where: { empresaId: user.empresaId },
-      orderBy: { numero: 'desc' },
-      select: { numero: true },
-    })
-    const numero = (ultimo?.numero ?? 0) + 1
+    const serie = body.serie ?? null
+    // Data default: dia corrente no fuso America/Sao_Paulo (como meia-noite UTC do dia,
+    // igual ao parse de "YYYY-MM-DD" enviado pelo front).
+    const dataOrcamento =
+      body.dataOrcamento ??
+      new Date(
+        `${new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date())}T00:00:00.000Z`,
+      )
+
+    // Nº = maior Nº da empresa + série + 1 (ou 1), numa transação com advisory lock por
+    // empresa (mesmo padrão do calculo-copia.service). P2002: repete 1 vez; depois 409.
+    const criarUmaVez = () =>
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${user.empresaId}))`
+        const ultimo = await tx.orcamentoGrafico.findFirst({
+          where: { empresaId: user.empresaId, serie },
+          orderBy: { numero: 'desc' },
+          select: { numero: true },
+        })
+        return tx.orcamentoGrafico.create({
+          data: {
+            empresaId: user.empresaId,
+            numero: (ultimo?.numero ?? 0) + 1,
+            versao: 1,
+            serie,
+            dataOrcamento,
+            clienteId: body.clienteId ?? null,
+            clienteNome: body.clienteNome ?? null,
+            vendedorId: body.vendedorId ?? null,
+            tipoEmbalagemId: tipoPlaceholder.id,
+            medidas: {},
+            quantidade: 0,
+            status: 'RASCUNHO',
+            etapaCalculo: 'EM_CALCULO',
+            linhaProdutoId: body.linhaProdutoId ?? null,
+            criadoPorId: user.id,
+          },
+          select: { id: true, numero: true, serie: true, dataOrcamento: true },
+        })
+      })
 
     try {
-      const orcamento = await prisma.orcamentoGrafico.create({
-        data: {
-          empresaId: user.empresaId,
-          numero,
-          versao: 1,
-          clienteId: body.clienteId ?? null,
-          clienteNome: body.clienteNome ?? null,
-          vendedorId: body.vendedorId ?? null,
-          tipoEmbalagemId: tipoPlaceholder.id,
-          medidas: {},
-          quantidade: 0,
-          status: 'RASCUNHO',
-          etapaCalculo: 'EM_CALCULO',
-          linhaProdutoId: body.linhaProdutoId ?? null,
-          criadoPorId: user.id,
-        },
-        select: { id: true, numero: true },
-      })
+      let orcamento
+      try {
+        orcamento = await criarUmaVez()
+      } catch (err: any) {
+        if (err?.code !== 'P2002') throw err
+        orcamento = await criarUmaVez()
+      }
       return reply.status(201).send(orcamento)
     } catch (err: any) {
       if (err?.code === 'P2002') {
@@ -5917,6 +5957,63 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
   })
 
   /**
+   * POST /api/orcamento-grafico/:id/itens/usar-calculo
+   *
+   * "Usar" um Cálculo Padrão em um orçamento existente (spec
+   * orcamento-grafico-paridade-fluxo-legado, tarefa 4.1). Delegado ao serviço
+   * `copiarCalculo` (modo 'ITEM'): numa transação cria um CalculoGrafico novo +
+   * ItemOrcamentoGrafico vinculados. Após o commit, reconsolida o orçamento
+   * (mesma função das rotas `de-calculo`). NÃO altera o motor nem a ancoragem.
+   * As rotas `de-calculo` seguem inalteradas (compatibilidade).
+   *
+   * Erros: CopiaCalculoError → statusCode (403 outra empresa; 404 inexistente;
+   * 409 colisão persistente; 422 divergência de custo); demais → handler padrão.
+   */
+  app.post('/:id/itens/usar-calculo', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string; perfil?: string }
+    const { id } = z
+      .object({ id: z.string().uuid({ message: 'id: deve ser um UUID válido' }) })
+      .parse(request.params)
+    const body = z
+      .object({
+        calculoId: z.string({ required_error: 'calculoId: campo obrigatório' }).uuid({ message: 'calculoId: deve ser um UUID válido' }),
+        novaQuantidade: z
+          .number({ invalid_type_error: 'novaQuantidade: deve ser um número inteiro positivo' })
+          .int({ message: 'novaQuantidade: deve ser um número inteiro positivo' })
+          .positive({ message: 'novaQuantidade: deve ser um número inteiro positivo' })
+          .optional(),
+      })
+      .parse(request.body)
+
+    let resultado
+    try {
+      resultado = await copiarCalculo({
+        empresaId: user.empresaId,
+        usuarioId: user.id,
+        origemId: body.calculoId,
+        modo: 'ITEM',
+        orcamentoId: id,
+        novaQuantidade: body.novaQuantidade,
+      })
+    } catch (err) {
+      if (err instanceof CopiaCalculoError) {
+        return reply.status(err.statusCode).send({ message: err.message })
+      }
+      throw err
+    }
+
+    // Pós-commit: reconsolida o cabeçalho do orçamento (empresaId explícito).
+    await reconsolidarOrcamento(id, user.empresaId)
+
+    return reply.status(201).send({
+      itemId: resultado.itemId,
+      calculoId: resultado.calculoId,
+      numeroCalculo: resultado.numeroCalculo,
+      avisos: resultado.avisos,
+    })
+  })
+
+  /**
    * POST /api/orcamento-grafico/de-calculo
    *
    * "Puxar Cálculo" no PONTO DE CRIAÇÃO (abordagem A da spec
@@ -6519,10 +6616,16 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     empresaId: string,
     db: DbClient = prisma,
   ): Promise<void> {
-    const planos = await db.planoCalculoGrafico.findMany({
+    const planosTodos = await db.planoCalculoGrafico.findMany({
       where: { itemId, empresaId },
       orderBy: { sequencia: 'asc' },
-      select: { sequencia: true, resultadoCalculo: true, custoSuporte: true, custoImpressao: true, custoAcabamento: true },
+      select: { sequencia: true, resultadoCalculo: true, custoSuporte: true, custoImpressao: true, custoAcabamento: true, especificacao: true },
+    })
+    // Plano_Base (gravado pelo Servico_Copia) é só exibição: não entra na soma de custo
+    // (Req 8.2/8.3/9.1/9.2). Se só existir Plano_Base, cai no caminho legado item-único.
+    const planos = planosTodos.filter((p) => {
+      const esp = p.especificacao as { somenteExibicao?: unknown } | null
+      return !(esp && typeof esp === 'object' && esp.somenteExibicao === true)
     })
 
     if (planos.length > 0) {

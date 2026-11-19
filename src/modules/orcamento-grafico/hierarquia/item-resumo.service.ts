@@ -9,7 +9,7 @@ import { exigirOrcamentoDaEmpresa, paraNumero, type DbClient } from './hierarqui
 export interface ItemResumoDTO {
   id: string
   sequencia: number
-  /** Número do cálculo de origem (numeroCalcgraf ?? numero); null se o item não veio de cálculo. */
+  /** Número do cálculo próprio do item (fallback: o de origem), como numeroCalcgraf ?? numero; null sem cálculo. */
   calculo: number | null
   linhaProduto: string | null
   tipoProduto: string | null
@@ -58,12 +58,14 @@ export async function listarItensResumo(
       pendente: true,
       tipoEmbalagemId: true,
       produtoGraficoId: true,
+      calculoGraficoId: true,
       calculoGraficoOrigemId: true,
     },
   })
   if (itens.length === 0) return []
 
-  const idsCalculo = unicos(itens.map((i) => i.calculoGraficoOrigemId))
+  // Cálculo próprio do item (calculoGraficoId) com fallback para o de origem.
+  const idsCalculo = unicos(itens.flatMap((i) => [i.calculoGraficoId, i.calculoGraficoOrigemId]))
   const idsProduto = unicos(itens.map((i) => i.produtoGraficoId))
   const idsEmbalagem = unicos(itens.map((i) => i.tipoEmbalagemId))
   const idsItem = itens.map((i) => i.id)
@@ -112,7 +114,9 @@ export async function listarItensResumo(
   }
 
   return itens.map((i) => {
-    const calc = i.calculoGraficoOrigemId ? mapaCalculo.get(i.calculoGraficoOrigemId) : undefined
+    const calc =
+      (i.calculoGraficoId ? mapaCalculo.get(i.calculoGraficoId) : undefined) ??
+      (i.calculoGraficoOrigemId ? mapaCalculo.get(i.calculoGraficoOrigemId) : undefined)
     const prod = i.produtoGraficoId ? mapaProduto.get(i.produtoGraficoId) : undefined
     const temCalculo = itemTemCalculo(i)
     return {

@@ -6343,6 +6343,16 @@ async function migrarOrcamentoGraficoCadastrosRelacoes() {
 
   await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "produto_grafico_id" TEXT`)
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)
+
+  // Paridade de fluxo legado (spec orcamento-grafico-paridade-fluxo-legado, tarefa 1.1).
+  // ADITIVO: colunas nulas ou com DEFAULT, sem constraint; não toca custo/consolidado/resultado.
+  await exec(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "origem_copia_id" TEXT`)
+  await exec(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "cancelado" BOOLEAN NOT NULL DEFAULT false`)
+  await exec(`ALTER TABLE "calculo_grafico" ADD COLUMN IF NOT EXISTS "status_anterior" VARCHAR(20)`)
+  await exec(`CREATE INDEX IF NOT EXISTS "calculo_grafico_empresa_id_cancelado_idx" ON "calculo_grafico"("empresa_id","cancelado")`)
+  await exec(`CREATE INDEX IF NOT EXISTS "calculo_grafico_empresa_id_origem_copia_id_idx" ON "calculo_grafico"("empresa_id","origem_copia_id")`)
+  await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "calculo_grafico_id" TEXT`)
+  await exec(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "tipo_plano_id" TEXT`)
   // Hierarquia Item/Plano (D1) — especificação do plano (Json versionado, versao: 1).
   // ADITIVO, nulo, fora do cálculo: o motor não lê esta coluna.
   await exec(`ALTER TABLE "plano_calculo_grafico" ADD COLUMN IF NOT EXISTS "especificacao" JSONB`)
