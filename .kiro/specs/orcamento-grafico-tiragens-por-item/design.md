@@ -63,3 +63,8 @@ servicoExterno, margemPerc Decimal(9,4), valorTotal, valorInformado Boolean, cmV
 ## 6. Decisões fechadas
 P1 (resolvida): o PedidoVenda recebe uma única tiragem, escolhida na aprovação. A conferir na implementação: o excedente de 10% da OP (fixo ou parâmetro) e a quantidade do PedidoItem, que o join do banco restaurado não retornou.
 
+## 7. Pendências conhecidas
+- Margem de volta do Calcgraf: no cálculo 15168 o AliqMargem gravado difere em ~3 pontos da margem que sai da fórmula do motor com o CEV conhecido (ICMS 3 + PIS/Cofins 9,25 + comissão 3 + juros 2 = 17,25%). O CEV implícito varia por tiragem (20,45 / 20,54 / 20,65). Há componente de CEV ainda não decifrado. O VALOR total digitado vale; só a margem exibida pode divergir do Calcgraf. Tratar na tarefa 6 ou depois.
+- Item ancorado (puxado de cálculo): calcularNaTiragem deve devolver o custo ancorado na quantidade de origem, para o espelho não sobrescrever o valor real.
+- A baseline do 	sc --noEmit hoje é de 139 erros (regra citava 65); nenhum nos arquivos desta spec.
+
