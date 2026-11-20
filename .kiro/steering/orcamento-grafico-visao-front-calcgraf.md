@@ -20,7 +20,7 @@ FECHAMENTO = totalizador de TODOS os itens (com seus lançamentos)
 
 1. Um orçamento tem **vários itens**.
 2. Cada item tem **dados do produto/item** (comuns a todos os planos).
-3. Dentro do item, exceto os produtos de **plano único** (linha **Cartucho** e **Lâmina Simples**),
+3. Dentro do item, exceto os produtos de **plano único** (linhas **Cartucho**, **Lâmina Simples** e **Sacola**; ver `docs/orcamento-grafico-linhas-de-produto.md`),
    pode haver **vários planos**; **cada plano tem suas próprias especificações**.
 4. O **Fechamento** totaliza todos os itens do orçamento, com os lançamentos de cada um.
 5. O Vizor deve mostrar **exatamente** o que é dado do ORÇAMENTO, do ITEM e do PLANO,
@@ -49,7 +49,7 @@ Título = nome do produto. Campos do ITEM (nível produto):
 **Acondicionamento** (2 listas marcáveis: Caixa Padrão/Embalar, e a escolhida) + **Conteúdo por volume** ·
 botões/linhas **Itens Diversos · Itens Fornecidos · Campos Livres · Observação · Obs. Áreas de Op**.
 
-### 3.A Item de PLANO ÚNICO (linha Cartucho e Lâmina Simples) — NÃO tem grid de planos
+### 3.A Item de PLANO ÚNICO (linhas Cartucho, Lâmina Simples e Sacola) — NÃO tem grid de planos
 Tudo na MESMA tela do item (print do orçamento 5622): além dos campos do item acima, mostra
 os campos do único plano, diretamente: `Cores` (ex.: 5x0) · `Processo de Impressão` (+ botão Pré e cadeado) ·
 `Cobertura de Tinta` · `Fabricante` · `Suporte` (+ NC) · `Form.Sup.` · `Fornecido` · `Microondulado` ·
@@ -106,7 +106,7 @@ Campos do PLANO:
 
 1. **Três níveis visuais distintos**: (a) Orçamento (itens + Fechamento total), (b) Item (dados do produto),
    (c) Plano (especificação). Nunca misturar campos de plano na tela do item multi-plano, nem campos de item na tela do plano.
-2. **Plano único (Cartucho / Lâmina Simples):** uma única tela de item com os campos do plano embutidos; sem grid de planos.
+2. **Plano único (Cartucho / Lâmina Simples / Sacola):** uma única tela de item com os campos do plano embutidos; sem grid de planos.
    Quem decide é o cadastro do Produto (plano fixo / `TipoPlano.fixo` e linha de produto); não hardcodar nomes.
 3. **Multi-plano:** item mostra grid de planos + Incluir/Copiar/Excluir/Reordenar; clicar no plano abre a Tela 3.
 4. **Fechamento:** totalizador do orçamento, por tiragem, somando TODOS os itens com os lançamentos de cada item
