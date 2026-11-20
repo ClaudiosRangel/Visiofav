@@ -7,6 +7,7 @@ import { authenticate } from '../../middleware/authenticate'
 import {
   calcularItem,
   ItemOrcamentoError,
+  montarParamsDoItem,
   montarParamsDoPlano,
   type ItemOrcamentoInput,
   type PlanoCalculoInput,
@@ -45,6 +46,10 @@ import {
 } from './cadastros/serie-documento.service'
 import { especificacaoPlanoSchema } from './hierarquia/especificacao-plano'
 import { HierarquiaError } from './hierarquia/hierarquia-common'
+import { calcularOrcamentoGrafico as calcularMotorTiragem } from './orcamento-grafico-calculo.service'
+import { recalcularTiragensDoItem } from './hierarquia/tiragens-item.service'
+import { registrarRotasTiragens } from './hierarquia/tiragens-item.routes'
+import { brutoDePlanos, contextoDePrecoDeParams, validarTiragens } from './hierarquia/tiragens-item-puro'
 import { exigirAbaixoDoLimite, inserirPlanoComPosicao } from './hierarquia/planos-ordem.service'
 import { mapearFotoPlanos, type PlanoMapeado } from './calculo-grafico/foto-planos.service'
 import { aplicarDecomposicaoStc, normalizarCustosStc, limparDescStc } from './calculo-grafico/decomposicao-stc.service'
@@ -463,6 +468,23 @@ const itemOrcamentoBodySchema = z.object({
   tabelaMargemId: z.string().uuid().optional().nullable(),
   // Markup escolhido p/ o Valor Total consolidado do orçamento.
   margemSelecionada: z.number().optional().nullable(),
+  // Várias tiragens do item (valem para todos os planos). Ausente = não altera; [] = remove.
+  // A validação de negócio (1..20, inteiros, sem repetição) fica em `validarTiragens`.
+  tiragens: z
+    .array(z.number())
+    .optional()
+    .refine(
+      (v) => {
+        if (!v || v.length === 0) return true
+        try {
+          validarTiragens(v)
+          return true
+        } catch {
+          return false
+        }
+      },
+      { message: 'informe de 1 a 20 tiragens inteiras e positivas, sem repetição' },
+    ),
   // ── Paridade Calcgraf (opcionais/aditivos — já entendidos pelo motor) ──
   servicosExternos: z.array(z.object({ descricao: z.string(), valor: z.number() })).optional(),
   creditosFiscais: z.number().optional(),
@@ -5939,6 +5961,20 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     await reconsolidarOrcamento(id, user.empresaId)
 
+    // Várias tiragens (aditivo): item criado já com a lista de tiragens.
+    if (body.tiragens && body.tiragens.length > 0) {
+      try {
+        await sincronizarTiragensDoItem(id, item.id, user.empresaId, {
+          tiragens: validarTiragens(body.tiragens),
+          inputItem: montarInputDoItem(body),
+          materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
+        })
+      } catch (err) {
+        if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+        if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+        throw err
+      }
+    }
     return reply.status(201).send(item)
   })
 
@@ -6382,6 +6418,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     await reconsolidarOrcamento(id, user.empresaId)
 
+    // Várias tiragens (aditivo): lista nova do corpo; sem lista, mantém as linhas já gravadas.
+    try {
+      await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
+        tiragens: body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens),
+        inputItem: montarInputDoItem(body),
+        materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
+      })
+    } catch (err) {
+      if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+      if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
     // Passo aditivo: cálculo próprio do item do zero acompanha a gravação.
     await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
 
@@ -6476,10 +6524,27 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
     await reconsolidarOrcamento(id, user.empresaId)
 
+    // Várias tiragens (aditivo): recalcula as linhas do item com o mesmo input desta chamada.
+    let tiragensCalculadas: Awaited<ReturnType<typeof sincronizarTiragensDoItem>> = null
+    try {
+      tiragensCalculadas = await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
+        tiragens: body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens),
+        inputItem: montarInputDoItem(body),
+        materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
+      })
+    } catch (err) {
+      if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+      if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+      throw err
+    }
     // Passo aditivo: cálculo próprio do item do zero acompanha o cálculo.
     await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
 
-    return { resultado, fechamento: { custoProducao: fech.custoProducao, valorTotal: fech.valorTotal } }
+    return {
+      resultado,
+      fechamento: { custoProducao: fech.custoProducao, valorTotal: fech.valorTotal },
+      ...(tiragensCalculadas ? { tiragens: tiragensCalculadas.map(({ contexto: _c, ...l }) => l) } : {}),
+    }
   })
 
   /**
@@ -6773,6 +6838,143 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     await reconsolidarOrcamento(orcamentoId, empresaId, db)
   }
 
+  /**
+   * Recalcula e grava as TIRAGENS do item (spec orcamento-grafico-tiragens-por-item).
+   *
+   * A lista de tiragens vale para todos os planos: cada tiragem é calculada pelo motor atual
+   * (`calcularOrcamentoGrafico`, sem alteração) e o item soma os planos naquela quantidade.
+   *  - `opts.tiragens` = lista nova (já validada); `[]` remove; `undefined` mantém as linhas existentes
+   *    (sem linhas, o item é de uma tiragem só e nada é feito: devolve null).
+   *  - Item sem planos: usa o input do item que a rota montou (`opts.inputItem`); a tiragem de origem
+   *    de um cálculo da biblioteca mantém o valor REAL do Calcgraf (`ancorarCustoCalcgraf`), as demais
+   *    seguem o motor.
+   *  - Item com planos: cada plano é recalculado com seus próprios dados persistidos; o aproveitamento
+   *    do plano é o já calculado (não depende da tiragem).
+   * `empresaId` explícito em toda consulta.
+   */
+  async function sincronizarTiragensDoItem(
+    orcamentoId: string,
+    itemId: string,
+    empresaId: string,
+    opts: {
+      tiragens?: number[]
+      inputItem?: ItemOrcamentoInput
+      materiais?: MaterialAcabamentoVinculo[] | null
+    } = {},
+  ) {
+    // Item de uma tiragem só (sem linhas e sem lista nova): nada a fazer, com uma consulta leve.
+    if (opts.tiragens === undefined) {
+      const temLinhas = await prisma.itemTiragemOrcamentoGrafico.findFirst({
+        where: { itemId, empresaId },
+        select: { id: true },
+      })
+      if (!temLinhas) return null
+    }
+    const item = await carregarItemDaEmpresa(orcamentoId, itemId, empresaId)
+    if (!item) return null
+    const planosTodos = await prisma.planoCalculoGrafico.findMany({
+      where: { itemId, empresaId },
+      orderBy: { sequencia: 'asc' },
+      select: {
+        sequencia: true, nome: true, suporteId: true, gramatura: true,
+        formatoLarguraMm: true, formatoAlturaMm: true, numCores: true, cores: true,
+        maquinaId: true, acabamentosRicos: true, resultadoCalculo: true, especificacao: true,
+      },
+    })
+    // Plano_Base é só exibição e não entra no custo (mesma regra de reconsolidarItemComPlanos).
+    const planos = planosTodos.filter((p) => {
+      const esp = p.especificacao as { somenteExibicao?: unknown } | null
+      return !(esp && typeof esp === 'object' && esp.somenteExibicao === true)
+    })
+
+    // Tiragem do cálculo de origem (item puxado da biblioteca): só nela vale a âncora.
+    let origemQuantidade: number | null = null
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ calculo_grafico_origem_id: string | null }>>(
+        `SELECT calculo_grafico_origem_id FROM item_orcamento_grafico WHERE id = $1 AND empresa_id = $2`,
+        itemId,
+        empresaId,
+      )
+      const origemId = rows[0]?.calculo_grafico_origem_id
+      if (origemId) {
+        const calc = await prisma.calculoGrafico.findFirst({ where: { id: origemId, empresaId }, select: { quantidade: true } })
+        origemQuantidade = calc?.quantidade ?? null
+      }
+    } catch {
+      origemQuantidade = null
+    }
+
+    const precoItem = await precoKgPapelDoItem(item.papelId, empresaId)
+    const baseInput: ItemOrcamentoInput = opts.inputItem ?? reconstruirInputBaseDoItem(item, precoItem)
+
+    const calcularNaTiragem =
+      planos.length > 0
+        ? async (quantidade: number) => {
+            const fechamentos: Array<ReturnType<typeof fechamentoPlanoDoResultado>> = []
+            let paramsUltimo: Awaited<ReturnType<typeof montarParamsDoPlano>> | null = null
+            for (const p of planos) {
+              const aproveitamento = Number((p.resultadoCalculo as { encaixe?: { aproveitamento?: number } } | null)?.encaixe?.aproveitamento ?? 0)
+              const inputPlano: ItemOrcamentoInput =
+                aproveitamento > 0
+                  ? { ...baseInput, quantidade, aproveitamentoManual: aproveitamento, montagemLinhas: null, montagemColunas: null }
+                  : { ...baseInput, quantidade }
+              const params = await montarParamsDoPlano(empresaId, inputPlano, {
+                nome: p.nome,
+                suporteId: p.suporteId ?? null,
+                gramatura: numOuUndef(p.gramatura),
+                formatoLarguraMm: numOuUndef(p.formatoLarguraMm),
+                formatoAlturaMm: numOuUndef(p.formatoAlturaMm),
+                numCores: p.numCores,
+                cores: (p.cores ?? undefined) as PlanoCalculoInput['cores'],
+                maquinaId: p.maquinaId ?? null,
+                acabamentosRicos: (p.acabamentosRicos ?? undefined) as PlanoCalculoInput['acabamentosRicos'],
+              })
+              paramsUltimo = params
+              fechamentos.push(fechamentoPlanoDoResultado(p.sequencia, calcularPlano(params)))
+            }
+            return { bruto: brutoDePlanos(fechamentos), ctx: contextoDePrecoDeParams(paramsUltimo!), valorAncorado: null }
+          }
+        : async (quantidade: number) => {
+            const params = await montarParamsDoItem(empresaId, { ...baseInput, quantidade })
+            const resultado = calcularMotorTiragem(params)
+            const ancorado = origemQuantidade !== null && quantidade === origemQuantidade
+            if (ancorado) await ancorarCustoCalcgraf(empresaId, itemId, resultado)
+            aplicarMateriaisComputadosAoResultado(resultado, somarMateriaisComputados(opts.materiais))
+            return {
+              bruto: {
+                materialDireto: resultado.materialDireto,
+                custoTransformacao: resultado.custoTransformacao,
+                servicoExterno: resultado.servicoExterno,
+              },
+              ctx: contextoDePrecoDeParams(params),
+              valorAncorado: ancorado ? Number(resultado.precoVenda) || null : null,
+            }
+          }
+
+    const linhas = await recalcularTiragensDoItem({
+      empresaId,
+      itemId,
+      tiragens: opts.tiragens,
+      quantidadeAtual: item.quantidade,
+      calcularNaTiragem,
+    })
+    if (linhas !== null) await reconsolidarOrcamento(orcamentoId, empresaId)
+    return linhas
+  }
+  /**
+   * Mesma sincronização, para as rotas de PLANO: o plano já foi gravado, então uma falha ao refazer as
+   * tiragens não pode desfazer nem esconder o salvamento. Registra o aviso e segue; as linhas ficam
+   * como estavam até a próxima sincronização bem-sucedida. Item sem tiragens: não faz nada.
+   */
+  async function sincronizarTiragensSemFalhar(orcamentoId: string, itemId: string, empresaId: string): Promise<void> {
+    try {
+      await sincronizarTiragensDoItem(orcamentoId, itemId, empresaId)
+    } catch (err) {
+      app.log.warn({ err, orcamentoId, itemId }, 'tiragens do item não sincronizadas após alterar plano')
+    }
+  }
+  // Rotas das tiragens do item (GET lista; PUT valor/margem por tiragem).
+  registrarRotasTiragens(app, { reconsolidarOrcamento: (orcamentoId, empresaId) => reconsolidarOrcamento(orcamentoId, empresaId) })
   /** Serializa os custos espelho + resultado de um plano a partir do resultado do motor. */
   function dadosPersistenciaPlano(body: PlanoBody, empresaId: string, itemId: string, sequencia: number, resultado: ResultadoOrcamento) {
     const fech = fechamentoPlanoDoResultado(sequencia, resultado)
@@ -6859,6 +7061,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
 
     await reconsolidarItemComPlanos(id, itemId, empresaId)
+    await sincronizarTiragensSemFalhar(id, itemId, empresaId)
 
     return reply.status(201).send(plano)
   })
@@ -6925,6 +7128,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
 
     await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+    await sincronizarTiragensSemFalhar(id, itemId, user.empresaId)
 
     return plano
   })
@@ -6952,6 +7156,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     await prisma.planoCalculoGrafico.delete({ where: { id: planoId } })
 
     await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+    await sincronizarTiragensSemFalhar(id, itemId, user.empresaId)
 
     return reply.status(204).send()
   })
@@ -7001,6 +7206,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
 
     await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+    await sincronizarTiragensSemFalhar(id, itemId, user.empresaId)
 
     return { plano, resultado }
   })

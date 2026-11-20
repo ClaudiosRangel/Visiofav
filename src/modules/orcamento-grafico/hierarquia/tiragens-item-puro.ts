@@ -62,6 +62,8 @@ export interface LinhaTiragem {
   valorInformado: boolean
   cmValor: number
   cmPerc: number
+  /** Contexto de preço usado; guardado para refazer o valor sem recalcular o item. */
+  contexto: ContextoPrecoTiragem
 }
 
 const r2 = (x: number) => Math.round((x + Number.EPSILON) * 100) / 100
@@ -103,6 +105,37 @@ function cevDe(ctx: ContextoPrecoTiragem): number {
   return m.impostos + m.comissao + m.despAdm
 }
 
+/**
+ * Deriva o contexto de preço a partir dos `ParamsOrcamento` que o motor usou. Replica a regra do
+ * motor: com `cev` detalhado, o divisor usa impostos = icms + juros + pisCofins e comissão =
+ * comissões (despAdm = 0), e o markup vem da margem resolvida; sem `cev`, usa a margem como está.
+ */
+export function contextoDePrecoDeParams(
+  params: Pick<ParamsOrcamento, 'margem' | 'cev' | 'creditosFiscais' | 'encargoFinanceiroPerc'>,
+): ContextoPrecoTiragem {
+  const c = params.cev
+  if (c) {
+    return {
+      margem: {
+        impostos: c.icms + c.juros + c.pisCofins,
+        comissao: c.comissoes,
+        despAdm: 0,
+        markup: params.margem.markup,
+      },
+      cevPerc: c.icms + c.juros + c.pisCofins + c.comissoes,
+      creditosFiscais: params.creditosFiscais,
+      encargoFinanceiroPerc: params.encargoFinanceiroPerc,
+    }
+  }
+  const m = params.margem
+  return {
+    margem: { ...m },
+    cevPerc: m.impostos + m.comissao + m.despAdm,
+    creditosFiscais: params.creditosFiscais,
+    encargoFinanceiroPerc: params.encargoFinanceiroPerc,
+  }
+}
+
 /** Forma valor, margem e CM de UMA tiragem a partir dos custos já somados. */
 export function formarLinhaTiragem(
   quantidade: number,
@@ -141,6 +174,7 @@ export function formarLinhaTiragem(
     valorInformado: informado,
     cmValor,
     cmPerc,
+    contexto: ctx,
   }
 }
 

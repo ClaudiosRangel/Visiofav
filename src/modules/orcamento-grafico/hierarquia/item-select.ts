@@ -20,6 +20,22 @@ export const PLANO_SELECT_HIDRATACAO = {
   custoAcabamento: true,
 } as const
 
+/** Select das tiragens do item na hidratação do GET /:id (sem o contexto interno de preço). */
+export const TIRAGEM_SELECT_HIDRATACAO = {
+  id: true,
+  ordem: true,
+  quantidade: true,
+  custoProducao: true,
+  materialDireto: true,
+  custoTransformacao: true,
+  servicoExterno: true,
+  margemPerc: true,
+  faixaMargem: true,
+  valorTotal: true,
+  valorInformado: true,
+  cmValor: true,
+  cmPerc: true,
+} as const
 /**
  * Select de hidratação dos itens do orçamento gráfico (GET /:id).
  * Fonte única: extraído de orcamento-grafico.routes.ts sem alterar nenhum campo.
@@ -53,6 +69,8 @@ export const ITEM_SELECT_HIDRATACAO = {
   itensFornecidos: true,
   camposLivres: true,
   quantidade: true,
+  // Várias tiragens do item (uma linha por tiragem; a de ordem 0 é a referência espelhada no item).
+  tiragens: { orderBy: { ordem: 'asc' }, select: TIRAGEM_SELECT_HIDRATACAO },
   resultadoCalculo: true,
   margemSelecionada: true,
   custoProducao: true,

@@ -28,6 +28,8 @@ const CHAVES_ITEM_D3 = [
   'numeroSanfonas', 'numeroPaginas',
 ]
 
+// Várias tiragens por item (spec orcamento-grafico-tiragens-por-item) — relação aditiva.
+const CHAVES_ITEM_TIRAGENS = ['tiragens']
 const CHAVES_PLANO_ANTIGAS = [
   'id', 'sequencia', 'nome', 'tipoPlanoId', 'suporteId', 'suporteProducaoId', 'gramatura',
   'formatoLarguraMm', 'formatoAlturaMm', 'numCores', 'cores', 'maquinaId', 'acabamentosRicos',
@@ -35,9 +37,18 @@ const CHAVES_PLANO_ANTIGAS = [
 ]
 
 describe('ITEM_SELECT_HIDRATACAO', () => {
+  it('as tiragens vêm ordenadas pela referência primeiro e não expõem o contexto interno de preço', () => {
+    expect(ITEM_SELECT_HIDRATACAO.tiragens.orderBy).toEqual({ ordem: 'asc' })
+    const chaves = Object.keys(ITEM_SELECT_HIDRATACAO.tiragens.select)
+    expect(chaves).toEqual(
+      expect.arrayContaining(['ordem', 'quantidade', 'custoProducao', 'margemPerc', 'valorTotal', 'valorInformado', 'cmValor', 'cmPerc']),
+    )
+    expect(chaves).not.toContain('contexto')
+    expect(chaves).not.toContain('empresaId')
+  })
   it('mantém as chaves do select antigo do GET /:id (item) e só acrescenta as colunas D3', () => {
     expect(Object.keys(ITEM_SELECT_HIDRATACAO).sort()).toEqual(
-      [...CHAVES_ITEM_ANTIGAS, ...CHAVES_ITEM_D3].sort(),
+      [...CHAVES_ITEM_ANTIGAS, ...CHAVES_ITEM_D3, ...CHAVES_ITEM_TIRAGENS].sort(),
     )
   })
 

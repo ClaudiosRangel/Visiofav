@@ -15,6 +15,7 @@ const { prismaMock, calcularItemMock, montarParamsDoPlanoMock } = vi.hoisted(() 
     orcamentoGrafico: model(),
     itemOrcamentoGrafico: model(),
     planoCalculoGrafico: model(),
+    itemTiragemOrcamentoGrafico: model(),
     produtoGrafico: model(),
     tipoPlanoGrafico: model(),
     precoMateriaPrima: model(),

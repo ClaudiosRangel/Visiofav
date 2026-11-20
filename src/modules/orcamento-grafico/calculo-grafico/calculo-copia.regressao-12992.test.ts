@@ -34,6 +34,7 @@ const { prismaMock, calcularItemMock } = vi.hoisted(() => {
     orcamentoGrafico: model(),
     itemOrcamentoGrafico: model(),
     planoCalculoGrafico: model(),
+    itemTiragemOrcamentoGrafico: model(),
     produtoGrafico: model(),
     defaultProdutoPlano: model(),
     tipoPlanoGrafico: model(),

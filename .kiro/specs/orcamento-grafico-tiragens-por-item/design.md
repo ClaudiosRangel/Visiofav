@@ -1,4 +1,4 @@
-﻿# Design — Várias tiragens por item (substitui `orcamento-grafico-varias-tiragens`)
+# Design — Várias tiragens por item (substitui `orcamento-grafico-varias-tiragens`)
 
 Status: APROVADO pelo usuário em 19/11/2026. Execução pela ordem do tasks.md.
 
@@ -67,4 +67,8 @@ P1 (resolvida): o PedidoVenda recebe uma única tiragem, escolhida na aprovaçã
 - Margem de volta do Calcgraf: no cálculo 15168 o AliqMargem gravado difere em ~3 pontos da margem que sai da fórmula do motor com o CEV conhecido (ICMS 3 + PIS/Cofins 9,25 + comissão 3 + juros 2 = 17,25%). O CEV implícito varia por tiragem (20,45 / 20,54 / 20,65). Há componente de CEV ainda não decifrado. O VALOR total digitado vale; só a margem exibida pode divergir do Calcgraf. Tratar na tarefa 6 ou depois.
 - Item ancorado (puxado de cálculo): calcularNaTiragem deve devolver o custo ancorado na quantidade de origem, para o espelho não sobrescrever o valor real.
 - A baseline do 	sc --noEmit hoje é de 139 erros (regra citava 65); nenhum nos arquivos desta spec.
-
+- Coluna contexto (JSON) na tabela de tiragens: guarda margem, CEV, créditos e encargo usados no cálculo, para refazer o valor de uma tiragem (valor digitado ou margem) sem reconstruir o item.
+- Copiar item (item-copia.service) ainda NÃO copia as linhas de tiragem. Tratar na tarefa 5 ou 6.
+- Recalcular tiragens a partir das rotas de PLANO reconstrói o input do item pelo persistido (mesma limitação já existente nas rotas de plano): margemOverride e 	abelaMargemId do Fechamento editável não são reaplicados. O recálculo pelo PUT/POST do item usa o input completo do corpo.
+- Item multi-plano: o valor de cada tiragem passa a ser formado pelo preço do motor (custo / (1 − margem − CEV)), e o espelho no item substitui o valor derivado da proporção antiga de econsolidarItemComPlanos.
+- Outras tiragens de item ancorado usam o motor (~5% abaixo do Calcgraf, como no recálculo do zero); o backfill por CalculoSTC (tarefa 8) corrige isso.

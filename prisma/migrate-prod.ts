@@ -5121,6 +5121,7 @@ async function seedMateriaisFromOPs() {
   "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "item_tiragem_orcamento_grafico_pkey" PRIMARY KEY ("id")
 )`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_tiragem_orcamento_grafico" ADD COLUMN IF NOT EXISTS "contexto" JSONB`)
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "item_tiragem_orcamento_grafico_item_id_quantidade_key" ON "item_tiragem_orcamento_grafico"("item_id","quantidade")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "item_tiragem_orcamento_grafico_empresa_id_idx" ON "item_tiragem_orcamento_grafico"("empresa_id")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "item_tiragem_orcamento_grafico_item_id_idx" ON "item_tiragem_orcamento_grafico"("item_id")`)

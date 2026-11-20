@@ -5302,6 +5302,9 @@ model ItemTiragemOrcamentoGrafico {
   valorInformado Boolean @default(false) @map("valor_informado")
   cmValor Decimal? @map("cm_valor") @db.Decimal(14, 2)
   cmPerc  Decimal? @map("cm_perc") @db.Decimal(9, 4)
+  /// Contexto de preco usado no calculo (margem, CEV, creditos, encargo): permite refazer o valor
+  /// desta tiragem (valor digitado ou margem) sem recalcular o item inteiro.
+  contexto Json?
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
