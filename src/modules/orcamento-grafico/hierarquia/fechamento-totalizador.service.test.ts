@@ -11,11 +11,74 @@ const item = (p: Partial<ItemParaFechamento> & { id: string; sequencia: number }
   ...p,
 })
 
+const tir = (quantidade: number, valorTotal: number, custoProducao: number, margemPerc: number | null, cmValor: number | null) => ({
+  quantidade,
+  valorTotal,
+  custoProducao,
+  margemPerc,
+  cmValor,
+})
+
+describe('agregarFechamento — várias tiragens por item', () => {
+  it('item com 3 tiragens gera 3 linhas, uma por tiragem, em ordem crescente', () => {
+    const r = agregarFechamento('o1', [
+      item({ id: 'a', sequencia: 1, tiragens: [tir(4000, 400, 200, 20, 100), tir(2000, 250, 150, 20, 60), tir(6000, 500, 260, 20, 130)] }),
+    ])
+    expect(r.linhas.map((l) => l.tiragem)).toEqual([2000, 4000, 6000])
+    expect(r.linhas[0]).toMatchObject({ valorTotal: 250, custoProducao: 150, itens: 1, itensSemEstaTiragem: 0, valorUnitario: 0.125 })
+  })
+  it('a lista de tiragens manda: a quantidade/valor do próprio item não entra como linha extra', () => {
+    const r = agregarFechamento('o1', [
+      item({ id: 'a', sequencia: 1, quantidade: 9999, valorTotal: 999, tiragens: [tir(1000, 100, 50, 20, 30)] }),
+    ])
+    expect(r.linhas.map((l) => l.tiragem)).toEqual([1000])
+    expect(r.linhas[0].valorTotal).toBe(100)
+  })
+  it('dois itens com as mesmas tiragens somam por tiragem (o total do orçamento é a soma dos itens)', () => {
+    const r = agregarFechamento('o1', [
+      item({ id: 'a', sequencia: 1, tiragens: [tir(1000, 100, 60, 20, 10), tir(2000, 180, 100, 20, 20)] }),
+      item({ id: 'b', sequencia: 2, tiragens: [tir(1000, 300, 150, 40, 90), tir(2000, 500, 260, 40, 150)] }),
+    ])
+    expect(r.linhas).toHaveLength(2)
+    expect(r.linhas[0]).toMatchObject({ tiragem: 1000, valorTotal: 400, custoProducao: 210, itens: 2, margemPerc: 35 })
+    expect(r.linhas[1]).toMatchObject({ tiragem: 2000, valorTotal: 680, custoProducao: 360, itens: 2 })
+  })
+  it('item com uma tiragem só e item com várias coexistem; a linha avisa quantos itens ficaram de fora', () => {
+    const r = agregarFechamento('o1', [
+      item({ id: 'a', sequencia: 1, quantidade: 1000 }),
+      item({ id: 'b', sequencia: 2, tiragens: [tir(1000, 300, 150, 40, 90), tir(2000, 500, 260, 40, 150)] }),
+    ])
+    const l1000 = r.linhas.find((l) => l.tiragem === 1000)!
+    const l2000 = r.linhas.find((l) => l.tiragem === 2000)!
+    expect(l1000).toMatchObject({ itens: 2, itensSemEstaTiragem: 0, valorTotal: 500 })
+    expect(l2000).toMatchObject({ itens: 1, itensSemEstaTiragem: 1, valorTotal: 500 })
+  })
+  it('item cujas linhas todas estão sem custo ou valor vai para "sem cálculo"', () => {
+    const r = agregarFechamento('o1', [
+      item({ id: 'a', sequencia: 1, tiragens: [{ quantidade: 1000, valorTotal: null, custoProducao: null, margemPerc: null, cmValor: null }] }),
+    ])
+    expect(r.linhas).toEqual([])
+    expect(r.quantidadeSemCalculo).toBe(1)
+  })
+  it('margem ausente em uma linha da tiragem deixa margemPerc nulo só nessa tiragem', () => {
+    const r = agregarFechamento('o1', [
+      item({ id: 'a', sequencia: 1, tiragens: [tir(1000, 100, 50, null, 10), tir(2000, 200, 90, 25, 30)] }),
+    ])
+    expect(r.linhas.find((l) => l.tiragem === 1000)!.margemPerc).toBeNull()
+    expect(r.linhas.find((l) => l.tiragem === 2000)!.margemPerc).toBe(25)
+  })
+  it('lista vazia de tiragens equivale a item de uma tiragem só', () => {
+    const a = agregarFechamento('o1', [item({ id: 'a', sequencia: 1, tiragens: [] })])
+    const b = agregarFechamento('o1', [item({ id: 'a', sequencia: 1 })])
+    expect(a.linhas).toEqual(b.linhas)
+  })
+})
+
 describe('agregarFechamento', () => {
   it('1 item → 1 linha', () => {
     const r = agregarFechamento('o1', [item({ id: 'a', sequencia: 1 })])
     expect(r.linhas).toEqual([
-      { tiragem: 1000, margemPerc: 30, contribuicaoMarginalPerc: 25, valorUnitario: 0.2, valorTotal: 200, custoProducao: 100, itens: 1 },
+      { tiragem: 1000, margemPerc: 30, contribuicaoMarginalPerc: 25, valorUnitario: 0.2, valorTotal: 200, custoProducao: 100, itens: 1, itensSemEstaTiragem: 0 },
     ])
     expect(r.itensSemCalculo).toEqual([])
     expect(r.quantidadeSemCalculo).toBe(0)

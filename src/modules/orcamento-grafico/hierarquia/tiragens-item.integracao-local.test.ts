@@ -19,6 +19,7 @@ vi.mock('../../../middleware/authenticate', () => ({
 import Fastify from 'fastify'
 import { prisma } from '../../../lib/prisma'
 import { orcamentoGraficoRoutes } from '../orcamento-grafico.routes'
+import { hierarquiaRoutes } from './hierarquia.routes'
 
 vi.setConfig({ testTimeout: 90_000, hookTimeout: 90_000 })
 const rodar = process.env.INTEGRACAO_LOCAL === '1'
@@ -45,6 +46,7 @@ describe.skipIf(!rodar)('tiragens por item — integração real (banco local)',
       return reply.status(error?.statusCode ?? 500).send({ message: error?.message ?? 'erro' })
     })
     app.register(orcamentoGraficoRoutes, { prefix: P })
+    app.register(hierarquiaRoutes, { prefix: P }) // totalizador do Fechamento, como no server.ts
     await app.ready()
 
     const wega = await prisma.empresa.findFirst({ where: { razaoSocial: { contains: 'CARTON WEGA' } }, select: { id: true } })
@@ -153,6 +155,19 @@ describe.skipIf(!rodar)('tiragens por item — integração real (banco local)',
     expect(ref.statusCode, ref.body).toBe(200)
     const item = await prisma.itemOrcamentoGrafico.findFirst({ where: { id: itemId, empresaId } })
     expect(Number(item?.valorTotal)).toBe(12345.67)
+  })
+
+  it('3b. o Fechamento do orçamento tem uma linha por tiragem e reflete o valor digitado', async () => {
+    const res = await chamar('GET', `${P}/${orcamentoId}/fechamento-totalizador`)
+    expect(res.statusCode, res.body).toBe(200)
+    const f = res.json() as { linhas: Array<any>; itensSemCalculo: unknown[] }
+    expect(f.linhas.map((l) => l.tiragem)).toEqual([1000, 2000, 5000])
+    expect(f.itensSemCalculo).toEqual([])
+    expect(f.linhas.every((l) => l.itens === 1 && l.itensSemEstaTiragem === 0)).toBe(true)
+    // Valores digitados no passo anterior: 12.345,67 (2.000) e 99.999,50 (5.000).
+    expect(f.linhas.find((l) => l.tiragem === 2000).valorTotal).toBe(12345.67)
+    expect(f.linhas.find((l) => l.tiragem === 5000).valorTotal).toBe(99999.5)
+    expect(f.linhas.find((l) => l.tiragem === 5000).valorUnitario).toBeCloseTo(99999.5 / 5000, 4)
   })
 
   it('4. salvar o item de novo sem a lista mantém as linhas e o valor digitado', async () => {

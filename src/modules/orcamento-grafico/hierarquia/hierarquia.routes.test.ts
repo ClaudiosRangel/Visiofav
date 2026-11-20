@@ -258,7 +258,7 @@ describe('GET /:id/fechamento-totalizador', () => {
     expect(res.json()).toEqual({
       orcamentoId: ORC,
       linhas: [
-        { tiragem: 1000, margemPerc: 30, contribuicaoMarginalPerc: 25, valorUnitario: 0.2, valorTotal: 200, custoProducao: 100, itens: 1 },
+        { tiragem: 1000, margemPerc: 30, contribuicaoMarginalPerc: 25, valorUnitario: 0.2, valorTotal: 200, custoProducao: 100, itens: 1, itensSemEstaTiragem: 0 },
       ],
       itensSemCalculo: [],
       quantidadeSemCalculo: 0,
