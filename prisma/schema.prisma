@@ -5028,6 +5028,7 @@ model ItemOrcamentoGrafico {
   orcamento  OrcamentoGrafico @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
   planos     PlanoCalculoGrafico[]
+  tiragens   ItemTiragemOrcamentoGrafico[]
   historicoTrocaSuporte HistoricoTrocaSuporte[]
 
   @@unique([orcamentoId, sequencia])
@@ -5275,6 +5276,41 @@ model PlanoCalculoGrafico {
   @@index([empresaId])
   @@index([itemId])
   @@map("plano_calculo_grafico")
+}
+
+/// Uma linha por tiragem do item (spec orcamento-grafico-tiragens-por-item).
+/// A lista de tiragens e do ITEM e vale para todos os planos; o custo de cada tiragem e a
+/// soma dos planos naquela quantidade. `ItemOrcamentoGrafico.quantidade/custoProducao/valorTotal`
+/// seguem existindo e espelham a tiragem de referencia (ordem 0). Item sem linhas = legado.
+model ItemTiragemOrcamentoGrafico {
+  id        String @id @default(uuid())
+  itemId    String @map("item_id")
+  empresaId String @map("empresa_id")
+  /// 0 = tiragem de referencia (espelhada no item).
+  ordem     Int
+  quantidade Int
+  custoProducao      Decimal? @map("custo_producao") @db.Decimal(14, 2)
+  materialDireto     Decimal? @map("material_direto") @db.Decimal(14, 2)
+  custoTransformacao Decimal? @map("custo_transformacao") @db.Decimal(14, 2)
+  servicoExterno     Decimal? @map("servico_externo") @db.Decimal(14, 2)
+  /// Margem em % (4 casas: quando o valor e digitado a margem e calculada de volta).
+  margemPerc Decimal? @map("margem_perc") @db.Decimal(9, 4)
+  /// Faixa de margem escolhida (0, 1 ou 2); null quando o valor foi informado.
+  faixaMargem Int? @map("faixa_margem")
+  valorTotal  Decimal? @map("valor_total") @db.Decimal(14, 2)
+  /// true = o usuario digitou o valor total desta tiragem.
+  valorInformado Boolean @default(false) @map("valor_informado")
+  cmValor Decimal? @map("cm_valor") @db.Decimal(14, 2)
+  cmPerc  Decimal? @map("cm_perc") @db.Decimal(9, 4)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  item ItemOrcamentoGrafico @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, quantidade])
+  @@index([empresaId])
+  @@index([itemId])
+  @@map("item_tiragem_orcamento_grafico")
 }
 
 /// Histórico de troca de suporte orçado → produção (Fase 3 — Req 7.4).

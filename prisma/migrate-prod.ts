@@ -5108,6 +5108,24 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "plano_calculo_grafico_item_id_sequencia_key" ON "plano_calculo_grafico"("item_id","sequencia")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_plano_calc_empresa" ON "plano_calculo_grafico"("empresa_id")`)
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "idx_plano_calc_item" ON "plano_calculo_grafico"("item_id")`)
+  // ── Várias tiragens por item (spec orcamento-grafico-tiragens-por-item) ──
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "item_tiragem_orcamento_grafico" (
+  "id" TEXT NOT NULL, "item_id" TEXT NOT NULL, "empresa_id" TEXT NOT NULL,
+  "ordem" INTEGER NOT NULL, "quantidade" INTEGER NOT NULL,
+  "custo_producao" DECIMAL(14,2), "material_direto" DECIMAL(14,2),
+  "custo_transformacao" DECIMAL(14,2), "servico_externo" DECIMAL(14,2),
+  "margem_perc" DECIMAL(9,4), "faixa_margem" INTEGER, "valor_total" DECIMAL(14,2),
+  "valor_informado" BOOLEAN NOT NULL DEFAULT false,
+  "cm_valor" DECIMAL(14,2), "cm_perc" DECIMAL(9,4),
+  "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "item_tiragem_orcamento_grafico_pkey" PRIMARY KEY ("id")
+)`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "item_tiragem_orcamento_grafico_item_id_quantidade_key" ON "item_tiragem_orcamento_grafico"("item_id","quantidade")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "item_tiragem_orcamento_grafico_empresa_id_idx" ON "item_tiragem_orcamento_grafico"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "item_tiragem_orcamento_grafico_item_id_idx" ON "item_tiragem_orcamento_grafico"("item_id")`)
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE "item_tiragem_orcamento_grafico" ADD CONSTRAINT "item_tiragem_item_fk" FOREIGN KEY ("item_id") REFERENCES "item_orcamento_grafico"("id") ON DELETE CASCADE`) } catch {}
+  console.log('✅ Orçamento Gráfico: tabela item_tiragem_orcamento_grafico (várias tiragens por item, idempotente)')
   try { await prisma.$executeRawUnsafe(`ALTER TABLE "plano_calculo_grafico" ADD CONSTRAINT "plano_calc_item_fk" FOREIGN KEY ("item_id") REFERENCES "item_orcamento_grafico"("id") ON DELETE CASCADE`) } catch {}
   console.log('✅ Orçamento Gráfico Paridade/OP (Fase 2): tabela plano_calculo_grafico + índices + FK item (idempotente)')
 
