@@ -30,8 +30,10 @@ const corpoTiragemSchema = z
     valorTotal: z.number().positive().optional(),
     margemPerc: z.number().min(-1000).max(1000).optional(),
     faixaMargem: z.number().int().min(0).max(2).optional(),
+    /** true = descarta valor/margem digitados e volta ao valor calculado. */
+    limpar: z.boolean().optional(),
   })
-  .refine((c) => c.valorTotal !== undefined || c.margemPerc !== undefined, {
+  .refine((c) => c.limpar === true || c.valorTotal !== undefined || c.margemPerc !== undefined, {
     message: 'Informe o valor total ou a margem da tiragem.',
   })
 
@@ -71,6 +73,7 @@ export function registrarRotasTiragens(app: FastifyInstance, deps: DepsRotasTira
         valorTotal: corpo.valorTotal ?? null,
         margemPerc: corpo.margemPerc ?? null,
         faixaMargem: corpo.faixaMargem ?? null,
+        limpar: corpo.limpar === true,
       })
       await deps.reconsolidarOrcamento(id, user.empresaId)
       return paraResposta(linha)

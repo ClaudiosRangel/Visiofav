@@ -257,3 +257,21 @@ Para reverter, ler o arquivo de backup e regravar os valores anteriores (todos e
 - O cadastro de tipos de plano de Cartucho Composto (Cartão, Microondulado, Berço, Invólucros) segue com os 3 blocos.
 - "Tipo de Plano" ainda só é incluído depois de salvar o item (D4), e o custo do micro não entra (seção 12).
 
+
+## 14. Camadas do plano no custo (v1, implementado)
+
+Modulo `src/modules/orcamento-grafico/camadas-plano.ts`, chamado em todas as rotas que calculam plano
+(criar, alterar, recalcular e refazer tiragens).
+
+- Le `especificacao.microondulado.suporteId` e `especificacao.capaInterna.suporteId` (PrecoMateriaPrima).
+  Camada sem suporte ou marcada como Fornecido nao entra.
+- Custo da camada = folhas da capa x area da folha do suporte (`SuporteGrafico.formatoLargura/AlturaMm`;
+  sem formato, usa a folha da capa) x gramatura x preco/kg. Soma no material direto do plano.
+- Folhas da capa sao derivadas do peso do papel do motor (o resultado nao expoe as folhas).
+- O detalhe vai em `resultado.camadas` (por camada: folhas, formato, gramatura, preco, peso, custo).
+- Desligar por empresa: parametro `orc.camadasPlano = false`. Falha ao ler cadastro nao derruba o calculo.
+- Teste de referencia: papel do micro do 15185 (7.500 folhas x 600x700 x 230 g a R$ 7,65) = R$ 5.542,43.
+
+Fora da v1: perda fixa propria da camada (Calcgraf ~150 folhas no micro), impressao da capa interna,
+formato de folha diferente por tiragem. Atividades e cola continuam entrando pelo proprio plano.
+Na tela do plano, suporte do microondulado e da capa interna passou a ser opcional.

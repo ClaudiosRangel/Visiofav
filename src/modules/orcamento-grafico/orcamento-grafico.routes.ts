@@ -45,6 +45,8 @@ import {
   ORIGEM_ORCAMENTO,
 } from './cadastros/serie-documento.service'
 import { especificacaoPlanoSchema } from './hierarquia/especificacao-plano'
+import { aplicarCamadasAoResultado } from './camadas-plano'
+import { aplicarTiragemEscolhida, itensComTiragens, pendenciasDeEscolha } from './hierarquia/aprovacao-tiragem'
 import { HierarquiaError } from './hierarquia/hierarquia-common'
 import { calcularOrcamentoGrafico as calcularMotorTiragem } from './orcamento-grafico-calculo.service'
 import { recalcularTiragensDoItem } from './hierarquia/tiragens-item.service'
@@ -4305,6 +4307,33 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     if (orcamento.status !== 'ENVIADO') {
       return reply.status(400).send({ message: 'Só é possível aprovar orçamentos com status ENVIADO' })
     }
+    // Tiragens (tarefa 7): item com mais de uma tiragem exige a escolhida; ela vira a referencia do item.
+    const corpoAprovar = z
+      .object({ tiragens: z.record(z.string().uuid(), z.number().int().positive()).optional() })
+      .parse(request.body ?? {})
+    const itensTiragem = await itensComTiragens(user.empresaId, id)
+    const pendencias = pendenciasDeEscolha(itensTiragem, corpoAprovar.tiragens)
+    if (pendencias.length > 0) {
+      return reply.status(400).send({
+        message: 'Escolha a tiragem aprovada de cada item com mais de uma tiragem.',
+        code: 'TIRAGEM_OBRIGATORIA',
+        itens: pendencias,
+      })
+    }
+    if (corpoAprovar.tiragens) {
+      for (const it of itensTiragem) {
+        const qtd = corpoAprovar.tiragens[it.id]
+        if (qtd != null && it.tiragens.length > 0) await aplicarTiragemEscolhida(user.empresaId, it.id, qtd)
+      }
+      await reconsolidarOrcamento(id, user.empresaId)
+      const recons = await prisma.orcamentoGrafico.findFirst({
+        where: { id, empresaId: user.empresaId },
+        select: { valorTotalConsolidado: true },
+      })
+      if (recons) orcamento.valorTotalConsolidado = recons.valorTotalConsolidado
+      // Com tiragem escolhida o valor do pedido vem dos itens, nao do cabecalho antigo.
+      if (itensTiragem.some((it) => it.tiragens.length > 1)) orcamento.precoVenda = null
+    }
     // Valor total do pedido: single-item usa precoVenda; multi-item usa o
     // valorTotalConsolidado (soma dos itens). Reforço: não aprovar sem preço
     // (evita PedidoVenda com valor 0).
@@ -6930,7 +6959,9 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
                 acabamentosRicos: (p.acabamentosRicos ?? undefined) as PlanoCalculoInput['acabamentosRicos'],
               })
               paramsUltimo = params
-              fechamentos.push(fechamentoPlanoDoResultado(p.sequencia, calcularPlano(params)))
+              const resCamadas = calcularPlano(params)
+              await aplicarCamadasAoResultado(empresaId, p.especificacao, resCamadas, params.papel?.gramatura ?? 0)
+              fechamentos.push(fechamentoPlanoDoResultado(p.sequencia, resCamadas))
             }
             return { bruto: brutoDePlanos(fechamentos), ctx: contextoDePrecoDeParams(paramsUltimo!), valorAncorado: null }
           }
@@ -7039,6 +7070,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       const params = await montarParamsDoPlano(empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
+      await aplicarCamadasAoResultado(empresaId, body.especificacao, resultado, params.papel?.gramatura ?? 0)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
@@ -7083,7 +7115,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const existente = await prisma.planoCalculoGrafico.findFirst({
       where: { id: planoId, itemId, empresaId: user.empresaId },
-      select: { id: true, sequencia: true },
+      select: { id: true, sequencia: true, especificacao: true },
     })
     if (!existente) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
 
@@ -7097,6 +7129,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
+      await aplicarCamadasAoResultado(user.empresaId, (body.especificacao === undefined ? existente.especificacao : body.especificacao), resultado, params.papel?.gramatura ?? 0)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
@@ -7178,7 +7211,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     const existente = await prisma.planoCalculoGrafico.findFirst({
       where: { id: planoId, itemId, empresaId: user.empresaId },
-      select: { id: true, sequencia: true },
+      select: { id: true, sequencia: true, especificacao: true },
     })
     if (!existente) return reply.status(404).send({ message: 'Plano de cálculo não encontrado' })
 
@@ -7189,6 +7222,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
+      await aplicarCamadasAoResultado(user.empresaId, (body.especificacao === undefined ? existente.especificacao : body.especificacao), resultado, params.papel?.gramatura ?? 0)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err

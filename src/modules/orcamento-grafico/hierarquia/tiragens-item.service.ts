@@ -139,13 +139,14 @@ export async function definirEntradaTiragem(
   empresaId: string,
   itemId: string,
   quantidade: number,
-  entrada: { valorTotal?: number | null; margemPerc?: number | null; faixaMargem?: number | null },
+  entrada: { valorTotal?: number | null; margemPerc?: number | null; faixaMargem?: number | null; limpar?: boolean },
   db: typeof prisma = prisma,
 ): Promise<LinhaTiragem> {
   const linha = await db.itemTiragemOrcamentoGrafico.findFirst({ where: { itemId, empresaId, quantidade } })
   if (!linha) throw naoEncontrado()
   const informado = entrada.valorTotal != null && entrada.valorTotal > 0
-  if (!informado && entrada.margemPerc == null) {
+  const limpar = entrada.limpar === true
+  if (!limpar && !informado && entrada.margemPerc == null) {
     throw new HierarquiaError(400, 'Informe o valor total ou a margem da tiragem.')
   }
   const ctx = linha.contexto as unknown as ContextoPrecoTiragem | null
@@ -164,7 +165,9 @@ export async function definirEntradaTiragem(
         quantidade,
         bruto,
         ctx,
-        informado
+        limpar
+          ? {}
+          : informado
           ? { valorInformado: entrada.valorTotal as number }
           : { margemPerc: entrada.margemPerc as number, faixaMargem: entrada.faixaMargem ?? 1 },
       ),

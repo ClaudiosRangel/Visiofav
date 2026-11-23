@@ -20,6 +20,7 @@ import Fastify from 'fastify'
 import { prisma } from '../../../lib/prisma'
 import { orcamentoGraficoRoutes } from '../orcamento-grafico.routes'
 import { hierarquiaRoutes } from './hierarquia.routes'
+import { aplicarTiragemEscolhida } from './aprovacao-tiragem'
 
 vi.setConfig({ testTimeout: 90_000, hookTimeout: 90_000 })
 const rodar = process.env.INTEGRACAO_LOCAL === '1'
@@ -180,6 +181,37 @@ describe.skipIf(!rodar)('tiragens por item — integração real (banco local)',
     expect(Number(l5000.valorTotal)).toBe(99999.5)
   })
 
+  it('4b. voltar ao cálculo: limpar descarta o valor digitado e refaz pela margem do item', async () => {
+    const res = await chamar('PUT', `${P}/${orcamentoId}/itens/${itemId}/tiragens/5000`, { limpar: true })
+    expect(res.statusCode, res.body).toBe(200)
+    const l = res.json()
+    expect(l.valorInformado).toBe(false)
+    expect(Number(l.valorTotal)).not.toBe(99999.5)
+    expect(Number(l.valorTotal)).toBeGreaterThan(0)
+  })
+
+  it('4c. aprovar exige a tiragem escolhida e torna a escolhida a referência do item', async () => {
+    await prisma.orcamentoGrafico.updateMany({ where: { id: orcamentoId, empresaId }, data: { status: 'ENVIADO' } })
+    try {
+      const sem = await chamar('POST', `${P}/${orcamentoId}/aprovar`, {})
+      expect(sem.statusCode, sem.body).toBe(400)
+      expect(sem.json().code).toBe('TIRAGEM_OBRIGATORIA')
+      expect([...sem.json().itens[0].tiragens].sort((a: number, b: number) => a - b)).toEqual([1000, 2000, 5000])
+      const errada = await chamar('POST', `${P}/${orcamentoId}/aprovar`, { tiragens: { [itemId]: 3333 } })
+      expect(errada.statusCode).toBe(400)
+      const ok = await chamar('POST', `${P}/${orcamentoId}/aprovar`, { tiragens: { [itemId]: 5000 } })
+      expect(ok.statusCode, ok.body).toBe(200)
+      const item = await prisma.itemOrcamentoGrafico.findFirst({ where: { id: itemId, empresaId } })
+      expect(item?.quantidade).toBe(5000)
+      const ref = await prisma.itemTiragemOrcamentoGrafico.findFirst({ where: { itemId, empresaId, ordem: 0 } })
+      expect(ref?.quantidade).toBe(5000)
+      expect(Number(item?.valorTotal)).toBe(Number(ref?.valorTotal))
+    } finally {
+      // Volta ao estado anterior para os próximos casos (referência 2000, orçamento em rascunho).
+      await aplicarTiragemEscolhida(empresaId, itemId, 2000)
+      await prisma.orcamentoGrafico.updateMany({ where: { id: orcamentoId, empresaId }, data: { status: 'RASCUNHO', aprovadoEm: null } })
+    }
+  })
   it('5. tiragens inválidas: 400 e nada muda', async () => {
     for (const ruim of [[1000, 1000], [0], [-5], [10.5], Array.from({ length: 21 }, (_, i) => (i + 1) * 100)]) {
       const res = await chamar('PUT', `${P}/${orcamentoId}/itens/${itemId}`, { ...corpoItem, tiragens: ruim })
