@@ -4,6 +4,11 @@ Levantamento de **20/11/2026**. Objetivo: saber, para cada linha de produto, com
 Vizor tem hoje em produção, para implementar uma vez só, sem retrabalho. Este documento é a base para a conferência
 com os prints de tela do Calcgraf que o usuário vai enviar, linha por linha.
 
+> **Leia primeiro `docs/orcamento-planos-calcgraf-HANDOFF.md`** (sessões de 13 e 14/11/2026). Ele já traz as telas das
+> 5 linhas, o fluxograma do Calcgraf, a tabela `RelTabelas` e a lista do que o Vizor precisa configurar. Este arquivo
+> só **confere o que está em produção em 20/11/2026** e lista as divergências. Os "prints pedidos" da seção 8 já
+> existiam em sua maior parte no handoff; ver a atualização de 23/11/2026 no fim deste arquivo.
+
 ## 1. Fontes e nível de confiança
 
 | Marca | Fonte | Confiança |
@@ -102,7 +107,7 @@ vazio, o valor fica `undefined` e o banco assume o padrão `TRES_DIMENSOES`. **[
 | D5 | Tipo "Display" tem fórmula 2D (`L`, `A`) mas o produto está em 3 dimensões | `CG-EMB-9` × `modo_formato` | Consequência de D1 | Resolvido junto com D1 | Média |
 | D6 | Linhas de plano único com mais de um plano no Calcgraf | Cartucho 149, Sacola 31, Lâmina Simples 2 | Existe "plano adicional" no especialista Simples; a tabela de adicionais está vazia no backup | A confirmar com o usuário como isso é usado; hoje o Vizor não cria plano em item de plano único | Média |
 | D7 | Tela de Acabamentos mostra "Acondicionamento" dentro da lista **e** como bloco separado | Prints do Vizor | Apresentação duplicada | Conferir com o print do Calcgraf (2 listas em bloco próprio) | Baixa |
-| D8 | Nota antiga dizia "39 de 53 atividades com acondicionamento"; produção tem 2 de 67 | §4 | Contagem de outra coisa, ou dado alterado depois | Conferir qual regra define o grupo "Acondicionamento" | Baixa |
+| D8 | ~~Nota antiga "39/53 atividades com acondicionamento" × 2 de 67 em produção~~ **Resolvido, sem divergência** | §4; HANDOFF §12.1 | "39" e "53" são os **códigos** das atividades Caixa Padrão e Embalar, não contagens | Nenhuma: só essas duas atividades têm a chave Acondicionamento, e produção tem exatamente 2 | — |
 | D9 | 4 tipos de plano sem linha (RÓTULO fixo, Laminas, Capa, Miolo), vindos de linhas canceladas | §4 | Importação de tipos de linhas inativas | Inativar ou ignorar; só aparecem se relacionados a um produto | Baixa |
 | D10 | Fechamento por tiragem editável e escolha da tiragem na aprovação | Spec `orcamento-grafico-tiragens-por-item` | Tarefas 6 e 7 pendentes | Implementar após a aprovação do desenho | Alta |
 
@@ -153,3 +158,32 @@ revelarem. Ordem sugerida: D2 (rápido, só tela) → D1 e D3 (dados e importado
 - Vizor: transação `READ ONLY` no banco de produção (`linha_produto`, `produto_grafico`, `tipo_plano_grafico`,
   `default_produto_plano`, `relacao_cadastro_grafico`, `tipo_embalagem`, `orcamento_grafico`, `item_orcamento_grafico`,
   `calculo_grafico`, `acabamento_grafico`). Nenhuma escrita.
+
+## 11. Atualização de 23/11/2026 (novos prints das 5 linhas + dados do Calcgraf)
+
+**Correções ao handoff e a este documento**
+- HANDOFF §12.3 diz que os planos de Lâminas **não têm** "Ocor."; os prints novos (Display, Envelope, Impressos) **mostram**
+  o campo "Ocor." no plano. Em produção o tipo tem `ocorrencias = UMA`. Tratar como campo presente e fixo em 1.
+- D8 era leitura errada minha (ver tabela de divergências).
+
+**Novo nos prints**
+- Item de **Cartelas** (2 dimensões) mostra "Comp. x Largura" **e** "Alt Tampa"; **Invólucros** mostra Comp x Larg x Alt,
+  Aba Cola, Aba Fec e Alt Tampa. Em produção `possui_altura_tampa` está **nulo nos 11 produtos**: precisa ser cadastrado.
+- O item de **Cartucho** (plano único) tem combo **Microondulado** com botão de cópia e **Ajuste Corte Micro** com o botão
+  Propriedades/Preview na própria tela.
+- Em todos os prints o campo Produto está vazio ou o Tipo de Plano não foi escolhido: eles mostram a tela **vazia**. Os campos
+  ficam ocultos até escolher o produto e habilitados até escolher o tipo de plano. Por isso **não provam** quais blocos
+  do plano cada tipo usa (D3 continua aberto).
+
+**Achado nos dados do Calcgraf (Cartucho Composto, 1.793 cálculos com vários planos)** **[CALC-BD]**
+- Cada "plano" que o usuário inclui pode virar **mais de uma linha** em `CalculoPlanos`, marcadas por `FlagMicro` (a
+  camada microondulada) e `FlagCapaMicro` (a capa do micro). No print do Cartucho Composto, "PARTE 02" aparece duas vezes
+  no grid: a capa (Stora Enzo, Cortadeira/Guilhotina/CVM) e o micro (Micro Pardo, Mazola (acoplagem)), cada um com seu roteiro.
+- O tipo de plano **não** decide se há micro: o tipo **Cartão** tem micro em 1.869 linhas e capa-do-micro em 258
+  (de 4.479); o tipo **Microondulado** quase não é usado (19 linhas). Logo os 3 blocos do formulário valem para os dois
+  tipos e quem decide é o que o usuário preenche.
+- Sentido da onda e Ajuste de Corte Micro estão em zero em todas as linhas lidas (nessas colunas).
+- **Consequência para o Vizor:** hoje 1 plano = 1 linha, com os 3 blocos dentro de `especificacao` e um só custo. Se o custo
+  do Calcgraf é por linha (cada camada com seu roteiro), o Vizor precisa decidir se cada camada vira uma linha de custo.
+  **Não verificado:** a regra que gera as linhas e como o roteiro de cada camada é escolhido (Mazola entrando só no micro).
+
