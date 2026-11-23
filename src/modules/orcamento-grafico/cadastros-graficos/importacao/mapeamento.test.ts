@@ -36,6 +36,20 @@ describe('mapeamento — amostra do legado', () => {
     expect(plano.operacoes.map((o) => o.tipo)).toEqual(['CRIAR', 'IGNORAR'])
   })
 
+  it('formato do produto: os 3 textos conhecidos e o VAZIO (Lâminas) mapeiam para o modo certo', () => {
+    const ctx = { idsLinha: new Map([[1, 'lin-1']]), tributacoes: new Map<number, string>() }
+    const modo = (Formato: unknown) =>
+      mapearProdutos([{ Codigo: 9, Ativo: 'ATIVO', Nome: 'Display', CodLinhaProduto: 1, Formato }], ctx)[0].dados.modoFormato
+    expect(modo('3 dimensões')).toBe('TRES_DIMENSOES')
+    expect(modo('2 dimensões')).toBe('DUAS_DIMENSOES')
+    expect(modo('2 dim (aberto+fechado)')).toBe('ABERTO_FECHADO')
+    // Display, Envelope e Impressos (Lâminas) têm Formato vazio no Calcgraf
+    expect(modo('')).toBe('DUAS_DIMENSOES')
+    expect(modo(null)).toBe('DUAS_DIMENSOES')
+    expect(modo('   ')).toBe('DUAS_DIMENSOES')
+    // texto desconhecido NÃO é adivinhado: fica sem modo (o banco assume o padrão)
+    expect(modo('formato novo')).toBeUndefined()
+  })
   it('catálogo simples: linha cancelada não é criada', () => {
     const itens = mapearLinhas([{ Codigo: 2, Nome: 'LÂMINAS', Ativo: 'Ativo' }, { Codigo: 9, Nome: 'Velha', Ativo: 'CANCELADO' }])
     expect(planejarPorOrigem('catalogos', itens, []).operacoes.map((o) => o.tipo)).toEqual(['CRIAR', 'IGNORAR'])

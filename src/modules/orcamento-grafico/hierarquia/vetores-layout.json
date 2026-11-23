@@ -4260,8 +4260,8 @@
       }
     },
     {
-      "id": "g2-altura-tampa-ignorado-duas-dim",
-      "descricao": "possuiAlturaTampa=true não afeta DUAS_DIMENSOES",
+      "id": "g2-altura-tampa-duas-dim",
+      "descricao": "possuiAlturaTampa=true acrescenta Alt Tampa em DUAS_DIMENSOES (Cartelas)",
       "entrada": {
         "produto": {
           "modoFormato": "DUAS_DIMENSOES",
@@ -4289,7 +4289,8 @@
         "gridPlanos": false,
         "formato": {
           "campos": [
-            "formatoFinal"
+            "formatoFinal",
+            "alturaTampa"
           ],
           "padrao": null,
           "formatoPendenteDeWireframe": false

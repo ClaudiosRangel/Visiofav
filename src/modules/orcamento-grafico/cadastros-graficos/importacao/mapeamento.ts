@@ -69,6 +69,17 @@ const MODO_FORMATO: Record<string, string> = {
   '2 dimensoes': 'DUAS_DIMENSOES',
   '2 dim (aberto+fechado)': 'ABERTO_FECHADO',
 }
+/**
+ * Formato VAZIO no Calcgraf (Display, Envelope e Impressos da linha Lâminas): a tela mostra só "Formato Página"
+ * (um par de medidas), sem Comprimento/Altura/Abas. Os tipos de embalagem desses produtos já usam fórmula 2D
+ * (`L` e `A`). Mapeia para 2 dimensões; antes caía no padrão do banco (3 dimensões).
+ */
+const MODO_FORMATO_PADRAO_VAZIO = 'DUAS_DIMENSOES'
+function modoDoFormato(formato: unknown): string | undefined {
+  const chave = normalizarNome(formato)
+  if (chave === '') return MODO_FORMATO_PADRAO_VAZIO
+  return MODO_FORMATO[chave]
+}
 
 export interface CtxProdutos {
   idsLinha: Ids
@@ -100,7 +111,7 @@ export function mapearProdutos(linhas: readonly LinhaBruta[], ctx: CtxProdutos):
         faturamentoMinimo: flag(l.FlagFatMinimo),
         valorFaturamentoMinimo: numeroPositivo(l.ValFaturamentoMinimo) ?? undefined,
         tipoCartucho: textoLimpo(l.TipoCartucho, 60) ?? undefined,
-        modoFormato: MODO_FORMATO[normalizarNome(l.Formato)],
+        modoFormato: modoDoFormato(l.Formato),
         formatoPadraoLargura: numeroPositivo(l.FormatoDef1) ?? undefined,
         formatoPadraoAltura: numeroPositivo(l.FormatoDef2) ?? undefined,
       }),

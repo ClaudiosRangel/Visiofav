@@ -185,5 +185,75 @@ revelarem. Ordem sugerida: D2 (rápido, só tela) → D1 e D3 (dados e importado
 - Sentido da onda e Ajuste de Corte Micro estão em zero em todas as linhas lidas (nessas colunas).
 - **Consequência para o Vizor:** hoje 1 plano = 1 linha, com os 3 blocos dentro de `especificacao` e um só custo. Se o custo
   do Calcgraf é por linha (cada camada com seu roteiro), o Vizor precisa decidir se cada camada vira uma linha de custo.
-  **Não verificado:** a regra que gera as linhas e como o roteiro de cada camada é escolhido (Mazola entrando só no micro).
+  A regra das linhas e do roteiro por camada foi investigada em 23/11/2026 (seção 12).
+
+## 12. Como o Calcgraf calcula um plano com micro (investigado em 23/11/2026) **[CALC-BD]**
+
+Caso de referência: cálculo **15185** (Cartucho Composto, 2 planos do usuário "PARTE 01" e "PARTE 02"), validado depois
+nos 1.962 cálculos de Cartucho Composto.
+
+**Regra de linhas.** Cada plano que o usuário inclui gera de 1 a 3 linhas em `CalculoPlanos`, cada uma com seu suporte,
+seu formato, seu roteiro e seu custo:
+
+| Linha | Marca | Suporte | O que entra |
+|---|---|---|---|
+| Capa externa | (nenhuma) | do bloco "capa externa" | impressão, cortadeira, guilhotina, verniz, hot stamping, corte e vinco, destacar |
+| Micro | `FlagMicro = -1` | do bloco "microondulado" (ex.: Micro Pardo 230) | só atividades da chave **Microondulado** (Mazola, Bimac) + material de acoplamento |
+| Capa interna | `FlagCapaMicro = -1` | do bloco "capa interna" | impressão própria e atividades próprias |
+
+Distribuição real (1.962 cálculos de Cartucho Composto): plano com 2 linhas (capa + micro) 1.784; 1 linha 356; 2 linhas
+(capa + capa interna) 232; 3 linhas 19; 4 linhas 5.
+
+**Regra do roteiro por camada.** A coluna `Atividades.ChaveDicionario` decide onde cada atividade vai. As chaves
+`Microondulado` e `Acoplamento` (Mazola, Bimac, Jato) marcam a atividade como da camada de acoplamento; as chaves
+`Cartucho composto - Capa externa` e `- Capa interna` restringem a atividade a uma capa. Confirmação: das 1.870 atividades
+com chave Microondulado, 1.822 (97%) estão na linha do micro; a linha do micro quase não tem outras atividades (106 de
+14.350). A tabela `AtividadesJuntaPlanos` existe e está **vazia**.
+
+**Material do acoplamento.** O material (Cola Vegetal Acoplagem F60, código 41) vem do `paramAcab` da atividade e vira uma
+linha de custo na linha do micro. O Vizor já importou `chaveDicionario`, `paramAcab` e `utilizaCtp` das 67 atividades.
+
+**Custo no 15185 (R$ 35.109,76 no total).** Capa PARTE 01 R$ 13.734,87; micro PARTE 01 R$ 6.601,78 (papel Micro Pardo
+5.542,43 + Mazola 420,00 + cola 639,35); capa PARTE 02 R$ 10.599,11; micro PARTE 02 R$ 4.174,00. As linhas de micro
+valem **R$ 10.775,78, ou 30,7% do cálculo**.
+
+**O que o Vizor faz hoje.** O bloco "microondulado" do plano é gravado em `especificacao`, que é **fora do cálculo**
+(`plano_calculo_grafico.especificacao`; o motor não a lê). `montarParamsDoPlano` usa só o suporte, o formato, as cores e
+as atividades do plano. Resultado: um orçamento **novo** de Cartucho Composto com micro preenchido sai sem o papel do
+micro, sem a Mazola e sem a cola, cerca de 31% abaixo no caso do 15185. Itens **de repetição** não sofrem isso porque o
+custo é ancorado no valor real do Calcgraf (e por isso não reagem a edição de custo).
+
+**Proposta (não implementada, depende de aprovação).** Gerar as camadas no cálculo, a partir do que já está cadastrado:
+1. Capa externa = o plano como hoje.
+2. Se o bloco micro tem suporte: criar a linha de micro (papel do micro, formato do micro) e rotear para ela as
+   atividades com chave Microondulado/Acoplamento, mais o material do `paramAcab`.
+3. Se o bloco capa interna tem suporte: criar a linha com impressão e atividades próprias.
+4. Somar as linhas no plano, e os planos no item, como hoje (`somaPlanos`).
+Validar contra os casos 15185, 15149, 15168 e 15165 (golden) antes de ligar. Deve entrar atrás de uma tolerância de
+0,5% como os demais golden.
+
+## 13. Cadastro corrigido em produção (23/11/2026)
+
+Script `scripts/corrigir-cadastro-linhas-wega.mjs` (simulação por padrão, `--apply` grava, backup do estado anterior em
+`scripts/backups/`, uma transação, idempotente, `empresa_id` explícito). Aplicado e confirmado (2ª execução = 0 alterações):
+
+| Alteração | Produtos / tipos | Evidência |
+|---|---|---|
+| `modo_formato` TRES_DIMENSOES → **DUAS_DIMENSOES** | Display, Envelope, Impressos (Lâminas) | Formato vazio no Calcgraf; tela mostra só "Formato Página"; tipos de embalagem deles usam fórmula 2D (`L`, `A`) |
+| `possui_altura_tampa` null → **true** | Cartucho Composto, Caixa, Invólucros, Cartelas | Prints do item e HANDOFF (imagem 05) mostram "Alt Tampa" |
+| `prev_capa_externa=true`, `prev_microondulado=false`, `prev_capa_interna=false`, `prev_fibra=true` | Tipos de plano Base, Envelope, Impressos (Lâminas) | Prints do plano de Lâminas: só Suporte e Fibra, sem blocos de micro nem capa interna |
+
+Para reverter, ler o arquivo de backup e regravar os valores anteriores (todos eram `TRES_DIMENSOES`, `null` e `null`).
+
+**Código** (commitado, ainda sem deploy):
+- Front: Tipo de Produto preenchido a partir do produto (item novo, só se vazio); Alt Tampa também em 2 dimensões; vetor
+  `g2-altura-tampa-duas-dim` (front e back idênticos; o vetor antigo dizia "ignorado em 2 dimensões").
+- Back: o importador mapeia Formato vazio para 2 dimensões.
+
+**Diferenças que ficam (cosméticas ou pendentes)**
+- Display/Envelope/Impressos mostram o rótulo "Formato Final"; o Calcgraf diz "Formato Página".
+- Tipos de plano de Lâminas mostram o bloco como "capa externa" (Suporte capa externa, Fibra da capa externa); o Calcgraf
+  mostra "Suporte" e "Fibra". Funcionalmente igual.
+- O cadastro de tipos de plano de Cartucho Composto (Cartão, Microondulado, Berço, Invólucros) segue com os 3 blocos.
+- "Tipo de Plano" ainda só é incluído depois de salvar o item (D4), e o custo do micro não entra (seção 12).
 
