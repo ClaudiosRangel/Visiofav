@@ -174,6 +174,21 @@ export async function criarSolicitacao(
     }
   }
 
+  // Repetição: o produto informado precisa existir na empresa do representante.
+  if (dados.produtoId) {
+    const produto = await prisma.produto.findFirst({
+      where: { id: dados.produtoId, empresaId },
+      select: { id: true },
+    })
+    if (!produto) {
+      throw {
+        statusCode: 400,
+        message: 'Produto não encontrado. Selecione um produto válido para a repetição.',
+        code: 'PRODUTO_NAO_ENCONTRADO',
+      }
+    }
+  }
+
   // Criar solicitação — vendedorId SEMPRE do token (Requirement 2.1, Property 7)
   const solicitacao = await prisma.solicitacaoOrcamentoRep.create({
     data: {
