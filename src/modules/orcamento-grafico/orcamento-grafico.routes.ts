@@ -46,6 +46,7 @@ import {
 } from './cadastros/serie-documento.service'
 import { especificacaoPlanoSchema } from './hierarquia/especificacao-plano'
 import { aplicarCamadasAoResultado } from './camadas-plano'
+import { resolverEstrutura } from './hierarquia/dados-item.service'
 import { aplicarTiragemEscolhida, itensComTiragens, pendenciasDeEscolha } from './hierarquia/aprovacao-tiragem'
 import { HierarquiaError } from './hierarquia/hierarquia-common'
 import { calcularOrcamentoGrafico as calcularMotorTiragem } from './orcamento-grafico-calculo.service'
@@ -367,7 +368,8 @@ const itemOrcamentoBodySchema = z.object({
   suporteId: z.string().uuid().optional().nullable(),
   // Suporte de produção do item (sem planos). Ausente não altera; null limpa.
   suporteProducaoId: z.string().uuid().optional().nullable(),
-  gramatura: z.number().positive(),
+  // 0 so e aceito em item de varios planos sem papel proprio (o papel fica nos planos).
+  gramatura: z.number().min(0),
   // Preço do papel por kg (aceita o alias precoKg, como o wizard envia).
   precoKgPapel: z.number().positive().optional(),
   precoKg: z.number().positive().optional(),
@@ -765,6 +767,54 @@ async function resolverIdDaEmpresa(
       ? await db.produtoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
       : await db.tipoPlanoGrafico.findFirst({ where: { id, empresaId }, select: { id: true } })
   return achou ? achou.id : null
+}
+
+/**
+ * Item de vários planos (produto sem tipo de plano fixo) salvo sem papel próprio: o custo vem dos
+ * planos, então o item não é calculado sozinho. Devolve true quando o cálculo do item deve ser adiado.
+ */
+async function adiarCalculoDoItem(empresaId: string, body: ItemOrcamentoBody): Promise<boolean> {
+  const temPapel = !!body.papelId || Number(body.precoKg ?? 0) > 0 || Number(body.precoKgPapel ?? 0) > 0
+  if (temPapel || !body.produtoGraficoId) return false
+  try {
+    const rels = await prisma.relacaoCadastroGrafico.findMany({
+      where: { empresaId, tipoOrigem: 'PRODUTO', idOrigem: body.produtoGraficoId, tipoDestino: 'PLANO' },
+      select: { idDestino: true },
+    })
+    if (!rels || rels.length === 0) return false
+    const tipos = await prisma.tipoPlanoGrafico.findMany({
+      where: { empresaId, status: true, id: { in: rels.map((r) => r.idDestino) } },
+      select: { id: true, fixo: true },
+    })
+    return !!tipos && tipos.length > 0 && resolverEstrutura(tipos).estrutura === 'MULTI_PLANO'
+  } catch {
+    // Sem cadastro de relações disponível: segue o caminho normal (item calculado sozinho).
+    return false
+  }
+}
+
+/** Grava só a lista de tiragens (sem custo) de um item ainda sem cálculo; o custo entra com os planos. */
+async function gravarListaTiragensSemCusto(empresaId: string, itemId: string, tiragens: number[], quantidade: number) {
+  const lista = [...new Set(tiragens)].sort((a, b) => a - b)
+  const ref = lista.includes(quantidade) ? quantidade : lista[0]
+  await prisma.$transaction(async (tx) => {
+    await tx.itemTiragemOrcamentoGrafico.deleteMany({ where: { itemId, empresaId, quantidade: { notIn: lista } } })
+    let ordem = 1
+    for (const q of lista) {
+      const o = q === ref ? 0 : ordem++
+      await tx.itemTiragemOrcamentoGrafico.upsert({
+        where: { itemId_quantidade: { itemId, quantidade: q } },
+        create: { itemId, empresaId, quantidade: q, ordem: o },
+        update: { ordem: o },
+      })
+    }
+  })
+}
+
+/** Campos do item sem cálculo próprio (custo/valor ficam vazios até haver planos). */
+function dadosPersistenciaItemSemCalculo(body: ItemOrcamentoBody) {
+  const dados = dadosPersistenciaItem(body, { custoProducao: 0, precoVenda: 0 } as unknown as ResultadoOrcamento)
+  return { ...dados, resultadoCalculo: Prisma.DbNull, custoProducao: null, valorTotal: null }
 }
 
 function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrcamento) {
@@ -5937,6 +5987,36 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const erroProduto = await validarProdutoGraficoDaEmpresa(user.empresaId, body.produtoGraficoId)
     if (erroProduto) return reply.status(422).send({ message: erroProduto })
 
+    // Item de vários planos sem papel: grava sem cálculo; o custo entra quando os planos forem incluídos.
+    if (await adiarCalculoDoItem(user.empresaId, body)) {
+      let tiragensAdiadas: number[] | null = null
+      try {
+        tiragensAdiadas = body.tiragens && body.tiragens.length > 0 ? validarTiragens(body.tiragens) : null
+      } catch (err) {
+        if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+        throw err
+      }
+      const criadoSemCalculo = await prisma.$transaction(async (tx) => {
+        const ultimo = await tx.itemOrcamentoGrafico.findFirst({
+          where: { orcamentoId: id, empresaId: user.empresaId },
+          orderBy: { sequencia: 'desc' },
+          select: { sequencia: true },
+        })
+        return tx.itemOrcamentoGrafico.create({
+          data: {
+            orcamentoId: id,
+            empresaId: user.empresaId,
+            sequencia: (ultimo?.sequencia ?? 0) + 1,
+            ...dadosPersistenciaItemSemCalculo(body),
+          },
+        })
+      })
+      if (tiragensAdiadas) await gravarListaTiragensSemCusto(user.empresaId, criadoSemCalculo.id, tiragensAdiadas, body.quantidade)
+      await reconsolidarOrcamento(id, user.empresaId)
+      return reply.status(201).send(criadoSemCalculo)
+    }
+    if (!(body.gramatura > 0)) return reply.status(400).send({ message: 'Dados inválidos — gramatura: informe a gramatura do papel.' })
+
     // Calcular o item (envelope do motor) — mapeia ItemOrcamentoError → status.
     let resultado: ResultadoOrcamento
     try {
@@ -6412,6 +6492,43 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // Preserva formato de corte/aproveitamento persistidos quando o body não traz.
     await preservarEngenhariaDoItem(body, itemId)
 
+    // Item de vários planos sem papel: grava os dados do item e refaz o custo pelos planos.
+    if (await adiarCalculoDoItem(user.empresaId, body)) {
+      let tiragensAdiadas: number[] | undefined
+      try {
+        tiragensAdiadas =
+          body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens)
+      } catch (err) {
+        if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+        throw err
+      }
+      const { resultadoCalculo: _r, custoProducao: _c, valorTotal: _v, ...semCusto } = dadosPersistenciaItemSemCalculo(body)
+      const qtdPlanos = await prisma.planoCalculoGrafico.count({ where: { itemId, empresaId: user.empresaId } })
+      const atualizadoSemCalculo = await prisma.itemOrcamentoGrafico.update({
+        where: { id: itemId },
+        data: qtdPlanos > 0 ? semCusto : { ...semCusto, resultadoCalculo: Prisma.DbNull, custoProducao: null, valorTotal: null },
+      })
+      if (qtdPlanos === 0) {
+        if (tiragensAdiadas !== undefined) await gravarListaTiragensSemCusto(user.empresaId, itemId, tiragensAdiadas, body.quantidade)
+        await reconsolidarOrcamento(id, user.empresaId)
+        return atualizadoSemCalculo
+      }
+      await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+      try {
+        await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
+          tiragens: tiragensAdiadas,
+          inputItem: montarInputDoItem(body),
+          materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
+        })
+      } catch (err) {
+        if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+        if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+        throw err
+      }
+      return prisma.itemOrcamentoGrafico.findFirst({ where: { id: itemId, empresaId: user.empresaId } })
+    }
+    if (!(body.gramatura > 0)) return reply.status(400).send({ message: 'Dados inválidos — gramatura: informe a gramatura do papel.' })
+
     let resultado: ResultadoOrcamento
     try {
       resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
@@ -6512,6 +6629,37 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // e sem eles o motor cairia no encaixe geométrico (ex.: 4 em vez de 3) e na
     // folha genérica da máquina, divergindo do Calcgraf. Lemos por SQL raw.
     await preservarEngenhariaDoItem(body, itemId)
+
+    // Item de vários planos sem papel: o cálculo é a soma dos planos.
+    if (await adiarCalculoDoItem(user.empresaId, body)) {
+      const qtdPlanos = await prisma.planoCalculoGrafico.count({ where: { itemId, empresaId: user.empresaId } })
+      if (qtdPlanos === 0) {
+        return reply.status(400).send({ message: 'Inclua ao menos um plano para calcular este item.' })
+      }
+      await reconsolidarItemComPlanos(id, itemId, user.empresaId)
+      let tiragensDosPlanos: Awaited<ReturnType<typeof sincronizarTiragensDoItem>> = null
+      try {
+        tiragensDosPlanos = await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
+          tiragens: body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens),
+          inputItem: montarInputDoItem(body),
+          materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
+        })
+      } catch (err) {
+        if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
+        if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
+        throw err
+      }
+      const it = await prisma.itemOrcamentoGrafico.findFirst({
+        where: { id: itemId, empresaId: user.empresaId },
+        select: { resultadoCalculo: true, custoProducao: true, valorTotal: true },
+      })
+      return {
+        resultado: it?.resultadoCalculo ?? null,
+        fechamento: { custoProducao: Number(it?.custoProducao ?? 0), valorTotal: Number(it?.valorTotal ?? 0) },
+        ...(tiragensDosPlanos ? { tiragens: tiragensDosPlanos.map(({ contexto: _c, ...l }) => l) } : {}),
+      }
+    }
+    if (!(body.gramatura > 0)) return reply.status(400).send({ message: 'Dados inválidos — gramatura: informe a gramatura do papel.' })
 
     let resultado: ResultadoOrcamento
     try {
@@ -6852,6 +7000,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       const valorAnterior = resItem?.valorTotal != null ? Number(resItem.valorTotal) : 0
       if (custoAnterior > 0 && valorAnterior > 0) {
         valorTotal = Math.round(custoProducao * (valorAnterior / custoAnterior) * 100) / 100
+      } else {
+        // Item sem cálculo próprio (vários planos sem papel no item): soma o preço formado em cada plano.
+        const somaPrecoPlanos = planos.reduce(
+          (s, p) => s + Number((p.resultadoCalculo as { precoVenda?: unknown } | null)?.precoVenda ?? 0),
+          0,
+        )
+        if (somaPrecoPlanos > 0) valorTotal = Math.round(somaPrecoPlanos * 100) / 100
       }
 
       await db.itemOrcamentoGrafico.update({

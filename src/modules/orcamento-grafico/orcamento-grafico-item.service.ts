@@ -775,16 +775,31 @@ export async function montarParamsDoPlano(
   itemBase: ItemOrcamentoInput,
   plano: PlanoCalculoInput,
 ): Promise<ParamsOrcamento> {
+  // Item de vários planos não tem papel próprio: o preço e a gramatura vêm do suporte do plano
+  // (cadastro PrecoMateriaPrima). Preço informado no plano continua tendo precedência.
+  let precoDoSuporte: number | undefined
+  let gramaturaDoSuporte: number | undefined
+  if (plano.suporteId && !(Number(plano.precoKgPapel) > 0)) {
+    const sup = await prisma.precoMateriaPrima.findFirst({
+      where: { id: plano.suporteId, empresaId },
+      select: { precoUnitario: true, gramatura: true },
+    })
+    if (sup) {
+      const p = Number(sup.precoUnitario)
+      const g = Number(sup.gramatura ?? 0)
+      precoDoSuporte = p > 0 ? p : undefined
+      gramaturaDoSuporte = g > 0 ? g : undefined
+    }
+  }
   const inputDoPlano: ItemOrcamentoInput = {
     ...itemBase,
 
     // ── Suporte/papel ORÇADO do plano (precedência sobre o do item) ──
     // `suporteId` do plano = papel do plano no cadastro de PrecoMateriaPrima.
     papelId: plano.suporteId ?? itemBase.papelId,
-    gramatura: plano.gramatura ?? itemBase.gramatura,
-    // Preço do papel do plano quando informado; senão herda o do item (que já
-    // aceita o alias `precoKg`). montarParamsDoItem exige um dos dois > 0.
-    precoKgPapel: plano.precoKgPapel ?? itemBase.precoKgPapel ?? itemBase.precoKg,
+    gramatura: plano.gramatura ?? gramaturaDoSuporte ?? itemBase.gramatura,
+    // Preço do papel: o informado no plano, senão o do suporte do plano, senão o do item.
+    precoKgPapel: plano.precoKgPapel ?? precoDoSuporte ?? itemBase.precoKgPapel ?? itemBase.precoKg,
 
     // ── Impressão: cores + máquina próprios do plano ──
     cores: plano.cores ?? itemBase.cores,

@@ -265,4 +265,85 @@ describe.skipIf(!rodar)('tiragens por item — integração real (banco local)',
     const linhas = (await chamar('GET', `${P}/${orcamentoId}/itens/${itemId}/tiragens`)).json() as Array<any>
     expect(linhas).toEqual([])
   })
+
+  it('10. vários planos: item sem papel salva sem cálculo e ganha custo e preço ao incluir o plano', async () => {
+    // Produto de vários planos do cadastro (nenhum tipo de plano fixo).
+    const produtos = await prisma.produtoGrafico.findMany({ where: { empresaId }, select: { id: true } })
+    let produtoMulti: string | null = null
+    for (const p of produtos) {
+      const rels = await prisma.relacaoCadastroGrafico.findMany({
+        where: { empresaId, tipoOrigem: 'PRODUTO', idOrigem: p.id, tipoDestino: 'PLANO' },
+        select: { idDestino: true },
+      })
+      if (rels.length === 0) continue
+      const tipos = await prisma.tipoPlanoGrafico.findMany({
+        where: { empresaId, status: true, id: { in: rels.map((r) => r.idDestino) } },
+        select: { fixo: true },
+      })
+      if (tipos.length > 0 && tipos.every((t) => !t.fixo)) { produtoMulti = p.id; break }
+    }
+    // Banco local sem o catálogo: cria produto + tipo de plano não fixo temporários.
+    const temporarios: { produto?: string; tipo?: string } = {}
+    if (!produtoMulti) {
+      const sufixo = Date.now().toString(36)
+      const prod = await prisma.produtoGrafico.create({ data: { empresaId, codigo: `QA-MULTI-${sufixo}`, nome: 'QA vários planos' } })
+      const tipo = await prisma.tipoPlanoGrafico.create({ data: { empresaId, codigo: `QA-TP-${sufixo}`, nome: 'QA Cartão', fixo: false } })
+      await prisma.relacaoCadastroGrafico.create({
+        data: { empresaId, tipoOrigem: 'PRODUTO', idOrigem: prod.id, tipoDestino: 'PLANO', idDestino: tipo.id },
+      })
+      temporarios.produto = prod.id
+      temporarios.tipo = tipo.id
+      produtoMulti = prod.id
+    }
+    try {
+    const suporte = await prisma.precoMateriaPrima.findFirst({
+      where: { empresaId, precoUnitario: { gt: 0 } },
+      select: { id: true },
+    })
+    if (!suporte) throw new Error('Sem papel com gramatura no banco local')
+
+    const { papelId: _p, precoKg: _k, ...semPapel } = corpoItem as Record<string, unknown>
+    const criar = await chamar('POST', `${P}/${orcamentoId}/itens`, {
+      ...semPapel, gramatura: 0, produtoGraficoId: produtoMulti, tiragens: [1000, 3000],
+    })
+    expect(criar.statusCode, criar.body).toBe(201)
+    const novoId = criar.json().id as string
+    expect(criar.json().valorTotal).toBeNull()
+    const linhas0 = (await chamar('GET', `${P}/${orcamentoId}/itens/${novoId}/tiragens`)).json() as Array<any>
+    expect(linhas0.map((l) => l.quantidade).sort((a: number, b: number) => a - b)).toEqual([1000, 3000])
+
+    // Salvar de novo sem plano também funciona.
+    const salvar = await chamar('PUT', `${P}/${orcamentoId}/itens/${novoId}`, {
+      ...semPapel, gramatura: 0, produtoGraficoId: produtoMulti, tiragens: [1000, 3000],
+    })
+    expect(salvar.statusCode, salvar.body).toBe(200)
+
+    const plano = await chamar('POST', `${P}/${orcamentoId}/itens/${novoId}/planos`, {
+      nome: 'Caixa', suporteId: suporte.id, gramatura: 300, formatoLarguraMm: 650, formatoAlturaMm: 900, numCores: 4,
+    })
+    expect(plano.statusCode, plano.body).toBe(201)
+    const item = await prisma.itemOrcamentoGrafico.findFirst({ where: { id: novoId, empresaId } })
+    expect(Number(item?.custoProducao)).toBeGreaterThan(0)
+    expect(Number(item?.valorTotal)).toBeGreaterThan(Number(item?.custoProducao))
+    const linhas1 = (await chamar('GET', `${P}/${orcamentoId}/itens/${novoId}/tiragens`)).json() as Array<any>
+    expect(linhas1.every((l) => Number(l.valorTotal) > 0)).toBe(true)
+
+    // Salvar o item depois do plano mantém o custo dos planos.
+    const salvar2 = await chamar('PUT', `${P}/${orcamentoId}/itens/${novoId}`, {
+      ...semPapel, gramatura: 0, produtoGraficoId: produtoMulti,
+    })
+    expect(salvar2.statusCode, salvar2.body).toBe(200)
+    expect(Number(salvar2.json().custoProducao)).toBeGreaterThan(0)
+    } finally {
+      // Itens do orçamento são apagados no afterAll; aqui só o catálogo temporário.
+      if (temporarios.produto) {
+        await prisma.itemTiragemOrcamentoGrafico.deleteMany({ where: { empresaId, item: { orcamentoId } } })
+        await prisma.planoCalculoGrafico.deleteMany({ where: { empresaId, item: { orcamentoId } } })
+        await prisma.itemOrcamentoGrafico.deleteMany({ where: { empresaId, orcamentoId, produtoGraficoId: temporarios.produto } })
+        await prisma.relacaoCadastroGrafico.deleteMany({ where: { empresaId, idOrigem: temporarios.produto } })
+        await prisma.produtoGrafico.deleteMany({ where: { id: temporarios.produto, empresaId } })
+      }
+      if (temporarios.tipo) await prisma.tipoPlanoGrafico.deleteMany({ where: { id: temporarios.tipo, empresaId } })
+    }
+  })
 })
