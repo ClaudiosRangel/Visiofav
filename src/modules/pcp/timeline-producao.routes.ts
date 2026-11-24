@@ -272,6 +272,7 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
                 descricao: true,
                 status: true,
                 disponivelProgramacao: true,
+                posicao: true,
                 tipoProcesso: { select: { codigo: true, descricao: true, posicao: true } },
                 turnoProducao: { select: { horaInicio: true, horaFim: true, diasSemana: true, duracaoMinutos: true } },
               },
@@ -461,6 +462,8 @@ export async function timelineProducaoRoutes(app: FastifyInstance) {
           centroProducaoId: etapa.centroProducaoId || null,
           tipoProcesso: etapa.centroProducao?.tipoProcesso?.descricao || null,
           tipoProcessoPosicao: etapa.centroProducao?.tipoProcesso?.posicao ?? 999,
+          // Ordem da máquina dentro do tipo (mesma da Programação: CentroProducao.posicao).
+          centroProducaoPosicao: etapa.centroProducao?.posicao ?? 999,
           turno: etapa.centroProducao?.turnoProducao || null,
           status: etapa.status,
           tempoSetupMinutos: setup,
