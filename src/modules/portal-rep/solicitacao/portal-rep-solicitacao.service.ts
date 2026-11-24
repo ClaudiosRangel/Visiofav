@@ -1,5 +1,6 @@
 import { prisma } from '../../../lib/prisma'
 import { PortalRepUser } from '../auth/portal-rep-auth.middleware'
+import { criarPedidoProposta } from '../../orcamento-grafico/pedido-proposta/pedido-proposta.service'
 import { criarNotificacaoComercial } from '../../orcamento-grafico/handoff-comercial/notificacao-comercial.service'
 
 /**
@@ -220,6 +221,15 @@ export async function criarSolicitacao(
     select: SOLICITACAO_SELECT,
   })
 
+  // Espelha a solicitação em Pedidos/Propostas (origem REPRESENTANTE) para o
+  // Comercial enxergar na tela central. Best-effort: falha aqui não derruba o
+  // envio do representante (a solicitação já está gravada).
+  try {
+    await espelharEmPedidoProposta(solicitacao.id, dados, portalRepUser, clienteNomeFinal)
+  } catch (err) {
+    console.error('[portal-rep] Falha ao espelhar solicitação em Pedidos/Propostas:', err)
+  }
+
   // Registrar log de auditoria (Requirement 7.4)
   await prisma.logAuditoriaRep.create({
     data: {
@@ -232,6 +242,76 @@ export async function criarSolicitacao(
   })
 
   return solicitacao
+}
+
+/**
+ * Cria o PedidoProposta (origem REPRESENTANTE) correspondente à solicitação.
+ * O id da solicitação fica registrado nas observações para rastreio.
+ */
+async function espelharEmPedidoProposta(
+  solicitacaoId: string,
+  dados: CriarSolicitacaoInput,
+  portalRepUser: PortalRepUser,
+  clienteNome: string | null,
+) {
+  const { empresaId, vendedorId, representanteId } = portalRepUser
+
+  const tipoPedido = (['NOVO', 'REPETICAO', 'MOSTRUARIO'] as const).find(
+    (t) => t === (dados.tipoPedido || '').toUpperCase(),
+  ) ?? 'NOVO'
+
+  const entrega = (dados.tipoEntrega || '').toUpperCase()
+  const tipoEntrega =
+    entrega === 'UNICA' || (entrega === 'FRACIONADA' && dados.entregaFracionadaDias?.trim())
+      ? (entrega as 'UNICA' | 'FRACIONADA')
+      : null
+
+  const exp = (dados.exportacao || '').toUpperCase()
+  const exportacao = exp === 'COMUM' || exp === 'EXPORTACAO' ? (exp as 'COMUM' | 'EXPORTACAO') : null
+
+  const medidasTexto =
+    dados.medidasTexto ||
+    ([dados.medidaComprimento, dados.medidaLargura, dados.medidaAltura].some((m) => m != null)
+      ? `${dados.medidaComprimento ?? '-'} x ${dados.medidaLargura ?? '-'} x ${dados.medidaAltura ?? '-'}`
+      : null)
+
+  const refSolicitacao = `Solicitação do portal do representante: ${solicitacaoId}`
+
+  await criarPedidoProposta(empresaId, representanteId, {
+    origem: 'REPRESENTANTE',
+    representanteId,
+    vendedorId,
+    tipoPedido,
+    clienteId: dados.clienteId || null,
+    clienteNome,
+    clienteCpfCnpj: dados.clienteCpfCnpj || null,
+    jaCliente: dados.jaCliente ?? !!dados.clienteId,
+    mercado: dados.mercado?.trim() || 'Não informado',
+    ufOrigem: dados.ufOrigem || null,
+    cidade: dados.cidade || null,
+    tipoEntrega,
+    entregaFracionadaDias: tipoEntrega === 'FRACIONADA' ? dados.entregaFracionadaDias : null,
+    prazoPagamento: dados.prazoPagamento || null,
+    produtoNome: dados.produtoNome || null,
+    produtoId: dados.produtoId || null,
+    tipoEmbalagem: dados.tipoEmbalagem,
+    quantidade: dados.quantidade,
+    cartao: dados.cartao || null,
+    gramatura: dados.gramaturaTexto || null,
+    medidasTexto,
+    cartaoFsc: dados.cartaoFsc,
+    corteInternoVerso: dados.corteInternoVerso,
+    passtime: dados.passtime,
+    acabamentos: dados.acabamentos || null,
+    matriz: dados.matriz || null,
+    acabamentoManual: dados.acabamentoManual,
+    quantidadePorVolume: dados.quantidadePorVolume || null,
+    variacoesArte: dados.variacoesArte || null,
+    exportacao,
+    dataValidade: dados.dataValidade || null,
+    discriminacao: dados.discriminacao || null,
+    observacoes: [dados.observacoes, refSolicitacao].filter(Boolean).join('\n'),
+  })
 }
 
 // ─── Listar Solicitações ────────────────────────────────────────────────────────
