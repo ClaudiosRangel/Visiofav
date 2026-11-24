@@ -5889,6 +5889,23 @@ async function seedMateriaisFromOPs() {
   console.log('✅ Comercial: pedido_proposta.imagem_faca + orcamento_grafico.imagem_faca (imagem da faca)')
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Alinhamento Portal do Representante x Pedidos/Propostas (reunião 24/11/2026).
+  // Tudo aditivo/idempotente. Colunas novas nas duas tabelas + flag comercial
+  // (lista única de tipos de embalagem e acabamentos nos dois formulários).
+  // ───────────────────────────────────────────────────────────────────────────
+  for (const t of ['solicitacao_orcamento_rep', 'pedido_proposta']) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "tiragens_texto" VARCHAR(200)`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "materia_prima_camadas" JSONB`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "entrega_mesmo_endereco" BOOLEAN NOT NULL DEFAULT true`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "entrega_endereco" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "alteracao_impressao" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "acondicionamento" VARCHAR(120)`)
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "tipo_embalagem" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
+  console.log('✅ Comercial: alinhamento portal-rep x pedido_proposta (colunas + exibir_comercial)')
+
+  // ───────────────────────────────────────────────────────────────────────────
   // Status fiel do Pedido/Proposta (spec comercial-pedido-status-fiel / Fundação).
   // Aditivo e idempotente. Colunas novas em pedido_proposta e log_pedido_proposta,
   // índices, índice único parcial de idempotência e migração de dados (Req 4).

@@ -10,27 +10,24 @@
 
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../../../lib/prisma'
+import { obterCatalogoComercial } from '../../orcamento-grafico/pedido-proposta/catalogo-comercial.service'
 import { portalRepAuth } from '../auth/portal-rep-auth.middleware'
 
 export async function portalRepCatalogoRoutes(app: FastifyInstance) {
 
-  // GET /catalogo/tipos-embalagem — lista tipos de embalagem da empresa
-  app.get('/tipos-embalagem', { preHandler: [portalRepAuth] }, async (request, reply) => {
+  // GET /catalogo/comercial - listas unicas (mesmas de Pedidos/Propostas):
+  // tipos de embalagem, acabamentos, acondicionamentos, suportes e prazos.
+  app.get('/comercial', { preHandler: [portalRepAuth] }, async (request, reply) => {
     const { empresaId } = request.portalRepUser
-
-    const tipos = await prisma.tipoEmbalagem.findMany({
-      where: { empresaId, status: true },
-      select: {
-        id: true,
-        codigo: true,
-        descricao: true,
-      },
-      orderBy: { descricao: 'asc' },
-    })
-
-    return reply.status(200).send(tipos)
+    return reply.status(200).send(await obterCatalogoComercial(empresaId))
   })
 
+  // Compatibilidade com versoes antigas do app (mesma fonte do /comercial).
+  app.get('/tipos-embalagem', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { empresaId } = request.portalRepUser
+    const { tiposEmbalagem } = await obterCatalogoComercial(empresaId)
+    return reply.status(200).send(tiposEmbalagem)
+  })
   // GET /catalogo/meus-produtos — produtos "do representante" para o pedido de
   // REPETIÇÃO. Reúne, sem duplicar, produtos ligados a ele por:
   //  (a) pedidos/propostas dele que já têm produto vinculado;
@@ -105,50 +102,9 @@ export async function portalRepCatalogoRoutes(app: FastifyInstance) {
     return reply.status(200).send(resultado)
   })
 
-  // GET /catalogo/acabamentos — lista acabamentos disponíveis (fixos + parametros-perda)
+  // GET /catalogo/acabamentos — acabamentos do produto (cadastro comercial).
   app.get('/acabamentos', { preHandler: [portalRepAuth] }, async (request, reply) => {
-    // Acabamentos são um catálogo fixo da indústria gráfica
-    // mas podemos enriquecer com os processos cadastrados nos centros de produção
     const { empresaId } = request.portalRepUser
-
-    // Buscar tipos de processo distintos (que representam acabamentos)
-    const tiposProcesso = await prisma.tipoProcesso.findMany({
-      where: { empresaId, status: true },
-      select: { codigo: true, descricao: true },
-      orderBy: { posicao: 'asc' },
-    })
-
-    // Combinar com acabamentos padrão da indústria
-    const acabamentosPadrao = [
-      { codigo: 'CORTE_VINCO', descricao: 'Corte e Vinco' },
-      { codigo: 'COLAGEM', descricao: 'Colagem' },
-      { codigo: 'VERNIZ_UV', descricao: 'Verniz UV' },
-      { codigo: 'LAMINACAO_BOPP', descricao: 'Laminação BOPP' },
-      { codigo: 'LAMINACAO_FOSCA', descricao: 'Laminação Fosca' },
-      { codigo: 'HOT_STAMPING', descricao: 'Hot Stamping' },
-      { codigo: 'RELEVO_SECO', descricao: 'Relevo Seco' },
-      { codigo: 'VERNIZ_AQUOSO', descricao: 'Verniz Aquoso' },
-      { codigo: 'PLASTIFICACAO', descricao: 'Plastificação' },
-    ]
-
-    // Mesclar: processos da empresa + padrão (sem duplicar por código)
-    const codigos = new Set<string>()
-    const resultado: Array<{ codigo: string; descricao: string }> = []
-
-    for (const tp of tiposProcesso) {
-      if (!codigos.has(tp.codigo)) {
-        codigos.add(tp.codigo)
-        resultado.push({ codigo: tp.codigo, descricao: tp.descricao })
-      }
-    }
-
-    for (const ap of acabamentosPadrao) {
-      if (!codigos.has(ap.codigo)) {
-        codigos.add(ap.codigo)
-        resultado.push(ap)
-      }
-    }
-
-    return reply.status(200).send(resultado)
-  })
-}
+    const { acabamentos } = await obterCatalogoComercial(empresaId)
+    return reply.status(200).send(acabamentos.map((a) => ({ codigo: a.codigo, descricao: a.nome, id: a.id })))
+  })}

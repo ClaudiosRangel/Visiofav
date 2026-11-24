@@ -76,6 +76,12 @@ export interface CriarPedidoPropostaInput {
   exigeProva?: boolean
   referenciaOrigemTipo?: 'CALCULO' | 'PROPOSTA' | 'OP' | 'PEDIDO' | null
   referenciaOrigemNumero?: string | null
+  // Alinhamento Portal Rep x Pedidos/Propostas (reunião 24/11/2026)
+  materiaPrimaCamadas?: Array<{ funcao: string; suporte: string; gramatura?: string | null }> | null
+  entregaMesmoEndereco?: boolean
+  entregaEndereco?: string | null
+  alteracaoImpressao?: string | null
+  acondicionamento?: string | null
 }
 
 /** Valida regras de negócio da criação/edição (origem, tipo, obrigatórios). */
@@ -126,6 +132,8 @@ function montarDados(input: Partial<CriarPedidoPropostaInput>) {
     'imagemFaca',
     'situacaoCliente', 'situacaoFaca', 'numeroMatriz', 'situacaoArte',
     'referenciaOrigemTipo', 'referenciaOrigemNumero',
+    'materiaPrimaCamadas', 'entregaMesmoEndereco', 'entregaEndereco',
+    'alteracaoImpressao', 'acondicionamento',
   ] as (keyof CriarPedidoPropostaInput)[]).forEach(set)
 
   // Booleanos: default false quando não informados na criação.

@@ -90,6 +90,11 @@ export async function criarOrcamentoDePedidoProposta(
       variacoesArte: true,
       tiragensTexto: true,
       imagemFaca: true,
+      materiaPrimaCamadas: true,
+      alteracaoImpressao: true,
+      acondicionamento: true,
+      entregaMesmoEndereco: true,
+      entregaEndereco: true,
     } as never,
   })
   if (!rfq) throw new PedidoPropostaError(404, 'Pedido/Proposta não encontrado.', 'NAO_ENCONTRADO')
@@ -143,6 +148,18 @@ export async function criarOrcamentoDePedidoProposta(
   if (rfq.medidasTexto) obsPartes.push(`Medidas: ${rfq.medidasTexto}`)
   if (r.variacoesArte) obsPartes.push(`Cores/Variações: ${r.variacoesArte}`)
   if (r.tiragensTexto) obsPartes.push(`Tiragens: ${r.tiragensTexto}`)
+  if (Array.isArray(r.materiaPrimaCamadas) && r.materiaPrimaCamadas.length) {
+    obsPartes.push(
+      'Matéria-prima: ' +
+        r.materiaPrimaCamadas
+          .map((c: { funcao?: string; suporte?: string; gramatura?: string | null }) =>
+            `${c.funcao ? c.funcao + ': ' : ''}${c.suporte ?? ''}${c.gramatura ? ' ' + c.gramatura + ' g/m²' : ''}`)
+          .join(' | '),
+    )
+  }
+  if (r.alteracaoImpressao) obsPartes.push(`Alteração na impressão: ${r.alteracaoImpressao}`)
+  if (r.acondicionamento) obsPartes.push(`Acondicionamento: ${r.acondicionamento}`)
+  if (r.entregaMesmoEndereco === false && r.entregaEndereco) obsPartes.push(`Entrega em: ${r.entregaEndereco}`)
   if (rfq.acabamentos) obsPartes.push(`Acabamentos solicitados: ${rfq.acabamentos}`)
   if (rfq.observacoes) obsPartes.push(rfq.observacoes)
 

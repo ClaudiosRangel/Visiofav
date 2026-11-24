@@ -55,6 +55,18 @@ export interface CriarSolicitacaoInput {
   anexo1Url?: string
   anexo2Url?: string
   discriminacao?: string
+  // Alinhamento Portal x Pedidos/Propostas (reuniao 24/11/2026)
+  exigeAmostra?: boolean
+  tiragensTexto?: string
+  prazoPagamentoId?: string
+  materiaPrimaCamadas?: Array<{ funcao: string; suporte: string; gramatura?: string }>
+  situacaoFaca?: 'NOVA' | 'EXISTENTE'
+  numeroMatriz?: string
+  alteracaoImpressao?: string
+  entregaMesmoEndereco?: boolean
+  entregaEndereco?: string
+  acondicionamento?: string
+  acabamentosSelecionados?: Array<{ acabamentoId?: string; nome: string }>
 }
 
 export interface ListarSolicitacoesFiltros {
@@ -174,6 +186,16 @@ export async function criarSolicitacao(
     }
   }
 
+  // Obrigatórios em todos os casos (reunião 24/11/2026): cidade e, quando o
+  // endereço de entrega é outro, o endereço. CNPJ e telefone ficam no cadastro
+  // do cliente (validados ao criar o cliente).
+  if (!dados.cidade?.trim()) {
+    throw { statusCode: 400, message: 'Informe a cidade.', code: 'CIDADE_OBRIGATORIA' }
+  }
+  if (dados.entregaMesmoEndereco === false && !dados.entregaEndereco?.trim()) {
+    throw { statusCode: 400, message: 'Informe o endereço de entrega.', code: 'ENDERECO_ENTREGA_OBRIGATORIO' }
+  }
+
   // Repetição: o produto informado precisa existir na empresa do representante.
   if (dados.produtoId) {
     const produto = await prisma.produto.findFirst({
@@ -219,8 +241,12 @@ export async function criarSolicitacao(
       dataValidade: dados.dataValidade || null,
       variacoesArte: dados.variacoesArte || null,
       exportacao: dados.exportacao || null,
-      cartao: dados.cartao || null,
-      gramaturaTexto: dados.gramaturaTexto || null,
+      cartao: dados.materiaPrimaCamadas?.length
+        ? dados.materiaPrimaCamadas.map((c) => c.suporte).join(' + ')
+        : dados.cartao || null,
+      gramaturaTexto: dados.materiaPrimaCamadas?.length
+        ? dados.materiaPrimaCamadas.map((c) => c.gramatura || '').filter(Boolean).join('+') || null
+        : dados.gramaturaTexto || null,
       cartaoFsc: dados.cartaoFsc ?? null,
       medidasTexto: dados.medidasTexto || null,
       corteInternoVerso: dados.corteInternoVerso ?? null,
@@ -231,6 +257,12 @@ export async function criarSolicitacao(
       anexo1Url: dados.anexo1Url || null,
       anexo2Url: dados.anexo2Url || null,
       discriminacao: dados.discriminacao || null,
+      tiragensTexto: dados.tiragensTexto || null,
+      materiaPrimaCamadas: dados.materiaPrimaCamadas?.length ? dados.materiaPrimaCamadas : undefined,
+      entregaMesmoEndereco: dados.entregaMesmoEndereco ?? true,
+      entregaEndereco: dados.entregaMesmoEndereco === false ? dados.entregaEndereco || null : null,
+      alteracaoImpressao: dados.alteracaoImpressao || null,
+      acondicionamento: dados.acondicionamento || null,
       status: 'PENDENTE',
     } as never,
     select: SOLICITACAO_SELECT,
@@ -292,11 +324,52 @@ async function espelharEmPedidoProposta(
 
   const refSolicitacao = `Solicitação do portal do representante: ${solicitacaoId}`
 
+  // Prazo: usa o cadastro (mesmo texto que o Comercial vê no orçamento).
+  let prazoTexto = dados.prazoPagamento || null
+  let prazoId: string | null = null
+  if (dados.prazoPagamentoId) {
+    const prazo = await prisma.condicaoPagamentoComercial.findFirst({
+      where: { id: dados.prazoPagamentoId, empresaId },
+      select: { id: true, descricao: true },
+    })
+    if (prazo) { prazoId = prazo.id; prazoTexto = prazo.descricao }
+  }
+
+  // Matéria-prima por camadas -> cartão/gramatura no formato do Pedido/Proposta.
+  const camadas = (dados.materiaPrimaCamadas ?? []).filter((c) => c.suporte?.trim())
+  const cartao = camadas.length ? camadas.map((c) => c.suporte.trim()).join(' + ') : dados.cartao || null
+  const gramatura = camadas.length
+    ? camadas.map((c) => (c.gramatura || '').trim()).filter(Boolean).join('+') || null
+    : dados.gramaturaTexto || null
+
+  // Mostruário = pedido NOVO que exige amostra (aprovada, segue como NOVO).
+  const exigeAmostra = dados.exigeAmostra ?? dados.tipoPedido === 'MOSTRUARIO'
+  const tipoPedidoFinal = tipoPedido === 'MOSTRUARIO' ? 'NOVO' : tipoPedido
+
+  // Situação da arte: só a impressão pode mudar na repetição.
+  const situacaoArte =
+    tipoPedidoFinal === 'REPETICAO'
+      ? (dados.alteracaoImpressao?.trim() ? 'EXISTENTE_COM_ALTERACAO' : 'EXISTENTE_SEM_ALTERACAO')
+      : undefined
+
+  // Acabamentos marcados no portal refletem no checklist do Pedido/Proposta.
+  const acabamentosSelecionados = (dados.acabamentosSelecionados ?? []).map((a) => ({
+    acabamentoId: a.acabamentoId ?? null,
+    nome: a.nome,
+    marcado: true,
+    detalhe: null,
+  }))
+
   await criarPedidoProposta(empresaId, representanteId, {
     origem: 'REPRESENTANTE',
     representanteId,
     vendedorId,
-    tipoPedido,
+    tipoPedido: tipoPedidoFinal,
+    exigeAmostra,
+    exigeProva: exigeAmostra,
+    situacaoFaca: dados.situacaoFaca ?? null,
+    numeroMatriz: dados.situacaoFaca === 'EXISTENTE' ? dados.numeroMatriz || null : null,
+    ...(situacaoArte ? { situacaoArte } : {}),
     clienteId: dados.clienteId || null,
     clienteNome,
     clienteCpfCnpj: dados.clienteCpfCnpj || null,
@@ -306,13 +379,21 @@ async function espelharEmPedidoProposta(
     cidade: dados.cidade || null,
     tipoEntrega,
     entregaFracionadaDias: tipoEntrega === 'FRACIONADA' ? dados.entregaFracionadaDias : null,
-    prazoPagamento: dados.prazoPagamento || null,
+    prazoPagamento: prazoTexto,
+    prazoPagamentoId: prazoId,
     produtoNome: dados.produtoNome || null,
     produtoId: dados.produtoId || null,
+    tiragensTexto: dados.tiragensTexto || null,
+    materiaPrimaCamadas: camadas.length ? camadas : null,
+    entregaMesmoEndereco: dados.entregaMesmoEndereco ?? true,
+    entregaEndereco: dados.entregaMesmoEndereco === false ? dados.entregaEndereco || null : null,
+    alteracaoImpressao: dados.alteracaoImpressao || null,
+    acondicionamento: dados.acondicionamento || null,
+    acabamentosSelecionados: acabamentosSelecionados.length ? acabamentosSelecionados : null,
     tipoEmbalagem: dados.tipoEmbalagem,
     quantidade: dados.quantidade,
-    cartao: dados.cartao || null,
-    gramatura: dados.gramaturaTexto || null,
+    cartao,
+    gramatura,
     medidasTexto,
     cartaoFsc: dados.cartaoFsc,
     corteInternoVerso: dados.corteInternoVerso,

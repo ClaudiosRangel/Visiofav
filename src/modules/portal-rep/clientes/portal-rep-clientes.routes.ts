@@ -33,11 +33,11 @@ const cadastrarClienteSchema = z.object({
   numero: z.string().nullish(),
   complemento: z.string().nullish(),
   bairro: z.string().nullish(),
-  cidade: z.string().nullish(),
+  cidade: z.string().trim().min(2, 'Cidade Ã© obrigatÃ³ria'),
   codigoMunicipio: z.string().nullish(),
   uf: z.string().nullish(),
   cep: z.string().nullish(),
-  telefone: z.string().nullish(),
+  telefone: z.string().trim().min(8, 'Telefone Ã© obrigatÃ³rio'),
   email: z.string().nullish(),
 })
 

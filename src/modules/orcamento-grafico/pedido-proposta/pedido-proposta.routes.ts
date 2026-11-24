@@ -22,6 +22,7 @@ import {
 } from './anexo-pedido-proposta.service'
 import { criarOrcamentoDePedidoProposta } from './encaminhar-orcamento.service'
 import { gerarPedidoPropostaPdf } from './pedido-proposta-pdf.service'
+import { obterCatalogoComercial } from './catalogo-comercial.service'
 import { liberarPedidoDePedidoProposta, type FasePendente } from './liberar-pedido-proposta.service'
 import { ESTADOS_VALIDOS, PedidoPropostaError, type EstadoProposta } from './pedido-proposta-estado.service'
 import { enriquecerCnpj } from '../../prospeccao/provider'
@@ -94,6 +95,16 @@ const corpoCriar = z.object({
   exigeProva: z.boolean().optional(),
   referenciaOrigemTipo: z.enum(['CALCULO', 'PROPOSTA', 'OP', 'PEDIDO']).optional().nullable(),
   referenciaOrigemNumero: z.string().max(60).optional().nullable(),
+  // Alinhamento Portal Rep x Pedidos/Propostas (reunião 24/11/2026)
+  materiaPrimaCamadas: z.array(z.object({
+    funcao: z.string().max(40),
+    suporte: z.string().max(200),
+    gramatura: z.string().max(60).optional().nullable(),
+  })).max(6).optional().nullable(),
+  entregaMesmoEndereco: z.boolean().optional(),
+  entregaEndereco: z.string().max(500).optional().nullable(),
+  alteracaoImpressao: z.string().max(2000).optional().nullable(),
+  acondicionamento: z.string().max(120).optional().nullable(),
 })
 
 export async function pedidoPropostaRoutes(app: FastifyInstance) {
@@ -502,6 +513,12 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   // ═══════════════════════════════════════════════════════════════════════════
   // Cadastro de Prazos / Condições de Pagamento (ligado ao Financeiro)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // Catálogo comercial único (mesmas listas do Portal do Representante).
+  app.get('/pedidos-proposta/catalogo-comercial', async (request) => {
+    const user = request.user as { id: string; empresaId: string }
+    return obterCatalogoComercial(user.empresaId)
+  })
 
   // Lista os prazos ativos da empresa (para o Select do RFQ e cadastro).
   app.get('/pedidos-proposta/prazos-pagamento', async (request) => {

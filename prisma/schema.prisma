@@ -3253,6 +3253,8 @@ model AcabamentoGrafico {
   @@unique([empresaId, codigo])
   @@index([empresaId, status])
   @@map("acabamento_grafico")
+  /// Exibe no Portal do Representante e em Pedidos/Propostas (lista comercial unica).
+  exibirComercial Boolean @default(true) @map("exibir_comercial")
 }
 
 /// Sub-opção (restrição) de uma atividade de acabamento (Req 7). Ex.: coladeira
@@ -4379,6 +4381,8 @@ model TipoEmbalagem {
 
   @@unique([empresaId, codigo])
   @@map("tipo_embalagem")
+  /// Exibe no Portal do Representante e em Pedidos/Propostas (lista comercial unica).
+  exibirComercial Boolean @default(true) @map("exibir_comercial")
 }
 
 // Preço de Matéria-Prima
@@ -4779,6 +4783,16 @@ model PedidoProposta {
   @@index([empresaId, setorResponsavel])
   @@index([empresaId, referenciaOrigemTipo, referenciaOrigemNumero])
   @@map("pedido_proposta")
+  // Alinhamento Portal Rep x Pedidos/Propostas (reuniao 24/11/2026) - aditivo.
+  /// Camadas de materia-prima: [{ funcao, suporte, gramatura }]
+  materiaPrimaCamadas   Json?     @map("materia_prima_camadas")
+  /// Entrega no mesmo endereco do CNPJ? (default true)
+  entregaMesmoEndereco  Boolean   @default(true) @map("entrega_mesmo_endereco")
+  entregaEndereco       String?   @map("entrega_endereco") @db.Text
+  /// Alteracao na impressao (somente em repeticao)
+  alteracaoImpressao    String?   @map("alteracao_impressao") @db.Text
+  /// Forma de acondicionamento (cadastro de acabamentos com acondicionamento=true)
+  acondicionamento      String?   @db.VarChar(120)
 }
 
 model AnexoPedidoProposta {
@@ -7274,6 +7288,18 @@ model SolicitacaoOrcamentoRep {
 
   @@index([empresaId, vendedorId, status])
   @@map("solicitacao_orcamento_rep")
+  // Alinhamento Portal Rep x Pedidos/Propostas (reuniao 24/11/2026) - aditivo.
+  /// Varias tiragens separadas por virgula (ex.: 1000, 5000).
+  tiragensTexto         String?   @map("tiragens_texto") @db.VarChar(200)
+  /// Camadas de materia-prima: [{ funcao, suporte, gramatura }]
+  materiaPrimaCamadas   Json?     @map("materia_prima_camadas")
+  /// Entrega no mesmo endereco do CNPJ? (default true)
+  entregaMesmoEndereco  Boolean   @default(true) @map("entrega_mesmo_endereco")
+  entregaEndereco       String?   @map("entrega_endereco") @db.Text
+  /// Alteracao na impressao (somente em repeticao)
+  alteracaoImpressao    String?   @map("alteracao_impressao") @db.Text
+  /// Forma de acondicionamento (cadastro de acabamentos com acondicionamento=true)
+  acondicionamento      String?   @db.VarChar(120)
 }
 
 model NotificacaoRep {

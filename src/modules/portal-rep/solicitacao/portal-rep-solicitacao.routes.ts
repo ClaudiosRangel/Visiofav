@@ -70,6 +70,25 @@ const criarSolicitacaoSchema = z.object({
   anexo1Url: z.string().max(500).optional(),
   anexo2Url: z.string().max(500).optional(),
   discriminacao: z.string().optional(),
+  // Alinhamento Portal x Pedidos/Propostas (reuniao 24/11/2026)
+  exigeAmostra: z.boolean().optional(), // mostruario: pedido NOVO com amostra para teste
+  tiragensTexto: z.string().max(200).optional(),
+  prazoPagamentoId: z.string().uuid().optional(),
+  materiaPrimaCamadas: z.array(z.object({
+    funcao: z.string().max(40),
+    suporte: z.string().max(200),
+    gramatura: z.string().max(60).optional(),
+  })).max(6).optional(),
+  situacaoFaca: z.enum(['NOVA', 'EXISTENTE']).optional(),
+  numeroMatriz: z.string().max(80).optional(),
+  alteracaoImpressao: z.string().max(2000).optional(),
+  entregaMesmoEndereco: z.boolean().optional(),
+  entregaEndereco: z.string().max(500).optional(),
+  acondicionamento: z.string().max(120).optional(),
+  acabamentosSelecionados: z.array(z.object({
+    acabamentoId: z.string().uuid().optional(),
+    nome: z.string().max(200),
+  })).max(60).optional(),
 })
 
 const listarSolicitacoesQuerySchema = z.object({
