@@ -37,11 +37,13 @@ export async function adicionarAnexo(
 ): Promise<{ id: string }> {
   await garantirPedidoDaEmpresa(empresaId, pedidoId)
 
-  if (!file.mime || !file.mime.toLowerCase().startsWith('image/')) {
-    throw new PedidoPropostaError(400, 'Apenas imagens são aceitas.', 'MIME_INVALIDO')
+  const mime = (file.mime || '').toLowerCase()
+  const ehPdf = mime === 'application/pdf' && file.buffer.subarray(0, 4).toString() === '%PDF'
+  if (!mime.startsWith('image/') && !ehPdf) {
+    throw new PedidoPropostaError(400, 'Apenas imagens ou arquivos PDF são aceitos.', 'MIME_INVALIDO')
   }
   if (file.buffer.length > TAMANHO_MAX) {
-    throw new PedidoPropostaError(400, 'Imagem acima do limite de 10MB.', 'ARQUIVO_GRANDE')
+    throw new PedidoPropostaError(400, 'Arquivo acima do limite de 10MB.', 'ARQUIVO_GRANDE')
   }
 
   const total = await prisma.anexoPedidoProposta.count({ where: { pedidoPropostaId: pedidoId, empresaId } })

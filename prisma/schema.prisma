@@ -4793,6 +4793,8 @@ model PedidoProposta {
   alteracaoImpressao    String?   @map("alteracao_impressao") @db.Text
   /// Forma de acondicionamento (cadastro de acabamentos com acondicionamento=true)
   acondicionamento      String?   @db.VarChar(120)
+  /// Telefone do cliente (obrigatorio - alinhamento reuniao 24/11/2026)
+  clienteTelefone       String?   @map("cliente_telefone") @db.VarChar(30)
 }
 
 model AnexoPedidoProposta {

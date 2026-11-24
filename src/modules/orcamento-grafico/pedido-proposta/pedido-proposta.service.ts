@@ -35,6 +35,7 @@ export interface CriarPedidoPropostaInput {
   clienteId?: string | null
   clienteNome?: string | null
   clienteCpfCnpj?: string | null
+  clienteTelefone?: string | null
   jaCliente?: boolean
   mercado: string
   ufOrigem?: string | null
@@ -123,7 +124,7 @@ function montarDados(input: Partial<CriarPedidoPropostaInput>) {
     if (input[k] !== undefined) dados[k as string] = input[k]
   }
   ;([
-    'origem', 'tipoPedido', 'clienteId', 'clienteNome', 'clienteCpfCnpj',
+    'origem', 'tipoPedido', 'clienteId', 'clienteNome', 'clienteCpfCnpj', 'clienteTelefone',
     'mercado', 'ufOrigem', 'cidade', 'tipoEntrega', 'entregaFracionadaDias',
     'prazoPagamento', 'produtoNome', 'tipoEmbalagem', 'quantidade', 'cartao',
     'gramatura', 'medidasTexto', 'acabamentos', 'matriz', 'quantidadePorVolume',

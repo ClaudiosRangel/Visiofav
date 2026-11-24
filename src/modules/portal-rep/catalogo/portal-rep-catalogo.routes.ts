@@ -12,6 +12,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../../../lib/prisma'
 import { obterCatalogoComercial } from '../../orcamento-grafico/pedido-proposta/catalogo-comercial.service'
 import { portalRepAuth } from '../auth/portal-rep-auth.middleware'
+import { buscarMunicipiosIBGE } from '../../fiscal/emissor-dfe/cte/cte-municipios.routes'
 
 export async function portalRepCatalogoRoutes(app: FastifyInstance) {
 
@@ -20,6 +21,13 @@ export async function portalRepCatalogoRoutes(app: FastifyInstance) {
   app.get('/comercial', { preHandler: [portalRepAuth] }, async (request, reply) => {
     const { empresaId } = request.portalRepUser
     return reply.status(200).send(await obterCatalogoComercial(empresaId))
+  })
+
+  // GET /catalogo/municipios?uf=RJ - municípios do IBGE (busca de cidade).
+  app.get('/municipios', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { uf } = request.query as { uf?: string }
+    if (!uf || !/^[A-Za-z]{2}$/.test(uf)) return reply.status(400).send({ message: 'Informe a UF (2 letras).' })
+    return reply.status(200).send(await buscarMunicipiosIBGE(uf.toUpperCase()))
   })
 
   // Compatibilidade com versoes antigas do app (mesma fonte do /comercial).

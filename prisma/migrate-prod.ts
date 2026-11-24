@@ -5903,6 +5903,7 @@ async function seedMateriaisFromOPs() {
   }
   await prisma.$executeRawUnsafe(`ALTER TABLE "tipo_embalagem" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "cliente_telefone" VARCHAR(30)`)
   console.log('✅ Comercial: alinhamento portal-rep x pedido_proposta (colunas + exibir_comercial)')
 
   // ───────────────────────────────────────────────────────────────────────────

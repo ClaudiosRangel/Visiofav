@@ -360,7 +360,16 @@ async function espelharEmPedidoProposta(
     detalhe: null,
   }))
 
+  // CNPJ e telefone vêm do cadastro do cliente (obrigatórios no Pedido/Proposta).
+  const clienteCad = dados.clienteId
+    ? await prisma.cliente.findFirst({
+        where: { id: dados.clienteId, empresaId },
+        select: { cpfCnpj: true, telefone: true },
+      })
+    : null
+
   await criarPedidoProposta(empresaId, representanteId, {
+    clienteTelefone: clienteCad?.telefone ?? null,
     origem: 'REPRESENTANTE',
     representanteId,
     vendedorId,
@@ -372,7 +381,7 @@ async function espelharEmPedidoProposta(
     ...(situacaoArte ? { situacaoArte } : {}),
     clienteId: dados.clienteId || null,
     clienteNome,
-    clienteCpfCnpj: dados.clienteCpfCnpj || null,
+    clienteCpfCnpj: dados.clienteCpfCnpj || clienteCad?.cpfCnpj || null,
     jaCliente: dados.jaCliente ?? !!dados.clienteId,
     mercado: dados.mercado?.trim() || 'Não informado',
     ufOrigem: dados.ufOrigem || null,

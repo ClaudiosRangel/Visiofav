@@ -47,6 +47,7 @@ const corpoCriar = z.object({
   clienteId: z.string().uuid().optional().nullable(),
   clienteNome: z.string().max(200).optional().nullable(),
   clienteCpfCnpj: z.string().max(20).optional().nullable(),
+  clienteTelefone: z.string().max(30).optional().nullable(),
   jaCliente: z.boolean().optional(),
   mercado: z.string().min(1).max(120),
   ufOrigem: z.string().max(2).optional().nullable(),

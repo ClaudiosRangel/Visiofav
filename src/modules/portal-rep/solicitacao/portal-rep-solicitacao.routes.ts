@@ -17,6 +17,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
 import { portalRepAuth } from '../auth/portal-rep-auth.middleware'
+import { adicionarAnexo } from '../../orcamento-grafico/pedido-proposta/anexo-pedido-proposta.service'
 import {
   criarSolicitacao,
   listarSolicitacoes,
@@ -160,6 +161,40 @@ export async function portalRepSolicitacaoRoutes(app: FastifyInstance) {
       const response: Record<string, unknown> = { message: err.message || 'Erro interno' }
       if (err.code) response.code = err.code
       return reply.status(statusCode).send(response)
+    }
+  })
+
+  // POST /:id/anexos — anexa PDF/imagem à solicitação (vai para o Pedido/Proposta
+  // espelhado). Só a própria solicitação do representante (empresa + representante).
+  app.post('/:id/anexos', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params)
+    const { empresaId, representanteId } = request.portalRepUser
+
+    const sol = await prisma.solicitacaoOrcamentoRep.findFirst({
+      where: { id, empresaId, representanteId },
+      select: { id: true },
+    })
+    if (!sol) return reply.status(404).send({ message: 'Solicitação não encontrada.' })
+
+    const pedido = await prisma.pedidoProposta.findFirst({
+      where: { empresaId, representanteId, observacoes: { contains: id } },
+      select: { id: true },
+    })
+    if (!pedido) return reply.status(404).send({ message: 'Pedido/Proposta da solicitação não encontrado.' })
+
+    const file = await (request as any).file?.()
+    if (!file) return reply.status(400).send({ message: 'Nenhum arquivo enviado (multipart/form-data).' })
+    try {
+      const buffer = await file.toBuffer()
+      const r = await adicionarAnexo(empresaId, pedido.id, {
+        nome: file.filename || 'anexo.pdf',
+        mime: file.mimetype || '',
+        buffer,
+      })
+      return reply.status(201).send(r)
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500
+      return reply.status(statusCode).send({ message: err.message || 'Erro ao anexar.', code: err.code })
     }
   })
 
