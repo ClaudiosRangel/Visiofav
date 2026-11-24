@@ -10,6 +10,7 @@ import { prisma } from '../../../lib/prisma'
 import { verificarPermissaoComercial } from '../permissoes-comercial.routes'
 import { registrarEvento, solicitarTransicao } from './servico-eventos.service'
 import { publicarFichaDoPedido } from './pre-impressao.service'
+import { registrarAprovacaoEtapa } from './aprovacao-etapa.service'
 import {
   StatusFielError,
   statusMacroDe,
@@ -357,6 +358,15 @@ export async function pedidoStatusRoutes(app: FastifyInstance) {
         await publicarFichaDoPedido(user.empresaId, id, user.id)
       } catch (e) {
         console.error('⚠️ [pedido-status] publicar ficha falhou (ignorado):', (e as Error)?.message)
+      }
+      // Mantém o workflow do estágio Arte em sincronia (efeitos no pedido já aplicados acima).
+      try {
+        await registrarAprovacaoEtapa({
+          empresaId: user.empresaId, pedidoId: id, etapa: 'ARTE', status: 'APROVADA',
+          forma: body.forma, usuarioId: user.id, motivo: body.observacao ?? null, aplicarEfeitosNoPedido: false,
+        })
+      } catch (e) {
+        console.error('⚠️ [pedido-status] sincronizar estágio Arte falhou (ignorado):', (e as Error)?.message)
       }
       return carregar(user.empresaId, id)
     } catch (err) {

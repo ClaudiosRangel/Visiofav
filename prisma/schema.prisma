@@ -4811,6 +4811,10 @@ model AnexoPedidoProposta {
 
   @@index([empresaId, pedidoPropostaId])
   @@map("anexo_pedido_proposta")
+  /// GERAL (legado) | MOCKUP | ARTE | ALTERACAO_CLIENTE (imagens enviadas pelo cliente no link)
+  categoria        String    @default("GERAL") @db.VarChar(20)
+  /// Link de aprovação que originou o anexo (ALTERACAO_CLIENTE)
+  linkId           String?   @map("link_id")
 }
 
 model LogPedidoProposta {
@@ -4864,6 +4868,8 @@ model LinkAprovacaoArte {
   @@index([empresaId, pedidoPropostaId])
   @@index([token])
   @@map("link_aprovacao_arte")
+  /// Estágio que o link aprova: MOCKUP | ARTE (links antigos = ARTE)
+  etapa            String    @default("ARTE") @db.VarChar(20)
 }
 
 /// Board da Pré-Impressão (spec comercial-pre-impressao-board). Uma linha por
@@ -4886,6 +4892,15 @@ model EtapaPreImpressao {
   @@unique([pedidoPropostaId, etapa])
   @@index([empresaId, pedidoPropostaId])
   @@map("etapa_pre_impressao")
+  // Aprovação do estágio (Mockup/Arte) - workflow cliente/manual (reunião 24/11/2026). Aditivo.
+  /// AGUARDANDO | APROVADA | ALTERACAO | CANCELADA (null = sem workflow iniciado)
+  aprovacaoStatus  String?   @map("aprovacao_status") @db.VarChar(20)
+  /// CLIENTE_LINK | REPRESENTANTE | EMAIL | PRESENCIAL
+  aprovacaoForma   String?   @map("aprovacao_forma") @db.VarChar(20)
+  aprovacaoPor     String?   @map("aprovacao_por") @db.VarChar(160)
+  aprovacaoEm      DateTime? @map("aprovacao_em")
+  /// Descrição da alteração ou motivo do cancelamento
+  aprovacaoMotivo  String?   @map("aprovacao_motivo") @db.Text
 }
 
 /// Cadastro de Prazos / Condições de Pagamento do Comercial (ligado ao

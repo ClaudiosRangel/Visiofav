@@ -5905,6 +5905,17 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "cliente_telefone" VARCHAR(30)`)
   console.log('✅ Comercial: alinhamento portal-rep x pedido_proposta (colunas + exibir_comercial)')
+  // Workflow de aprovação por estágio (Mockup/Arte) da Pré-Impressão (reunião 24/11/2026).
+  for (const [col, tipo] of [
+    ['aprovacao_status', 'VARCHAR(20)'], ['aprovacao_forma', 'VARCHAR(20)'], ['aprovacao_por', 'VARCHAR(160)'],
+    ['aprovacao_em', 'TIMESTAMP(3)'], ['aprovacao_motivo', 'TEXT'],
+  ]) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "etapa_pre_impressao" ADD COLUMN IF NOT EXISTS "${col}" ${tipo}`)
+  }
+  await prisma.$executeRawUnsafe(`ALTER TABLE "link_aprovacao_arte" ADD COLUMN IF NOT EXISTS "etapa" VARCHAR(20) NOT NULL DEFAULT 'ARTE'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "anexo_pedido_proposta" ADD COLUMN IF NOT EXISTS "categoria" VARCHAR(20) NOT NULL DEFAULT 'GERAL'`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "anexo_pedido_proposta" ADD COLUMN IF NOT EXISTS "link_id" TEXT`)
+  console.log('✅ Comercial: workflow de aprovação Mockup/Arte (etapa_pre_impressao, link_aprovacao_arte, anexo_pedido_proposta)')
 
   // ───────────────────────────────────────────────────────────────────────────
   // Status fiel do Pedido/Proposta (spec comercial-pedido-status-fiel / Fundação).

@@ -336,6 +336,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   app.post('/pedidos-proposta/:id/anexos', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { categoria } = z.object({ categoria: z.enum(['GERAL', 'MOCKUP', 'ARTE']).optional() }).parse(request.query)
     const file = await (request as any).file?.()
     if (!file) return reply.status(400).send({ message: 'Nenhum arquivo enviado (multipart/form-data).' })
     try {
@@ -344,7 +345,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
         nome: file.filename || 'imagem',
         mime: file.mimetype || '',
         buffer,
-      })
+      }, categoria ?? 'GERAL')
       return reply.status(201).send(r)
     } catch (err) {
       return tratarErro(err, reply)

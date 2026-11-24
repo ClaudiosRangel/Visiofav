@@ -14,6 +14,9 @@ const TAMANHO_MAX = 10 * 1024 * 1024 // 10MB
 
 export class AnexoPropostaError extends PedidoPropostaError {}
 
+/** GERAL (legado/imagens do pedido) | MOCKUP | ARTE (arquivos do estágio na Pré-Impressão). */
+export type CategoriaAnexo = 'GERAL' | 'MOCKUP' | 'ARTE'
+
 /** Garante que o pedido pai existe e pertence à empresa. Retorna o id. */
 async function garantirPedidoDaEmpresa(empresaId: string, pedidoId: string): Promise<string> {
   const p = await prisma.pedidoProposta.findFirst({
@@ -34,6 +37,7 @@ export async function adicionarAnexo(
   empresaId: string,
   pedidoId: string,
   file: ArquivoAnexo,
+  categoria: CategoriaAnexo = 'GERAL',
 ): Promise<{ id: string }> {
   await garantirPedidoDaEmpresa(empresaId, pedidoId)
 
@@ -46,7 +50,10 @@ export async function adicionarAnexo(
     throw new PedidoPropostaError(400, 'Arquivo acima do limite de 10MB.', 'ARQUIVO_GRANDE')
   }
 
-  const total = await prisma.anexoPedidoProposta.count({ where: { pedidoPropostaId: pedidoId, empresaId } })
+  // Limite por categoria (Mockup e Arte têm 5 arquivos cada; as imagens de alteração do cliente não contam).
+  const total = await prisma.anexoPedidoProposta.count({
+    where: { pedidoPropostaId: pedidoId, empresaId, categoria },
+  })
   if (total >= LIMITE_ANEXOS) {
     throw new PedidoPropostaError(409, `Limite de ${LIMITE_ANEXOS} imagens atingido.`, 'LIMITE_ANEXOS')
   }
@@ -59,7 +66,8 @@ export async function adicionarAnexo(
       tipo: file.mime.slice(0, 100),
       tamanho: file.buffer.length,
       dados: file.buffer,
-    },
+      categoria,
+    } as never,
     select: { id: true },
   })
   return criado
@@ -93,11 +101,11 @@ export async function removerAnexo(empresaId: string, pedidoId: string, anexoId:
 export async function listarAnexosMetadados(
   empresaId: string,
   pedidoId: string,
-): Promise<Array<{ id: string; nome: string; tipo: string; tamanho: number }>> {
+): Promise<Array<{ id: string; nome: string; tipo: string; tamanho: number; categoria: string; linkId: string | null }>> {
   await garantirPedidoDaEmpresa(empresaId, pedidoId)
   return prisma.anexoPedidoProposta.findMany({
     where: { pedidoPropostaId: pedidoId, empresaId },
-    select: { id: true, nome: true, tipo: true, tamanho: true },
+    select: { id: true, nome: true, tipo: true, tamanho: true, categoria: true, linkId: true },
     orderBy: { criadoEm: 'asc' },
   })
 }

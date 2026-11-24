@@ -4,9 +4,13 @@
  * expiração do link e validação da decisão do cliente.
  */
 
-export type StatusLink = 'PENDENTE' | 'APROVADA' | 'AJUSTE_SOLICITADO' | 'CANCELADO'
-export type DecisaoCliente = 'APROVADA' | 'AJUSTE_SOLICITADO'
-export type EstadoEfetivo = 'PENDENTE' | 'EXPIRADO' | 'APROVADA' | 'AJUSTE_SOLICITADO' | 'CANCELADO'
+export type StatusLink = 'PENDENTE' | 'APROVADA' | 'AJUSTE_SOLICITADO' | 'CANCELADA_CLIENTE' | 'CANCELADO'
+export type DecisaoCliente = 'APROVADA' | 'AJUSTE_SOLICITADO' | 'CANCELADA_CLIENTE'
+export type EstadoEfetivo = 'PENDENTE' | 'EXPIRADO' | 'APROVADA' | 'AJUSTE_SOLICITADO' | 'CANCELADA_CLIENTE' | 'CANCELADO'
+
+/** Estágios da Pré-Impressão que têm workflow de aprovação. */
+export type EtapaAprovacao = 'MOCKUP' | 'ARTE'
+export const ETAPAS_APROVACAO: EtapaAprovacao[] = ['MOCKUP', 'ARTE']
 
 export class AprovacaoArteError extends Error {
   constructor(public statusCode: number, message: string, public code: string) {
@@ -54,10 +58,17 @@ export function validarDecisao(
   if (estado !== 'PENDENTE') {
     throw new AprovacaoArteError(409, 'Este link já foi respondido.', 'LINK_JA_RESPONDIDO')
   }
-  if (decisao === 'AJUSTE_SOLICITADO') {
+  if (decisao === 'AJUSTE_SOLICITADO' || decisao === 'CANCELADA_CLIENTE') {
     const limpo = (motivo ?? '').trim()
     if (limpo.length < 1 || limpo.length > 500) {
-      throw new AprovacaoArteError(400, 'Informe o motivo do ajuste (até 500 caracteres).', 'MOTIVO_OBRIGATORIO')
+      const o = decisao === 'AJUSTE_SOLICITADO' ? 'a descrição da alteração' : 'o motivo do cancelamento'
+      throw new AprovacaoArteError(400, `Informe ${o} (até 500 caracteres).`, 'MOTIVO_OBRIGATORIO')
     }
   }
+}
+
+/** Valida o estágio; lança 400 se não for MOCKUP/ARTE. */
+export function validarEtapaAprovacao(e: string): EtapaAprovacao {
+  if ((ETAPAS_APROVACAO as string[]).includes(e)) return e as EtapaAprovacao
+  throw new AprovacaoArteError(400, 'Estágio inválido para aprovação (use MOCKUP ou ARTE).', 'ETAPA_INVALIDA')
 }

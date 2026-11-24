@@ -8,6 +8,7 @@ import { authenticate } from '../../../middleware/authenticate'
 import { verificarPermissaoComercial } from '../permissoes-comercial.routes'
 import { gerarLink, listarLinks, cancelarLinksPendentes } from './aprovacao-arte.service'
 import { AprovacaoArteError } from './aprovacao-arte.motor'
+import { obterAprovacoesEtapas, registrarAprovacaoEtapa } from './aprovacao-etapa.service'
 
 type Usuario = { id: string; empresaId: string; perfil?: string }
 
@@ -28,12 +29,15 @@ export async function aprovacaoArteRoutes(app: FastifyInstance) {
   app.post('/pedidos-proposta/:id/link-aprovacao', async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const { novo } = z.object({ novo: z.coerce.boolean().optional() }).parse(request.query)
+    const { novo, etapa } = z.object({
+      novo: z.coerce.boolean().optional(),
+      etapa: z.enum(['MOCKUP', 'ARTE']).optional(),
+    }).parse(request.query)
     try {
       if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
         return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
       }
-      return await gerarLink(user.empresaId, id, user.id, !!novo)
+      return await gerarLink(user.empresaId, id, user.id, !!novo, etapa ?? 'ARTE')
     } catch (err) {
       return tratarErro(err, reply)
     }
@@ -58,8 +62,56 @@ export async function aprovacaoArteRoutes(app: FastifyInstance) {
       if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
         return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
       }
-      const cancelados = await cancelarLinksPendentes(user.empresaId, id)
+      const { etapa } = z.object({ etapa: z.enum(['MOCKUP', 'ARTE']).optional() }).parse(request.query)
+      const cancelados = await cancelarLinksPendentes(user.empresaId, id, etapa)
       return { cancelados }
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Estado do workflow de aprovação dos estágios Mockup e Arte (para Pré-Impressão e Pedido/Proposta).
+  app.get('/pedidos-proposta/:id/aprovacoes', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    try {
+      const [etapas, links] = await Promise.all([
+        obterAprovacoesEtapas(user.empresaId, id),
+        listarLinks(user.empresaId, id),
+      ])
+      return { etapas, links }
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Registro MANUAL do workflow (Pedido/Proposta): Aprovado | Alteração | Cancelado.
+  app.post('/pedidos-proposta/:id/etapas/:etapa/aprovacao', async (request, reply) => {
+    const user = request.user as Usuario
+    const { id, etapa } = z.object({ id: z.string().uuid(), etapa: z.enum(['MOCKUP', 'ARTE']) }).parse(request.params)
+    const body = z.object({
+      status: z.enum(['APROVADA', 'ALTERACAO', 'CANCELADA']),
+      forma: z.enum(['REPRESENTANTE', 'EMAIL', 'PRESENCIAL']),
+      motivo: z.string().max(500).optional(),
+      nome: z.string().max(160).optional(),
+    }).parse(request.body)
+    try {
+      if (!(await verificarPermissaoComercial(user.empresaId, user.id, user.perfil, 'podeVerComercial'))) {
+        return reply.status(403).send({ message: 'Sem permissão.', code: 'PERMISSAO_NEGADA' })
+      }
+      // Registro manual encerra o link pendente do estágio (evita decisão dupla).
+      await cancelarLinksPendentes(user.empresaId, id, etapa)
+      await registrarAprovacaoEtapa({
+        empresaId: user.empresaId,
+        pedidoId: id,
+        etapa,
+        status: body.status,
+        forma: body.forma,
+        por: body.nome ?? null,
+        motivo: body.motivo ?? null,
+        usuarioId: user.id,
+      })
+      return { etapas: await obterAprovacoesEtapas(user.empresaId, id) }
     } catch (err) {
       return tratarErro(err, reply)
     }

@@ -5,7 +5,7 @@
  */
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { obterPublico, obterImagemPublica, decidir } from './aprovacao-arte.service'
+import { obterPublico, obterImagemPublica, decidir, anexarImagemAlteracao } from './aprovacao-arte.service'
 import { AprovacaoArteError } from './aprovacao-arte.motor'
 
 function tratarErro(err: unknown, reply: any) {
@@ -48,11 +48,26 @@ export async function aprovacaoArtePublicaRoutes(app: FastifyInstance) {
     }
   })
 
-  // Decisão do cliente: aprovar ou pedir ajuste.
+  // Cliente anexa uma imagem ao pedir alteração (multipart; até 5 por link).
+  app.post('/:token/alteracao-imagem', async (request, reply) => {
+    const { token } = z.object({ token: z.string().min(10).max(40) }).parse(request.params)
+    try {
+      const file = await (request as any).file?.()
+      if (!file) return reply.status(400).send({ message: 'Nenhum arquivo enviado.', code: 'SEM_ARQUIVO' })
+      const buffer = await file.toBuffer()
+      return reply.status(201).send(
+        await anexarImagemAlteracao(token, { nome: file.filename || 'imagem', mime: file.mimetype || '', buffer }),
+      )
+    } catch (err) {
+      return tratarErro(err, reply)
+    }
+  })
+
+  // Decisão do cliente: aprovar, pedir alteração (com descrição) ou cancelar (com motivo).
   app.post('/:token/decidir', async (request, reply) => {
     const { token } = z.object({ token: z.string().min(10).max(40) }).parse(request.params)
     const body = z.object({
-      decisao: z.enum(['APROVADA', 'AJUSTE_SOLICITADO']),
+      decisao: z.enum(['APROVADA', 'AJUSTE_SOLICITADO', 'CANCELADA_CLIENTE']),
       nome: z.string().min(1).max(160),
       motivo: z.string().max(500).optional(),
     }).parse(request.body)

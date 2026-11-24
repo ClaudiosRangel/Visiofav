@@ -17,8 +17,10 @@ import {
   calcularExpiracao,
   validarDecisao,
   type DecisaoCliente,
+  type EtapaAprovacao,
   type StatusLink,
 } from './aprovacao-arte.motor'
+import { registrarAprovacaoEtapa } from './aprovacao-etapa.service'
 import { registrarEvento, solicitarTransicao } from './servico-eventos.service'
 import { isTerminal, type Situacao } from './status-fiel.motor'
 import { publicarFichaDoPedido } from './pre-impressao.service'
@@ -40,6 +42,7 @@ export async function gerarLink(
   pedidoId: string,
   usuarioId: string,
   novo = false,
+  etapa: EtapaAprovacao = 'ARTE',
 ): Promise<GerarResult> {
   const pedido = await prisma.pedidoProposta.findFirst({
     where: { id: pedidoId, empresaId },
@@ -51,13 +54,13 @@ export async function gerarLink(
 
   if (novo) {
     await prisma.linkAprovacaoArte.updateMany({
-      where: { empresaId, pedidoPropostaId: pedidoId, status: 'PENDENTE' },
+      where: { empresaId, pedidoPropostaId: pedidoId, status: 'PENDENTE', etapa },
       data: { status: 'CANCELADO' },
     })
   } else {
-    // reuso de um PENDENTE não expirado
+    // reuso de um PENDENTE não expirado (do mesmo estágio)
     const existente = await prisma.linkAprovacaoArte.findFirst({
-      where: { empresaId, pedidoPropostaId: pedidoId, status: 'PENDENTE' },
+      where: { empresaId, pedidoPropostaId: pedidoId, status: 'PENDENTE', etapa },
       orderBy: { criadoEm: 'desc' },
       select: { token: true, expiraEm: true },
     })
@@ -74,8 +77,17 @@ export async function gerarLink(
   const token = randomUUID()
   const expiraEm = calcularExpiracao(agora)
   await prisma.linkAprovacaoArte.create({
-    data: { empresaId, pedidoPropostaId: pedidoId, token, status: 'PENDENTE', expiraEm, criadoPorId: usuarioId },
+    data: { empresaId, pedidoPropostaId: pedidoId, token, status: 'PENDENTE', expiraEm, criadoPorId: usuarioId, etapa },
   })
+
+  // Workflow do estágio: passa a "Aguardando cliente" (best-effort).
+  try {
+    await registrarAprovacaoEtapa({
+      empresaId, pedidoId, etapa, status: 'AGUARDANDO', usuarioId, aplicarEfeitosNoPedido: false,
+    })
+  } catch (e) {
+    console.error('⚠️ [aprovacao-arte] marcar AGUARDANDO falhou (ignorado):', (e as Error)?.message)
+  }
 
   // Evento best-effort (não derruba a geração).
   try {
@@ -96,6 +108,8 @@ export async function gerarLink(
 
 export interface LinkResumo {
   id: string
+  etapa: EtapaAprovacao
+  motivoAjuste: string | null
   tokenAbreviado: string
   status: StatusLink
   estado: string
@@ -109,11 +123,16 @@ export async function listarLinks(empresaId: string, pedidoId: string): Promise<
   const links = await prisma.linkAprovacaoArte.findMany({
     where: { empresaId, pedidoPropostaId: pedidoId },
     orderBy: { criadoEm: 'desc' },
-    select: { id: true, token: true, status: true, expiraEm: true, decididoEm: true, decididoNome: true },
+    select: {
+      id: true, token: true, status: true, expiraEm: true, decididoEm: true, decididoNome: true,
+      etapa: true, motivoAjuste: true,
+    },
   })
   const agora = new Date()
   return links.map((l) => ({
     id: l.id,
+    etapa: ((l as { etapa?: string }).etapa ?? 'ARTE') as EtapaAprovacao,
+    motivoAjuste: (l as { motivoAjuste?: string | null }).motivoAjuste ?? null,
     tokenAbreviado: `${l.token.slice(0, 8)}…`,
     status: l.status as StatusLink,
     estado: avaliarLink(l.status as StatusLink, l.expiraEm, agora).estado,
@@ -124,11 +143,15 @@ export async function listarLinks(empresaId: string, pedidoId: string): Promise<
   }))
 }
 
-export async function cancelarLinksPendentes(empresaId: string, pedidoId: string): Promise<number> {
+export async function cancelarLinksPendentes(
+  empresaId: string,
+  pedidoId: string,
+  etapa?: EtapaAprovacao,
+): Promise<number> {
   const pedido = await prisma.pedidoProposta.findFirst({ where: { id: pedidoId, empresaId }, select: { id: true } })
   if (!pedido) throw new AprovacaoArteError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
   const r = await prisma.linkAprovacaoArte.updateMany({
-    where: { empresaId, pedidoPropostaId: pedidoId, status: 'PENDENTE' },
+    where: { empresaId, pedidoPropostaId: pedidoId, status: 'PENDENTE', ...(etapa ? { etapa } : {}) },
     data: { status: 'CANCELADO' },
   })
   return r.count
@@ -140,10 +163,14 @@ export async function cancelarLinksPendentes(empresaId: string, pedidoId: string
 
 export interface DadosPublicos {
   estado: string
+  etapa: EtapaAprovacao
   numero: number
   produto: string | null
   cliente: string | null
-  imagens: Array<{ id: string; nome: string }>
+  /** Arquivos do estágio (imagens e PDF). `imagem` = true quando é imagem. */
+  imagens: Array<{ id: string; nome: string; tipo: string; imagem: boolean }>
+  /** Imagens que o cliente já anexou ao pedir alteração (até 5). */
+  imagensAlteracao: number
   decididoEm: Date | null
   motivoAjuste: string | null
 }
@@ -153,7 +180,7 @@ async function carregarPorToken(token: string) {
     where: { token },
     select: {
       id: true, empresaId: true, pedidoPropostaId: true, status: true, expiraEm: true,
-      decididoEm: true, motivoAjuste: true,
+      decididoEm: true, motivoAjuste: true, etapa: true,
     },
   })
   if (!link) throw new AprovacaoArteError(404, 'Link não encontrado.', 'NAO_ENCONTRADO')
@@ -169,19 +196,27 @@ export async function obterPublico(token: string): Promise<DadosPublicos> {
     where: { id: link.pedidoPropostaId, empresaId: link.empresaId },
     select: {
       numero: true, produtoNome: true, tipoEmbalagem: true, clienteNome: true,
-      anexos: { select: { id: true, nome: true, tipo: true }, orderBy: { criadoEm: 'asc' } },
+      anexos: { select: { id: true, nome: true, tipo: true, categoria: true, linkId: true }, orderBy: { criadoEm: 'asc' } },
     },
   })
   if (!pedido) throw new AprovacaoArteError(404, 'Pedido não encontrado.', 'NAO_ENCONTRADO')
 
+  const etapa = ((link as { etapa?: string }).etapa ?? 'ARTE') as EtapaAprovacao
+  // Arte: arquivos ARTE + legados (GERAL). Mockup: só MOCKUP. Nunca as imagens de alteração do cliente.
+  const categoriasVisiveis = etapa === 'MOCKUP' ? ['MOCKUP'] : ['ARTE', 'GERAL']
+  const anexos = (pedido.anexos || []) as Array<{ id: string; nome: string; tipo: string; categoria?: string; linkId?: string | null }>
+
   return {
-    estado, // PENDENTE | EXPIRADO | APROVADA | AJUSTE_SOLICITADO | CANCELADO
+    estado, // PENDENTE | EXPIRADO | APROVADA | AJUSTE_SOLICITADO | CANCELADA_CLIENTE | CANCELADO
+    etapa,
     numero: pedido.numero,
     produto: pedido.produtoNome || pedido.tipoEmbalagem || null,
     cliente: pedido.clienteNome || null,
-    imagens: (pedido.anexos || [])
-      .filter((a) => (a.tipo || '').startsWith('image/'))
-      .map((a) => ({ id: a.id, nome: a.nome })),
+    imagensAlteracao: anexos.filter((a) => a.categoria === 'ALTERACAO_CLIENTE' && a.linkId === link.id).length,
+    imagens: anexos
+      .filter((a) => categoriasVisiveis.includes(a.categoria ?? 'GERAL'))
+      .filter((a) => (a.tipo || '').startsWith('image/') || a.tipo === 'application/pdf')
+      .map((a) => ({ id: a.id, nome: a.nome, tipo: a.tipo, imagem: (a.tipo || '').startsWith('image/') })),
     decididoEm: link.decididoEm,
     motivoAjuste: link.motivoAjuste,
   }
@@ -195,6 +230,50 @@ export async function obterImagemPublica(token: string, anexoId: string): Promis
   })
   if (!anexo) throw new AprovacaoArteError(404, 'Imagem não encontrada.', 'NAO_ENCONTRADO')
   return { dados: Buffer.from(anexo.dados), tipo: anexo.tipo, nome: anexo.nome }
+}
+
+const MAX_IMAGENS_ALTERACAO = 5
+const TAMANHO_MAX_IMAGEM = 10 * 1024 * 1024
+
+/**
+ * Cliente anexa uma imagem ao pedir alteração (antes de enviar a decisão).
+ * Só enquanto o link está PENDENTE e não expirou; máx. 5 por link; só image/*.
+ */
+export async function anexarImagemAlteracao(
+  token: string,
+  file: { nome: string; mime: string; buffer: Buffer },
+): Promise<{ id: string; total: number }> {
+  const link = await carregarPorToken(token)
+  const { estado } = avaliarLink(link.status as StatusLink, link.expiraEm, new Date())
+  if (estado === 'EXPIRADO') throw new AprovacaoArteError(410, 'O link de aprovação expirou.', 'LINK_EXPIRADO')
+  if (estado !== 'PENDENTE') throw new AprovacaoArteError(409, 'Este link já foi respondido.', 'LINK_JA_RESPONDIDO')
+
+  if (!(file.mime || '').toLowerCase().startsWith('image/')) {
+    throw new AprovacaoArteError(400, 'Envie apenas imagens.', 'MIME_INVALIDO')
+  }
+  if (file.buffer.length > TAMANHO_MAX_IMAGEM) {
+    throw new AprovacaoArteError(400, 'Imagem acima do limite de 10MB.', 'ARQUIVO_GRANDE')
+  }
+  const atuais = await prisma.anexoPedidoProposta.count({
+    where: { pedidoPropostaId: link.pedidoPropostaId, empresaId: link.empresaId, categoria: 'ALTERACAO_CLIENTE', linkId: link.id },
+  })
+  if (atuais >= MAX_IMAGENS_ALTERACAO) {
+    throw new AprovacaoArteError(409, `Limite de ${MAX_IMAGENS_ALTERACAO} imagens atingido.`, 'LIMITE_ANEXOS')
+  }
+  const criado = await prisma.anexoPedidoProposta.create({
+    data: {
+      pedidoPropostaId: link.pedidoPropostaId,
+      empresaId: link.empresaId,
+      nome: (file.nome || 'imagem').slice(0, 255),
+      tipo: file.mime.slice(0, 100),
+      tamanho: file.buffer.length,
+      dados: file.buffer,
+      categoria: 'ALTERACAO_CLIENTE',
+      linkId: link.id,
+    } as never,
+    select: { id: true },
+  })
+  return { id: criado.id, total: atuais + 1 }
 }
 
 export interface ResultadoDecisao {
@@ -234,7 +313,7 @@ export async function decidir(
       decididoEm: agora,
       decididoNome: nome?.slice(0, 160) || null,
       decididoIp: ip?.slice(0, 64) || null,
-      motivoAjuste: decisao === 'AJUSTE_SOLICITADO' ? (motivo?.trim().slice(0, 500) ?? null) : null,
+      motivoAjuste: decisao !== 'APROVADA' ? (motivo?.trim().slice(0, 500) ?? null) : null,
     },
   })
 
@@ -249,7 +328,12 @@ export async function decidir(
     const sit = (pedido?.situacaoInterna as Situacao) ?? null
     const terminal = sit ? isTerminal(sit) : false
 
-    if (decisao === 'APROVADA') {
+    const etapaLink = (((link as { etapa?: string }).etapa) ?? 'ARTE') as EtapaAprovacao
+    if (decisao === 'CANCELADA_CLIENTE') {
+      // Cancelado pelo cliente: só marca o estágio (registrarAprovacaoEtapa abaixo). Não cancela o pedido.
+    } else if (decisao === 'APROVADA' && etapaLink === 'MOCKUP') {
+      // Mockup aprovado: efeitos só no estágio (abaixo); não publica ficha nem marca aprovação da arte.
+    } else if (decisao === 'APROVADA') {
       await registrarEvento({
         empresaId: link.empresaId,
         pedidoId: link.pedidoPropostaId,
@@ -297,6 +381,23 @@ export async function decidir(
     }
   } catch (e) {
     console.error('⚠️ [aprovacao-arte] reflexo no status falhou (ignorado):', (e as Error)?.message)
+  }
+
+  // Workflow do estágio (Mockup/Arte): grava aprovado / alteração / cancelado (best-effort).
+  try {
+    const etapaLink = (((link as { etapa?: string }).etapa) ?? 'ARTE') as EtapaAprovacao
+    await registrarAprovacaoEtapa({
+      empresaId: link.empresaId,
+      pedidoId: link.pedidoPropostaId,
+      etapa: etapaLink,
+      status: decisao === 'APROVADA' ? 'APROVADA' : decisao === 'AJUSTE_SOLICITADO' ? 'ALTERACAO' : 'CANCELADA',
+      forma: 'CLIENTE_LINK',
+      por: nome,
+      motivo: decisao === 'APROVADA' ? null : motivo,
+      aplicarEfeitosNoPedido: false, // o fluxo acima já aplicou (arte aprovada)
+    })
+  } catch (e) {
+    console.error('⚠️ [aprovacao-arte] registro no estágio falhou (ignorado):', (e as Error)?.message)
   }
 
   return { estado: decisao, pedidoAtualizado }
