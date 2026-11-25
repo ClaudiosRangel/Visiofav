@@ -151,6 +151,7 @@ export async function criarSolicitacao(
   // Nome do cliente a gravar (congela a razão social no momento da solicitação
   // quando é cliente da carteira; caso prospect, usa o nome informado).
   let clienteNomeFinal: string | null = dados.clienteNome || null
+  let clienteNovo = false
 
   // Validar cliente: ou é um cliente existente na carteira, ou é prospect inline
   if (dados.clienteId) {
@@ -175,6 +176,9 @@ export async function criarSolicitacao(
     // Congela o nome do cliente na solicitação (corrige o "—" na listagem interna)
     clienteNomeFinal =
       dados.clienteNome || cliente.nomeFantasia || cliente.razaoSocial || null
+
+    // Cliente cadastrado pelo próprio portal e ainda sem pedido = cliente NOVO.
+    clienteNovo = await clienteEhNovoNoPortal(empresaId, dados.clienteId, cliente.cpfCnpj)
   } else {
     // Prospect inline: exigir nome e CPF/CNPJ (Requirement 2.6)
     if (!dados.clienteNome || !dados.clienteCpfCnpj) {
@@ -230,7 +234,8 @@ export async function criarSolicitacao(
       produtoId: dados.produtoId || null,
       // Campos da planilha Carton Wega (B2 Fase B) — gravados quando presentes.
       tipoPedido: dados.tipoPedido || null,
-      jaCliente: dados.jaCliente ?? null,
+      // O formulário envia sempre jaCliente=true; quem decide é o cadastro (cliente criado pelo portal e sem pedido = novo).
+      jaCliente: dados.clienteId ? !clienteNovo : (dados.jaCliente ?? null),
       mercado: dados.mercado || null,
       ufOrigem: dados.ufOrigem || null,
       cidade: dados.cidade || null,
@@ -272,7 +277,7 @@ export async function criarSolicitacao(
   // Comercial enxergar na tela central. Best-effort: falha aqui não derruba o
   // envio do representante (a solicitação já está gravada).
   try {
-    await espelharEmPedidoProposta(solicitacao.id, dados, portalRepUser, clienteNomeFinal)
+    await espelharEmPedidoProposta(solicitacao.id, dados, portalRepUser, clienteNomeFinal, clienteNovo)
   } catch (err) {
     console.error('[portal-rep] Falha ao espelhar solicitação em Pedidos/Propostas:', err)
   }
@@ -292,6 +297,24 @@ export async function criarSolicitacao(
 }
 
 /**
+ * Cliente NOVO = cadastrado pelo Portal do Representante (log CLIENTE_CADASTRADO
+ * com o CNPJ) e que ainda não teve nenhuma solicitação. A partir do 1º pedido,
+ * passa a ser cliente existente. Clientes da base antiga (sem esse log) são sempre existentes.
+ */
+async function clienteEhNovoNoPortal(empresaId: string, clienteId: string, cpfCnpj: string | null): Promise<boolean> {
+  const doc = (cpfCnpj || '').replace(/\D/g, '')
+  if (!doc) return false
+  const [cadastroPeloPortal, pedidosAnteriores] = await Promise.all([
+    prisma.logAuditoriaRep.findFirst({
+      where: { empresaId, acao: 'CLIENTE_CADASTRADO', detalhes: { contains: `(${doc})` } },
+      select: { id: true },
+    }),
+    prisma.solicitacaoOrcamentoRep.count({ where: { empresaId, clienteId } }),
+  ])
+  return !!cadastroPeloPortal && pedidosAnteriores === 0
+}
+
+/**
  * Cria o PedidoProposta (origem REPRESENTANTE) correspondente à solicitação.
  * O id da solicitação fica registrado nas observações para rastreio.
  */
@@ -300,6 +323,7 @@ async function espelharEmPedidoProposta(
   dados: CriarSolicitacaoInput,
   portalRepUser: PortalRepUser,
   clienteNome: string | null,
+  clienteNovo = false,
 ) {
   const { empresaId, vendedorId, representanteId } = portalRepUser
 
@@ -364,11 +388,13 @@ async function espelharEmPedidoProposta(
   const clienteCad = dados.clienteId
     ? await prisma.cliente.findFirst({
         where: { id: dados.clienteId, empresaId },
-        select: { cpfCnpj: true, telefone: true },
+        select: { cpfCnpj: true, telefone: true, razaoSocial: true },
       })
     : null
 
   await criarPedidoProposta(empresaId, representanteId, {
+    // Cliente novo (cadastrado pelo portal): reflete como NOVO no Pedido/Proposta.
+    situacaoCliente: clienteNovo ? 'NOVO' : 'EXISTENTE',
     clienteTelefone: clienteCad?.telefone ?? null,
     origem: 'REPRESENTANTE',
     representanteId,
@@ -380,9 +406,10 @@ async function espelharEmPedidoProposta(
     numeroMatriz: dados.situacaoFaca === 'EXISTENTE' ? dados.numeroMatriz || null : null,
     ...(situacaoArte ? { situacaoArte } : {}),
     clienteId: dados.clienteId || null,
-    clienteNome,
+    // Razão social do cadastro (igual ao Pedido/Proposta criado internamente a partir do cliente).
+    clienteNome: clienteCad?.razaoSocial || clienteNome,
     clienteCpfCnpj: dados.clienteCpfCnpj || clienteCad?.cpfCnpj || null,
-    jaCliente: dados.jaCliente ?? !!dados.clienteId,
+    jaCliente: dados.clienteId ? !clienteNovo : (dados.jaCliente ?? false),
     mercado: dados.mercado?.trim() || 'Não informado',
     ufOrigem: dados.ufOrigem || null,
     cidade: dados.cidade || null,

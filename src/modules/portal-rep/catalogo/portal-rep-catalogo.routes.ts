@@ -9,6 +9,7 @@
  */
 
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
 import { obterCatalogoComercial } from '../../orcamento-grafico/pedido-proposta/catalogo-comercial.service'
 import { portalRepAuth } from '../auth/portal-rep-auth.middleware'
@@ -21,6 +22,50 @@ export async function portalRepCatalogoRoutes(app: FastifyInstance) {
   app.get('/comercial', { preHandler: [portalRepAuth] }, async (request, reply) => {
     const { empresaId } = request.portalRepUser
     return reply.status(200).send(await obterCatalogoComercial(empresaId))
+  })
+
+  // POST /catalogo/prazos-pagamento - o representante cria um prazo novo (mesmo cadastro do
+  // Comercial: aparece em Pedidos/Propostas e no orçamento). Se já existir um prazo ativo com a
+  // mesma descrição (sem diferenciar maiúsculas), devolve o existente em vez de duplicar.
+  app.post('/prazos-pagamento', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { empresaId, representanteId } = request.portalRepUser
+    const parsed = z.object({
+      descricao: z.string().trim().min(2, 'Informe a descrição do prazo.').max(120),
+      dias: z.coerce.number().int().min(0).max(720).default(0),
+      parcelas: z.coerce.number().int().min(1).max(60).default(1),
+    }).safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0]?.message || 'Dados inválidos.', code: 'DADOS_INVALIDOS' })
+    }
+    const { descricao, dias, parcelas } = parsed.data
+
+    const existente = await prisma.condicaoPagamentoComercial.findFirst({
+      where: { empresaId, descricao: { equals: descricao, mode: 'insensitive' } },
+      select: { id: true, descricao: true, status: true },
+    })
+    if (existente) {
+      if (!existente.status) {
+        return reply.status(409).send({
+          message: 'Esse prazo existe, mas está inativo. Fale com o Comercial para reativá-lo.',
+          code: 'PRAZO_INATIVO',
+        })
+      }
+      return reply.status(200).send({ id: existente.id, descricao: existente.descricao, reaproveitado: true })
+    }
+
+    const criado = await prisma.condicaoPagamentoComercial.create({
+      data: { empresaId, descricao, dias, parcelas },
+      select: { id: true, descricao: true },
+    })
+    await prisma.logAuditoriaRep.create({
+      data: {
+        empresaId,
+        representanteId,
+        acao: 'PRAZO_PAGAMENTO_CRIADO',
+        detalhes: `Prazo criado pelo portal: ${descricao} (${dias} dias, ${parcelas}x)`,
+      },
+    })
+    return reply.status(201).send({ ...criado, reaproveitado: false })
   })
 
   // GET /catalogo/municipios?uf=RJ - municípios do IBGE (busca de cidade).
