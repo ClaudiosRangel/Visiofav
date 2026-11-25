@@ -90,6 +90,7 @@ const criarSolicitacaoSchema = z.object({
   acabamentosSelecionados: z.array(z.object({
     acabamentoId: z.string().uuid().optional(),
     nome: z.string().max(200),
+    detalhe: z.string().max(500).optional(),
   })).max(60).optional(),
 })
 

@@ -67,7 +67,7 @@ export interface CriarSolicitacaoInput {
   entregaMesmoEndereco?: boolean
   entregaEndereco?: string
   acondicionamento?: string
-  acabamentosSelecionados?: Array<{ acabamentoId?: string; nome: string }>
+  acabamentosSelecionados?: Array<{ acabamentoId?: string; nome: string; detalhe?: string }>
 }
 
 export interface ListarSolicitacoesFiltros {
@@ -382,7 +382,7 @@ async function espelharEmPedidoProposta(
     acabamentoId: a.acabamentoId ?? null,
     nome: a.nome,
     marcado: true,
-    detalhe: null,
+    detalhe: a.detalhe?.trim() || null,
   }))
 
   // CNPJ e telefone vêm do cadastro do cliente (obrigatórios no Pedido/Proposta).
