@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma'
 import { authenticate } from '../../../middleware/authenticate'
 
@@ -15,17 +16,38 @@ const listaQuerySchema = z.object({
   busca: z.string().trim().optional(),
 })
 
+/** Tinta da composição padrão: nome da tinta do cadastro + % (0,01 a 100). */
+const tintaPadraoSchema = z.object({
+  tinta: z.string().trim().min(1, 'Tinta é obrigatória').max(120, 'Tinta deve ter no máximo 120 caracteres'),
+  perc: z.number().gt(0, 'Percentual deve ser maior que 0').max(100, 'Percentual deve ser no máximo 100'),
+})
+
+/** Composição padrão: 1 cor usa `umaCor`; N cores, as N primeiras de `cores` (até 12). */
+export const tintasPadraoSchema = z.object({
+  umaCor: tintaPadraoSchema.nullable().optional(),
+  cores: z.array(tintaPadraoSchema).max(12, 'No máximo 12 tintas').default([]),
+})
+
 const criarSchema = z.object({
   codigo: z.string().trim().min(1, 'Código é obrigatório').max(60, 'Código deve ter no máximo 60 caracteres'),
   nome: z.string().trim().min(1, 'Nome é obrigatório').max(120, 'Nome deve ter no máximo 120 caracteres'),
   ativo: z.boolean().optional(),
+  tintasPadrao: tintasPadraoSchema.nullable().optional(),
 })
 
 const atualizarSchema = z.object({
   codigo: z.string().trim().min(1, 'Código é obrigatório').max(60, 'Código deve ter no máximo 60 caracteres').optional(),
   nome: z.string().trim().min(1, 'Nome é obrigatório').max(120, 'Nome deve ter no máximo 120 caracteres').optional(),
   ativo: z.boolean().optional(),
+  tintasPadrao: tintasPadraoSchema.nullable().optional(),
 })
+
+/** Composição para gravar: null limpa (Prisma.DbNull); composição vazia também vira null. */
+function tintasParaGravar(t: z.infer<typeof tintasPadraoSchema> | null | undefined) {
+  if (t === undefined) return undefined
+  if (t === null || (!t.umaCor && t.cores.length === 0)) return Prisma.DbNull
+  return { umaCor: t.umaCor ?? null, cores: t.cores }
+}
 
 export async function coberturaTintaRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -61,7 +83,8 @@ export async function coberturaTintaRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.errors[0]?.message ?? 'Dados inválidos' })
     }
-    const { codigo, nome, ativo } = parsed.data
+    const { codigo, nome, ativo, tintasPadrao } = parsed.data
+    const tintas = tintasParaGravar(tintasPadrao)
 
     const existente = await prisma.coberturaTinta.findFirst({
       where: { empresaId: user.empresaId, codigo },
@@ -72,7 +95,7 @@ export async function coberturaTintaRoutes(app: FastifyInstance) {
     }
 
     const criado = await prisma.coberturaTinta.create({
-      data: { empresaId: user.empresaId, codigo, nome, ativo: ativo ?? true },
+      data: { empresaId: user.empresaId, codigo, nome, ativo: ativo ?? true, ...(tintas !== undefined ? { tintasPadrao: tintas } : {}) },
     })
     return reply.status(201).send(criado)
   })
@@ -110,6 +133,7 @@ export async function coberturaTintaRoutes(app: FastifyInstance) {
         ...(dados.codigo !== undefined ? { codigo: dados.codigo } : {}),
         ...(dados.nome !== undefined ? { nome: dados.nome } : {}),
         ...(dados.ativo !== undefined ? { ativo: dados.ativo } : {}),
+        ...(dados.tintasPadrao !== undefined ? { tintasPadrao: tintasParaGravar(dados.tintasPadrao) } : {}),
       },
     })
   })

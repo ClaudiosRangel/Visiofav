@@ -6118,6 +6118,23 @@ async function seedMateriaisFromOPs() {
     console.log('⚠️ Cadastros e relações do orçamento gráfico: falha', e.message?.substring(0, 200))
   }
 
+  // Cobertura de Tinta: composição padrão das tintas (janela Tintas do orçamento).
+  // { umaCor: {tinta, perc}, cores: [{tinta, perc}, ...] } — 1 cor usa `umaCor`; N cores, as N primeiras.
+  // Escala/Especial vêm do sistema de referência (CoberturasTinta + CoberturasTintaxCodTinta); só
+  // preenche onde está vazio (nunca sobrescreve ajuste feito no cadastro).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "cobertura_tinta" ADD COLUMN IF NOT EXISTS "tintas_padrao" JSONB`)
+  const escala = { umaCor: { tinta: 'Escala', perc: 20 }, cores: [...Array(4).fill({ tinta: 'Escala', perc: 10 }), ...Array(4).fill({ tinta: 'Especiais', perc: 10 })] }
+  const especial = { umaCor: { tinta: 'Metálica', perc: 20 }, cores: Array(4).fill({ tinta: 'Especiais', perc: 10 }) }
+  await prisma.$executeRawUnsafe(
+    `UPDATE "cobertura_tinta" SET "tintas_padrao" = $1::jsonb WHERE "tintas_padrao" IS NULL AND lower(trim("nome")) = 'escala'`,
+    JSON.stringify(escala),
+  )
+  await prisma.$executeRawUnsafe(
+    `UPDATE "cobertura_tinta" SET "tintas_padrao" = $1::jsonb WHERE "tintas_padrao" IS NULL AND lower(trim("nome")) = 'especial'`,
+    JSON.stringify(especial),
+  )
+  console.log('✅ cobertura_tinta: tintas_padrao (Escala/Especial preenchidas onde vazio)')
+
   await migrarSerieDocumento()
 
   await migrarPedidosParaStatusFiel()

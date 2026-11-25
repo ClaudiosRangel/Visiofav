@@ -3318,6 +3318,10 @@ model CoberturaTinta {
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
+  /// Composição padrão das tintas: { umaCor: {tinta, perc}, cores: [{tinta, perc}] }.
+  /// 1 cor usa `umaCor`; N cores, as N primeiras de `cores`.
+  tintasPadrao Json?    @map("tintas_padrao")
+
   @@unique([empresaId, codigo])
   @@map("cobertura_tinta")
 }
