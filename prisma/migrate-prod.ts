@@ -5904,6 +5904,9 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "tipo_embalagem" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "acabamento_grafico" ADD COLUMN IF NOT EXISTS "exibir_comercial" BOOLEAN NOT NULL DEFAULT true`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "cliente_telefone" VARCHAR(30)`)
+  // Fluxo por operacao (Comercial): alteracao solicitada + etapa atual do fluxo
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "solicita_alteracao" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "pedido_proposta" ADD COLUMN IF NOT EXISTS "etapa_fluxo" VARCHAR(20)`)
   console.log('✅ Comercial: alinhamento portal-rep x pedido_proposta (colunas + exibir_comercial)')
   // Workflow de aprovação por estágio (Mockup/Arte) da Pré-Impressão (reunião 24/11/2026).
   for (const [col, tipo] of [

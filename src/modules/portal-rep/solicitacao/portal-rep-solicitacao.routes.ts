@@ -73,6 +73,7 @@ const criarSolicitacaoSchema = z.object({
   discriminacao: z.string().optional(),
   // Alinhamento Portal x Pedidos/Propostas (reuniao 24/11/2026)
   exigeAmostra: z.boolean().optional(), // mostruario: pedido NOVO com amostra para teste
+  solicitaAlteracao: z.boolean().optional(), // alteracao de arte ou faca
   tiragensTexto: z.string().max(200).optional(),
   prazoPagamentoId: z.string().uuid().optional(),
   materiaPrimaCamadas: z.array(z.object({

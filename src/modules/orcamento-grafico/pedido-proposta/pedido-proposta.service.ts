@@ -83,6 +83,8 @@ export interface CriarPedidoPropostaInput {
   entregaEndereco?: string | null
   alteracaoImpressao?: string | null
   acondicionamento?: string | null
+  /** Solicita alteracao de arte ou faca (operacao ALTERACAO do fluxo). */
+  solicitaAlteracao?: boolean
 }
 
 /** Valida regras de negócio da criação/edição (origem, tipo, obrigatórios). */
@@ -138,7 +140,7 @@ function montarDados(input: Partial<CriarPedidoPropostaInput>) {
   ] as (keyof CriarPedidoPropostaInput)[]).forEach(set)
 
   // Booleanos: default false quando não informados na criação.
-  for (const b of ['jaCliente', 'cartaoFsc', 'corteInternoVerso', 'passtime', 'acabamentoManual', 'exigeAmostra'] as const) {
+  for (const b of ['jaCliente', 'cartaoFsc', 'corteInternoVerso', 'passtime', 'acabamentoManual', 'exigeAmostra', 'solicitaAlteracao'] as const) {
     if (input[b] !== undefined) dados[b] = !!input[b]
   }
 

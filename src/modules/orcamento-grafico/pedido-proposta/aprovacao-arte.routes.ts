@@ -5,6 +5,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../../../middleware/authenticate'
+import { guardaSetorPedido } from '../fluxo-operacao/fluxo-guard'
 import { verificarPermissaoComercial } from '../permissoes-comercial.routes'
 import { gerarLink, listarLinks, cancelarLinksPendentes } from './aprovacao-arte.service'
 import { AprovacaoArteError } from './aprovacao-arte.motor'
@@ -26,7 +27,7 @@ export async function aprovacaoArteRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
   // Gera (ou reusa) o link de aprovação. ?novo=1 força um novo (cancela os pendentes).
-  app.post('/pedidos-proposta/:id/link-aprovacao', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/link-aprovacao', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const { novo, etapa } = z.object({
@@ -55,7 +56,7 @@ export async function aprovacaoArteRoutes(app: FastifyInstance) {
   })
 
   // Cancela os links pendentes do pedido.
-  app.post('/pedidos-proposta/:id/link-aprovacao/cancelar', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/link-aprovacao/cancelar', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     try {
@@ -86,7 +87,7 @@ export async function aprovacaoArteRoutes(app: FastifyInstance) {
   })
 
   // Registro MANUAL do workflow (Pedido/Proposta): Aprovado | Alteração | Cancelado.
-  app.post('/pedidos-proposta/:id/etapas/:etapa/aprovacao', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/etapas/:etapa/aprovacao', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id, etapa } = z.object({ id: z.string().uuid(), etapa: z.enum(['MOCKUP', 'ARTE']) }).parse(request.params)
     const body = z.object({

@@ -5,6 +5,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../../../middleware/authenticate'
+import { guardaSetorPedido } from '../fluxo-operacao/fluxo-guard'
 import { verificarPermissaoComercial } from '../permissoes-comercial.routes'
 import {
   garantirBoard,
@@ -62,7 +63,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
   })
 
   // Cria/garante o board (pedidos antigos).
-  app.post('/pedidos-proposta/:id/board/garantir', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/board/garantir', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     try {
@@ -86,7 +87,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
     }
   })
 
-  app.put('/pedidos-proposta/:id/faca', async (request, reply) => {
+  app.put('/pedidos-proposta/:id/faca', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({
@@ -115,7 +116,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
     }
   })
 
-  app.put('/pedidos-proposta/:id/ficha-rascunho', async (request, reply) => {
+  app.put('/pedidos-proposta/:id/ficha-rascunho', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({
@@ -134,7 +135,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
   })
 
   // Publicação manual (quando a aprovação da arte foi registrada manualmente).
-  app.post('/pedidos-proposta/:id/ficha-rascunho/publicar', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/ficha-rascunho/publicar', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     try {
@@ -165,7 +166,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/pedidos-proposta/:id/pre-calculo/solicitar', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/pre-calculo/solicitar', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({ observacao: z.string().max(2000).optional() }).parse(request.body ?? {})
@@ -179,7 +180,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/pedidos-proposta/:id/pre-calculo/concluir', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/pre-calculo/concluir', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({ observacao: z.string().max(2000).optional() }).parse(request.body ?? {})
@@ -194,7 +195,7 @@ export async function preImpressaoRoutes(app: FastifyInstance) {
   })
 
   // Muda o status de uma etapa do board.
-  app.patch('/pedidos-proposta/:id/board/:etapa', async (request, reply) => {
+  app.patch('/pedidos-proposta/:id/board/:etapa', { preHandler: guardaSetorPedido('PRE_IMPRESSAO') }, async (request, reply) => {
     const user = request.user as Usuario
     const { id, etapa } = z.object({
       id: z.string().uuid(),

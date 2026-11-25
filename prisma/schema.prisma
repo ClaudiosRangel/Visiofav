@@ -4795,6 +4795,10 @@ model PedidoProposta {
   acondicionamento      String?   @db.VarChar(120)
   /// Telefone do cliente (obrigatorio - alinhamento reuniao 24/11/2026)
   clienteTelefone       String?   @map("cliente_telefone") @db.VarChar(30)
+  /// Portal/pedido: solicita alteracao de arte ou faca (define a operacao ALTERACAO do fluxo)
+  solicitaAlteracao     Boolean   @default(false) @map("solicita_alteracao")
+  /// Etapa atual do fluxo por operacao (COMERCIAL|ORCAMENTO|PRE_IMPRESSAO|OP_PCP|FATURAMENTO|CONCLUIDO). null = ainda nao iniciado
+  etapaFluxo            String?   @map("etapa_fluxo") @db.VarChar(20)
 }
 
 model AnexoPedidoProposta {

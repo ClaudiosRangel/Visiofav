@@ -49,6 +49,8 @@ export interface EtapaConfig {
   ativa: boolean
   /** Setores que NÃO podem agir no pedido enquanto esta etapa não for concluída. */
   bloqueia: SetorBloqueavel[]
+  /** So OP_PCP: ao concluir a(s) OP(s), o pedido avanca sozinho para o Faturamento. Sem isso, e preciso encaminhar manualmente. */
+  automatica?: boolean
 }
 
 export interface FluxoOperacao {
@@ -92,9 +94,9 @@ export function validarEtapas(entrada: unknown): ResultadoValidacao {
   if (!Array.isArray(entrada)) return { ok: false, erros: ['Informe a lista de etapas do fluxo.'] }
 
   const vistas = new Set<string>()
-  const lidas: Array<{ etapa: EtapaFluxo; ativa: boolean; bloqueia: unknown }> = []
+  const lidas: Array<{ etapa: EtapaFluxo; ativa: boolean; bloqueia: unknown; automatica: boolean }> = []
   for (const item of entrada) {
-    const e = item as { etapa?: unknown; ativa?: unknown; bloqueia?: unknown }
+    const e = item as { etapa?: unknown; ativa?: unknown; bloqueia?: unknown; automatica?: unknown }
     if (!e || typeof e.etapa !== 'string' || !(ETAPAS_FLUXO as readonly string[]).includes(e.etapa)) {
       erros.push('Há uma etapa desconhecida na configuração.')
       continue
@@ -104,7 +106,7 @@ export function validarEtapas(entrada: unknown): ResultadoValidacao {
       continue
     }
     vistas.add(e.etapa)
-    lidas.push({ etapa: e.etapa as EtapaFluxo, ativa: e.ativa === true, bloqueia: e.bloqueia })
+    lidas.push({ etapa: e.etapa as EtapaFluxo, ativa: e.ativa === true, bloqueia: e.bloqueia, automatica: e.automatica === true })
   }
   for (const etapa of ETAPAS_FLUXO) {
     if (!vistas.has(etapa)) erros.push(`Falta a etapa ${ROTULO_ETAPA[etapa]}.`)
@@ -149,7 +151,9 @@ export function validarEtapas(entrada: unknown): ResultadoValidacao {
       // forma canônica (ordem fixa) para comparar/gravar sem ruído
       bloqueia = SETORES_BLOQUEAVEIS.filter((s) => bloqueia.includes(s))
     }
-    return { etapa: l.etapa, ativa: l.ativa, bloqueia }
+    const cfg: EtapaConfig = { etapa: l.etapa, ativa: l.ativa, bloqueia }
+    if (l.etapa === 'OP_PCP' && l.ativa && l.automatica) cfg.automatica = true
+    return cfg
   })
 
   return erros.length > 0 ? { ok: false, erros } : { ok: true, etapas }
@@ -222,6 +226,8 @@ export interface DadosOperacaoPedido {
   exigeProva?: boolean | null
   situacaoArte?: string | null
   alteracaoImpressao?: string | null
+  /** Marcado no portal/pedido: solicitar alteracao de arte ou faca. */
+  solicitaAlteracao?: boolean | null
 }
 
 /**
@@ -231,6 +237,7 @@ export interface DadosOperacaoPedido {
 export function operacaoDoPedido(p: DadosOperacaoPedido): Operacao {
   if (p.tipoPedido === 'MOSTRUARIO' || p.exigeAmostra === true || p.exigeProva === true) return 'MOSTRUARIO'
   if (
+    p.solicitaAlteracao === true ||
     p.tipoPedidoDerivado === 'ALTERACAO' ||
     p.situacaoArte === 'EXISTENTE_COM_ALTERACAO' ||
     p.situacaoArte === 'CLIENTE_ENVIA' ||

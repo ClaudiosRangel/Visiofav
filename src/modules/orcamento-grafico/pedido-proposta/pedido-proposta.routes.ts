@@ -6,6 +6,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../../../middleware/authenticate'
+import { guardaSetorPedido } from '../fluxo-operacao/fluxo-guard'
 import { prisma } from '../../../lib/prisma'
 import {
   criarPedidoProposta,
@@ -74,6 +75,7 @@ const corpoCriar = z.object({
   discriminacao: z.string().optional().nullable(),
   observacoes: z.string().optional().nullable(),
   exigeAmostra: z.boolean().optional(),
+  solicitaAlteracao: z.boolean().optional(),
   // Revisão 3
   produtoId: z.string().uuid().optional().nullable(),
   prazoPagamentoId: z.string().uuid().optional().nullable(),
@@ -211,7 +213,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   })
 
   // ── Atualizar ──
-  app.put('/pedidos-proposta/:id', async (request, reply) => {
+  app.put('/pedidos-proposta/:id', { preHandler: guardaSetorPedido('COMERCIAL') }, async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = corpoCriar.partial().parse(request.body)
@@ -224,7 +226,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   })
 
   // ── Transição de estado ──
-  app.patch('/pedidos-proposta/:id/estado', async (request, reply) => {
+  app.patch('/pedidos-proposta/:id/estado', { preHandler: guardaSetorPedido('COMERCIAL') }, async (request, reply) => {
     const user = request.user as { id: string; empresaId: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({
@@ -255,7 +257,7 @@ export async function pedidoPropostaRoutes(app: FastifyInstance) {
   })
 
   // ── Liberar a PCP/Faturamento ──
-  app.post('/pedidos-proposta/:id/liberar', async (request, reply) => {
+  app.post('/pedidos-proposta/:id/liberar', { preHandler: guardaSetorPedido('COMERCIAL', { exigeEtapasConcluidas: true }) }, async (request, reply) => {
     const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const body = z.object({ senha: z.string().optional() }).parse(request.body ?? {})

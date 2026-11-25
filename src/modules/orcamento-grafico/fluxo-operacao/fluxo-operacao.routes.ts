@@ -3,12 +3,14 @@ import { authenticate } from '../../../middleware/authenticate'
 import { verificarPermissaoComercial } from '../permissoes-comercial.routes'
 import { FluxoOperacaoError, ehOperacao } from './fluxo-operacao.motor'
 import { listarFluxos, obterFluxo, restaurarPadrao, salvarFluxo } from './fluxo-operacao.service'
+import { concluirEtapaAtual, obterContextoFluxo, pedidoIdDoOrcamento } from './fluxo-pedido.service'
+import { z } from 'zod'
 
 type Usuario = { id: string; empresaId: string; perfil: string }
 
 function erro(reply: FastifyReply, e: unknown) {
   if (e instanceof FluxoOperacaoError) {
-    return reply.status(e.statusCode).send({ error: e.message, code: e.code, erros: e.erros })
+    return reply.status(e.statusCode).send({ error: e.message, message: e.message, code: e.code, erros: e.erros })
   }
   throw e
 }

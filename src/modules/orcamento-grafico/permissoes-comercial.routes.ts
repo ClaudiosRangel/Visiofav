@@ -23,6 +23,7 @@ export interface PermissoesComercialUsuario {
   podeLiberarPcp: boolean
   podeGerenciarAmostras: boolean
   podeEditarCadastros: boolean
+  podeConcluirEtapas: boolean
   // Acesso por menu (habilitar/ocultar cada tela). Se ausente, tudo liberado.
   acessoMenus?: Record<string, { habilitado?: boolean }>
 }
@@ -37,6 +38,7 @@ export const DEFAULT_PERMISSOES_COMERCIAL: PermissoesComercialUsuario = {
   podeLiberarPcp: true,
   podeGerenciarAmostras: true,
   podeEditarCadastros: true,
+  podeConcluirEtapas: true,
 }
 
 function chave(usuarioId: string) {
@@ -80,6 +82,7 @@ const permissoesSchema = z.object({
   podeLiberarPcp: z.boolean().optional(),
   podeGerenciarAmostras: z.boolean().optional(),
   podeEditarCadastros: z.boolean().optional(),
+  podeConcluirEtapas: z.boolean().optional(),
   acessoMenus: z.record(z.string(), z.object({ habilitado: z.boolean().optional() })).optional(),
 })
 

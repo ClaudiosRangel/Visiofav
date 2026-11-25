@@ -4,6 +4,9 @@ import { randomUUID } from 'crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import { authenticate } from '../../middleware/authenticate'
+import { guardaSetorOrcamento } from './fluxo-operacao/fluxo-guard'
+import { exigirEtapasConcluidasParaLiberarPedidoVenda } from './fluxo-operacao/fluxo-pedido.service'
+import { FluxoOperacaoError } from './fluxo-operacao/fluxo-operacao.motor'
 import {
   calcularItem,
   ItemOrcamentoError,
@@ -1573,6 +1576,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
   })
   app.addHook('onRequest', authenticate)
+  // Fluxo por operacao: escritas do Orcamento/Comercial respeitam o bloqueio de setor do pedido.
+  app.addHook('preHandler', guardaSetorOrcamento)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TIPO EMBALAGEM (Especialistas de cálculo)
@@ -4697,8 +4702,12 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       return reply.status(403).send({ message: 'Sem permissão para liberar pedidos ao PCP.' })
     }
     try {
+      await exigirEtapasConcluidasParaLiberarPedidoVenda(user.empresaId, pedidoId)
       return reply.status(200).send(await liberarPedidoParaPcp(user.empresaId, pedidoId, user.id, { senha: body.senha }))
     } catch (err) {
+      if (err instanceof FluxoOperacaoError) {
+        return reply.status(err.statusCode).send({ message: err.message, error: err.message, code: err.code })
+      }
       if (err instanceof LiberacaoError) {
         return reply.status(err.statusCode).send({ message: err.message, code: err.code })
       }

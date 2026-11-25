@@ -57,6 +57,7 @@ export interface CriarSolicitacaoInput {
   discriminacao?: string
   // Alinhamento Portal x Pedidos/Propostas (reuniao 24/11/2026)
   exigeAmostra?: boolean
+  solicitaAlteracao?: boolean
   tiragensTexto?: string
   prazoPagamentoId?: string
   materiaPrimaCamadas?: Array<{ funcao: string; suporte: string; gramatura?: string }>
@@ -402,6 +403,7 @@ async function espelharEmPedidoProposta(
     tipoPedido: tipoPedidoFinal,
     exigeAmostra,
     exigeProva: exigeAmostra,
+    solicitaAlteracao: !!dados.solicitaAlteracao,
     situacaoFaca: dados.situacaoFaca ?? null,
     numeroMatriz: dados.situacaoFaca === 'EXISTENTE' ? dados.numeroMatriz || null : null,
     ...(situacaoArte ? { situacaoArte } : {}),
