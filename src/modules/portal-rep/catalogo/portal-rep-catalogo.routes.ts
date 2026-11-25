@@ -155,6 +155,130 @@ export async function portalRepCatalogoRoutes(app: FastifyInstance) {
     return reply.status(200).send(resultado)
   })
 
+  // GET /catalogo/meus-produtos/:produtoId/pedidos — pedidos CONCLUÍDOS do produto para o
+  // representante escolher qual repetir. Cada pedido traz `dados` para preencher o formulário.
+  // Concluído = proposta ACEITA, solicitação CONVERTIDA ou pedido de venda fora de RASCUNHO/CANCELADO.
+  // Isolamento: empresaId + representanteId/vendedorId SEMPRE do token.
+  app.get('/meus-produtos/:produtoId/pedidos', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { empresaId, representanteId, vendedorId } = request.portalRepUser
+    const { produtoId } = request.params as { produtoId: string }
+    const { clienteId } = request.query as { clienteId?: string }
+    if (!/^[0-9a-f-]{36}$/i.test(produtoId)) return reply.status(400).send({ message: 'Produto inválido.' })
+
+    const produto = await prisma.produto.findFirst({
+      where: { id: produtoId, empresaId, status: true },
+      select: { id: true, codigo: true, nome: true },
+    })
+    if (!produto) return reply.status(404).send({ message: 'Produto não encontrado.' })
+
+    const filtroCliente = clienteId ? { clienteId } : {}
+    const [propostas, solicitacoes, itensVenda] = await Promise.all([
+      prisma.pedidoProposta.findMany({
+        where: { empresaId, representanteId, produtoId, estado: 'ACEITO', ...filtroCliente },
+        orderBy: { criadoEm: 'desc' },
+        take: 50,
+      }),
+      prisma.solicitacaoOrcamentoRep.findMany({
+        where: { empresaId, representanteId, produtoId, status: 'CONVERTIDA', ...filtroCliente },
+        orderBy: { criadoEm: 'desc' },
+        take: 50,
+      }),
+      prisma.itemPedidoVenda.findMany({
+        where: {
+          produtoId,
+          pedidoVenda: { empresaId, vendedorId, status: { notIn: ['RASCUNHO', 'CANCELADO'] }, ...filtroCliente },
+        },
+        select: { quantidade: true, pedidoVenda: { select: { id: true, numero: true, status: true, criadoEm: true } } },
+        orderBy: { pedidoVenda: { criadoEm: 'desc' } },
+        take: 50,
+      }),
+    ])
+
+    const txt = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : '')
+    const medidasDe = (c?: unknown, l?: unknown, a?: unknown) =>
+      [c, l, a].map((x) => (x == null ? 0 : Number(x))).filter((x) => x > 0).join(' x ')
+
+    type Dados = {
+      tipoEmbalagem: string; medidasTexto: string; cartao: string; gramatura: string
+      camadas: Array<{ funcao: string; suporte: string; gramatura: string }>
+      acabamentos: Array<{ acabamentoId: string | null; nome: string }>
+      variacoesArte: string; situacaoFaca: string; numeroMatriz: string
+      cartaoFsc: boolean; corteInternoVerso: boolean; passtime: boolean
+      quantidadePorVolume: string; acondicionamento: string; tiragensTexto: string
+    }
+    const acabamentosDe = (sel: unknown, texto: unknown) => {
+      if (Array.isArray(sel) && sel.length) {
+        return (sel as Array<{ acabamentoId?: string | null; nome?: string; marcado?: boolean }>)
+          .filter((a) => a?.nome && a.marcado !== false)
+          .map((a) => ({ acabamentoId: a.acabamentoId ?? null, nome: String(a.nome) }))
+      }
+      return txt(texto).split(',').map((n) => n.trim()).filter(Boolean).map((nome) => ({ acabamentoId: null, nome }))
+    }
+    const camadasDe = (c: unknown) =>
+      Array.isArray(c)
+        ? (c as Array<{ funcao?: string; suporte?: string; gramatura?: string | null }>)
+            .filter((x) => x?.suporte)
+            .map((x) => ({ funcao: x.funcao ?? 'Cartão', suporte: String(x.suporte), gramatura: x.gramatura ?? '' }))
+        : []
+
+    const pedidos: Array<{
+      chave: string; origem: 'PROPOSTA' | 'SOLICITACAO' | 'VENDA'; numero: number | null
+      data: Date; quantidade: number | null; situacao: string; resumo: string; dados: Dados | null
+    }> = []
+
+    for (const p of propostas) {
+      const camadas = camadasDe(p.materiaPrimaCamadas)
+      pedidos.push({
+        chave: `P-${p.id}`, origem: 'PROPOSTA', numero: p.numero, data: p.criadoEm,
+        quantidade: p.quantidade ?? null, situacao: 'Aceito',
+        resumo: [txt(p.tipoEmbalagem), txt(p.medidasTexto), txt(p.cartao)].filter(Boolean).join(' · '),
+        dados: {
+          tipoEmbalagem: txt(p.tipoEmbalagem), medidasTexto: txt(p.medidasTexto),
+          cartao: txt(p.cartao), gramatura: txt(p.gramatura), camadas,
+          acabamentos: acabamentosDe(p.acabamentosSelecionados, p.acabamentos),
+          variacoesArte: txt(p.variacoesArte),
+          situacaoFaca: txt(p.situacaoFaca) === 'EXISTENTE' || txt(p.matriz) ? 'EXISTENTE' : 'NOVA',
+          numeroMatriz: txt(p.numeroMatriz) || txt(p.matriz),
+          cartaoFsc: !!p.cartaoFsc, corteInternoVerso: !!p.corteInternoVerso, passtime: !!p.passtime,
+          quantidadePorVolume: txt(p.quantidadePorVolume), acondicionamento: txt(p.acondicionamento),
+          tiragensTexto: txt(p.tiragensTexto) || (p.quantidade ? String(p.quantidade) : ''),
+        },
+      })
+    }
+    for (const s of solicitacoes) {
+      const camadas = camadasDe(s.materiaPrimaCamadas)
+      const medidas = txt(s.medidasTexto) || medidasDe(s.medidaComprimento, s.medidaLargura, s.medidaAltura)
+      pedidos.push({
+        chave: `S-${s.id}`, origem: 'SOLICITACAO', numero: null, data: s.criadoEm,
+        quantidade: s.quantidade ?? null, situacao: 'Convertido em pedido',
+        resumo: [txt(s.tipoEmbalagem), medidas, txt(s.cartao)].filter(Boolean).join(' · '),
+        dados: {
+          tipoEmbalagem: txt(s.tipoEmbalagem), medidasTexto: medidas,
+          cartao: txt(s.cartao), gramatura: txt(s.gramaturaTexto), camadas,
+          acabamentos: acabamentosDe(null, s.acabamentos),
+          variacoesArte: txt(s.variacoesArte),
+          situacaoFaca: txt(s.matriz) ? 'EXISTENTE' : 'NOVA', numeroMatriz: txt(s.matriz),
+          cartaoFsc: !!s.cartaoFsc, corteInternoVerso: !!s.corteInternoVerso, passtime: !!s.passtime,
+          quantidadePorVolume: txt(s.quantidadePorVolume), acondicionamento: '',
+          tiragensTexto: txt(s.tiragensTexto) || String(s.quantidade),
+        },
+      })
+    }
+    // Pedidos de venda não guardam a especificação: reaproveitam a do pedido mais recente que a tem.
+    const base = pedidos.find((x) => x.dados)?.dados ?? null
+    for (const i of itensVenda) {
+      const pv = i.pedidoVenda
+      pedidos.push({
+        chave: `V-${pv.id}`, origem: 'VENDA', numero: pv.numero, data: pv.criadoEm,
+        quantidade: Number(i.quantidade), situacao: 'Pedido de venda',
+        resumo: base ? [base.tipoEmbalagem, base.medidasTexto, base.cartao].filter(Boolean).join(' · ') : '',
+        dados: base ? { ...base, tiragensTexto: String(Math.round(Number(i.quantidade))) } : null,
+      })
+    }
+    pedidos.sort((a, b) => b.data.getTime() - a.data.getTime())
+    return reply.status(200).send({ produto, pedidos: pedidos.slice(0, 50) })
+  })
+
   // GET /catalogo/acabamentos — acabamentos do produto (cadastro comercial).
   app.get('/acabamentos', { preHandler: [portalRepAuth] }, async (request, reply) => {
     const { empresaId } = request.portalRepUser
