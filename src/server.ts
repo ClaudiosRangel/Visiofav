@@ -205,6 +205,7 @@ import { processoImpressaoRoutes } from './modules/orcamento-grafico/cadastros/p
 import { materialAcabamentoRoutes } from './modules/orcamento-grafico/cadastros/material-acabamento.routes'
 import { templatePropostaRoutes } from './modules/orcamento-grafico/template-proposta.routes'
 import { permissoesComercialRoutes } from './modules/orcamento-grafico/permissoes-comercial.routes'
+import { fluxoOperacaoRoutes } from './modules/orcamento-grafico/fluxo-operacao/fluxo-operacao.routes'
 import { pedidoPropostaRoutes } from './modules/orcamento-grafico/pedido-proposta/pedido-proposta.routes'
 import { pedidoStatusRoutes } from './modules/orcamento-grafico/pedido-proposta/pedido-status.routes'
 import { aprovacaoArteRoutes } from './modules/orcamento-grafico/pedido-proposta/aprovacao-arte.routes'
@@ -561,6 +562,7 @@ async function bootstrap() {
   await app.register(templatePropostaRoutes, { prefix: '/api/orcamento-grafico/templates-proposta' })
   await app.register(templateVisualRoutes, { prefix: '/api/orcamento-grafico/templates-visuais' })
   await app.register(permissoesComercialRoutes, { prefix: '/api/orcamento-grafico/comercial' })
+  await app.register(fluxoOperacaoRoutes, { prefix: '/api/orcamento-grafico/comercial' })
   await app.register(pedidoPropostaRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(pedidoStatusRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(aprovacaoArteRoutes, { prefix: '/api/orcamento-grafico' })
