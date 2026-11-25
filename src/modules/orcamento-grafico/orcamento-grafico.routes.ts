@@ -346,6 +346,10 @@ const corItemSchema = z.object({
   // Rendimento: aceita 0/ausente e normaliza para o padrão 25 (não bloqueia o
   // salvar de itens vindos de cálculos migrados, onde o rendimento não vem).
   rendimentoM2Kg: z.number().min(0).optional().transform((v) => (v && v > 0 ? v : 25)),
+  // Janela "Tintas" (Tinta | Complem. | Perc %): identifica a linha para reabrir. Fora do cálculo.
+  tintaId: z.string().uuid().optional().nullable(),
+  tinta: z.string().max(200).optional().nullable(),
+  complemento: z.string().max(120).optional().nullable(),
 })
 
 /**
