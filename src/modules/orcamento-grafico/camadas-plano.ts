@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma'
 import type { ResultadoOrcamento } from './orcamento-grafico-calculo.service'
+import { resolverPapelDoPlano } from './papel-do-plano'
 
 /**
  * Camadas do plano (microondulado e capa interna) no custo do orçamento.
@@ -90,10 +91,16 @@ async function calcularCamadasDoPlanoBruto(
   const folhas = folhasDaCapa(resultado, gramaturaCapa)
   if (folhas <= 0) return []
 
-  const precos = await prisma.precoMateriaPrima.findMany({
-    where: { empresaId, id: { in: alvos.map((a) => a.suporteId) } },
-    select: { id: true, precoUnitario: true, gramatura: true, suporteId: true },
-  })
+  // Id do papel (ou id antigo do suporte, resolvido para o papel desse suporte).
+  const resolvidos = await Promise.all(alvos.map((a) => resolverPapelDoPlano(empresaId, a.suporteId)))
+  const idsPapel = resolvidos.filter((r): r is NonNullable<typeof r> => !!r).map((r) => r.id)
+  const precos = idsPapel.length
+    ? await prisma.precoMateriaPrima.findMany({
+        where: { empresaId, id: { in: idsPapel } },
+        select: { id: true, precoUnitario: true, gramatura: true, suporteId: true },
+      })
+    : []
+  const papelDoAlvo = new Map(alvos.map((a, i) => [a.suporteId, resolvidos[i]?.id ?? null]))
   const suporteIds = precos.map((p) => p.suporteId).filter((x): x is string => !!x)
   const suportes = suporteIds.length
     ? await prisma.suporteGrafico.findMany({
@@ -108,7 +115,8 @@ async function calcularCamadasDoPlanoBruto(
   if (!lay) return []
   const saida: CamadaCusto[] = []
   for (const a of alvos) {
-    const preco = precoPorId.get(a.suporteId)
+    const idPapel = papelDoAlvo.get(a.suporteId)
+    const preco = idPapel ? precoPorId.get(idPapel) : undefined
     if (!preco) continue
     const sup = preco.suporteId ? suportePorId.get(preco.suporteId) : undefined
     // Sem formato cadastrado no suporte, assume a folha da capa (mesma imposição).

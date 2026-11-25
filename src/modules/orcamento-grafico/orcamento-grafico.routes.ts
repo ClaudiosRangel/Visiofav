@@ -7238,6 +7238,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       const params = await montarParamsDoPlano(empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
+      // A gramatura gravada no plano é a do papel escolhido (o grid mostra este valor).
+      if (Number(params.papel?.gramatura) > 0) body.gramatura = Number(params.papel.gramatura)
       await aplicarCamadasAoResultado(empresaId, body.especificacao, resultado, params.papel?.gramatura ?? 0)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
@@ -7297,6 +7299,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
+      // A gramatura gravada no plano é a do papel escolhido (o grid mostra este valor).
+      if (Number(params.papel?.gramatura) > 0) body.gramatura = Number(params.papel.gramatura)
       await aplicarCamadasAoResultado(user.empresaId, (body.especificacao === undefined ? existente.especificacao : body.especificacao), resultado, params.papel?.gramatura ?? 0)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
@@ -7390,6 +7394,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       const params = await montarParamsDoPlano(user.empresaId, inputBase, montarInputDoPlano(body))
       resultado = calcularPlano(params)
+      // A gramatura gravada no plano é a do papel escolhido (o grid mostra este valor).
+      if (Number(params.papel?.gramatura) > 0) body.gramatura = Number(params.papel.gramatura)
       await aplicarCamadasAoResultado(user.empresaId, (body.especificacao === undefined ? existente.especificacao : body.especificacao), resultado, params.papel?.gramatura ?? 0)
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })

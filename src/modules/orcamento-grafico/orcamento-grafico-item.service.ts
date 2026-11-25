@@ -25,6 +25,7 @@
 // O `maquinaId` opcional do input já é aceito porque a rota já o aceita hoje.
 
 import { prisma } from '../../lib/prisma'
+import { resolverPapelDoPlano } from './papel-do-plano'
 import {
   calcularOrcamentoGrafico,
   type ParamsOrcamento,
@@ -777,27 +778,18 @@ export async function montarParamsDoPlano(
 ): Promise<ParamsOrcamento> {
   // Item de vários planos não tem papel próprio: o preço e a gramatura vêm do suporte do plano
   // (cadastro PrecoMateriaPrima). Preço informado no plano continua tendo precedência.
-  let precoDoSuporte: number | undefined
-  let gramaturaDoSuporte: number | undefined
-  if (plano.suporteId && !(Number(plano.precoKgPapel) > 0)) {
-    const sup = await prisma.precoMateriaPrima.findFirst({
-      where: { id: plano.suporteId, empresaId },
-      select: { precoUnitario: true, gramatura: true },
-    })
-    if (sup) {
-      const p = Number(sup.precoUnitario)
-      const g = Number(sup.gramatura ?? 0)
-      precoDoSuporte = p > 0 ? p : undefined
-      gramaturaDoSuporte = g > 0 ? g : undefined
-    }
-  }
+  // O papel escolhido define o preço e a gramatura (a gramatura do papel vence a gravada no plano,
+  // que pode ser de um papel anterior). Id antigo de suporte é resolvido para o papel daquele suporte.
+  const papel = await resolverPapelDoPlano(empresaId, plano.suporteId, plano.gramatura)
+  const precoDoSuporte = papel && papel.precoKg > 0 && !(Number(plano.precoKgPapel) > 0) ? papel.precoKg : undefined
+  const gramaturaDoSuporte = papel?.gramatura ?? undefined
   const inputDoPlano: ItemOrcamentoInput = {
     ...itemBase,
 
     // ── Suporte/papel ORÇADO do plano (precedência sobre o do item) ──
     // `suporteId` do plano = papel do plano no cadastro de PrecoMateriaPrima.
-    papelId: plano.suporteId ?? itemBase.papelId,
-    gramatura: plano.gramatura ?? gramaturaDoSuporte ?? itemBase.gramatura,
+    papelId: papel?.id ?? plano.suporteId ?? itemBase.papelId,
+    gramatura: gramaturaDoSuporte ?? plano.gramatura ?? itemBase.gramatura,
     // Preço do papel: o informado no plano, senão o do suporte do plano, senão o do item.
     precoKgPapel: plano.precoKgPapel ?? precoDoSuporte ?? itemBase.precoKgPapel ?? itemBase.precoKg,
 
