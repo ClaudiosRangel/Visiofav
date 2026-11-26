@@ -165,6 +165,7 @@ async function copiarUmaVez(
       itensDiversos: jsonNullable(o.itensDiversos),
       itensFornecidos: jsonNullable(o.itensFornecidos),
       camposLivres: jsonNullable(o.camposLivres),
+      preImpressao: jsonNullable(o.preImpressao),
       quantidade: o.quantidade,
       resultadoCalculo: jsonNullable(o.resultadoCalculo),
       margemSelecionada: o.margemSelecionada,

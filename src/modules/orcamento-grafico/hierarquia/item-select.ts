@@ -68,6 +68,7 @@ export const ITEM_SELECT_HIDRATACAO = {
   itensDiversos: true,
   itensFornecidos: true,
   camposLivres: true,
+  preImpressao: true,
   quantidade: true,
   // Várias tiragens do item (uma linha por tiragem; a de ordem 0 é a referência espelhada no item).
   tiragens: { orderBy: { ordem: 'asc' }, select: TIRAGEM_SELECT_HIDRATACAO },
@@ -155,6 +156,7 @@ export const CAMPOS_ENGENHARIA_ITEM = [
   'itensDiversos',
   'itensFornecidos',
   'camposLivres',
+  'preImpressao',
   'quantidade',
   'comprimentoMm',
   'larguraMm',

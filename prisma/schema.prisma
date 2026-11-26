@@ -5021,6 +5021,8 @@ model ItemOrcamentoGrafico {
   itensDiversos   Json? @map("itens_diversos") // [{descricao, quantidade, valor, fixo}]
   itensFornecidos Json? @map("itens_fornecidos") // [{descricao, quantidade}]
   camposLivres    Json? @map("campos_livres") // [{rotulo, conteudo}]
+  /// Janela Pré-Impressão do item: { ctp, fotolito, contatos, montagem }. Só gravado; não altera o preço.
+  preImpressao    Json? @map("pre_impressao")
 
   // ── Tiragem e resultado ──
   quantidade        Int

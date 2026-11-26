@@ -6140,6 +6140,8 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "prazo_pagamento" VARCHAR(120)`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "precisa_recalcular" BOOLEAN NOT NULL DEFAULT false`)
   await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "prazo_alterado_em" TIMESTAMP(3)`)
+  // Janela Pré-Impressão do item (CTP, fotolito, contatos, montagem): só gravada, não altera o preço.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "pre_impressao" JSONB`)
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "log_valor_orcamento_grafico" (
       "id" TEXT NOT NULL,

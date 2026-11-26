@@ -482,6 +482,16 @@ const itemOrcamentoBodySchema = z.object({
     .array(z.object({ rotulo: z.string().min(1).max(50), conteudo: z.string().max(500) }))
     .max(20)
     .optional(),
+  // Janela Pré-Impressão do Calcgraf (só gravada; não altera o preço).
+  preImpressao: z
+    .object({
+      ctp: z.boolean(),
+      fotolito: z.enum(["NAO_CALCULAR", "FORNECIDO", "EM_ARQUIVO"]),
+      contatos: z.enum(["NAO_CALCULAR", "FORNECIDO", "EM_ARQUIVO", "CALCULAR"]),
+      montagem: z.enum(["NAO_CALCULAR", "MONT_CONTATOS"]),
+    })
+    .nullable()
+    .optional(),
   quantidade: z.number().int().positive(),
   tabelaMargemId: z.string().uuid().optional().nullable(),
   // Markup escolhido p/ o Valor Total consolidado do orçamento.
@@ -860,6 +870,8 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     itensDiversos: (body.itensDiversos ?? undefined) as any,
     itensFornecidos: (body.itensFornecidos ?? undefined) as any,
     camposLivres: (body.camposLivres ?? undefined) as any,
+    // null limpa; ausente não altera.
+    preImpressao: body.preImpressao === null ? Prisma.DbNull : (body.preImpressao ?? undefined),
     quantidade: body.quantidade,
     resultadoCalculo: resultado as any,
     margemSelecionada: fech.margemSelecionada,
@@ -1141,6 +1153,7 @@ function reconstruirBodyDoItem(item: any, novaQuantidade?: number): ItemOrcament
     itensDiversos: (item.itensDiversos ?? undefined) as ItemOrcamentoBody['itensDiversos'],
     itensFornecidos: (item.itensFornecidos ?? undefined) as ItemOrcamentoBody['itensFornecidos'],
     camposLivres: (item.camposLivres ?? undefined) as ItemOrcamentoBody['camposLivres'],
+    preImpressao: (item.preImpressao ?? undefined) as ItemOrcamentoBody['preImpressao'],
     quantidade: novaQuantidade ?? item.quantidade,
     margemSelecionada: item.margemSelecionada != null ? Number(item.margemSelecionada) : null,
     // Paridade (não afeta cálculo) — preservadas.
