@@ -207,6 +207,49 @@ export async function authRoutes(app: FastifyInstance) {
     return { message: 'Logout realizado' }
   })
 
+  // ── Renovar sessão a partir do access token AINDA VÁLIDO ──
+  // Rede de segurança do keep-alive do front: se a aba perdeu o refresh token (storage limpo por
+  // outra aba, sessão antiga etc.), a renovação automática não acontecia e o token expirava com o
+  // usuário em pleno uso. Com o access token válido, emite um novo par (access + refresh) para a
+  // MESMA empresa do token — sessão deslizante enquanto o usuário estiver usando o sistema.
+  app.post('/renovar', { preHandler: [authenticate] }, async (request, reply) => {
+    const atual = request.user as TokenPayload & { scope?: string }
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: atual.id },
+      select: { id: true, nome: true, perfil: true, status: true },
+    })
+    if (!usuario || !usuario.status) {
+      return reply.status(401).send({ message: 'Conta desativada' })
+    }
+    const empresaId = atual.empresaId ?? null
+    if (empresaId) {
+      // A empresa do token ainda precisa estar vinculada ao usuário (SUPER_ADMIN acessa qualquer uma).
+      const vinculo =
+        usuario.perfil === 'SUPER_ADMIN'
+          ? true
+          : await prisma.usuarioEmpresa.findFirst({ where: { usuarioId: usuario.id, empresaId }, select: { empresaId: true } })
+      if (!vinculo) return reply.status(401).send({ message: 'Empresa não vinculada ao usuário' })
+    }
+    const payload: TokenPayload = { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresaId }
+    const accessToken = generateAccessToken(app, payload)
+    const refreshToken = generateRefreshToken()
+    try {
+      await prisma.refreshToken.create({
+        data: {
+          usuarioId: usuario.id,
+          token: refreshToken,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          empresaId,
+        },
+      })
+    } catch {
+      // Sem tabela/erro de gravação: devolve só o access token novo (ainda estende a sessão).
+      return { token: accessToken }
+    }
+    setAuthCookies(reply, accessToken, refreshToken)
+    return { token: accessToken, refreshToken }
+  })
+
   // ── Segurança: Registro protegido — apenas SUPER_ADMIN e ADMIN podem criar usuários ──
   app.post('/registrar', { preHandler: [authenticate, perfilGuard('SUPER_ADMIN', 'ADMIN')] }, async (request, reply) => {
     const bodySchema = z.object({
