@@ -1980,7 +1980,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     // Verificar que a etapa pertence à empresa e está CONCLUIDA
     const etapa = await prisma.etapaOrdemProducao.findFirst({
       where: { id, ordemProducao: { empresaId: user.empresaId }, status: 'CONCLUIDA' },
-      include: { ordemProducao: { select: { id: true, numero: true, status: true, empresaId: true } } },
+      include: {
+        ordemProducao: { select: { id: true, numero: true, status: true, empresaId: true } },
+        centroProducao: { select: { codigo: true, descricao: true } },
+      },
     })
 
     if (!etapa) {
@@ -2007,14 +2010,31 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
       })
     }
 
-    // Log de auditoria
+    // Log de auditoria: qual etapa e máquina voltaram, quem clicou e, se houve, quem autorizou.
+    const centroLabel = etapa.centroProducao
+      ? `${etapa.centroProducao.codigo} - ${etapa.centroProducao.descricao}`
+      : 'sem centro'
+    const concluidaEm = etapa.dataFimReal
+      ? ` (concluída em ${new Date(etapa.dataFimReal).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})`
+      : ''
+    let quemClicou = usuarioLogNome
+    if (usuarioLogId !== user.id) {
+      const solicitante = await prisma.usuario.findFirst({ where: { id: user.id }, select: { nome: true, email: true } })
+      quemClicou = solicitante ? `${solicitante.nome} (${solicitante.email})` : 'usuário'
+    }
+    const autorizacao = usuarioLogId !== user.id
+      ? `, autorizado por ${usuarioLogNome}${usuarioLogEmail ? ` (${usuarioLogEmail})` : ''}`
+      : ''
     await prisma.logOrdemProducao.create({
       data: {
         ordemProducaoId: etapa.ordemProducao.id,
-        usuarioId: usuarioLogId,
+        // Registra quem estava logado e clicou; o autorizador fica no texto.
+        usuarioId: user.id,
         statusAnterior: 'CONCLUIDA',
         statusNovo: 'PENDENTE',
-        observacao: `Etapa retornada à fila por ${usuarioLogNome}${usuarioLogEmail ? ` (${usuarioLogEmail})` : ''}`,
+        observacao:
+          `Etapa retornada à fila: "${etapa.descricao}" (${centroLabel})${concluidaEm}. ` +
+          `Retornada por ${quemClicou}${autorizacao}.`,
       },
     })
 

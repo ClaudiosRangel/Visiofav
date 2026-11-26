@@ -337,7 +337,33 @@ export async function concluirEtapa(
 
   const encerrandoSemInicio = etapa.status === 'PENDENTE' && opcoes?.encerrarSemInicio === true
   if (!['EM_ANDAMENTO', 'PAUSADA'].includes(etapa.status) && !encerrandoSemInicio) {
-    throw new EtapaOperacionalError(400, 'Etapa precisa estar em andamento para concluir')
+    const centroRecusa = etapa.centroProducao
+      ? `${etapa.centroProducao.codigo} - ${etapa.centroProducao.descricao}`
+      : 'sem centro'
+    const motivoRecusa = etapa.status === 'CONCLUIDA'
+      ? 'a etapa já estava concluída'
+      : `a etapa está ${etapa.status} (não foi iniciada)`
+    // Registra a tentativa recusada: sem isso, quem tentou finalizar não deixava rastro
+    // e a etapa "voltava" no dia seguinte sem explicação. Best-effort, não muda a resposta.
+    try {
+      await prisma.logOrdemProducao.create({
+        data: {
+          ordemProducaoId: etapa.ordemProducaoId,
+          statusAnterior: etapa.status,
+          statusNovo: etapa.status,
+          usuarioId,
+          observacao: `Tentativa de concluir RECUSADA: etapa "${etapa.descricao}" (${centroRecusa}) — ${motivoRecusa}.`,
+        },
+      })
+    } catch (err) {
+      console.error('[PCP] Erro ao registrar log de conclusão recusada:', err)
+    }
+    throw new EtapaOperacionalError(
+      400,
+      etapa.status === 'CONCLUIDA'
+        ? 'Etapa já está concluída'
+        : 'Etapa precisa estar em andamento para concluir. Inicie a etapa antes de finalizar.',
+    )
   }
   const qtdEncerramento = encerrandoSemInicio ? Math.max(0, Number(opcoes?.quantidadeProduzida ?? 0)) : 0
 
