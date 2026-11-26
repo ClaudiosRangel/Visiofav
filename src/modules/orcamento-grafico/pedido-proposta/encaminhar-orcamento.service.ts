@@ -95,6 +95,8 @@ export async function criarOrcamentoDePedidoProposta(
       acondicionamento: true,
       entregaMesmoEndereco: true,
       entregaEndereco: true,
+      prazoPagamento: true,
+      prazoPagamentoId: true,
     } as never,
   })
   if (!rfq) throw new PedidoPropostaError(404, 'Pedido/Proposta não encontrado.', 'NAO_ENCONTRADO')
@@ -195,6 +197,9 @@ export async function criarOrcamentoDePedidoProposta(
         imagemFaca: r.imagemFaca ?? null,
         observacoes: obsPartes.join('\n'),
         pedidoPropostaId: rfq.id,
+        // Prazo de pagamento combinado no pedido: entra no cálculo (juros) e passa a ser do orçamento.
+        prazoPagamentoId: r.prazoPagamentoId ?? null,
+        prazoPagamento: r.prazoPagamento ?? null,
         criadoPorId: usuarioId,
       } as never,
       select: { id: true, numero: true },

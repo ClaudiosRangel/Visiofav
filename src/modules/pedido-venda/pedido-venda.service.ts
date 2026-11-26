@@ -4,6 +4,7 @@ import { ratearValor } from './pedido-rateio.service'
 import { validarPermissaoEdicao, obterCamposEditaveis, validarCamposPedido, validarPrecoFinalPositivo } from './pedido-validacao.service'
 import { PRIORIDADES, ORIGENS_PEDIDO } from './pedido-venda.constants'
 import type { CreatePedidoVendaInput, EditPedidoVendaInput } from './pedido-venda.schemas'
+import { validarParcelamento, valorMinimoParcelamento } from '../orcamento-grafico/prazo-orcamento.service'
 
 export interface EditarResult {
   success: true
@@ -292,6 +293,10 @@ export class PedidoVendaService {
       descontoGeralAbsoluto,
       acrescimoGeral: 0, // acréscimo já foi rateado nos itens
     })
+
+    // Parcelamento só a partir do valor mínimo configurado (orc.valorMinimoParcelamento).
+    const erroParcela = validarParcelamento(valorTotalPedido, condicao?.parcelas ?? 1, await valorMinimoParcelamento(empresaId))
+    if (erroParcela) return { error: { status: 422, message: erroParcela } as ServiceError }
 
     // 14. Prioridade URGENTE: calcular dataLimiteAtendimento
     const agora = new Date()
@@ -666,6 +671,17 @@ export class PedidoVendaService {
           acrescimoGeral: acrescimoVal,
         })
       }
+    }
+
+    // Parcelamento só a partir do valor mínimo configurado (orc.valorMinimoParcelamento).
+    const condicaoFinalId = input.condicaoPagId !== undefined ? input.condicaoPagId : pedido.condicaoPagId
+    if (condicaoFinalId) {
+      const condicaoFinal = await prisma.condicaoPagamento.findFirst({
+        where: { id: condicaoFinalId, tabelaPreco: { empresaId } },
+        select: { parcelas: true },
+      })
+      const erroParcela = validarParcelamento(valorTotalPedido, condicaoFinal?.parcelas ?? 1, await valorMinimoParcelamento(empresaId))
+      if (erroParcela) return { success: false, status: 422, body: { message: erroParcela } }
     }
 
     // Build update data

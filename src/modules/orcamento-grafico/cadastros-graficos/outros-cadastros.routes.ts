@@ -74,6 +74,9 @@ export const PARAMETROS_ORCAMENTO: readonly DefParametro[] = [
   { chave: 'orc.partidaTintaGramas', descricao: 'Partida de consumo de tinta (g)', padrao: 200, min: 0, max: 100000 },
   { chave: 'orc.jurosAplicacaoMes', descricao: 'Juros de aplicação (% ao mês)', padrao: 2, min: 0, max: 100 },
   { chave: 'orc.jurosBancariosMes', descricao: 'Juros bancários (% ao mês)', padrao: 2, min: 0, max: 100 },
+  { chave: 'orc.aplicarJurosPrazo', descricao: 'Aplicar juros pelo prazo de pagamento no preço (1 = sim, 0 = não)', padrao: 1, min: 0, max: 1, inteiro: true },
+  { chave: 'orc.margemMinimaPerc', descricao: 'Margem mínima entre custo e preço (%)', padrao: 30, min: 0, max: 100 },
+  { chave: 'orc.valorMinimoParcelamento', descricao: 'Valor total mínimo para parcelar o pagamento (R$; 0 = sem limite)', padrao: 0, min: 0, max: 1000000000 },
   { chave: 'orc.prazoMedioProducaoDias', descricao: 'Prazo médio de produção (dias)', padrao: 2, min: 0, max: 3650, inteiro: true },
   { chave: 'orc.diasRecusado', descricao: 'Dias para tratar como recusado', padrao: 210, min: 0, max: 3650, inteiro: true },
 ] as const

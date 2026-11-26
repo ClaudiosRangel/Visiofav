@@ -18,9 +18,17 @@ describe('filtrarClientes', () => {
     expect(filtrarClientes([c('1', 'Zélia')], { q: 'zelia' })).toHaveLength(1)
   })
 
-  it('q casa por código exato ou por nome', () => {
-    const lista = [c('1', 'Alfa', 123), c('2', 'Beta', 1234), c('3', 'Gama 123')]
-    expect(filtrarClientes(lista, { q: '123' }).map((x) => x.id)).toEqual(['1', '3'])
+  it('q casa por "contém" no código, no nome ou nos dígitos do CNPJ/CPF', () => {
+    const lista = [c('1', 'Alfa', 123), c('2', 'Beta', 1234), c('3', 'Gama 123'), c('4', 'Delta', 9)]
+    expect(filtrarClientes(lista, { q: '123' }).map((x) => x.id)).toEqual(['1', '2', '3'])
+    const comDoc = [{ ...c('5', 'Epsilon'), cpfCnpj: '23.787.041/0001-75' }, c('6', 'Zeta')]
+    expect(filtrarClientes(comDoc, { q: '23787' }).map((x) => x.id)).toEqual(['5'])
+    expect(filtrarClientes(comDoc, { q: '23' }).map((x) => x.id)).toEqual([])
+  })
+
+  it('código específico casa por "contém"', () => {
+    const lista = [c('1', 'Alfa', 4502), c('2', 'Beta', 1450), c('3', 'Gama', 77)]
+    expect(filtrarClientes(lista, { codigo: '45' }).map((x) => x.id)).toEqual(['1', '2'])
   })
 
   it('nunca passa de 50 resultados', () => {

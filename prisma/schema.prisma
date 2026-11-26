@@ -4618,6 +4618,16 @@ model OrcamentoGrafico {
   // null = sem override (comportamento atual). Ex.: {margem:{markup,comissao,...}}.
   fechamentoOverride       Json?     @map("fechamento_override")
 
+  // Prazo de pagamento do orçamento (cadastro CondicaoPagamentoComercial) — spec
+  // orcamento-prazos-cliente-margem. Copiado do Pedido/Proposta ou da solicitação do Portal; com o
+  // orçamento calculado só muda aqui e exige recalcular (`precisaRecalcular`). Os dias do prazo
+  // entram no preço como juros (orc.jurosAplicacaoMes × dias ÷ 30).
+  prazoPagamentoId  String?  @map("prazo_pagamento_id")
+  prazoPagamento    String?  @map("prazo_pagamento") @db.VarChar(120)
+  precisaRecalcular Boolean  @default(false) @map("precisa_recalcular")
+  /// Quando o prazo foi trocado com o orçamento calculado: itens gravados antes disso estão no preço antigo.
+  prazoAlteradoEm   DateTime? @map("prazo_alterado_em")
+
   itens ItemOrcamentoGrafico[] // 0..999 (Req 1.2)
 
   @@unique([empresaId, serieId, numero, versao])
@@ -4909,6 +4919,30 @@ model EtapaPreImpressao {
   aprovacaoEm      DateTime? @map("aprovacao_em")
   /// Descrição da alteração ou motivo do cancelamento
   aprovacaoMotivo  String?   @map("aprovacao_motivo") @db.Text
+}
+
+/// Log de alteração manual do valor de uma tiragem do orçamento gráfico (quem, quando, valor e
+/// margem antes/depois, e se ficou abaixo da margem mínima). Spec orcamento-prazos-cliente-margem R5.
+model LogValorOrcamentoGrafico {
+  id             String   @id @default(uuid())
+  empresaId      String   @map("empresa_id")
+  orcamentoId    String   @map("orcamento_id")
+  itemId         String   @map("item_id")
+  quantidade     Int
+  valorAnterior  Decimal? @map("valor_anterior") @db.Decimal(14, 2)
+  valorNovo      Decimal? @map("valor_novo") @db.Decimal(14, 2)
+  margemAnterior Decimal? @map("margem_anterior") @db.Decimal(9, 4)
+  margemNova     Decimal? @map("margem_nova") @db.Decimal(9, 4)
+  margemMinima   Decimal? @map("margem_minima") @db.Decimal(7, 2)
+  abaixoMargem   Boolean  @default(false) @map("abaixo_margem")
+  /// VALOR (digitado) | LIMPAR (voltou ao cálculo)
+  acao           String   @default("VALOR") @db.VarChar(10)
+  usuarioId      String?  @map("usuario_id")
+  usuarioNome    String?  @map("usuario_nome") @db.VarChar(160)
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  @@index([empresaId, orcamentoId, criadoEm])
+  @@map("log_valor_orcamento_grafico")
 }
 
 /// Cadastro de Prazos / Condições de Pagamento do Comercial (ligado ao

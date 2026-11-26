@@ -24,6 +24,8 @@ export interface PermissoesComercialUsuario {
   podeGerenciarAmostras: boolean
   podeEditarCadastros: boolean
   podeConcluirEtapas: boolean
+  /** Digitar o valor unitário/total de uma tiragem do orçamento (padrão: não). */
+  podeAlterarValorUnitario: boolean
   // Acesso por menu (habilitar/ocultar cada tela). Se ausente, tudo liberado.
   acessoMenus?: Record<string, { habilitado?: boolean }>
 }
@@ -39,6 +41,7 @@ export const DEFAULT_PERMISSOES_COMERCIAL: PermissoesComercialUsuario = {
   podeGerenciarAmostras: true,
   podeEditarCadastros: true,
   podeConcluirEtapas: true,
+  podeAlterarValorUnitario: false,
 }
 
 function chave(usuarioId: string) {
@@ -83,6 +86,7 @@ const permissoesSchema = z.object({
   podeGerenciarAmostras: z.boolean().optional(),
   podeEditarCadastros: z.boolean().optional(),
   podeConcluirEtapas: z.boolean().optional(),
+  podeAlterarValorUnitario: z.boolean().optional(),
   acessoMenus: z.record(z.string(), z.object({ habilitado: z.boolean().optional() })).optional(),
 })
 
@@ -93,7 +97,8 @@ export async function permissoesComercialRoutes(app: FastifyInstance) {
   app.get('/permissoes/minha', async (request) => {
     const user = request.user as { id: string; empresaId: string; perfil: string }
     if (['SUPER_ADMIN', 'ADMIN'].includes(user.perfil)) {
-      return { ...DEFAULT_PERMISSOES_COMERCIAL, isAdmin: true }
+      // ADMIN pode tudo (inclui as ações que nascem restritas, como alterar o valor unitário).
+      return { ...DEFAULT_PERMISSOES_COMERCIAL, podeAlterarValorUnitario: true, isAdmin: true }
     }
     const permissoes = await getPermissoesComercial(user.empresaId, user.id)
     return { ...permissoes, isAdmin: false }

@@ -3,6 +3,7 @@ import { authenticate } from '../../../middleware/authenticate'
 import { obterComissoes } from './comissoes.service'
 import { obterDadosItem } from './dados-item.service'
 import { obterFechamentoTotalizador } from './fechamento-totalizador.service'
+import { margemMinimaPerc, margemSobrePreco, situacaoMargem } from '../margem-minima'
 import { z } from 'zod'
 import { HierarquiaError, paramsItemSchema, paramsOrcamentoSchema, paramsPlanoSchema } from './hierarquia-common'
 import { copiarItem, obterItemHidratado } from './item-copia.service'
@@ -60,7 +61,22 @@ export async function hierarquiaRoutes(app: FastifyInstance) {
   // Aba Fechamento (totalizador; lê só o persistido).
   app.get('/:id/fechamento-totalizador', async (request, reply) => {
     const { id } = paramsOrcamentoSchema.parse(request.params)
-    return tratar(reply, () => obterFechamentoTotalizador(id, empresaDe(request)))
+    return tratar(reply, async () => {
+      const empresaId = empresaDe(request)
+      const [fechamento, minima] = await Promise.all([
+        obterFechamentoTotalizador(id, empresaId),
+        margemMinimaPerc(empresaId).catch(() => 0),
+      ])
+      // Margem entre custo e preço de cada tiragem frente à mínima configurada (spec orcamento-prazos-cliente-margem R5).
+      return {
+        ...fechamento,
+        margemMinima: minima,
+        linhas: fechamento.linhas.map((l) => {
+          const margemSobre = margemSobrePreco(l.valorTotal, l.custoProducao)
+          return { ...l, margemSobrePreco: margemSobre, situacaoMargem: situacaoMargem(margemSobre, minima) }
+        }),
+      }
+    })
   })
 
   // Aba Comissões.

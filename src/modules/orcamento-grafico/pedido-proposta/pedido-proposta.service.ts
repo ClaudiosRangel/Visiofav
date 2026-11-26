@@ -7,6 +7,7 @@
  * `LogPedidoProposta` (auditoria).
  */
 import { prisma } from '../../../lib/prisma'
+import { garantirPrazoLivreNoPedido, PrazoOrcamentoError } from '../prazo-orcamento.service'
 import {
   validarTransicao,
   type EstadoProposta,
@@ -245,6 +246,17 @@ export async function atualizarPedidoProposta(
     },
     false,
   )
+
+  // Com o orçamento vinculado já calculado, o prazo só muda no orçamento (e exige recalcular).
+  try {
+    await garantirPrazoLivreNoPedido(empresaId, existente.id, {
+      prazoPagamentoId: input.prazoPagamentoId,
+      prazoPagamento: input.prazoPagamento,
+    })
+  } catch (e) {
+    if (e instanceof PrazoOrcamentoError) throw new PedidoPropostaError(e.statusCode, e.message, e.code)
+    throw e
+  }
 
   await prisma.pedidoProposta.update({
     where: { id: existente.id },

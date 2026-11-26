@@ -8,6 +8,13 @@ import { guardaSetorOrcamento } from './fluxo-operacao/fluxo-guard'
 import { exigirEtapasConcluidasParaLiberarPedidoVenda } from './fluxo-operacao/fluxo-pedido.service'
 import { FluxoOperacaoError } from './fluxo-operacao/fluxo-operacao.motor'
 import {
+  condicaoVendaDoPrazoDoOrcamento,
+  conferirParcelamentoDoOrcamento,
+  garantirOrcamentoRecalculado,
+  PrazoOrcamentoError,
+  reavaliarPrecisaRecalcular,
+} from './prazo-orcamento.service'
+import {
   calcularItem,
   ItemOrcamentoError,
   montarParamsDoItem,
@@ -553,8 +560,9 @@ type ItemOrcamentoBody = z.infer<typeof itemOrcamentoBodySchema>
  * Os campos ainda sem efeito no motor (modelo/matriz/tinta/restrição) NÃO entram
  * aqui — são apenas persistidos nas colunas do item pela rota.
  */
-function montarInputDoItem(body: ItemOrcamentoBody): ItemOrcamentoInput {
+function montarInputDoItem(body: ItemOrcamentoBody, orcamentoId?: string): ItemOrcamentoInput {
   return {
+    orcamentoId,
     tipoEmbalagemId: body.tipoEmbalagemId,
     medidas: body.medidas,
     papelId: body.papelId ?? null,
@@ -929,6 +937,8 @@ async function reconsolidarOrcamento(
       valorTotalConsolidado: consolidado.valorTotalConsolidado,
     },
   })
+  // Troca de prazo com o orçamento calculado: a marca cai quando todos os itens forem regravados.
+  await reavaliarPrecisaRecalcular(empresaId, orcamentoId, db as never)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1003,6 +1013,8 @@ type ItemPersistidoBase = {
   formatoCorteAlturaMm: unknown
   margemSelecionada: unknown
   resultadoCalculo: unknown
+  /** Orçamento do item (juros pelo prazo); presente quando a linha foi lida inteira. */
+  orcamentoId?: string
 }
 
 const numOuUndef = (v: unknown): number | undefined =>
@@ -1046,6 +1058,7 @@ function reconstruirInputBaseDoItem(
     : undefined
 
   return {
+    orcamentoId: item.orcamentoId,
     tipoEmbalagemId: item.tipoEmbalagemId,
     medidas: (item.medidas ?? {}) as Record<string, number>,
     papelId: item.papelId ?? null,
@@ -3020,6 +3033,10 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     tipo: true,
     variacoes: true,
     observacoes: true,
+    // Prazo de pagamento do orçamento (entra nos juros) e marca de recálculo pendente.
+    prazoPagamentoId: true,
+    prazoPagamento: true,
+    precisaRecalcular: true,
     criadoPorId: true,
     criadoEm: true,
     atualizadoEm: true,
@@ -3060,12 +3077,23 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         .nullable(),
       // Data do orçamento; ausente = hoje em America/Sao_Paulo.
       dataOrcamento: z.coerce.date({ invalid_type_error: 'data inválida' }).optional().nullable(),
+      // Prazo de pagamento (cadastro do Comercial); ausente = nenhum.
+      prazoPagamentoId: z.string().uuid('deve ser um id válido').optional().nullable(),
       // `empresaId` eventualmente enviado no body é descartado (z.object remove chaves
       // desconhecidas): a empresa é SEMPRE a da sessão.
     }).parse(request.body)
 
     if (!body.clienteId && !body.clienteNome?.trim()) {
       return reply.status(400).send({ message: 'Informe o cliente (cadastrado ou nome livre).' })
+    }
+    const prazoInicial = body.prazoPagamentoId
+      ? await prisma.condicaoPagamentoComercial.findFirst({
+          where: { id: body.prazoPagamentoId, empresaId: user.empresaId },
+          select: { id: true, descricao: true },
+        })
+      : null
+    if (body.prazoPagamentoId && !prazoInicial) {
+      return reply.status(400).send({ message: 'prazoPagamentoId: prazo de pagamento não cadastrado' })
     }
 
     // Placeholder de tipo de embalagem — o produto real é escolhido no editor.
@@ -3119,6 +3147,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             clienteId: body.clienteId ?? null,
             clienteNome: body.clienteNome ?? null,
             vendedorId: body.vendedorId ?? null,
+            prazoPagamentoId: prazoInicial?.id ?? null,
+            prazoPagamento: prazoInicial?.descricao ?? null,
             tipoEmbalagemId: tipoPlaceholder.id,
             medidas: {},
             quantidade: 0,
@@ -3588,10 +3618,18 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
 
     if (query.busca) {
+      // Nº por "contém" (o nº é inteiro: casa pelo texto, consulta parametrizada e limitada à empresa).
+      const digitos = query.busca.replace(/\D/g, '')
+      const porNumero = digitos
+        ? await prisma.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM orcamento_grafico
+            WHERE empresa_id = ${user.empresaId} AND numero::text LIKE ${'%' + digitos + '%'}
+            LIMIT 500`
+        : []
       where.OR = [
-        { numero: { equals: isNaN(Number(query.busca)) ? undefined : Number(query.busca) } },
+        ...(porNumero.length ? [{ id: { in: porNumero.map((r) => r.id) } }] : []),
         { clienteNome: { contains: query.busca, mode: 'insensitive' } },
-      ].filter(c => Object.values(c)[0] !== undefined)
+      ]
     }
 
     // Usa orcamentoGraficoSelect mas exclui resultadoCalculo (pode ser JSON grande)
@@ -4305,6 +4343,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
     }
 
+    // Prazo trocado sem recalcular / prazo parcelado abaixo do valor mínimo.
+    try {
+      await garantirOrcamentoRecalculado(user.empresaId, id)
+      await conferirParcelamentoDoOrcamento(user.empresaId, id)
+    } catch (e) {
+      if (e instanceof PrazoOrcamentoError) return reply.status(e.statusCode).send({ message: e.message, code: e.code })
+      throw e
+    }
     const validadeAte = orcamento.validadeAte ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
 
     const atualizado = await prisma.orcamentoGrafico.update({
@@ -4410,6 +4456,12 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
     }
 
+    try {
+      await conferirParcelamentoDoOrcamento(user.empresaId, id)
+    } catch (e) {
+      if (e instanceof PrazoOrcamentoError) return reply.status(e.statusCode).send({ message: e.message, code: e.code })
+      throw e
+    }
     const updateData: any = {
       status: 'APROVADO',
       aprovadoEm: new Date(),
@@ -4431,6 +4483,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
           select: { numero: true },
         })
         const numeroPedido = (ultimoPedido?.numero ?? 0) + 1
+        const condicaoPagId = await condicaoVendaDoPrazoDoOrcamento(user.empresaId, id, tabelaPreco.id)
 
         const pedido = await prisma.pedidoVenda.create({
           data: {
@@ -4439,6 +4492,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
             clienteId: orcamento.clienteId,
             vendedorId: orcamento.vendedorId,
             tabelaPrecoId: tabelaPreco.id,
+            // Condição da tabela de preço com as mesmas parcelas do prazo do orçamento (quando houver).
+            ...(condicaoPagId ? { condicaoPagId } : {}),
             valorTotal: valorTotalPedido,
             status: 'RASCUNHO',
             origemPedido: 'ORCAMENTO_GRAFICO',
@@ -5139,7 +5194,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
       let resultado: ResultadoOrcamento | null = null
       try {
-        resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
+        resultado = await calcularItem(user.empresaId, montarInputDoItem(body, id))
       } catch (err) {
         if (err instanceof ItemOrcamentoError) {
           avisos.push(`Item #${item.sequencia}: não recalculado (${err.message}). Copiado com o cálculo original.`)
@@ -6033,7 +6088,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     // Calcular o item (envelope do motor) — mapeia ItemOrcamentoError → status.
     let resultado: ResultadoOrcamento
     try {
-      resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
+      resultado = await calcularItem(user.empresaId, montarInputDoItem(body, id))
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
@@ -6088,7 +6143,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       try {
         await sincronizarTiragensDoItem(id, item.id, user.empresaId, {
           tiragens: validarTiragens(body.tiragens),
-          inputItem: montarInputDoItem(body),
+          inputItem: montarInputDoItem(body, id),
           materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
         })
       } catch (err) {
@@ -6530,7 +6585,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       try {
         await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
           tiragens: tiragensAdiadas,
-          inputItem: montarInputDoItem(body),
+          inputItem: montarInputDoItem(body, id),
           materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
         })
       } catch (err) {
@@ -6544,7 +6599,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     let resultado: ResultadoOrcamento
     try {
-      resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
+      resultado = await calcularItem(user.empresaId, montarInputDoItem(body, id))
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
@@ -6581,7 +6636,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
         tiragens: body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens),
-        inputItem: montarInputDoItem(body),
+        inputItem: montarInputDoItem(body, id),
         materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
       })
     } catch (err) {
@@ -6654,7 +6709,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       try {
         tiragensDosPlanos = await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
           tiragens: body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens),
-          inputItem: montarInputDoItem(body),
+          inputItem: montarInputDoItem(body, id),
           materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
         })
       } catch (err) {
@@ -6676,7 +6731,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
 
     let resultado: ResultadoOrcamento
     try {
-      resultado = await calcularItem(user.empresaId, montarInputDoItem(body))
+      resultado = await calcularItem(user.empresaId, montarInputDoItem(body, id))
     } catch (err) {
       if (err instanceof ItemOrcamentoError) return reply.status(err.statusCode).send({ message: err.message })
       throw err
@@ -6719,7 +6774,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     try {
       tiragensCalculadas = await sincronizarTiragensDoItem(id, itemId, user.empresaId, {
         tiragens: body.tiragens === undefined ? undefined : body.tiragens.length === 0 ? [] : validarTiragens(body.tiragens),
-        inputItem: montarInputDoItem(body),
+        inputItem: montarInputDoItem(body, id),
         materiais: body.materiaisAcabamento as MaterialAcabamentoVinculo[] | null | undefined,
       })
     } catch (err) {
@@ -6869,7 +6924,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     })
     if (!existente) return reply.status(404).send({ message: 'Item de orçamento não encontrado' })
 
-    const baseInput = montarInputDoItem(body)
+    const baseInput = montarInputDoItem(body, id)
     const simulacoes: Array<{
       quantidade: number
       custoProducao: number
@@ -6912,6 +6967,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       select: {
         id: true,
         empresaId: true,
+        orcamentoId: true,
         tipoEmbalagemId: true,
         medidas: true,
         papelId: true,

@@ -12,6 +12,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
 import { obterCatalogoComercial } from '../../orcamento-grafico/pedido-proposta/catalogo-comercial.service'
+import { historicoPrazosCliente } from '../../orcamento-grafico/prazo-orcamento.service'
 import { portalRepAuth } from '../auth/portal-rep-auth.middleware'
 import { buscarMunicipiosIBGE } from '../../fiscal/emissor-dfe/cte/cte-municipios.routes'
 
@@ -22,6 +23,18 @@ export async function portalRepCatalogoRoutes(app: FastifyInstance) {
   app.get('/comercial', { preHandler: [portalRepAuth] }, async (request, reply) => {
     const { empresaId } = request.portalRepUser
     return reply.status(200).send(await obterCatalogoComercial(empresaId))
+  })
+
+  // GET /catalogo/clientes/:clienteId/prazo-padrao - prazo mais usado pelo cliente (spec
+  // orcamento-prazos-cliente-margem R4), para já vir preenchido na solicitação nova.
+  app.get('/clientes/:clienteId/prazo-padrao', { preHandler: [portalRepAuth] }, async (request, reply) => {
+    const { empresaId } = request.portalRepUser
+    const parsed = z.object({ clienteId: z.string().uuid() }).safeParse(request.params)
+    if (!parsed.success) return reply.status(400).send({ message: 'Cliente inválido.' })
+    const cliente = await prisma.cliente.findFirst({ where: { id: parsed.data.clienteId, empresaId }, select: { id: true } })
+    if (!cliente) return reply.status(404).send({ message: 'Cliente não encontrado.' })
+    const { padrao } = await historicoPrazosCliente(empresaId, cliente.id)
+    return reply.status(200).send({ padrao })
   })
 
   // POST /catalogo/prazos-pagamento - o representante cria um prazo novo (mesmo cadastro do

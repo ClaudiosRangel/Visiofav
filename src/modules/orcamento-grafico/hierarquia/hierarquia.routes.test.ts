@@ -255,13 +255,16 @@ describe('GET /:id/fechamento-totalizador', () => {
     const app = await buildApp()
     const res = await app.inject({ method: 'GET', url: `${P}/${ORC}/fechamento-totalizador`, headers: hA })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({
+    const body = res.json()
+    expect(body).toMatchObject({
       orcamentoId: ORC,
-      linhas: [
-        { tiragem: 1000, margemPerc: 30, contribuicaoMarginalPerc: 25, valorUnitario: 0.2, valorTotal: 200, custoProducao: 100, itens: 1, itensSemEstaTiragem: 0 },
-      ],
-      itensSemCalculo: [],
       quantidadeSemCalculo: 0,
+      itensSemCalculo: [],
+      linhas: [
+        expect.objectContaining({
+          tiragem: 1000, margemPerc: 30, contribuicaoMarginalPerc: 25, valorUnitario: 0.2, valorTotal: 200, custoProducao: 100, itens: 1, itensSemEstaTiragem: 0,
+        }),
+      ],
     })
     const [sql, ...params] = prismaMock.$queryRawUnsafe.mock.calls[0]
     expect(sql).toContain('empresa_id = $2')

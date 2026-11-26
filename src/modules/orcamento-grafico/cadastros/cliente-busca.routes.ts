@@ -24,10 +24,12 @@ export interface ClienteBuscaCandidato {
   razaoSocial: string
   nomeFantasia: string | null
   codigoCalcgraf: number | null
+  /** CNPJ/CPF; casa pelos dígitos digitados (opcional para compatibilidade). */
+  cpfCnpj?: string | null
 }
 
 /**
- * Filtro puro. `q` casa por código (exato) OU nome (trecho); `codigo` e `nome`
+ * Filtro puro, tudo por "contém": `q` casa por código, nome ou CNPJ/CPF (dígitos); `codigo` e `nome`
  * específicos, quando informados juntos com `q`, são combinados com E.
  */
 export function filtrarClientes(
@@ -42,10 +44,14 @@ export function filtrarClientes(
     normalizarBusca(c.razaoSocial).includes(trecho) ||
     (c.nomeFantasia != null && normalizarBusca(c.nomeFantasia).includes(trecho))
   const casaCodigo = (c: ClienteBuscaCandidato, cod: string) =>
-    c.codigoCalcgraf != null && String(c.codigoCalcgraf) === cod
+    c.codigoCalcgraf != null && String(c.codigoCalcgraf).includes(cod)
+  const casaDoc = (c: ClienteBuscaCandidato, trecho: string) => {
+    const d = trecho.replace(/\D/g, '')
+    return d.length >= 3 && (c.cpfCnpj ?? '').replace(/\D/g, '').includes(d)
+  }
 
   const filtrados = candidatos.filter((c) => {
-    if (q && !(casaCodigo(c, q) || casaNome(c, q))) return false
+    if (q && !(casaCodigo(c, q) || casaNome(c, q) || casaDoc(c, q))) return false
     if (codigo && !casaCodigo(c, codigo)) return false
     if (nome && !casaNome(c, nome)) return false
     return true
@@ -79,7 +85,7 @@ export async function clienteBuscaRoutes(app: FastifyInstance) {
 
     const candidatos = await prisma.cliente.findMany({
       where: { empresaId: user.empresaId, status: true },
-      select: { id: true, razaoSocial: true, nomeFantasia: true, codigoCalcgraf: true },
+      select: { id: true, razaoSocial: true, nomeFantasia: true, codigoCalcgraf: true, cpfCnpj: true },
     })
 
     const achados = filtrarClientes(candidatos, { q, codigo, nome })
@@ -97,6 +103,7 @@ export async function clienteBuscaRoutes(app: FastifyInstance) {
       codigo: c.codigoCalcgraf,
       nome: c.razaoSocial,
       nomeFantasia: c.nomeFantasia,
+      cpfCnpj: c.cpfCnpj ?? null,
       observacao: mapaObs.get(c.id) ?? null,
     }))
   })

@@ -202,6 +202,7 @@ import { clienteBuscaRoutes } from './modules/orcamento-grafico/cadastros/client
 import { materialMicroonduladoRoutes } from './modules/orcamento-grafico/cadastros/material-microondulado.routes'
 import { coberturaTintaRoutes } from './modules/orcamento-grafico/cadastros/cobertura-tinta.routes'
 import { acabadosRoutes } from './modules/orcamento-grafico/cadastros/acabados.routes'
+import { orcamentoClientePrazoRoutes } from './modules/orcamento-grafico/orcamento-cliente-prazo.routes'
 import { processoImpressaoRoutes } from './modules/orcamento-grafico/cadastros/processo-impressao.routes'
 import { materialAcabamentoRoutes } from './modules/orcamento-grafico/cadastros/material-acabamento.routes'
 import { templatePropostaRoutes } from './modules/orcamento-grafico/template-proposta.routes'
@@ -557,6 +558,7 @@ async function bootstrap() {
   await app.register(materialMicroonduladoRoutes, { prefix: '/api/orcamento-grafico/materiais-microondulado' })
   await app.register(coberturaTintaRoutes, { prefix: '/api/orcamento-grafico/coberturas-tinta' })
   await app.register(acabadosRoutes, { prefix: '/api/orcamento-grafico/acabados' })
+  await app.register(orcamentoClientePrazoRoutes, { prefix: '/api/orcamento-grafico' })
   await app.register(processoImpressaoRoutes, { prefix: '/api/orcamento-grafico/processos-impressao' })
   await app.register(materialAcabamentoRoutes, { prefix: '/api/orcamento-grafico/materiais-acabamento' })
   // Cadastros e relações do orçamento gráfico (produtos, planos, relações, catálogo…)

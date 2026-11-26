@@ -80,6 +80,7 @@ export async function criarOrcamentoGraficoDeSolicitacao(
       acabamentos: true,
       observacoes: true,
       produtoId: true,
+      prazoPagamento: true,
     },
   })
 
@@ -140,6 +141,15 @@ export async function criarOrcamentoGraficoDeSolicitacao(
   })
   const numero = (ultimo?.numero ?? 0) + 1
 
+  // Prazo escolhido no Portal (a solicitação guarda a descrição): casa com o cadastro do Comercial.
+  const prazoTexto = solicitacao.prazoPagamento?.trim() || null
+  const prazoCadastro = prazoTexto
+    ? await prisma.condicaoPagamentoComercial.findFirst({
+        where: { empresaId, descricao: { equals: prazoTexto, mode: 'insensitive' } },
+        select: { id: true, descricao: true },
+      })
+    : null
+
   const orcamento = await prisma.orcamentoGrafico.create({
     data: {
       empresaId,
@@ -157,6 +167,8 @@ export async function criarOrcamentoGraficoDeSolicitacao(
       etapaCalculo: 'AGUARDANDO',
       observacoes: obsPartes.join('\n'),
       produtoId: solicitacao.produtoId ?? null, // modo repetição propagado
+      prazoPagamentoId: prazoCadastro?.id ?? null,
+      prazoPagamento: prazoCadastro?.descricao ?? prazoTexto,
       criadoPorId: usuarioId,
     },
     select: { id: true, numero: true },

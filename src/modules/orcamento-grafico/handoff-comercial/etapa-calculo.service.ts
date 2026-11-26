@@ -16,6 +16,7 @@
  */
 import bcrypt from 'bcryptjs'
 import { prisma } from '../../../lib/prisma'
+import { garantirOrcamentoRecalculado, PrazoOrcamentoError } from '../prazo-orcamento.service'
 
 export type EtapaCalculo = 'AGUARDANDO' | 'EM_CALCULO' | 'VALIDAR' | 'VALIDADO'
 
@@ -53,6 +54,16 @@ function validarTransicao(atual: EtapaCalculo | null, novo: EtapaCalculo): void 
   }
 }
 
+/** Prazo trocado com o orçamento calculado: validar só depois de recalcular os itens. */
+async function exigirRecalculado(empresaId: string, id: string): Promise<void> {
+  try {
+    await garantirOrcamentoRecalculado(empresaId, id)
+  } catch (e) {
+    if (e instanceof PrazoOrcamentoError) throw new EtapaCalculoError(e.statusCode, e.message, e.code)
+    throw e
+  }
+}
+
 async function carregar(empresaId: string, id: string) {
   const orc = await prisma.orcamentoGrafico.findFirst({
     where: { id, empresaId },
@@ -84,6 +95,7 @@ export async function iniciarCalculo(empresaId: string, id: string, usuarioId: s
 export async function enviarParaValidacao(empresaId: string, id: string) {
   const orc = await carregar(empresaId, id)
   validarTransicao((orc.etapaCalculo as EtapaCalculo | null) ?? null, 'VALIDAR')
+  await exigirRecalculado(empresaId, orc.id)
   await prisma.orcamentoGrafico.update({
     where: { id: orc.id },
     data: { etapaCalculo: 'VALIDAR' },

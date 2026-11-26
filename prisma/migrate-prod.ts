@@ -6135,6 +6135,33 @@ async function seedMateriaisFromOPs() {
   )
   console.log('✅ cobertura_tinta: tintas_padrao (Escala/Especial preenchidas onde vazio)')
 
+  // Spec orcamento-prazos-cliente-margem: prazo no orçamento + log de valor manual das tiragens.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "prazo_pagamento_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "prazo_pagamento" VARCHAR(120)`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "precisa_recalcular" BOOLEAN NOT NULL DEFAULT false`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "orcamento_grafico" ADD COLUMN IF NOT EXISTS "prazo_alterado_em" TIMESTAMP(3)`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "log_valor_orcamento_grafico" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "orcamento_id" TEXT NOT NULL,
+      "item_id" TEXT NOT NULL,
+      "quantidade" INTEGER NOT NULL,
+      "valor_anterior" DECIMAL(14,2),
+      "valor_novo" DECIMAL(14,2),
+      "margem_anterior" DECIMAL(9,4),
+      "margem_nova" DECIMAL(9,4),
+      "margem_minima" DECIMAL(7,2),
+      "abaixo_margem" BOOLEAN NOT NULL DEFAULT false,
+      "acao" VARCHAR(10) NOT NULL DEFAULT 'VALOR',
+      "usuario_id" TEXT,
+      "usuario_nome" VARCHAR(160),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "log_valor_orcamento_grafico_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "log_valor_orcamento_grafico_empresa_id_orcamento_id_criado_em_idx" ON "log_valor_orcamento_grafico"("empresa_id","orcamento_id","criado_em")`)
+  console.log('✅ orcamento_grafico: prazo_pagamento_id/prazo_pagamento/precisa_recalcular + log_valor_orcamento_grafico')
+
   await migrarSerieDocumento()
 
   await migrarPedidosParaStatusFiel()

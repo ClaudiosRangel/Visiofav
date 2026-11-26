@@ -26,6 +26,7 @@
 
 import { prisma } from '../../lib/prisma'
 import { resolverPapelDoPlano } from './papel-do-plano'
+import { aplicarJurosNaMargem, jurosDoPrazoDoOrcamento } from './juros-prazo'
 import {
   calcularOrcamentoGrafico,
   type ParamsOrcamento,
@@ -194,6 +195,10 @@ export interface ItemOrcamentoInput {
    * brutas no 15.086), sem alterar a perda geral da empresa. Ausente → legado.
    */
   perdasOverride?: { impressaoPercent?: number; impressaoFixaFolhas?: number }
+  /** Orçamento do item: usado para os juros pelo prazo de pagamento do orçamento. */
+  orcamentoId?: string | null
+  /** Juros do prazo (%) já resolvidos; quando presente, dispensa a leitura do orçamento. */
+  jurosPrazoPerc?: number
 }
 
 /** Erro de regra de negócio ao montar os params (ex.: cadastro ausente). */
@@ -489,6 +494,14 @@ export async function montarParamsDoItem(
     }
   }
 
+  // Juros pelo prazo de pagamento do orçamento (taxa ao mês × dias ÷ 30), somados no CEV como no
+  // sistema de referência. Sem orçamento/prazo ou com a configuração desligada → 0 (não-regressão).
+  const jurosPrazo =
+    input.jurosPrazoPerc ?? (input.orcamentoId ? await jurosDoPrazoDoOrcamento(empresaId, input.orcamentoId) : 0)
+  const comJuros = aplicarJurosNaMargem(margem, input.cev, jurosPrazo)
+  margem = comJuros.margem
+  const cevComJuros = comJuros.cev
+
   // Buscar perdas (parâmetro geral = sem centroProducaoId). Override opcional
   // (`input.perdasOverride`) tem precedência — usado pela paridade Calcgraf
   // (golden 15.086) para fixar a quebra de impressão sem depender do
@@ -624,7 +637,7 @@ export async function montarParamsDoItem(
     itensFornecidos: input.itensFornecidos,
     creditosFiscais: input.creditosFiscais,
     encargoFinanceiroPerc: input.encargoFinanceiroPerc,
-    cev: input.cev,
+    cev: cevComJuros,
     coberturaCmykAgregadaPercent: input.coberturaCmykAgregadaPercent,
   }
 
