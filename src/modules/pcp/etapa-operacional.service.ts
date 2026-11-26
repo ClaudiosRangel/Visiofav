@@ -83,6 +83,34 @@ export async function iniciarEtapa(etapaId: string, empresaId: string, funcionar
     throw new EtapaOperacionalError(400, `Etapa não pode ser iniciada. Status atual: ${etapa.status}`)
   }
 
+  // Trava: uma OP por vez na máquina. Só centros marcados com
+  // "permite produção simultânea" (serviços manuais, filas...) aceitam paralelo.
+  if (etapa.centroProducaoId) {
+    const centro = await prisma.centroProducao.findFirst({
+      where: { id: etapa.centroProducaoId, empresaId },
+      select: { codigo: true, descricao: true, permiteProducaoSimultanea: true },
+    })
+    if (centro && !centro.permiteProducaoSimultanea) {
+      const emAndamento = await prisma.etapaOrdemProducao.findFirst({
+        where: {
+          centroProducaoId: etapa.centroProducaoId,
+          status: 'EM_ANDAMENTO',
+          id: { not: etapaId },
+          ordemProducao: { empresaId },
+        },
+        select: { descricao: true, ordemProducao: { select: { numero: true, referenciaExterna: true } } },
+      })
+      if (emAndamento) {
+        const op = emAndamento.ordemProducao.referenciaExterna || String(emAndamento.ordemProducao.numero)
+        throw new EtapaOperacionalError(
+          409,
+          `A máquina ${centro.codigo} - ${centro.descricao} já está produzindo a OP ${op}. ` +
+            'Pause ou finalize essa etapa antes de iniciar outra.',
+        )
+      }
+    }
+  }
+
   const agora = new Date()
   const atualizada = await prisma.etapaOrdemProducao.update({
     where: { id: etapaId },

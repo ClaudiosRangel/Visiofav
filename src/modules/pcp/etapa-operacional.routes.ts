@@ -723,6 +723,89 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   })
 
   // =========================================================================
+  // GET /api/pcp/ordens-producao/:opId/apontamentos — Histórico de apontamentos
+  // de TODAS as etapas da OP (inclusive concluídas), para a tela da OP.
+  // =========================================================================
+  app.get('/ordens-producao/:opId/apontamentos', async (request, reply) => {
+    const user = request.user as { id: string; empresaId: string }
+    const { opId } = z.object({ opId: z.string().uuid() }).parse(request.params)
+
+    const op = await prisma.ordemProducao.findFirst({
+      where: { id: opId, empresaId: user.empresaId },
+      select: { id: true },
+    })
+    if (!op) return reply.status(404).send({ message: 'OP não encontrada' })
+
+    const apontamentos = await prisma.apontamentoEtapa.findMany({
+      where: { empresaId: user.empresaId, etapaOrdemProducao: { ordemProducaoId: opId } },
+      orderBy: { dataHora: 'desc' },
+      take: 1000,
+      select: {
+        id: true,
+        tipo: true,
+        dataHora: true,
+        quantidadeProduzida: true,
+        quantidadePerda: true,
+        quantidadeRetrabalho: true,
+        motivoPerda: true,
+        motivoParada: true,
+        tempoParadaMinutos: true,
+        observacao: true,
+        cancelado: true,
+        funcionarioId: true,
+        etapaOrdemProducao: {
+          select: {
+            id: true,
+            sequencia: true,
+            descricao: true,
+            status: true,
+            centroProducao: { select: { codigo: true, descricao: true } },
+          },
+        },
+      },
+    })
+
+    const idsFunc = [...new Set(apontamentos.map((a) => a.funcionarioId).filter(Boolean))] as string[]
+    const usuarios = idsFunc.length
+      ? await prisma.usuario.findMany({ where: { id: { in: idsFunc } }, select: { id: true, nome: true } })
+      : []
+    const nomes = new Map(usuarios.map((u) => [u.id, u.nome]))
+
+    const validos = apontamentos.filter((a) => !a.cancelado)
+    return {
+      apontamentos: apontamentos.map((a) => ({
+        id: a.id,
+        tipo: a.tipo,
+        dataHora: a.dataHora,
+        quantidadeProduzida: Number(a.quantidadeProduzida),
+        quantidadePerda: Number(a.quantidadePerda),
+        quantidadeRetrabalho: Number(a.quantidadeRetrabalho ?? 0),
+        motivoPerda: a.motivoPerda,
+        motivoParada: a.motivoParada,
+        tempoParadaMinutos: a.tempoParadaMinutos,
+        observacao: a.observacao,
+        cancelado: a.cancelado,
+        operador: a.funcionarioId ? (nomes.get(a.funcionarioId) ?? null) : null,
+        etapa: {
+          id: a.etapaOrdemProducao.id,
+          sequencia: a.etapaOrdemProducao.sequencia,
+          descricao: a.etapaOrdemProducao.descricao,
+          status: a.etapaOrdemProducao.status,
+          centro: a.etapaOrdemProducao.centroProducao
+            ? `${a.etapaOrdemProducao.centroProducao.codigo} - ${a.etapaOrdemProducao.centroProducao.descricao}`
+            : null,
+        },
+      })),
+      totais: {
+        totalProduzido: validos.reduce((s, a) => s + Number(a.quantidadeProduzida), 0),
+        totalPerda: validos.reduce((s, a) => s + Number(a.quantidadePerda), 0),
+        totalParadas: validos.filter((a) => a.tipo === 'PARADA').length,
+        tempoParadaTotal: validos.reduce((s, a) => s + (a.tempoParadaMinutos || 0), 0),
+      },
+    }
+  })
+
+  // =========================================================================
   // PATCH /api/pcp/etapas/:id/observacao — Atualiza observação do operador (inline)
   // =========================================================================
   app.patch('/etapas/:id/observacao', async (request, reply) => {

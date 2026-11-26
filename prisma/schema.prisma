@@ -3067,6 +3067,9 @@ model CentroProducao {
   // Colagem) que ajudam a sequenciar mas não devem poluir o quadro de chão.
   // Pedido do Caio. Default true (não-regressão).
   disponivelQuadroProducao Boolean @default(true) @map("disponivel_quadro_producao")
+  // Permite mais de uma etapa EM_ANDAMENTO ao mesmo tempo neste centro (ex.: serviços
+  // manuais, filas, terceirizado). false (padrão) = trava: só uma OP por vez na máquina.
+  permiteProducaoSimultanea Boolean @default(false) @map("permite_producao_simultanea")
   // Modo de contagem de PRODUÇÃO no Checkout (spec checkout-contagem-por-contador):
   // QUANTIDADE (digitada, padrão) | CONTADOR (leitura do display/odômetro da
   // máquina — quantidade = leituraFinal − leituraInicial). Perda/Retrabalho

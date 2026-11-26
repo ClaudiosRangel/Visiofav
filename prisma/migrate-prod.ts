@@ -2940,6 +2940,8 @@ async function main() {
   // Flag: quando false, o centro NÃO aparece no Quadro de Produção (TV),
   // mesmo estando na Programação (pedido do Caio). Default true (não-regressão).
   await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "disponivel_quadro_producao" BOOLEAN NOT NULL DEFAULT true`)
+  // Trava de produção simultânea por máquina (default false = uma OP por vez).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "centro_producao" ADD COLUMN IF NOT EXISTS "permite_producao_simultanea" BOOLEAN NOT NULL DEFAULT false`)
   console.log('✅ centro_producao: campos velocidade, unidade_velocidade, formato_folha_largura, formato_folha_altura, pinca_mm, disponivel_programacao, disponivel_quadro_producao adicionados')
 
   // =========================================================================

@@ -5,6 +5,7 @@
  */
 
 import { prisma } from '../../lib/prisma'
+import { iniciarEtapa as iniciarEtapaOperacional, EtapaOperacionalError } from '../pcp/etapa-operacional.service'
 import { extrairBlocoTransporte } from '../nota-entrada/transporte-xml-parser'
 import { resolverOuCriarProduto } from '../produto/produto-import.service'
 import { CodigoSequencialEsgotadoError } from '../produto/codigo-sequencial.service'
@@ -2584,12 +2585,12 @@ async function executarIniciarEtapaProducao(input: { numeroOp: string | number; 
   }
 
   const eraPausada = etapa.status === 'PAUSADA'
-  await prisma.etapaOrdemProducao.update({
-    where: { id: etapa.id },
-    data: { status: 'EM_ANDAMENTO', dataInicioReal: etapa.dataInicioReal || new Date() },
-  })
-  if (eraPausada) {
-    await prisma.apontamentoEtapa.create({ data: { etapaOrdemProducaoId: etapa.id, empresaId, tipo: 'RETOMADA' } }).catch(() => {})
+  // Mesma regra da Programação/Checkout (inclui a trava de uma OP por vez na máquina).
+  try {
+    await iniciarEtapaOperacional(etapa.id, empresaId)
+  } catch (err) {
+    if (err instanceof EtapaOperacionalError) return { resposta: `⚠️ ${err.message}` }
+    throw err
   }
 
   return {

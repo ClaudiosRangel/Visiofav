@@ -477,6 +477,18 @@ export function calcularTimelineOp(
     const dur = duracao(e)
     const espera = Number(e.tempoEsperaMinutos) || 0
 
+    // Etapa CONCLUÍDA: fica no passado, nas datas REAIS. Antes ela era encaixada na
+    // cascata da OP e, se uma etapa anterior da sequência ainda estava pendente, era
+    // empurrada para o futuro — no Gantt parecia continuar na fila mesmo finalizada.
+    if (e.status === 'CONCLUIDA' && e.dataFimReal) {
+      const fimReal = new Date(e.dataFimReal)
+      const iniReal = e.dataInicioReal ? new Date(e.dataInicioReal) : fimReal
+      resultado.push({ etapaId: e.id, inicioPrevisto: iniReal, fimPrevisto: fimReal })
+      const aposConcluida = avancar(fimReal, espera, turno, excecoes)
+      if (aposConcluida.getTime() > cursor.getTime()) cursor = aposConcluida
+      continue
+    }
+
     let inicio: Date
     if (e.agendaTravada && e.inicioAgendadoManual) {
       // Ponto fixo: início na âncora, "snapado" ao próximo horário válido do

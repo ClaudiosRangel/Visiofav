@@ -39,6 +39,7 @@ const centroProducaoBodySchema = z.object({
   // Quando false, o centro NÃO aparece no Quadro de Produção (TV), mesmo
   // disponível na Programação (pedido do Caio). Default true (não-regressão).
   disponivelQuadroProducao: z.boolean().optional(),
+  permiteProducaoSimultanea: z.boolean().optional(),
   // Modo de contagem da Produção (spec checkout-contagem-por-contador):
   // QUANTIDADE (digitada, padrão) | CONTADOR (leitura do display da máquina).
   modoContagem: z.enum(['QUANTIDADE', 'CONTADOR']).optional(),
@@ -214,6 +215,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         tempoSetupMin: body.tempoSetupMin ?? undefined,
         disponivelProgramacao: body.disponivelProgramacao ?? true,
         ...( { disponivelQuadroProducao: body.disponivelQuadroProducao ?? true } as any ),
+        permiteProducaoSimultanea: body.permiteProducaoSimultanea ?? false,
         modoContagem: body.modoContagem ?? undefined,
         contadorZeraDiariamente: body.contadorZeraDiariamente ?? undefined,
         posicao,
@@ -282,6 +284,7 @@ export async function centroProducaoRoutes(app: FastifyInstance) {
         tempoSetupMin: body.tempoSetupMin ?? null,
         disponivelProgramacao: body.disponivelProgramacao ?? centro.disponivelProgramacao,
         ...( { disponivelQuadroProducao: body.disponivelQuadroProducao ?? (centro as any).disponivelQuadroProducao ?? true } as any ),
+        permiteProducaoSimultanea: body.permiteProducaoSimultanea ?? centro.permiteProducaoSimultanea,
         modoContagem: body.modoContagem ?? centro.modoContagem,
         contadorZeraDiariamente: body.contadorZeraDiariamente ?? centro.contadorZeraDiariamente,
       },
