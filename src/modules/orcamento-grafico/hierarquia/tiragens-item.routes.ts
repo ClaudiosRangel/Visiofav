@@ -23,6 +23,39 @@ import { definirEntradaTiragem } from './tiragens-item.service'
 export interface DepsRotasTiragens {
   /** Reconsolida o cabeçalho do orçamento (função do arquivo de rotas principal). */
   reconsolidarOrcamento: (orcamentoId: string, empresaId: string) => Promise<void>
+  /**
+   * Cria a linha de tiragem do item que ainda não tem nenhuma (item de uma tiragem só, como os
+   * puxados de um cálculo existente), na quantidade atual do item, para o Fechamento poder editar
+   * margem e valor unitário. Usa o mesmo recálculo das tiragens (com a âncora do cálculo de origem).
+   */
+  criarTiragemUnica?: (orcamentoId: string, itemId: string, empresaId: string, quantidade: number) => Promise<void>
+}
+
+/**
+ * Item em RASCUNHO sem nenhuma linha de tiragem e com quantidade: cria a linha única. Falha não
+ * impede a leitura (a tela mostra o aviso de "sem tiragens", como antes).
+ */
+async function garantirTiragemUnica(
+  deps: DepsRotasTiragens,
+  orcamentoId: string,
+  itemId: string,
+  empresaId: string,
+  log: FastifyInstance['log'],
+): Promise<void> {
+  if (!deps.criarTiragemUnica) return
+  const existe = await prisma.itemTiragemOrcamentoGrafico.findFirst({ where: { itemId, empresaId }, select: { id: true } })
+  if (existe) return
+  const item = await prisma.itemOrcamentoGrafico.findFirst({
+    where: { id: itemId, orcamentoId, empresaId, orcamento: { empresaId, status: 'RASCUNHO' } },
+    select: { quantidade: true },
+  })
+  const quantidade = Number(item?.quantidade ?? 0)
+  if (!Number.isInteger(quantidade) || quantidade <= 0) return
+  try {
+    await deps.criarTiragemUnica(orcamentoId, itemId, empresaId, quantidade)
+  } catch (err) {
+    log.warn({ err, orcamentoId, itemId }, 'não foi possível criar a tiragem única do item')
+  }
 }
 
 const paramsTiragemSchema = paramsItemSchema.extend({
@@ -69,6 +102,7 @@ export function registrarRotasTiragens(app: FastifyInstance, deps: DepsRotasTira
       select: { id: true },
     })
     if (!item) return reply.status(404).send({ message: MSG_NAO_ENCONTRADO })
+    await garantirTiragemUnica(deps, id, itemId, user.empresaId, request.log)
     const [linhas, minima] = await Promise.all([
       prisma.itemTiragemOrcamentoGrafico.findMany({
         where: { itemId, empresaId: user.empresaId },
@@ -88,6 +122,7 @@ export function registrarRotasTiragens(app: FastifyInstance, deps: DepsRotasTira
       select: { id: true },
     })
     if (!item) return reply.status(404).send({ message: MSG_NAO_ENCONTRADO })
+    await garantirTiragemUnica(deps, id, itemId, user.empresaId, request.log)
 
     const valorTotalDigitado =
       corpo.valorUnitario !== undefined ? r2(corpo.valorUnitario * quantidade) : corpo.valorTotal

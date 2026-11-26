@@ -7242,7 +7242,13 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     }
   }
   // Rotas das tiragens do item (GET lista; PUT valor/margem por tiragem).
-  registrarRotasTiragens(app, { reconsolidarOrcamento: (orcamentoId, empresaId) => reconsolidarOrcamento(orcamentoId, empresaId) })
+  registrarRotasTiragens(app, {
+    reconsolidarOrcamento: (orcamentoId, empresaId) => reconsolidarOrcamento(orcamentoId, empresaId),
+    // Item de uma tiragem só (ex.: puxado de cálculo existente): cria a linha para o Fechamento editar.
+    criarTiragemUnica: async (orcamentoId, itemId, empresaId, quantidade) => {
+      await sincronizarTiragensDoItem(orcamentoId, itemId, empresaId, { tiragens: [quantidade] })
+    },
+  })
   /** Serializa os custos espelho + resultado de um plano a partir do resultado do motor. */
   function dadosPersistenciaPlano(body: PlanoBody, empresaId: string, itemId: string, sequencia: number, resultado: ResultadoOrcamento) {
     const fech = fechamentoPlanoDoResultado(sequencia, resultado)
