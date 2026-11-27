@@ -1,0 +1,138 @@
+# Estudo — Editor do Cálculo, Tipos de Plano × Planos do Cálculo e Status do item (Calcgraf)
+
+Estudo feito sobre o banco restaurado `CalcgrafCartonWega` (somente leitura), a partir dos prints do
+orçamento 5619 (Cervejaria Cidade Imperial, cálculo 15650). O 5619 não está no banco restaurado; o
+mesmo comportamento foi reproduzido com o orçamento **5306** (mesmo cliente 149, mesma caixa
+"Império Gold 210ml", cálculos 15061 / 15169 / 15171) e com os cálculos 15168, 15174 e 15187.
+
+## 1. Três camadas (e não duas)
+
+| Camada | Tela no Calcgraf | Tabela no banco | O que guarda |
+|---|---|---|---|
+| Orçamento | "Orçamentos" (lista de itens + Fechamento) | `Solicitacao` (série/número, cliente principal, status) | cabeçalho; cada item é um CÁLCULO |
+| Item = Cálculo | janela do produto ("CARTUCHO COMPOSTO") | `CalculoHeader` (+ `CalculoAcabados`, `CalculoTiragens`) | dados do produto; ligação `CodSolicitacao` + `OrdemItemSol` (nº do item) |
+| **Tipos de Plano** (entrada resumida) | grid "Tipos de Plano" da janela do produto + "Alteração de Tipo de Plano" | `Especialista<Linha>xTiposPlano` (ex.: `EspecialistaCartuchoCompostoxTiposPlano`) + `Especialista<Linha>` (dimensões do produto) | o que o usuário informa: nome, tipo de plano (`codTipoPlano`/`CodPlanoCad`), cores F×V, processo, suporte/gramatura da capa externa, formato aberto |
+| **Planos do Cálculo** (engenharia real) | **Editor** (botão "Editor") → grid "Planos" → janela "Planos" | `CalculoPlanos` (+ `CalculoAtividades`, `CalculoAtvImpressao`, `CalculoTintas`, `CalculoEstrutura`) | os planos que o motor calcula de fato: suporte, formato da folha, aproveitamento, quebras, refiles, atividades por plano, tintas por plano, custo do plano |
+
+Ou seja: cada item tem UM cálculo; dentro dele há a lista curta de **Tipos de Plano** (o que o vendedor
+preenche) e a lista expandida de **Planos do Cálculo** (o que o motor custeia). O Editor trabalha na
+segunda.
+
+## 2. Por que 1 Tipo de Plano vira 2 (ou 3) planos no Editor
+
+A expansão acontece quando o Tipo de Plano tem microondulado e/ou capa interna. Confirmado no banco:
+
+- **15061 / 15169 / 15171** (o mesmo caso do print): 1 Tipo de Plano "Cartão" →
+  2 planos: `Cartão` (capa externa, suporte 8 = Stora Enzo, 290 g) e `Cartão` com `FlagMicro = -1`
+  (suporte 1034 = Micro Pardo, 245 g). O Editor exibe o segundo como **"Cartão (M)"**; no banco o nome é
+  o mesmo, quem marca é `FlagMicro`.
+- **15168**: 1 Tipo de Plano → 3 planos: capa externa, micro (`FlagMicro`) e **capa interna**
+  (`FlagCapaMicro = -1`).
+- **15174**: 3 Tipos de Plano (TAMPA, CAIXA, BOLSA) → 5 planos (TAMPA + TAMPA micro, CAIXA + CAIXA micro, BOLSA).
+
+Regra deduzida:
+```
+para cada Tipo de Plano:
+  plano 1 = capa externa (suporte da capa, cores/processo do tipo, formato aberto)
+  se tem suporte microondulado  → plano 2 = micro   (FlagMicro,     suporte micro, sem impressão)
+  se tem suporte de capa interna → plano 3 = capa interna (FlagCapaMicro, cores/processo da capa interna)
+todos herdam: CodTipoPlano, codPlanoCad, tiragem, ocorrências, dimensões do produto
+```
+Os três planos gerados ficam ligados ao mesmo `CodTipoPlano` (é assim que o Calcgraf sabe que vieram do
+mesmo Tipo de Plano).
+
+## 3. Atividades distribuídas por plano
+
+`CalculoAtividades.codPlanoAcabado` diz em qual plano a atividade roda (`tipo`: I = impressão,
+A = acabamento, M = material/verniz). Exemplo 15061:
+
+| Plano | Atividades |
+|---|---|
+| 1 (capa) | Offset Plana (I), Cortadeira (Grande), Guilhotina maior, Verniz (M), Bobst E, Destacar |
+| 2 (micro) | Mazola (acoplagem) |
+
+No 15187 (capa interna) o plano 2 recebe Cortadeira, Guilhotina e Jato (acoplagem): cada folha gerada tem
+o seu próprio preparo (corte), e a **acoplagem fica no plano que é colado** (micro ou capa interna).
+No Tipo de Plano o usuário marca uma lista única de atividades; na expansão o sistema reparte: impressão,
+verniz, corte e vinco e destaque vão para a capa; acoplagem vai para o micro/capa interna; o corte inicial
+(cortadeira/guilhotina) vai para cada folha.
+
+Tintas também são por plano (`CalculoTintas.codPlano`), com cobertura (`areaTinta`) e complemento.
+
+## 4. O que o Editor permite (janela "Planos")
+
+Por plano, editável: tipo/nome, tiragem, formato (A), ocorrências, fibra; suporte (tipo/gramatura, formato
+da folha (C), aproveitamento B/C e A/C, "NC" = suporte não cadastrado com custo/kg, ICMS/IPI de crédito);
+quebras fixa/variável/total e apara; flags **Não calcular plano**, **Não cobrar impressão**, **Não exibir
+na proposta**; grade de atividades (repetições, formato (B), centro de produção, cores, tira/retira,
+entradas); **Permitir tira/retira**, **Considerar pinça**, refile folha/final, contra-pinça, corte duplo;
+impressão em até 3 processos (abas 1/2/3): cores, processo, CTP/fotolito/contatos/montagem, cobertura e
+lista de tintas; e o **Custo do Plano** recalculado na hora.
+
+Botões do Editor: incluir, copiar, excluir e reordenar planos. Plano incluído pelo Editor nasce vazio com os
+padrões de folha (tira/retira e pinça ligados, refile folha 2, refile final 1, contra-pinça 8).
+
+Campos `man*` (`manTiragem`, `manDimPlano`, `manFormSuporte`, `manQuebraPlanoFix`, `manCodCpr`,
+`manDimCorte`, ...) marcam o que o usuário digitou à mão no Editor e que o recálculo NÃO deve sobrescrever.
+`CalculoPlanos.FlagAlteradoEditorxExpressa = -1` marca o plano mexido no Editor de forma que já não bate com
+o Tipo de Plano (1.379 planos no banco). Na prática: o Tipo de Plano gera os planos; o Editor refina; se o
+usuário voltar ao Tipo de Plano e regenerar, os campos manuais são preservados (por isso o `codPlano` dos
+planos do 15174 vai de 14 a 18: foram regenerados várias vezes).
+
+## 5. "Gerado a partir do cálculo" e itens que repetem
+
+`CalculoHeader.CodCalculoOrigemLer` = cálculo de onde este foi copiado (o texto "Gerado a partir do
+cálculo: 15341" do Editor). No orçamento 5306: item 1 (15061) veio do 14790; itens 2 e 3 (15169, 15171)
+vieram do item 1 (15061), com outra tiragem e outro suporte. É o mesmo padrão do 5619 (4 itens do mesmo
+produto em tiragens diferentes).
+
+"Sigla Acabado |vários|" = o item tem lista de acabados em `CalculoAcabadosEstoque` (produto 3231, quantidade
+por acabado).
+
+## 6. Status do item (coluna Status)
+
+`CalculoHeader.Status` (contagem no banco): `OP` 6.125, `LB` 2.383 (liberado), `PR` 1.443 (proposta),
+`PA` 1.018 (pedido), `NC` 23, vazio/NULL 569.
+
+- **OP: N** — ao emitir a OP o Calcgraf **copia o cálculo** (novo `Codigo`, mesmo `NumCalculo`,
+  `CodSolicitacao = -1`) e liga a cópia à OP por `CodOpItemEstrutura` → `OpItemEstrutura` → `OpHeader.Numero`.
+  Ex.: 15169 → cópia 15173 → OP 3132; 15171 → cópia 15175 → OP 3134. A cópia é a "foto" usada pela OP:
+  editar o orçamento depois não muda a OP.
+- **Ped: N** — item com status `PA`. Conferido: o 15061 (234.000 × R$ 3,219) corresponde ao pedido **2904**
+  (item com o acabado 3231, 234.000 un a 3,219, mesma data do orçamento). Não achei a coluna que grava esse
+  vínculo (provavelmente fica no código do Calcgraf ou por acabado + quantidade); para o Vizor isso não
+  importa, porque o nosso pedido já guarda o orçamento/item de origem.
+- Ao abrir o status (duplo clique) o Calcgraf leva ao pedido ou à OP daquele item.
+
+## 7. Comparação com o Vizor hoje
+
+| Calcgraf | Vizor hoje |
+|---|---|
+| Item = 1 cálculo | `ItemOrcamentoGrafico` (ok) |
+| Tipos de Plano (entrada resumida, grid do item) | `PlanoCalculoGrafico` (cada linha do grid = 1 plano) |
+| Planos do Cálculo (expansão capa/micro/capa interna) | **não existe**: cada Tipo de Plano é calculado como 1 plano só; micro e capa interna entram como campos do mesmo plano |
+| Editor (refinar plano a plano, incluir/copiar/excluir planos, custo por plano, campos manuais) | **não existe** |
+| Atividades por plano (`codPlanoAcabado`) | acabamentos do plano (`acabamentosRicos`) — sem repartição capa/micro |
+| Cópia do cálculo ao emitir OP | OP gerada do pedido; sem foto do cálculo por OP |
+| Status por item (Ped/OP com link) | status no orçamento/pedido; não por item |
+
+## 8. Proposta de implementação (para aprovar antes de codar)
+
+1. **Planos do Cálculo como entidade filha do Tipo de Plano.** Nova tabela `plano_calculo_folha` (nome a
+   definir) ligada ao `PlanoCalculoGrafico` (= Tipo de Plano), com `papel` = CAPA | MICRO | CAPA_INTERNA |
+   AVULSO, suporte, formato da folha, aproveitamento, quebras, refiles, flags (não calcular/não cobrar
+   impressão/não exibir), impressão (até 3 processos), tintas, atividades e `campos_manuais` (lista do que
+   foi digitado no Editor). Schema + `migrate-prod.ts` no mesmo commit.
+2. **Expansão automática** ao salvar o Tipo de Plano (regra da seção 2), repartindo as atividades
+   (seção 3). Regenerar preserva os campos manuais e marca "alterado no Editor" quando divergir.
+3. **Tela Editor do Cálculo** no item: grid Produto/Tiragem/Acabamento + grid dos Planos do Cálculo
+   (Tiragem, Suporte, Formato, Pré-Impressão, Impressão, Acabamento), incluir/copiar/excluir/reordenar,
+   janela "Planos" com os campos da seção 4 e o Custo do Plano ao vivo.
+4. **Motor**: o custo do item passa a ser a soma dos Planos do Cálculo (hoje soma dos Tipos de Plano). O
+   `calcularOrcamentoGrafico` NÃO muda (é chamado por folha); a ancoragem dos itens puxados continua igual.
+5. **Status por item** na grade do orçamento: "Ped: N" / "OP: N" com link, a partir do pedido de venda e
+   das OPs geradas do item.
+6. (Opcional) Foto do cálculo ao emitir a OP, como o Calcgraf.
+
+Pontos a confirmar com o usuário: a regra de repartição das atividades (seção 3) vale para todas as linhas
+ou só Cartucho Composto? Planos incluídos à mão no Editor precisam aparecer no grid de Tipos de Plano?
