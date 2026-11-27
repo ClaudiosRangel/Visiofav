@@ -163,7 +163,7 @@ describe('GET /:id/itens-resumo', () => {
     expect(itens).toHaveLength(2)
     expect(itens[0]).toEqual({
       id: ITEM, sequencia: 1, calculo: 15652, linhaProduto: 'CARTUCHO COMPOSTO', tipoProduto: 'Cartucho Composto',
-      tiragens: [6000], descricao: 'Caixa', status: 'Liberado', op: { id: uuid(20), numero: 99 }, temCalculo: true,
+      tiragens: [6000], descricao: 'Caixa', status: 'Liberado', op: { id: uuid(20), numero: 99 }, pedido: null, temCalculo: true,
     })
     expect(itens[1]).toMatchObject({ calculo: null, status: 'Não calculado', temCalculo: false, op: null, tiragens: [1000] })
 

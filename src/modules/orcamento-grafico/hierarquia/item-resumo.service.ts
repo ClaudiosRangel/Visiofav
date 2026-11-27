@@ -19,6 +19,8 @@ export interface ItemResumoDTO {
   /** Rótulo já resolvido: "Liberado" (calculado), "Pendente" (marcado pendente), "Não calculado" (sem custo/valor gravado). */
   status: string
   op: { id: string; numero: number } | null
+  /** Pedido de venda gerado do orçamento (status "Ped: N" da grade). Spec orcamento-editor-calculo R7. */
+  pedido: { id: string; numero: number } | null
   /** custoProducao != null && valorTotal != null (mesma regra do totalizador). */
   temCalculo: boolean
 }
@@ -104,6 +106,19 @@ export async function listarItensResumo(
       })
     : []
 
+  // Pedido de venda do orçamento (aprovado). Falha de leitura não derruba a grade.
+  let pedido: { id: string; numero: number } | null = null
+  try {
+    const pv = await db.pedidoVenda.findFirst({
+      where: { empresaId, orcamentoOrigemId: orcamentoId },
+      orderBy: { criadoEm: 'desc' },
+      select: { id: true, numero: true },
+    })
+    pedido = pv ? { id: pv.id, numero: Number(pv.numero) } : null
+  } catch {
+    pedido = null
+  }
+
   const mapaCalculo = new Map(calculos.map((c) => [c.id, c]))
   const mapaProduto = new Map(produtos.map((p) => [p.id, p]))
   const mapaEmbalagem = new Map(embalagens.map((e) => [e.id, e.descricao]))
@@ -129,6 +144,7 @@ export async function listarItensResumo(
       descricao: i.descricao ?? null,
       status: rotuloStatusItem(i, temCalculo),
       op: mapaOp.get(i.id) ?? null,
+      pedido,
       temCalculo,
     }
   })
