@@ -25,7 +25,10 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Status por item: "OP: N" (cálculo copiado ao emitir a OP) e "Ped: N".
 - **Configuração:** a regra vem de `_LinhasProduto.IdExpressa` (modelo por linha) + `Planos` (tipos de
   plano por linha) + `_CaracteristicasPlano`. O Vizor precisa de um campo "Modelo" na `LinhaProduto`.
-- **Decisões:** expansão só no Cartucho Composto; plano incluído no Editor aparece na grade de Tipos de Plano.
+- **Decisões:** expansão só no Cartucho Composto; plano incluído no Editor aparece na grade de Tipos de Plano;
+  **Montagem e Formato de Corte continuam SÓ LEITURA na tela do item** (preenchidos pelo cálculo, como o
+  Mont./Corte do Calcgraf); a edição (Aproveitamento B/C, Formato (C) da folha, Formato (B) por atividade)
+  fica no Editor, por plano, marcada como digitada à mão (decisão do usuário 27/11/2026).
 - **AGUARDANDO:** o usuário vai buscar no Calcgraf as telas de cadastro de Linhas de Produto (onde se
   escolhe a Expressa), de Tipos de Plano/características e de parâmetros da expressa. Depois: spec com
   wireframe em texto, aprovação, e implementação em fases (seção 8 do estudo).
