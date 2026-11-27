@@ -11,6 +11,25 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
+## ⏸️ HANDOFF — EDITOR DO CÁLCULO / PLANOS DO CÁLCULO (27/11/2026, ESTUDO PRONTO, NÃO IMPLEMENTADO)
+
+**LEMBRAR O USUÁRIO no início das sessões sobre orçamento até ele retomar.** Estudo completo:
+`docs/estudo-editor-calculo-planos-calcgraf.md` (back `cb46674b8`). Resumo:
+- Calcgraf separa **Tipos de Plano** (entrada do item) de **Planos do Cálculo** (folhas que o motor
+  custeia, editadas no **Editor**). Só a expressa CARTUCHO COMPOSTO expande 1 tipo em capa + micro "(M)"
+  + capa interna (opcionais, conforme o suporte informado). Lâminas = expressa EDITORIAL (1 tipo = 1 plano).
+  O Editor existe em todas as linhas (Cartucho também ganha planos extras pelo Editor).
+- Atividade com "Aplicado sobre" (uma linha por plano; acoplagem nos planos (M)), janela "Detalhes..."
+  (produção/hora, entradas, repetições, acertos, quebras, formato de corte, centro, restrições) e materiais
+  com área de cobertura % frente/verso; informação complementar por atividade.
+- Status por item: "OP: N" (cálculo copiado ao emitir a OP) e "Ped: N".
+- **Configuração:** a regra vem de `_LinhasProduto.IdExpressa` (modelo por linha) + `Planos` (tipos de
+  plano por linha) + `_CaracteristicasPlano`. O Vizor precisa de um campo "Modelo" na `LinhaProduto`.
+- **Decisões:** expansão só no Cartucho Composto; plano incluído no Editor aparece na grade de Tipos de Plano.
+- **AGUARDANDO:** o usuário vai buscar no Calcgraf as telas de cadastro de Linhas de Produto (onde se
+  escolhe a Expressa), de Tipos de Plano/características e de parâmetros da expressa. Depois: spec com
+  wireframe em texto, aprovação, e implementação em fases (seção 8 do estudo).
+
 ## 🟢 CADASTROS E RELAÇÕES DO ORÇAMENTO — FASE 1 NO AR (15/11/2026)
 
 Spec `orcamento-grafico-cadastros-relacoes` (back `a28fa0b33`, front `41dd0c2`). Produtos, Tipos de
