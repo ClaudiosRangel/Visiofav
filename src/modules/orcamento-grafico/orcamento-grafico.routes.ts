@@ -62,6 +62,13 @@ import { HierarquiaError } from './hierarquia/hierarquia-common'
 import { calcularOrcamentoGrafico as calcularMotorTiragem } from './orcamento-grafico-calculo.service'
 import { recalcularTiragensDoItem } from './hierarquia/tiragens-item.service'
 import { registrarRotasTiragens } from './hierarquia/tiragens-item.routes'
+import { registrarRotasEditor } from './editor-calculo/editor-calculo.routes'
+import {
+  calcularFolhas,
+  gerarFolhasDoItem,
+  itemTemFolhas,
+  recalcularEGravarFolhas,
+} from './editor-calculo/editor-calculo.service'
 import { brutoDePlanos, contextoDePrecoDeParams, validarTiragens } from './hierarquia/tiragens-item-puro'
 import { exigirAbaixoDoLimite, inserirPlanoComPosicao } from './hierarquia/planos-ordem.service'
 import { mapearFotoPlanos, type PlanoMapeado } from './calculo-grafico/foto-planos.service'
@@ -7020,6 +7027,28 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     return papel ? Number(papel.precoUnitario) : undefined
   }
 
+  /** Input do item para calcular as folhas do Editor (mesmo input dos planos). */
+  async function inputBaseDoItemParaFolhas(orcamentoId: string, itemId: string, empresaId: string) {
+    const item = await carregarItemDaEmpresa(orcamentoId, itemId, empresaId)
+    if (!item) return null
+    const precoItem = await precoKgPapelDoItem(item.papelId, empresaId)
+    return reconstruirInputBaseDoItem(item, precoItem)
+  }
+
+  /** Item puxado de um cálculo existente: o custo fica ancorado no valor real do cálculo de origem. */
+  async function itemAncorado(itemId: string, empresaId: string): Promise<boolean> {
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ o: string | null }>>(
+        `SELECT calculo_grafico_origem_id AS o FROM item_orcamento_grafico WHERE id = $1 AND empresa_id = $2`,
+        itemId,
+        empresaId,
+      )
+      return !!rows[0]?.o
+    } catch {
+      return false
+    }
+  }
+
   /**
    * Reconsolida o item a partir dos seus planos (Req 5.2/5.3/5.5):
    *  - Busca todos os planos do item (findMany por itemId + empresaId).
@@ -7037,7 +7066,29 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     itemId: string,
     empresaId: string,
     db: DbClient = prisma,
+    opts: { regerarFolhas?: boolean } = {},
   ): Promise<void> {
+    // Spec orcamento-editor-calculo: item com Planos do Cálculo (folhas) soma as folhas. Item puxado de
+    // cálculo existente (ancorado) recalcula as folhas só para exibição e mantém o custo ancorado.
+    if (db === prisma && (await itemTemFolhas(empresaId, itemId))) {
+      if (opts.regerarFolhas !== false) await gerarFolhasDoItem(empresaId, itemId)
+      const base = await inputBaseDoItemParaFolhas(orcamentoId, itemId, empresaId)
+      if (base) {
+        const calculadas = await recalcularEGravarFolhas(empresaId, itemId, base)
+        const comResultado = calculadas.filter((c) => c.resultado)
+        if (comResultado.length > 0 && !(await itemAncorado(itemId, empresaId))) {
+          const soma = somaPlanos(comResultado.map((c) => fechamentoPlanoDoResultado(c.sequencia, c.resultado!)))
+          const custoProducao = Math.round((soma.materialDireto + soma.custoTransformacao + soma.servicoExterno) * 100) / 100
+          const valorTotal = Math.round(comResultado.reduce((s, c) => s + Number(c.resultado!.precoVenda || 0), 0) * 100) / 100
+          await prisma.itemOrcamentoGrafico.update({
+            where: { id: itemId, empresaId },
+            data: { custoProducao, valorTotal: valorTotal > 0 ? valorTotal : custoProducao },
+          })
+          await reconsolidarOrcamento(orcamentoId, empresaId, db)
+          return
+        }
+      }
+    }
     const planosTodos = await db.planoCalculoGrafico.findMany({
       where: { itemId, empresaId },
       orderBy: { sequencia: 'asc' },
@@ -7173,8 +7224,19 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
     const precoItem = await precoKgPapelDoItem(item.papelId, empresaId)
     const baseInput: ItemOrcamentoInput = opts.inputItem ?? reconstruirInputBaseDoItem(item, precoItem)
 
-    const calcularNaTiragem =
-      planos.length > 0
+    // Item com Planos do Cálculo (Editor) e sem âncora: cada tiragem soma as folhas.
+    const usaFolhas = (await itemTemFolhas(empresaId, itemId)) && !(await itemAncorado(itemId, empresaId))
+    const calcularNaTiragem = usaFolhas
+      ? async (quantidade: number) => {
+          const calc = (await calcularFolhas(empresaId, itemId, baseInput, quantidade)).filter((c) => c.resultado && c.params)
+          if (calc.length === 0) throw new ItemOrcamentoError('Nenhum plano do cálculo para calcular.', 400)
+          return {
+            bruto: brutoDePlanos(calc.map((c) => fechamentoPlanoDoResultado(c.sequencia, c.resultado!))),
+            ctx: contextoDePrecoDeParams(calc[calc.length - 1].params!),
+            valorAncorado: null,
+          }
+        }
+      : planos.length > 0
         ? async (quantidade: number) => {
             const fechamentos: Array<ReturnType<typeof fechamentoPlanoDoResultado>> = []
             let paramsUltimo: Awaited<ReturnType<typeof montarParamsDoPlano>> | null = null
@@ -7241,6 +7303,14 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       app.log.warn({ err, orcamentoId, itemId }, 'tiragens do item não sincronizadas após alterar plano')
     }
   }
+  // Editor do Cálculo (Planos do Cálculo por folha). Spec orcamento-editor-calculo.
+  registrarRotasEditor(app, {
+    inputBaseDoItem: (orcamentoId, itemId, empresaId) => inputBaseDoItemParaFolhas(orcamentoId, itemId, empresaId),
+    depoisDeAlterar: async (orcamentoId, itemId, empresaId) => {
+      await reconsolidarItemComPlanos(orcamentoId, itemId, empresaId, prisma, { regerarFolhas: false })
+      await sincronizarTiragensSemFalhar(orcamentoId, itemId, empresaId)
+    },
+  })
   // Rotas das tiragens do item (GET lista; PUT valor/margem por tiragem).
   registrarRotasTiragens(app, {
     reconsolidarOrcamento: (orcamentoId, empresaId) => reconsolidarOrcamento(orcamentoId, empresaId),

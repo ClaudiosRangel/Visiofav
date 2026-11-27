@@ -45,6 +45,9 @@ export interface TipoPlanoEntrada {
   ocorrencias: number
   formatoLarguraMm: number | null
   formatoAlturaMm: number | null
+  /** Formato da folha (C) do Tipo de Plano (hoje o formato de corte do plano). */
+  formatoFolhaLarguraMm?: number | null
+  formatoFolhaAlturaMm?: number | null
   capa: SuporteEntrada
   impressao: ImpressaoEntrada | null
   micro?: SuporteEntrada | null
@@ -62,6 +65,8 @@ export interface FolhaGerada {
   ocorrencias: number
   formatoLarguraMm: number | null
   formatoAlturaMm: number | null
+  formatoFolhaLarguraMm: number | null
+  formatoFolhaAlturaMm: number | null
   suporteId: string | null
   gramatura: number | null
   impressao: ImpressaoEntrada[] | null
@@ -101,6 +106,8 @@ function folhaBase(t: TipoPlanoEntrada, papel: PapelFolha, s: SuporteEntrada, im
     ocorrencias: t.ocorrencias > 0 ? t.ocorrencias : 1,
     formatoLarguraMm: t.formatoLarguraMm,
     formatoAlturaMm: t.formatoAlturaMm,
+    formatoFolhaLarguraMm: t.formatoFolhaLarguraMm ?? null,
+    formatoFolhaAlturaMm: t.formatoFolhaAlturaMm ?? null,
     suporteId: s.suporteId,
     gramatura: s.gramatura ?? null,
     impressao: impressao ? [impressao] : null,
@@ -186,6 +193,8 @@ export function gerarFolhas(
       ocorrencias: Number(a.valores.ocorrencias ?? 1) || 1,
       formatoLarguraMm: (a.valores.formatoLarguraMm as number | null) ?? null,
       formatoAlturaMm: (a.valores.formatoAlturaMm as number | null) ?? null,
+      formatoFolhaLarguraMm: (a.valores.formatoFolhaLarguraMm as number | null) ?? null,
+      formatoFolhaAlturaMm: (a.valores.formatoFolhaAlturaMm as number | null) ?? null,
       suporteId: (a.valores.suporteId as string | null) ?? null,
       gramatura: (a.valores.gramatura as number | null) ?? null,
       impressao: (a.valores.impressao as ImpressaoEntrada[] | null) ?? null,
@@ -199,6 +208,12 @@ export function gerarFolhas(
   atividades.forEach((a, i) => { a.sequencia = i + 1 })
   return { folhas, atividades }
 }
+
+/** Campos da folha que a geração preenche (os demais só mudam pelo Editor). */
+export const CAMPOS_GERADOS = [
+  'nome', 'tiragem', 'ocorrencias', 'formatoLarguraMm', 'formatoAlturaMm',
+  'formatoFolhaLarguraMm', 'formatoFolhaAlturaMm', 'suporteId', 'gramatura', 'impressao',
+] as const
 
 /** Nome exibido no Editor: o micro ganha " (M)", como no sistema de referência. */
 export function nomeExibido(f: { nome: string; papel: PapelFolha }): string {
