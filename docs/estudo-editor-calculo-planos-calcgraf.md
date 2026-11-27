@@ -154,6 +154,38 @@ Planos por linha de produto (`CalculoPlanos` × `CalculoHeader.CodLinhaProduto`)
 - **Informação complementar por atividade**: `CalculoAtvAcabamento.InfoComplementar` (ex.
   "Matriz: 2570B - Caixa (Faca Nova) / 2477B - Tampa / 2478B - Bolsa", "Segue obs de impressão").
 
+## 7.3 O que configura o Cartucho Composto a expandir (verificado no banco)
+
+Não há uma flag "expandir micro" em tabela. O comportamento vem da **Expressa** (o modelo de tela e de
+regra) que cada Linha de Produto usa:
+
+`_LinhasProduto.IdExpressa`:
+
+| Linha | Expressa |
+|---|---|
+| LÂMINAS, EDITORIAL, TAMPA/FUNDO, DISPLAY, CARDS | EDITORIAL (multi-plano, 1 tipo = 1 plano; tabela `EspecialistaEditorialxTiposPlano`) |
+| LÂMINA SIMPLES, CARTUCHO, RÓTULO, SACOLA | SIMPLES (plano único + planos adicionais; `EspecialistaSimples`, `EspecialistaSimplesPlanosAdicionais`) |
+| CONTÍNUO, BLOCADO | BLOCADO |
+| CARTUCHO COMPOSTO | **CARTUCHO COMPOSTO** (capa + micro + capa interna; `EspecialistaCartuchoCompostoxTiposPlano`) |
+| PRÉ-IMPRESSÃO, FLEXÍVEL, ETIQUETA FLEXO, REVENDA | expressas próprias |
+
+Ou seja: a regra (gerar capa/micro/capa interna) está no código da expressa CARTUCHO COMPOSTO; a
+CONFIGURAÇÃO é qual expressa cada linha usa. Mais duas tabelas de configuração participam:
+
+- `Planos` = Tipos de Plano por linha. Cartucho Composto: Cartão (8), Microondulado (9), Berço (10),
+  Invólucros (11), todos "3 dimensões". Cartucho: CARTUCHO (FIXO). Lâminas: Envelope, Base, Impressos.
+- `_CaracteristicasPlano` (linha × tipo de plano × campo × valor): `Plano Miolo`, `Tipo Ocorrencia`
+  (todas as linhas); `Cálc.Autom.Formato`, `Dist. atividade N`, `Cód.ativ.dist. N`, `Somar lombada`,
+  `Somar orelhas`, `Tipo Largura`, `Dist. entre páginas` (Lâminas e Editorial).
+
+Micro e capa interna são OPCIONAIS por Tipo de Plano: só são gerados quando o suporte correspondente é
+informado. No Cartucho Composto: 2.988 planos de capa sem acompanhamento, 2.360 micro, 319 capa interna
+(tipo Cartão); Invólucros e Microondulado também aparecem com micro/capa interna.
+
+No Vizor, `LinhaProduto` não tem o campo equivalente à Expressa. Para não fixar nomes no código, a
+implementação precisa de um campo de configuração na Linha de Produto (modelo: SIMPLES | EDITORIAL |
+CARTUCHO_COMPOSTO | ...) e, se quisermos paridade, das características por tipo de plano.
+
 ## 8. Proposta de implementação (para aprovar antes de codar)
 
 1. **Planos do Cálculo como entidade filha do Tipo de Plano.** Nova tabela `plano_calculo_folha` (nome a
