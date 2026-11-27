@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
 import type { ItemOrcamentoInput } from '../orcamento-grafico-item.service'
 import { ItemOrcamentoError } from '../orcamento-grafico-item.service'
+import { sincronizarCalculoProprio } from '../calculo-grafico/calculo-proprio.service'
 import {
   EditorCalculoError,
   atualizarAtividade,
@@ -152,6 +153,12 @@ export function registrarRotasEditor(app: FastifyInstance, deps: DepsRotasEditor
     const { empresaId } = usuario(request)
     try {
       await exigirItemEditavel(id, itemId, empresaId, false)
+      // Item criado antes da regra "todo item tem número de cálculo": ganha o número ao abrir o Editor.
+      try {
+        await sincronizarCalculoProprio({ empresaId, usuarioId: usuario(request).id, itemId })
+      } catch (err) {
+        request.log.warn({ err, itemId }, 'Editor: número de cálculo do item não sincronizado')
+      }
       return await montarVisaoEditor(empresaId, id, itemId)
     } catch (err) {
       return responder(reply, err)

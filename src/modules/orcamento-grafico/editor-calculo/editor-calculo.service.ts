@@ -475,10 +475,16 @@ export async function montarVisaoEditor(empresaId: string, orcamentoId: string, 
     where: { id: itemId, orcamentoId, empresaId },
     select: {
       id: true, descricao: true, quantidade: true, siglaAcabado: true, medidas: true, custoProducao: true, valorTotal: true,
+      calculoGraficoId: true, calculoGraficoOrigemId: true,
       orcamento: { select: { numero: true, status: true } },
     },
   })
   if (!item) throw new EditorCalculoError(404, 'Item de orçamento não encontrado')
+  const idCalculo = item.calculoGraficoId ?? item.calculoGraficoOrigemId
+  const calculoDoItem = idCalculo
+    ? await prisma.calculoGrafico.findFirst({ where: { id: idCalculo, empresaId }, select: { numero: true, numeroCalcgraf: true } })
+    : null
+  const numeroCalculo = calculoDoItem ? (calculoDoItem.numeroCalcgraf ?? calculoDoItem.numero ?? null) : null
   const { modelo, linha } = await modeloDoItem(empresaId, itemId)
   let calculoOrigem: number | null = null
   try {
@@ -517,6 +523,7 @@ export async function montarVisaoEditor(empresaId: string, orcamentoId: string, 
     },
     linhaProduto: linha,
     modelo,
+    numeroCalculo,
     calculoOrigem,
     gerado: folhas.length > 0,
     folhas: folhas.map((f) => ({

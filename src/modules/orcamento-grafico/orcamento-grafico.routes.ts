@@ -6100,6 +6100,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         })
       })
       if (tiragensAdiadas) await gravarListaTiragensSemCusto(user.empresaId, criadoSemCalculo.id, tiragensAdiadas, body.quantidade)
+      // Paridade: todo item gravado tem número de cálculo, inclusive o de vários planos ainda sem custo.
+      await sincronizarCalculoProprioSemFalhar(request, user, criadoSemCalculo.id, body.aproveitamentoManual)
       await reconsolidarOrcamento(id, user.empresaId)
       return reply.status(201).send(criadoSemCalculo)
     }
@@ -6598,6 +6600,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
       })
       if (qtdPlanos === 0) {
         if (tiragensAdiadas !== undefined) await gravarListaTiragensSemCusto(user.empresaId, itemId, tiragensAdiadas, body.quantidade)
+        await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
         await reconsolidarOrcamento(id, user.empresaId)
         return atualizadoSemCalculo
       }
@@ -6613,6 +6616,8 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
         throw err
       }
+      // Item de vários planos também ganha (e mantém em dia) o número de cálculo.
+      await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
       return prisma.itemOrcamentoGrafico.findFirst({ where: { id: itemId, empresaId: user.empresaId } })
     }
     if (!(body.gramatura > 0)) return reply.status(400).send({ message: 'Dados inválidos — gramatura: informe a gramatura do papel.' })
@@ -6737,6 +6742,7 @@ export async function orcamentoGraficoRoutes(app: FastifyInstance) {
         if (err instanceof HierarquiaError) return reply.status(err.statusCode).send({ message: err.message })
         throw err
       }
+      await sincronizarCalculoProprioSemFalhar(request, user, itemId, body.aproveitamentoManual)
       const it = await prisma.itemOrcamentoGrafico.findFirst({
         where: { id: itemId, empresaId: user.empresaId },
         select: { resultadoCalculo: true, custoProducao: true, valorTotal: true },
