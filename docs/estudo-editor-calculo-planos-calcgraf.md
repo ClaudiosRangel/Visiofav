@@ -116,6 +116,44 @@ por acabado).
 | Cópia do cálculo ao emitir OP | OP gerada do pedido; sem foto do cálculo por OP |
 | Status por item (Ped/OP com link) | status no orçamento/pedido; não por item |
 
+## 7.1 Quais linhas expandem planos (verificado no banco)
+
+Planos por linha de produto (`CalculoPlanos` × `CalculoHeader.CodLinhaProduto`):
+
+| Linha | Cálculos | Planos | Micro (`FlagMicro`) | Capa interna (`FlagCapaMicro`) | Planos mexidos no Editor |
+|---|---|---|---|---|---|
+| CARTUCHO COMPOSTO (15) | 2.555 | 5.819 | 2.370 | 331 | 820 |
+| CARTUCHO (5) | 6.894 | 7.169 | 0 | 0 | 257 |
+| LÂMINAS (1) | 1.004 | 1.072 | 0 | 0 | 236 |
+| LÂMINA SIMPLES (3) | 374 | 376 | 0 | 0 | 2 |
+| SACOLA (11) | 234 | 272 | 0 | 0 | 62 |
+
+- **A expansão capa / micro / capa interna só existe no Cartucho Composto.**
+- **Lâminas** é multi-plano, mas 1 Tipo de Plano = 1 plano do cálculo (cada plano com seu `CodTipoPlano`:
+  ex. 14649 MONT01..MONT05; 13993 três lâminas de tempero). Sem micro.
+- **Cartucho e Lâmina Simples** (plano único no item) também usam o Editor: há cálculos com um plano a mais
+  incluído no Editor no mesmo tipo de plano (ex. 15113/15114 CARTUCHO + BERÇO; 15102 FRUTAS + CHOCOLATE).
+  Ou seja, o Editor vale para todas as linhas; a expansão automática é só do Cartucho Composto.
+
+## 7.2 Atividade "Aplicado sobre" e "Detalhes..." (informação do usuário, confirmada no banco)
+
+- **Aplicado sobre** = em quais planos do cálculo a atividade roda. Cada plano marcado vira uma linha em
+  `CalculoAtividades` com `codPlanoAcabado` = aquele plano. Ex. 15174: Bimac (Acoplagem) tem uma linha no
+  plano 16 (TAMPA (M)) e outra no 18 (CAIXA (M)); Cortadeira, Corte e Vinco e Destacar têm uma linha por
+  folha. `codPlanoAcabado = -1` = atividade do PRODUTO (ex.: Seladora Bolsa, Fechadora de Caixa).
+  Acoplagem (Mazola, Jato ou Bimac) é marcada nos planos (M), que são os que se colam à capa.
+- **Detalhes...** abre a janela da atividade por plano ("Acabamento: Laminação maior", "HotStamping"):
+  tiragem, produção/hora, entradas, repetições (ex. 2x2), tempo do 1º acerto, quantidade de acertos,
+  tempo por acerto, quebra fixa % e variável %, formato de corte, centro de produção e restrições. No banco:
+  as mesmas colunas de `CalculoAtividades` (`producaoHora`, `entradas`, `manRepeticoes`,
+  `tempoPrimeiroAcerto`, `quantAcertos`, `tempoPorAcerto`, `quebraFixa`, `quebraVariavel`, `dimCorte1/2`,
+  `codCentroCusto`, `codRestricao0..9`) com os `man*` marcando o que foi digitado.
+- **Materiais da atividade** (ex. BOPP Brilho/Fosco/Holográfico na laminação; Filme Hot Stamping com a
+  medida 50x100): `CalculoMatAcabamento` por (atividade `codAtvAcabamento`, plano `codPlanoAcabado`,
+  material), com `ParamAcab1/2` = **área de cobertura % frente/verso** (ex. 100 / 0; Bimac 60).
+- **Informação complementar por atividade**: `CalculoAtvAcabamento.InfoComplementar` (ex.
+  "Matriz: 2570B - Caixa (Faca Nova) / 2477B - Tampa / 2478B - Bolsa", "Segue obs de impressão").
+
 ## 8. Proposta de implementação (para aprovar antes de codar)
 
 1. **Planos do Cálculo como entidade filha do Tipo de Plano.** Nova tabela `plano_calculo_folha` (nome a
@@ -134,5 +172,7 @@ por acabado).
    das OPs geradas do item.
 6. (Opcional) Foto do cálculo ao emitir a OP, como o Calcgraf.
 
-Pontos a confirmar com o usuário: a regra de repartição das atividades (seção 3) vale para todas as linhas
-ou só Cartucho Composto? Planos incluídos à mão no Editor precisam aparecer no grid de Tipos de Plano?
+Decisões do usuário (27/11/2026): expansão e repartição só no Cartucho Composto (confirmado no banco,
+seção 7.1); planos incluídos à mão no Editor aparecem também no grid de Tipos de Plano. Incluir no Editor:
+"Aplicado sobre" por atividade, janela "Detalhes..." por atividade/plano e materiais com área de cobertura
+(seção 7.2). O usuário vai passar mais recursos antes da implementação.
