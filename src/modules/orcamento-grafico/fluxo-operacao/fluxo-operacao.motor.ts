@@ -10,6 +10,9 @@
  *  - Pré-impressão atende as duas: pode vir antes ou depois de qualquer uma, ou ser pulada.
  *  - OP/PCP e Faturamento são sempre as duas últimas, nessa ordem.
  *  - O desbloqueio é SÓ por configuração: não existe "liberar" pontual.
+ *  - A SEQUÊNCIA define quem espera quem: setor cuja etapa vem depois da etapa em andamento aguarda
+ *    a vez (só ações; todos continuam vendo o pedido). Os bloqueios marcados somam a isso (ex.: uma
+ *    etapa posterior impedir que um setor anterior altere o que já entregou).
  */
 
 export const OPERACOES = ['NOVO', 'REPETICAO', 'MOSTRUARIO', 'ALTERACAO'] as const
@@ -198,7 +201,7 @@ export function setorPodeAgir(
 ): ResultadoAcesso {
   if (!etapaAtual) return { permitido: true }
   const cfg = etapas.find((e) => e.etapa === etapaAtual)
-  if (cfg?.ativa && cfg.bloqueia.includes(setor)) {
+  if (cfg?.ativa && (cfg.bloqueia.includes(setor) || aguardaPelaSequencia(etapas, etapaAtual, setor))) {
     return {
       permitido: false,
       bloqueadoPor: etapaAtual,
@@ -208,11 +211,39 @@ export function setorPodeAgir(
   return { permitido: true }
 }
 
-/** Setores bloqueados enquanto o pedido está em `etapaAtual` (para telas mostrarem o aviso). */
+/**
+ * A SEQUÊNCIA define quem espera quem: o setor cuja etapa (ativa) vem DEPOIS da etapa em andamento
+ * ainda não chegou a vez dele e aguarda. Ele continua VENDO o pedido (só as ações são barradas).
+ * Setor com etapa pulada no fluxo não espera pela sequência (só por bloqueio marcado).
+ */
+export function aguardaPelaSequencia(
+  etapas: readonly EtapaConfig[],
+  etapaAtual: EtapaFluxo,
+  setor: SetorBloqueavel,
+): boolean {
+  if (setor === etapaAtual) return false
+  const iAtual = etapas.findIndex((e) => e.etapa === etapaAtual)
+  const iSetor = etapas.findIndex((e) => e.etapa === setor)
+  if (iAtual < 0 || iSetor < 0 || !etapas[iSetor].ativa) return false
+  return iSetor > iAtual
+}
+
+/**
+ * Setores bloqueados enquanto o pedido está em `etapaAtual` (para telas mostrarem o aviso): os
+ * marcados na etapa + os que ainda aguardam a vez pela sequência.
+ */
 export function setoresBloqueados(etapas: readonly EtapaConfig[], etapaAtual: EtapaFluxo | null): SetorBloqueavel[] {
   if (!etapaAtual) return []
   const cfg = etapas.find((e) => e.etapa === etapaAtual)
-  return cfg?.ativa ? [...cfg.bloqueia] : []
+  if (!cfg?.ativa) return []
+  return SETORES_BLOQUEAVEIS.filter((s) => cfg.bloqueia.includes(s) || aguardaPelaSequencia(etapas, etapaAtual, s))
+}
+
+/** Setores que aguardam a vez (pela sequência) enquanto `etapa` estiver em andamento — para a visão do fluxo. */
+export function setoresQueAguardam(etapas: readonly EtapaConfig[], etapa: EtapaFluxo): SetorBloqueavel[] {
+  const cfg = etapas.find((e) => e.etapa === etapa)
+  if (!cfg?.ativa) return []
+  return SETORES_BLOQUEAVEIS.filter((s) => aguardaPelaSequencia(etapas, etapa, s))
 }
 
 // ============================================================================

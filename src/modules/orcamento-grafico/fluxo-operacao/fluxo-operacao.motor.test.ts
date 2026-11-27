@@ -163,6 +163,28 @@ describe('consultas do fluxo', () => {
   })
 })
 
+describe('sequencia define quem espera quem (sem bloqueio marcado)', () => {
+  // Orcamento -> Comercial -> Pre-Impressao, nenhum bloqueio marcado.
+  const etapas = montar(['ORCAMENTO', 'COMERCIAL', 'PRE_IMPRESSAO'], {})
+
+  it('na etapa Orcamento, Comercial e Pre-Impressao aguardam a vez', () => {
+    expect(setorPodeAgir(etapas, 'ORCAMENTO', 'ORCAMENTO').permitido).toBe(true)
+    expect(setorPodeAgir(etapas, 'ORCAMENTO', 'COMERCIAL')).toMatchObject({ permitido: false, bloqueadoPor: 'ORCAMENTO' })
+    expect(setorPodeAgir(etapas, 'ORCAMENTO', 'PRE_IMPRESSAO').permitido).toBe(false)
+    expect(setoresBloqueados(etapas, 'ORCAMENTO')).toEqual(['COMERCIAL', 'PRE_IMPRESSAO'])
+  })
+  it('na etapa Comercial, quem ja passou (Orcamento) pode agir e a Pre-Impressao aguarda', () => {
+    expect(setorPodeAgir(etapas, 'COMERCIAL', 'ORCAMENTO').permitido).toBe(true)
+    expect(setorPodeAgir(etapas, 'COMERCIAL', 'PRE_IMPRESSAO').permitido).toBe(false)
+    expect(setoresBloqueados(etapas, 'COMERCIAL')).toEqual(['PRE_IMPRESSAO'])
+  })
+  it('etapa pulada nao aguarda; depois das etapas de setor ninguem aguarda', () => {
+    const comPulo = montar(['ORCAMENTO', 'COMERCIAL', 'PRE_IMPRESSAO'], { PRE_IMPRESSAO: { ativa: false } })
+    expect(setorPodeAgir(comPulo, 'ORCAMENTO', 'PRE_IMPRESSAO').permitido).toBe(true)
+    expect(setoresBloqueados(etapas, 'OP_PCP')).toEqual([])
+  })
+})
+
 describe('operacaoDoPedido', () => {
   it('mostruario (tipo, amostra ou prova) tem prioridade', () => {
     expect(operacaoDoPedido({ tipoPedido: 'MOSTRUARIO' })).toBe('MOSTRUARIO')
