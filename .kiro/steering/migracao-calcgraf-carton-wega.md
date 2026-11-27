@@ -11,7 +11,22 @@ Vizor. Leia os documentos-mestre abaixo antes de agir neste tema.
 - Estudo de migração TOTAL + impacto de produtos: #[[file:docs/estudo-migracao-total-calcgraf.md]]
 - Mapeamento de importação (schema real): #[[file:docs/calcgraf-mapeamento-importacao.md]]
 
-## ⏸️ HANDOFF — EDITOR DO CÁLCULO / PLANOS DO CÁLCULO (27/11/2026, ESTUDO PRONTO, NÃO IMPLEMENTADO)
+## 🟡 EDITOR DO CÁLCULO — IMPLEMENTADO 27/11/2026 (falta conferir na tela)
+
+Spec `.kiro/specs/orcamento-editor-calculo/` (tarefas 1–9 feitas; 10 = conferência na tela). Back
+`f90fd95cc`/`cfa0d4bb9`/`41ffd78ed`, front `c09e69d`/`7058626`/`59be080`.
+- `LinhaProduto.modelo` (SIMPLES|EDITORIAL|CARTUCHO_COMPOSTO|BLOCADO|OUTRO; seletor no cadastro).
+- Tabelas `folha_calculo_grafico` (Planos do Cálculo) e `atividade_folha_grafico` ("Aplicado sobre",
+  detalhes, materiais, info complementar). Geração pura `editor-calculo/gerar-folhas.ts` (11 testes).
+- Rotas `/:id/itens/:itemId/editor` (+ gerar, calcular, folhas CRUD/copiar/ordem/limpar-manual,
+  atividades). Tela `/orcamento-grafico/:id/itens/:itemId/editor` (botão "Editor" na tela do item).
+- Item COM folhas: `reconsolidarItemComPlanos` soma as folhas (motor por folha; micro sem impressão);
+  tiragens também. Item SEM folhas = cálculo de antes. Item ancorado (puxado de cálculo) mantém o custo.
+- Grade de itens: "Ped: N" / "OP: N" com link.
+- Limitações: repartição das atividades reconhece acoplagem/cortadeira/guilhotina pelo nome/tipo de
+  processo; quebra fixa e materiais da atividade são gravados mas ainda não entram no custo.
+
+## ⏸️ (histórico) HANDOFF — EDITOR DO CÁLCULO / PLANOS DO CÁLCULO (27/11/2026, ESTUDO)
 
 **LEMBRAR O USUÁRIO no início das sessões sobre orçamento até ele retomar.** Estudo completo:
 `docs/estudo-editor-calculo-planos-calcgraf.md` (back `cb46674b8`). Resumo:
