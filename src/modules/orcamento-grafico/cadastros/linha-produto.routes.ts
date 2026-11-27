@@ -9,6 +9,8 @@ import { authenticate } from '../../../middleware/authenticate'
  * confiar só no prismaScoped — bypass SUPER_ADMIN).
  */
 const situacaoEnum = z.enum(['ativa', 'inativa', 'todas'])
+/** Modelo da linha (regra do item, equivale à Expressa do sistema de referência). Spec orcamento-editor-calculo. */
+const modeloEnum = z.enum(['SIMPLES', 'EDITORIAL', 'CARTUCHO_COMPOSTO', 'BLOCADO', 'OUTRO'])
 
 const listaQuerySchema = z.object({
   situacao: situacaoEnum.optional(),
@@ -19,12 +21,14 @@ const criarSchema = z.object({
   codigo: z.string().trim().min(1, 'Código é obrigatório').max(60, 'Código deve ter no máximo 60 caracteres'),
   nome: z.string().trim().min(1, 'Nome é obrigatório').max(120, 'Nome deve ter no máximo 120 caracteres'),
   ativo: z.boolean().optional(),
+  modelo: modeloEnum.optional(),
 })
 
 const atualizarSchema = z.object({
   codigo: z.string().trim().min(1, 'Código é obrigatório').max(60, 'Código deve ter no máximo 60 caracteres').optional(),
   nome: z.string().trim().min(1, 'Nome é obrigatório').max(120, 'Nome deve ter no máximo 120 caracteres').optional(),
   ativo: z.boolean().optional(),
+  modelo: modeloEnum.optional(),
 })
 
 export async function linhaProdutoRoutes(app: FastifyInstance) {
@@ -62,7 +66,7 @@ export async function linhaProdutoRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.errors[0]?.message ?? 'Dados inválidos' })
     }
-    const { codigo, nome, ativo } = parsed.data
+    const { codigo, nome, ativo, modelo } = parsed.data
 
     const existente = await prisma.linhaProduto.findFirst({
       where: { empresaId: user.empresaId, codigo },
@@ -73,7 +77,7 @@ export async function linhaProdutoRoutes(app: FastifyInstance) {
     }
 
     const criado = await prisma.linhaProduto.create({
-      data: { empresaId: user.empresaId, codigo, nome, ativo: ativo ?? true },
+      data: { empresaId: user.empresaId, codigo, nome, ativo: ativo ?? true, modelo: modelo ?? 'SIMPLES' },
     })
     return reply.status(201).send(criado)
   })
@@ -112,6 +116,7 @@ export async function linhaProdutoRoutes(app: FastifyInstance) {
         ...(dados.codigo !== undefined ? { codigo: dados.codigo } : {}),
         ...(dados.nome !== undefined ? { nome: dados.nome } : {}),
         ...(dados.ativo !== undefined ? { ativo: dados.ativo } : {}),
+        ...(dados.modelo !== undefined ? { modelo: dados.modelo } : {}),
       },
     })
   })

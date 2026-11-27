@@ -6166,6 +6166,84 @@ async function seedMateriaisFromOPs() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "log_valor_orcamento_grafico_empresa_id_orcamento_id_criado_em_idx" ON "log_valor_orcamento_grafico"("empresa_id","orcamento_id","criado_em")`)
   console.log('✅ orcamento_grafico: prazo_pagamento_id/prazo_pagamento/precisa_recalcular + log_valor_orcamento_grafico')
 
+  // Spec orcamento-editor-calculo: modelo da Linha de Produto (equivale à "Expressa" do sistema de
+  // referência) + Planos do Cálculo (folhas) e atividades por folha. Aditivo: item sem folhas segue o
+  // cálculo atual. O modelo só é preenchido onde está NULL (não sobrescreve ajuste do cadastro).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "linha_produto" ADD COLUMN IF NOT EXISTS "modelo" VARCHAR(30)`)
+  await prisma.$executeRawUnsafe(`
+    UPDATE "linha_produto" SET "modelo" = CASE
+      WHEN "codigo_origem" = 15 OR upper("nome") LIKE '%CARTUCHO COMPOSTO%' THEN 'CARTUCHO_COMPOSTO'
+      WHEN "codigo_origem" IN (1, 2, 9, 10, 13) THEN 'EDITORIAL'
+      WHEN "codigo_origem" IN (4, 7) THEN 'BLOCADO'
+      WHEN "codigo_origem" IN (3, 5, 6, 11) THEN 'SIMPLES'
+      WHEN "codigo_origem" IS NULL THEN 'SIMPLES'
+      ELSE 'OUTRO' END
+    WHERE "modelo" IS NULL`)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "folha_calculo_grafico" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "item_id" TEXT NOT NULL,
+      "plano_id" TEXT,
+      "papel" VARCHAR(20) NOT NULL DEFAULT 'CAPA',
+      "sequencia" INTEGER NOT NULL,
+      "nome" VARCHAR(60) NOT NULL,
+      "tiragem" INTEGER,
+      "formato_largura_mm" DECIMAL(10,2),
+      "formato_altura_mm" DECIMAL(10,2),
+      "ocorrencias" INTEGER NOT NULL DEFAULT 1,
+      "fibra" VARCHAR(20),
+      "suporte_id" TEXT,
+      "gramatura" DECIMAL(6,2),
+      "suporte_nc" JSONB,
+      "formato_folha_largura_mm" DECIMAL(10,2),
+      "formato_folha_altura_mm" DECIMAL(10,2),
+      "aproveitamento" INTEGER,
+      "quebra_fixa" DECIMAL(7,2),
+      "quebra_variavel" DECIMAL(7,2),
+      "apara" DECIMAL(7,2),
+      "impressao" JSONB,
+      "opcoes" JSONB,
+      "campos_manuais" JSONB,
+      "alterada_no_editor" BOOLEAN NOT NULL DEFAULT false,
+      "resultado_calculo" JSONB,
+      "custo_total" DECIMAL(14,2),
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "folha_calculo_grafico_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "folha_calculo_grafico_item_id_sequencia_key" ON "folha_calculo_grafico"("item_id","sequencia")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "folha_calculo_grafico_empresa_id_idx" ON "folha_calculo_grafico"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "folha_calculo_grafico_item_id_idx" ON "folha_calculo_grafico"("item_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "folha_calculo_grafico" ADD CONSTRAINT "folha_calculo_grafico_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "item_orcamento_grafico"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch { /* já existe */ }
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "atividade_folha_grafico" (
+      "id" TEXT NOT NULL,
+      "empresa_id" TEXT NOT NULL,
+      "item_id" TEXT NOT NULL,
+      "folha_id" TEXT,
+      "acabamento_id" TEXT NOT NULL,
+      "sequencia" INTEGER NOT NULL DEFAULT 0,
+      "detalhes" JSONB,
+      "campos_manuais" JSONB,
+      "materiais" JSONB,
+      "info_complementar" TEXT,
+      "criado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "atualizado_em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "atividade_folha_grafico_pkey" PRIMARY KEY ("id")
+    )`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "atividade_folha_grafico_empresa_id_idx" ON "atividade_folha_grafico"("empresa_id")`)
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "atividade_folha_grafico_item_id_idx" ON "atividade_folha_grafico"("item_id")`)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "atividade_folha_grafico" ADD CONSTRAINT "atividade_folha_grafico_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "item_orcamento_grafico"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch { /* já existe */ }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "atividade_folha_grafico" ADD CONSTRAINT "atividade_folha_grafico_folha_id_fkey" FOREIGN KEY ("folha_id") REFERENCES "folha_calculo_grafico"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+  } catch { /* já existe */ }
+  console.log('✅ orcamento-editor-calculo: linha_produto.modelo + folha_calculo_grafico + atividade_folha_grafico')
+
   await migrarSerieDocumento()
 
   await migrarPedidosParaStatusFiel()

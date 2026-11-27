@@ -3300,6 +3300,9 @@ model LinhaProduto {
   ativo        Boolean  @default(true)
   /// Código no sistema legado (só para casar importação). Sem @@unique aqui.
   codigoOrigem Int?     @map("codigo_origem")
+  /// Modelo (regra) da linha, equivale à Expressa do sistema de referência: SIMPLES | EDITORIAL |
+  /// CARTUCHO_COMPOSTO | BLOCADO | OUTRO. NULL = SIMPLES. Spec orcamento-editor-calculo.
+  modelo       String?  @db.VarChar(30)
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
@@ -5107,6 +5110,9 @@ model ItemOrcamentoGrafico {
   modeloFaca ModeloFaca?      @relation(fields: [modeloFacaId], references: [id], onDelete: Restrict)
   planos     PlanoCalculoGrafico[]
   tiragens   ItemTiragemOrcamentoGrafico[]
+  /// Planos do Cálculo (folhas) e atividades por folha (spec orcamento-editor-calculo).
+  folhas           FolhaCalculoGrafico[]
+  atividadesFolha  AtividadeFolhaGrafico[]
   historicoTrocaSuporte HistoricoTrocaSuporte[]
 
   @@unique([orcamentoId, sequencia])
@@ -8112,4 +8118,73 @@ model SelecaoMaterialAcabamento {
   @@index([empresaId, itemId])
   @@index([empresaId])
   @@map("selecao_material_acabamento")
+}
+
+/// Plano do Cálculo (folha que o motor custeia), gerado do Tipo de Plano e refinado no Editor do
+/// cálculo. Item sem folhas = cálculo atual. Spec orcamento-editor-calculo.
+model FolhaCalculoGrafico {
+  id                    String   @id @default(uuid())
+  empresaId             String   @map("empresa_id")
+  itemId                String   @map("item_id")
+  /// Tipo de Plano de origem (PlanoCalculoGrafico), só id; null = plano único do item ou incluída no Editor.
+  planoId               String?  @map("plano_id")
+  /// CAPA | MICRO | CAPA_INTERNA | AVULSO
+  papel                 String   @default("CAPA") @db.VarChar(20)
+  sequencia             Int
+  nome                  String   @db.VarChar(60)
+  tiragem               Int?
+  formatoLarguraMm      Decimal? @map("formato_largura_mm") @db.Decimal(10, 2)
+  formatoAlturaMm       Decimal? @map("formato_altura_mm") @db.Decimal(10, 2)
+  ocorrencias           Int      @default(1)
+  fibra                 String?  @db.VarChar(20)
+  suporteId             String?  @map("suporte_id")
+  gramatura             Decimal? @db.Decimal(6, 2)
+  suporteNc             Json?    @map("suporte_nc")
+  formatoFolhaLarguraMm Decimal? @map("formato_folha_largura_mm") @db.Decimal(10, 2)
+  formatoFolhaAlturaMm  Decimal? @map("formato_folha_altura_mm") @db.Decimal(10, 2)
+  aproveitamento        Int?
+  quebraFixa            Decimal? @map("quebra_fixa") @db.Decimal(7, 2)
+  quebraVariavel        Decimal? @map("quebra_variavel") @db.Decimal(7, 2)
+  apara                 Decimal? @db.Decimal(7, 2)
+  /// Até 3 processos: [{ cores, processo, maquinaId, numCores, cores[], coberturaTintaTexto, preImpressao }]
+  impressao             Json?
+  /// naoCalcular, naoCobrarImpressao, naoExibirProposta, tiraRetira, pinca, refileFolha, refileFinal, contraPinca, corteDuplo
+  opcoes                Json?
+  /// Campos digitados à mão no Editor (não sobrescritos pela regeração nem pelo recálculo).
+  camposManuais         Json?    @map("campos_manuais")
+  alteradaNoEditor      Boolean  @default(false) @map("alterada_no_editor")
+  resultadoCalculo      Json?    @map("resultado_calculo")
+  custoTotal            Decimal? @map("custo_total") @db.Decimal(14, 2)
+  criadoEm              DateTime @default(now()) @map("criado_em")
+  atualizadoEm          DateTime @updatedAt @map("atualizado_em")
+  item       ItemOrcamentoGrafico    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  atividades AtividadeFolhaGrafico[]
+  @@unique([itemId, sequencia])
+  @@index([empresaId])
+  @@index([itemId])
+  @@map("folha_calculo_grafico")
+}
+
+/// Atividade do Editor do cálculo, por folha ("Aplicado sobre"); folhaId null = atividade do produto.
+/// Detalhes (produção/hora, entradas, repetições, acertos, quebras, formato de corte, centro, restrições),
+/// materiais com cobertura frente/verso e informação complementar. Spec orcamento-editor-calculo.
+model AtividadeFolhaGrafico {
+  id               String   @id @default(uuid())
+  empresaId        String   @map("empresa_id")
+  itemId           String   @map("item_id")
+  folhaId          String?  @map("folha_id")
+  acabamentoId     String   @map("acabamento_id")
+  sequencia        Int      @default(0)
+  detalhes         Json?
+  camposManuais    Json?    @map("campos_manuais")
+  /// [{ materialAcabamentoId, medida, coberturaFrente, coberturaVerso }]
+  materiais        Json?
+  infoComplementar String?  @map("info_complementar") @db.Text
+  criadoEm         DateTime @default(now()) @map("criado_em")
+  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
+  item  ItemOrcamentoGrafico @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  folha FolhaCalculoGrafico? @relation(fields: [folhaId], references: [id], onDelete: Cascade)
+  @@index([empresaId])
+  @@index([itemId])
+  @@map("atividade_folha_grafico")
 }
