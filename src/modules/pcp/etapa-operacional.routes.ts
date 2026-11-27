@@ -1283,7 +1283,11 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
   app.patch('/etapas/:id/mover', async (request, reply) => {
     const user = request.user as { id: string; empresaId: string; perfil?: string }
     const { id } = idSchema.parse(request.params)
-    const body = z.object({ centroProducaoId: z.string().uuid() }).parse(request.body)
+    const body = z.object({
+      centroProducaoId: z.string().uuid(),
+      // Enviado pelo "Mover p/ Grupo" da Programação: total de etapas do lote (só para o log).
+      loteTotal: z.coerce.number().int().min(1).max(1000).optional(),
+    }).parse(request.body)
 
     // Verificar permissão
     const { permitido } = await verificarPermissaoEtapa(user, id, 'podeMover')
@@ -1303,6 +1307,10 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
     if (!centro) return reply.status(404).send({ message: 'Centro de destino não encontrado' })
 
     const centroOrigemId = etapa.centroProducaoId
+    const centroOrigem = centroOrigemId
+      ? await prisma.centroProducao.findFirst({ where: { id: centroOrigemId, empresaId: user.empresaId }, select: { codigo: true, descricao: true } })
+      : null
+    const origemLabel = centroOrigem ? (centroOrigem.codigo || centroOrigem.descricao) : null
 
     // Trava de SEQUÊNCIA: mover etapa travada exige permissão; ao mover, a
     // trava é removida (a posição na fila de origem deixa de valer).
@@ -1333,7 +1341,7 @@ export async function etapaOperacionalRoutes(app: FastifyInstance) {
         statusAnterior: etapa.status,
         statusNovo: etapa.status,
         usuarioId: user.id,
-        observacao: `Etapa "${etapa.descricao}" movida para centro ${centro.codigo || centro.descricao}${destravarSequencia ? ' (trava de sequência removida ao mudar de máquina)' : ''}`,
+        observacao: `Etapa "${etapa.descricao}" movida para centro ${centro.codigo || centro.descricao}${origemLabel ? ` (de ${origemLabel})` : ''}${body.loteTotal ? ` — mover em lote (${body.loteTotal} etapa(s))` : ''}${destravarSequencia ? ' (trava de sequência removida ao mudar de máquina)' : ''}`,
       },
     })
 
