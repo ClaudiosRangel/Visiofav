@@ -108,7 +108,7 @@ export async function tiposDoItem(empresaId: string, itemId: string): Promise<{ 
     where: { id: itemId, empresaId },
     select: {
       descricao: true, papelId: true, gramatura: true, cores: true, maquinaId: true, acabamentosRicos: true,
-      formatoCorteLarguraMm: true, formatoCorteAlturaMm: true,
+      formatoCorteLarguraMm: true, formatoCorteAlturaMm: true, microondulado: true, microSuporteId: true,
     },
   })
   if (!item) throw new EditorCalculoError(404, 'Item de orçamento não encontrado')
@@ -144,6 +144,8 @@ export async function tiposDoItem(empresaId: string, itemId: string): Promise<{ 
           impressao: cores.length > 0
             ? { cores: null, processoImpressao: null, coberturaTinta: null, maquinaId: item.maquinaId, numCores: cores.length, tintas: cores }
             : null,
+          // Microondulado do item de plano único (combo "Microondulado" da tela do item).
+          micro: item.microSuporteId ? { suporteId: item.microSuporteId } : null,
           atividades: ids.map((id) => ({ acabamentoId: id, classe: classes.get(id) ?? 'OUTRA' })),
         },
       ],

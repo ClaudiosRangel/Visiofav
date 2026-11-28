@@ -536,6 +536,9 @@ const itemOrcamentoBodySchema = z.object({
   microondulado: z.boolean().optional(),
   // ── Fase 2 (Req 8) — material microondulado escolhido (aditivo/opcional) ──
   materialMicroonduladoId: z.string().uuid().optional().nullable(),
+  // Suporte (papel) do microondulado do item de plano único (combo "Microondulado").
+  microSuporteId: z.string().uuid().optional().nullable(),
+  microSuporteNome: z.string().max(200).optional().nullable(),
   fornecido: z.boolean().optional(),
   qtdModelos: z.number().int().min(0).optional(),
   arte: z.string().max(60).optional().nullable(),
@@ -892,6 +895,8 @@ function dadosPersistenciaItem(body: ItemOrcamentoBody, resultado: ResultadoOrca
     fabricante: body.fabricante ?? null,
     microondulado: body.microondulado ?? false,
     materialMicroonduladoId: body.materialMicroonduladoId ?? null,
+    microSuporteId: body.microSuporteId ?? null,
+    microSuporteNome: body.microSuporteNome ?? null,
     fornecido: body.fornecido ?? false,
     qtdModelos: body.qtdModelos ?? 0,
     arte: body.arte ?? null,
@@ -1170,6 +1175,8 @@ function reconstruirBodyDoItem(item: any, novaQuantidade?: number): ItemOrcament
     coberturaTintaTexto: item.coberturaTintaTexto ?? null,
     fabricante: item.fabricante ?? null,
     microondulado: item.microondulado ?? false,
+    microSuporteId: (item as { microSuporteId?: string | null }).microSuporteId ?? null,
+    microSuporteNome: (item as { microSuporteNome?: string | null }).microSuporteNome ?? null,
     fornecido: item.fornecido ?? false,
     qtdModelos: item.qtdModelos ?? 0,
     arte: item.arte ?? null,

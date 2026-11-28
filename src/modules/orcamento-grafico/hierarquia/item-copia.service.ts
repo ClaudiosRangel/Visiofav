@@ -161,6 +161,8 @@ async function copiarUmaVez(
       acabamentosRicos: jsonNullable(o.acabamentosRicos),
       materiaisAcabamento: jsonNullable(o.materiaisAcabamento), // reescrito abaixo com os novos selecaoId
       materialMicroonduladoId: o.materialMicroonduladoId,
+      microSuporteId: o.microSuporteId,
+      microSuporteNome: o.microSuporteNome,
       modeloFacaId: o.modeloFacaId,
       itensDiversos: jsonNullable(o.itensDiversos),
       itensFornecidos: jsonNullable(o.itensFornecidos),

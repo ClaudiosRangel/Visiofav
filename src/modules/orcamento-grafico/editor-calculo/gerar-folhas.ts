@@ -133,11 +133,13 @@ export function gerarFolhas(
     folhas.push({ ...folhaBase(t, 'CAPA', t.capa, t.impressao), sequencia: 0, camposManuais: [], alteradaNoEditor: false })
     let iMicro: number | null = null
     let iInterna: number | null = null
+    // Microondulado informado gera a folha MICRO em qualquer modelo (no plano único vem do combo
+    // "Microondulado" do item); capa interna só existe no Cartucho Composto.
+    if (temSuporte(t.micro)) {
+      iMicro = folhas.length
+      folhas.push({ ...folhaBase(t, 'MICRO', t.micro, null), sequencia: 0, camposManuais: [], alteradaNoEditor: false })
+    }
     if (modelo === 'CARTUCHO_COMPOSTO') {
-      if (temSuporte(t.micro)) {
-        iMicro = folhas.length
-        folhas.push({ ...folhaBase(t, 'MICRO', t.micro, null), sequencia: 0, camposManuais: [], alteradaNoEditor: false })
-      }
       if (temSuporte(t.capaInterna)) {
         iInterna = folhas.length
         folhas.push({
@@ -149,8 +151,9 @@ export function gerarFolhas(
       }
     }
     const destinosCorte = [iCapa, iMicro, iInterna].filter((i): i is number => i !== null)
+    const reparte = modelo === 'CARTUCHO_COMPOSTO' || iMicro !== null
     for (const a of t.atividades) {
-      if (modelo !== 'CARTUCHO_COMPOSTO') {
+      if (!reparte) {
         atividades.push({ acabamentoId: a.acabamentoId, folha: iCapa, sequencia: 0 })
       } else if (a.classe === 'ACOPLAGEM') {
         atividades.push({ acabamentoId: a.acabamentoId, folha: iMicro ?? iInterna ?? iCapa, sequencia: 0 })

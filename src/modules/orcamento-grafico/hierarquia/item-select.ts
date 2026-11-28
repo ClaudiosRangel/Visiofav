@@ -87,6 +87,8 @@ export const ITEM_SELECT_HIDRATACAO = {
   fabricante: true,
   microondulado: true,
   materialMicroonduladoId: true,
+  microSuporteId: true,
+  microSuporteNome: true,
   fornecido: true,
   qtdModelos: true,
   arte: true,

@@ -6243,6 +6243,10 @@ async function seedMateriaisFromOPs() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "atividade_folha_grafico" ADD CONSTRAINT "atividade_folha_grafico_folha_id_fkey" FOREIGN KEY ("folha_id") REFERENCES "folha_calculo_grafico"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
   } catch { /* já existe */ }
   console.log('✅ orcamento-editor-calculo: linha_produto.modelo + folha_calculo_grafico + atividade_folha_grafico')
+  // Suporte do microondulado no item de plano único (combo "Microondulado" da tela do item).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "micro_suporte_id" TEXT`)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "item_orcamento_grafico" ADD COLUMN IF NOT EXISTS "micro_suporte_nome" VARCHAR(200)`)
+  console.log('✅ item_orcamento_grafico: micro_suporte_id/micro_suporte_nome')
 
   await migrarSerieDocumento()
 

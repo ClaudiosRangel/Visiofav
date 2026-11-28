@@ -74,12 +74,18 @@ describe('gerarFolhas — Cartucho Composto (caso do cálculo 15061/15650)', () 
 })
 
 describe('gerarFolhas — demais modelos', () => {
-  it('SIMPLES e EDITORIAL: 1 folha por tipo, micro ignorado, todas as atividades na folha', () => {
+  it('SIMPLES e EDITORIAL sem micro: 1 folha por tipo, todas as atividades na folha', () => {
     for (const modelo of ['SIMPLES', 'EDITORIAL'] as const) {
-      const r = gerarFolhas(modelo, [tipo(), tipo({ planoId: 'p2', nome: 'MONT02' })])
+      const r = gerarFolhas(modelo, [tipo({ micro: null }), tipo({ planoId: 'p2', nome: 'MONT02', micro: null })])
       expect(r.folhas.map((f) => f.papel)).toEqual(['CAPA', 'CAPA'])
       expect(r.atividades.filter((a) => a.folha === 0)).toHaveLength(3)
     }
+  })
+  it('SIMPLES com microondulado (combo do item): capa + micro, acoplagem no micro; capa interna ignorada', () => {
+    const r = gerarFolhas('SIMPLES', [tipo({ capaInterna: { suporteId: 'i', impressao: null } })])
+    expect(r.folhas.map((f) => f.papel)).toEqual(['CAPA', 'MICRO'])
+    const bimac = r.atividades.find((a) => a.acabamentoId === 'bimac')!
+    expect(r.folhas[bimac.folha!].papel).toBe('MICRO')
   })
   it('modelo desconhecido vira SIMPLES', () => {
     expect(modeloDaLinha('cartucho_composto')).toBe('CARTUCHO_COMPOSTO')

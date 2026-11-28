@@ -13,7 +13,7 @@ const CHAVES_ITEM_ANTIGAS = [
   'modeloFacaId', 'itensDiversos', 'itensFornecidos', 'camposLivres', 'preImpressao', 'quantidade',
   'resultadoCalculo', 'margemSelecionada', 'custoProducao', 'valorTotal', 'pendente',
   'criadoEm', 'atualizadoEm', 'siglaAcabado', 'tributacao', 'processoImpressao',
-  'coberturaTintaTexto', 'fabricante', 'microondulado', 'materialMicroonduladoId', 'fornecido',
+  'coberturaTintaTexto', 'fabricante', 'microondulado', 'materialMicroonduladoId', 'microSuporteId', 'microSuporteNome', 'fornecido',
   'qtdModelos', 'arte', 'observacao', 'observacaoAreasOp', 'conteudoVolume', 'acondicionamento',
   'comprimentoMm', 'larguraMm', 'alturaMm', 'abaColaMm', 'abaFechamentoMm', 'fibra',
   'montagemLinhas', 'montagemColunas', 'formatoSupLarguraMm', 'formatoSupAlturaMm',

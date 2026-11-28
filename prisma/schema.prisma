@@ -5019,6 +5019,10 @@ model ItemOrcamentoGrafico {
   // ── Fase 2 (Req 8) — material microondulado escolhido quando `microondulado`
   // está marcado. Nullable/aditivo (não-regressão). FK lógica p/ MaterialMicroondulado.
   materialMicroonduladoId String? @map("material_microondulado_id")
+  /// Suporte (papel) do microondulado do item de plano único, como o combo "Microondulado" do sistema
+  /// de referência. Id de PrecoMateriaPrima (sem @relation); o Editor do cálculo gera a folha MICRO dele.
+  microSuporteId   String? @map("micro_suporte_id")
+  microSuporteNome String? @map("micro_suporte_nome") @db.VarChar(200)
 
   // ── GCad / Faca (Req 6) ──
   modeloFacaId String? @map("modelo_faca_id")
