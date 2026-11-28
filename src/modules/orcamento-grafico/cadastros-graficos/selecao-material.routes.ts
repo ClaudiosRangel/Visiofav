@@ -41,6 +41,11 @@ const putSchema = z.object({
   /** Parâmetros opcionais do cálculo (sem cadastro próprio na fase 1). */
   gramaturaKgM2: z.number().finite().min(0).nullable().optional(),
   pecasPorCaixa: z.number().finite().min(0).nullable().optional(),
+  /**
+   * true = a atividade aceita VÁRIOS materiais ao mesmo tempo (ex.: Cola Branca e Cola Quente): grava/atualiza
+   * a seleção deste material sem trocar as demais. Ausente = troca o material da atividade (comportamento antigo).
+   */
+  adicionar: z.boolean().optional(),
 })
 
 const getSchema = z.object({ itemId: ID })
@@ -49,6 +54,8 @@ const deleteSchema = z.object({
   itemId: ID,
   acabamentoId: ID,
   planoId: ID.nullable().optional(),
+  /** Remove sÃ³ este material da atividade (vÃ¡rios materiais). Ausente = remove todos da atividade. */
+  materialId: ID.optional(),
 })
 
 function erroZod(reply: FastifyReply, error: z.ZodError) {
@@ -239,7 +246,13 @@ export async function selecaoMaterialRoutes(app: FastifyInstance) {
 
     const { selecao, todas } = await prisma.$transaction(async (tx) => {
       const existente = await tx.selecaoMaterialAcabamento.findFirst({
-        where: { empresaId, itemId: item.id, planoId, acabamentoId: b.acabamentoId },
+        where: {
+          empresaId,
+          itemId: item.id,
+          planoId,
+          acabamentoId: b.acabamentoId,
+          ...(b.adicionar ? { materialId: b.materialId } : {}),
+        },
         select: { id: true },
       })
       const gravada = existente
@@ -328,7 +341,13 @@ export async function selecaoMaterialRoutes(app: FastifyInstance) {
 
     const { removidas, todas } = await prisma.$transaction(async (tx) => {
       const apagadas = await tx.selecaoMaterialAcabamento.deleteMany({
-        where: { empresaId, itemId: item.id, planoId, acabamentoId: b.acabamentoId },
+        where: {
+          empresaId,
+          itemId: item.id,
+          planoId,
+          acabamentoId: b.acabamentoId,
+          ...(b.materialId ? { materialId: b.materialId } : {}),
+        },
       })
       const lista = await tx.selecaoMaterialAcabamento.findMany({
         where: { empresaId, itemId: item.id },
